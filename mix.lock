@@ -1,0 +1,5 @@
+%{
+  "complex": {:git, "https://github.com/elixir-nx/complex.git", "445f464440efa5cb601a6f6168554e1579e68934", [branch: "main"]},
+  "nx": {:git, "https://github.com/elixir-nx/nx.git", "58ad1f3e66853e74b5e3495d92cc8de17be46ffc", [sparse: "nx"]},
+  "table_rex": {:hex, :table_rex, "3.1.1", "0c67164d1714b5e806d5067c1e96ff098ba7ae79413cc075973e17c38a587caa", [:mix], [], "hexpm", "678a23aba4d670419c23c17790f9dcd635a4a89022040df7d5d772cb21012490"},
+}
