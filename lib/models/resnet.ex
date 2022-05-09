@@ -8,7 +8,7 @@ defmodule ResNet do
   @embedding_size 64
   @hidden_sizes [256, 512, 1024, 2048]
   @depths [3, 4, 6, 3]
-  @layer_top :bottleneck
+  @layer_type :bottleneck
   @hidden_act :relu
   @downsample_in_first_stage false
 
