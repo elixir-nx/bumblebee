@@ -13,52 +13,58 @@ defmodule ResNet do
   @downsample_in_first_stage false
 
   def conv_layer(%Axon{} = x, out_channels, opts \\ []) do
-    opts = Keyword.validate!(opts, [kernel_size: 3, stride: 1, activation: :relu])
+    opts = Keyword.validate!(opts, kernel_size: 3, strides: 1, activation: :relu)
     kernel_size = opts[:kernel_size]
-    stride = opts[:stride]
+    strides = opts[:strides]
     activation = opts[:activation]
 
     edge_padding = div(kernel_size, 2)
     padding_config = [{edge_padding, edge_padding}, {edge_padding, edge_padding}]
 
     x
-    |> Axon.conv(out_channels, kernel_size: kernel_size, stride: stride, padding: padding_config, use_bias: false)
+    |> Axon.conv(out_channels,
+      kernel_size: kernel_size,
+      strides: strides,
+      padding: padding_config,
+      use_bias: false
+    )
     |> Axon.batch_norm()
     |> Axon.activation(activation)
   end
 
   def embedding_layer(%Axon{} = x) do
     x
-    |> conv_layer(@embedding_size, kernel_size: 7, stride: 2, activation: @hidden_act)
-    |> Axon.max_pool(kernel_size: 3, stride: 2, padding: [{1, 1}, {1, 1}])
+    |> conv_layer(@embedding_size, kernel_size: 7, strides: 2, activation: @hidden_act)
+    |> Axon.max_pool(kernel_size: 3, strides: 2, padding: [{1, 1}, {1, 1}])
   end
 
   def shortcut_layer(%Axon{} = x, out_channels, opts \\ []) do
-    opts = Keyword.validate!(opts, [stride: 2])
-    stride = opts[:stride]
+    opts = Keyword.validate!(opts, strides: 2)
+    strides = opts[:strides]
 
     x
-    |> Axon.conv(out_channels, kernel_size: 1, stride: stride, use_bias: false)
+    |> Axon.conv(out_channels, kernel_size: 1, strides: strides, use_bias: false)
     |> Axon.batch_norm()
   end
 
   def basic_layer(%Axon{} = x, out_channels, opts \\ []) do
-    opts = Keyword.validate!(opts, [stride: 1, activation: :relu])
-    stride = opts[:stride]
+    opts = Keyword.validate!(opts, strides: 1, activation: :relu)
+    strides = opts[:strides]
     activation = opts[:activation]
 
     # init
-    should_apply_shortcut = get_channels(x) != out_channels or stride != 1
+    should_apply_shortcut = get_channels(x) != out_channels or strides != 1
+
     shortcut =
       if should_apply_shortcut do
-        &shortcut_layer(&1, out_channels, stride: stride)
+        &shortcut_layer(&1, out_channels, strides: strides)
       else
         & &1
       end
 
     layer = fn x ->
       x
-      |> conv_layer(out_channels, stride: stride)
+      |> conv_layer(out_channels, strides: strides)
       |> conv_layer(out_channels, activation: :linear)
     end
 
@@ -75,17 +81,18 @@ defmodule ResNet do
   end
 
   def bottleneck_layer(%Axon{} = x, out_channels, opts \\ []) do
-    opts = Keyword.validate!(opts, [stride: 1, activation: :relu, reduction: 4])
-    stride = opts[:stride]
+    opts = Keyword.validate!(opts, strides: 1, activation: :relu, reduction: 4)
+    strides = opts[:strides]
     activation = opts[:activation]
     reduction = opts[:reduction]
 
     # init
-    should_apply_shortcut = get_channels(x) != out_channels or stride != 1
+    should_apply_shortcut = get_channels(x) != out_channels or strides != 1
     reduces_channels = div(out_channels, reduction)
+
     shortcut =
       if should_apply_shortcut do
-        &shortcut_layer(&1, out_channels, stride: stride)
+        &shortcut_layer(&1, out_channels, strides: strides)
       else
         & &1
       end
@@ -93,7 +100,7 @@ defmodule ResNet do
     layer = fn x ->
       x
       |> conv_layer(reduces_channels, kernel_size: 1)
-      |> conv_layer(reduces_channels, stride: stride)
+      |> conv_layer(reduces_channels, strides: strides)
       |> conv_layer(out_channels, kernel_size: 1, activation: :linear)
     end
 
@@ -110,8 +117,8 @@ defmodule ResNet do
   end
 
   def stage(%Axon{} = x, out_channels, opts \\ []) do
-    opts = Keyword.validate!(opts, [stride: 2, depth: 2])
-    stride = opts[:stride]
+    opts = Keyword.validate!(opts, strides: 2, depth: 2)
+    strides = opts[:strides]
     depth = opts[:depth]
 
     # init
@@ -125,7 +132,8 @@ defmodule ResNet do
       end
 
     # forward
-    x = layer.(x, out_channels, stride: stride, activation: @hidden_act)
+    x = layer.(x, out_channels, strides: strides, activation: @hidden_act)
+
     for _ <- 1..(depth - 1), reduce: x do
       x ->
         layer.(x, out_channels, activation: @hidden_act)
@@ -136,9 +144,9 @@ defmodule ResNet do
     # init
     [first_hidden_size | hidden_sizes] = @hidden_sizes
     [first_depth | depths] = @depths
-    first_stride = if @downsample_in_first_stage, do: 2, else: 1
+    first_strides = if @downsample_in_first_stage, do: 2, else: 1
 
-    first_stage = &stage(&1, first_hidden_size, stride: first_stride, depth: first_depth)
+    first_stage = &stage(&1, first_hidden_size, strides: first_strides, depth: first_depth)
 
     rest_of_stages =
       for {size, depth} <- Enum.zip(hidden_sizes, depths) do
