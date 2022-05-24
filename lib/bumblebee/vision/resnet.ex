@@ -1,4 +1,4 @@
-defmodule ResNet do
+defmodule Bumblebee.Vision.ResNet do
   @moduledoc """
   ResNet-50 Architecture.
   """

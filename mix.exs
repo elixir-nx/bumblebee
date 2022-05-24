@@ -21,7 +21,8 @@ defmodule Bumblebee.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:axon, "~> 0.1.0-dev", axon_opts()}
+      {:axon, "~> 0.1.0-dev", axon_opts()},
+      {:unpickler, github: "dashbitco/unpickler"}
     ]
   end
 
