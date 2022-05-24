@@ -4,7 +4,7 @@ defmodule Bumblebee.Vision.ResNet do
   """
   # TODO: These are the HF config defaults for ResNet config and should be
   # somehow included in the function which builds the model
-  @num_channels 3
+  # @num_channels 3
   @embedding_size 64
   @hidden_sizes [256, 512, 1024, 2048]
   @depths [3, 4, 6, 3]
