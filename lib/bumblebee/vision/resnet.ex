@@ -153,9 +153,10 @@ defmodule Bumblebee.Vision.ResNet do
 
     stages = [first_stage | rest_of_stages]
 
-    for stage <- stages, reduce: {x, {}} do
+    for stage <- stages, reduce: {x, {x}} do
       {hidden_state, hidden_states} ->
-        {stage.(hidden_state), Tuple.append(hidden_states, hidden_state)}
+        hidden_state = stage.(hidden_state)
+        {hidden_state, Tuple.append(hidden_states, hidden_state)}
     end
   end
 
