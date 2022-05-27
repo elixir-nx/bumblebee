@@ -96,16 +96,15 @@ defmodule Bumblebee.Vision.ResNet do
     config = Keyword.get_lazy(opts, :config, &config/0)
     name = if(name = opts[:name], do: name <> ".", else: "")
 
-    x = Axon.input({nil, config.num_channels, 224, 224})
-
     # TODO: Correct initialization for layer types
-    embedder = &embedding_layer(&1, config, name: name <> "embedder")
-    encoder = &encoder(&1, config, name: name <> "encoder")
-    pooler = &Axon.adaptive_avg_pool(&1, output_size: {1, 1}, name: name <> "pooler")
 
-    embedding_output = embedder.(x)
-    {encoder_output, hidden_states} = encoder.(embedding_output)
-    pooled_output = pooler.(encoder_output)
+    {encoder_output, hidden_states} =
+      Axon.input({nil, config.num_channels, 224, 224})
+      |> embedding_layer(config, name: name <> "embedder")
+      |> encoder(config, name: name <> "encoder")
+
+    pooled_output =
+      Axon.adaptive_avg_pool(encoder_output, output_size: {1, 1}, name: name <> "pooler")
 
     Axon.container(%{
       last_hidden_state: encoder_output,
@@ -135,28 +134,13 @@ defmodule Bumblebee.Vision.ResNet do
   defp encoder(%Axon{} = x, config, opts) do
     name = opts[:name]
 
-    [first_hidden_size | hidden_sizes] = config.hidden_sizes
-    [first_depth | depths] = config.depths
-    first_strides = if config.downsample_in_first_stage, do: 2, else: 1
+    stages = config.hidden_sizes |> Enum.zip(config.depths) |> Enum.with_index()
 
-    first_stage =
-      &stage(&1, first_hidden_size, config,
-        strides: first_strides,
-        depth: first_depth,
-        name: name <> ".stages.0"
-      )
-
-    rest_of_stages =
-      for {{size, depth}, idx} <- Enum.zip(hidden_sizes, depths) |> Enum.with_index(1) do
-        &stage(&1, size, config, depth: depth, name: name <> ".stages.#{idx}")
-      end
-
-    stages = [first_stage | rest_of_stages]
-
-    for stage <- stages, reduce: {x, {x}} do
-      {hidden_state, hidden_states} ->
-        hidden_state = stage.(hidden_state)
-        {hidden_state, Tuple.append(hidden_states, hidden_state)}
+    for {{size, depth}, idx} <- stages, reduce: {x, {x}} do
+      {x, hidden_states} ->
+        strides = if idx == 0 and not config.downsample_in_first_stage, do: 1, else: 2
+        x = stage(x, size, config, depth: depth, strides: strides, name: name <> ".stages.#{idx}")
+        {x, Tuple.append(hidden_states, x)}
     end
   end
 
@@ -191,30 +175,20 @@ defmodule Bumblebee.Vision.ResNet do
     strides = opts[:strides]
     activation = opts[:activation]
 
-    should_apply_shortcut = get_channels(x) != out_channels or strides != 1
+    should_apply_shortcut? = get_channels(x) != out_channels or strides != 1
 
-    shortcut =
-      if should_apply_shortcut do
-        &shortcut_layer(&1, out_channels, strides: strides, name: name <> ".shortcut")
+    residual =
+      if should_apply_shortcut? do
+        shortcut_layer(x, out_channels, strides: strides, name: name <> ".shortcut")
       else
-        & &1
+        x
       end
 
-    layer = fn x ->
-      x
-      |> conv_layer(out_channels, strides: strides, name: name <> ".layer.0")
-      |> conv_layer(out_channels, activation: :linear, name: name <> ".layer.1")
-    end
-
-    activation = &Axon.activation(&1, activation, name: name <> ".activation")
-
-    residual = x
-    hidden_state = layer.(x)
-    residual = shortcut.(residual)
-    hidden_state = Axon.add(hidden_state, residual)
-    hidden_state = activation.(hidden_state)
-
-    hidden_state
+    x
+    |> conv_layer(out_channels, strides: strides, name: name <> ".layer.0")
+    |> conv_layer(out_channels, activation: :linear, name: name <> ".layer.1")
+    |> Axon.add(residual)
+    |> Axon.activation(activation, name: name <> ".activation")
   end
 
   defp bottleneck_layer(%Axon{} = x, out_channels, opts) do
@@ -224,36 +198,22 @@ defmodule Bumblebee.Vision.ResNet do
     activation = opts[:activation]
     reduction = opts[:reduction]
 
-    should_apply_shortcut = get_channels(x) != out_channels or strides != 1
+    should_apply_shortcut? = get_channels(x) != out_channels or strides != 1
     reduces_channels = div(out_channels, reduction)
 
-    shortcut =
-      if should_apply_shortcut do
-        &shortcut_layer(&1, out_channels, strides: strides, name: name <> ".shortcut")
+    residual =
+      if should_apply_shortcut? do
+        shortcut_layer(x, out_channels, strides: strides, name: name <> ".shortcut")
       else
-        & &1
+        x
       end
 
-    layer = fn x ->
-      x
-      |> conv_layer(reduces_channels, kernel_size: 1, name: name <> ".layer.0")
-      |> conv_layer(reduces_channels, strides: strides, name: name <> ".layer.1")
-      |> conv_layer(out_channels,
-        kernel_size: 1,
-        activation: :linear,
-        name: name <> ".layer.2"
-      )
-    end
-
-    activation = &Axon.activation(&1, activation, name: name <> ".activation")
-
-    residual = x
-    hidden_state = layer.(x)
-    residual = shortcut.(residual)
-    hidden_state = Axon.add(hidden_state, residual)
-    hidden_state = activation.(hidden_state)
-
-    hidden_state
+    x
+    |> conv_layer(reduces_channels, kernel_size: 1, name: name <> ".layer.0")
+    |> conv_layer(reduces_channels, strides: strides, name: name <> ".layer.1")
+    |> conv_layer(out_channels, kernel_size: 1, activation: :linear, name: name <> ".layer.2")
+    |> Axon.add(residual)
+    |> Axon.activation(activation, name: name <> ".activation")
   end
 
   defp shortcut_layer(%Axon{} = x, out_channels, opts) do
