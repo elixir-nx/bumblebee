@@ -153,7 +153,7 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp format_list(items), do: Enum.map_join(items, "\n", &("  * " <> &1))
 
-  # TODO: op may be atom or function, how do we distinguish functions
+  # TODO: change this to use layer metadata once it is available in Axon
   defp param_from_pytorch(:dense, "kernel", pytorch_state, layer_name) do
     with {:ok, kernel, key} <- lookup_param(pytorch_state, layer_name, ["weight"]) do
       [out_features, in_features] = Nx.axes(kernel)
