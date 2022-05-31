@@ -1,14 +1,18 @@
 defmodule Bumblebee.Vision.ResNet do
+  @common_keys [:id2label, :label2id, :num_labels, :output_hidden_states]
+
   @moduledoc """
-  ResNet architecture.
-  """
+  Models based on the ResNet architecture.
 
-  @behaviour Bumblebee.Architecture
+  ## Architectures
 
-  @doc """
-  Model configuration.
+    * `:base` - plain ResNet without any head on top
 
-  ## Options
+    * `:for_image_classification` - ResNet with a classification head.
+      The head consists of a single dense layer on top of the pooled
+      features
+
+  ## Configuration
 
     * `:num_channels` - the number of input channels. Defaults to `3`
 
@@ -32,43 +36,41 @@ defmodule Bumblebee.Vision.ResNet do
     * `:downsample_in_first_stage` - whether the first stage should
       downsample the inputs using a stride of 2. Defaults to `false`
 
-  #{Bumblebee.Config.common_options_docs([:output_hidden_states, :id2label, :num_labels])}
+  ### Common options
+
+  #{Bumblebee.Shared.common_config_docs(@common_keys)}
   """
+
+  alias Bumblebee.Shared
+
+  defstruct [
+              architecture: :base,
+              num_channels: 3,
+              embedding_size: 64,
+              hidden_sizes: [256, 512, 1024, 2048],
+              depths: [3, 4, 6, 3],
+              layer_type: :bottleneck,
+              hidden_act: :relu,
+              downsample_in_first_stage: false
+            ] ++ Shared.common_config_defaults(@common_keys)
+
+  @behaviour Bumblebee.ModelSpec
+
   @impl true
-  def config(opts \\ []) do
-    defaults = [
-      num_channels: 3,
-      embedding_size: 64,
-      hidden_sizes: [256, 512, 1024, 2048],
-      depths: [3, 4, 6, 3],
-      layer_type: :bottleneck,
-      hidden_act: :relu,
-      downsample_in_first_stage: false
-    ]
-
-    common_keys = [:output_hidden_states, :id2label, :num_labels]
-
-    Bumblebee.Config.build_config(opts, common_keys, defaults, atoms: [:layer_type, :hidden_act])
-  end
+  def architectures(), do: [:base, :for_image_classification]
 
   @impl true
   def base_model_prefix(), do: "resnet"
 
-  @doc """
-  Builds a ResNet model with a classification head.
+  @impl true
+  def config(config, opts \\ []) do
+    opts = Shared.add_common_computed_options(opts)
+    Shared.put_config_attrs(config, opts)
+  end
 
-  The classification head consists of a single dense layer on top of
-  the pooled features.
-
-  ## Options
-
-    * `:config` - see `config/1`
-
-  """
-  def model_for_image_classification(opts \\ []) do
-    config = Keyword.get_lazy(opts, :config, &config/0)
-
-    resnet = model(config: config, name: "resnet")
+  @impl true
+  def model(%__MODULE__{architecture: :for_image_classification} = config) do
+    resnet = base_model(config, "resnet")
 
     outputs = Bumblebee.Utils.Axon.unwrap_container(resnet)
 
@@ -80,21 +82,12 @@ defmodule Bumblebee.Vision.ResNet do
     Axon.container(%{logits: logits, hidden_states: outputs.hidden_states})
   end
 
-  @doc """
-  Builds a ResNet model without any head.
+  def model(%__MODULE__{architecture: :base} = config) do
+    base_model(config, nil)
+  end
 
-  The model ends with a pooling layer.
-
-  ## Options
-
-    * `:config` - see `config/1`
-
-    * `:name` - prefix for all layer names
-
-  """
-  def model(opts \\ []) do
-    config = Keyword.get_lazy(opts, :config, &config/0)
-    name = if(name = opts[:name], do: name <> ".", else: "")
+  defp base_model(config, name) do
+    name = if(name, do: name <> ".", else: "")
 
     # TODO: Correct initialization for layer types
 
@@ -253,8 +246,21 @@ defmodule Bumblebee.Vision.ResNet do
     |> Axon.activation(activation, name: name <> ".activation")
   end
 
-  defp get_channels(%Axon{output_shape: shape}) do
-    # TODO: Should be flexible NCHW or NHWC
-    elem(shape, 1)
+  defp get_channels(%Axon{output_shape: shape}), do: elem(shape, 1)
+
+  defimpl Bumblebee.HuggingFace.Transformers.Config do
+    def architecture_mapping(_struct) do
+      %{
+        base: "ResNetModel",
+        for_image_classification: "ResNetForImageClassification"
+      }
+    end
+
+    def load(config, data) do
+      data
+      |> Shared.atomize_values(["layer_type", "hidden_act"])
+      |> Shared.cast_common_values()
+      |> Shared.data_into_config(config)
+    end
   end
 end

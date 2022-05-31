@@ -44,7 +44,16 @@ defmodule Bumblebee.MixProject do
     [
       main: "Bumblebee",
       source_url: "https://github.com/elixir-nx/bumblebee",
-      source_ref: "v#{@version}"
+      source_ref: "v#{@version}",
+      groups_for_modules: [
+        Models: [
+          Bumblebee.Vision.ResNet
+        ],
+        Interfaces: [
+          Bumblebee.ModelSpec,
+          Bumblebee.HuggingFace.Transformers.Config
+        ]
+      ]
     ]
   end
 end
