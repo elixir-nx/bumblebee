@@ -13,6 +13,18 @@ defmodule Bumblebee do
   @config_filename "config.json"
   @params_filename %{pytorch: "pytorch_model.bin"}
 
+  @typedoc """
+  A location to fetch model files from.
+
+  Can be either:
+
+    * `string` - repository id on Hugging Face
+
+    * `{:local, dir}` - the directory containing model files
+
+  """
+  @type repository :: String.t() | {:local, Path.t()}
+
   @doc """
   Builds new model configuration.
   """
@@ -45,10 +57,8 @@ defmodule Bumblebee do
     module.model(config)
   end
 
-  # TODO: add support for local files, potentially a pluggable storage
-
   @doc """
-  Loads model configuration from a model repository on Hugging Face.
+  Loads model configuration from a model repository.
 
   ## Options
 
@@ -76,17 +86,13 @@ defmodule Bumblebee do
       {:ok, config} = Bumblebee.load_config("microsoft/resnet-50", architecture: :base)
 
   """
-  @spec load_config(String.t(), keyword()) :: {:ok, map()} | {:error, String.t()}
-  def load_config(model_id, opts \\ []) do
+  @spec load_config(repository(), keyword()) :: {:ok, map()} | {:error, String.t()}
+  def load_config(repository, opts \\ []) do
     opts = Keyword.validate!(opts, [:module, :architecture, :revision, :cache_dir])
     module = opts[:module]
     architecture = opts[:architecture]
-    revision = opts[:revision]
-    cache_dir = opts[:cache_dir]
 
-    url = HuggingFace.Hub.file_url(model_id, @config_filename, revision)
-
-    with {:ok, path} <- HuggingFace.Hub.cached_download(url, cache_dir: cache_dir),
+    with {:ok, path} <- download(repository, @config_filename, opts),
          {:ok, data} <- decode_config(path) do
       {inferred_module, inferred_architecture, inferrence_error} =
         case infer_module_and_architecture(data) do
@@ -153,7 +159,7 @@ defmodule Bumblebee do
   end
 
   @doc """
-  Loads a pretrained model from a model repository on Hugging Face.
+  Loads a pretrained model from a model repository.
 
   ## Options
 
@@ -194,14 +200,17 @@ defmodule Bumblebee do
       {:ok, model, params, config} = Bumblebee.load_model("microsoft/resnet-50", config: config)
 
   """
-  @spec load_model(String.t(), keyword()) ::
+  @spec load_model(repository(), keyword()) ::
           {:ok, Axon.t(), params :: map(), config :: map()} | {:error, String.t()}
-  def load_model(model_id, opts \\ []) do
+  def load_model(repository, opts \\ []) do
     config_response =
       if config = opts[:config] do
         {:ok, config}
       else
-        load_config(model_id, Keyword.take(opts, [:module, :architecture, :revision, :cache_dir]))
+        load_config(
+          repository,
+          Keyword.take(opts, [:module, :architecture, :revision, :cache_dir])
+        )
       end
 
     with {:ok, config} <- config_response,
@@ -210,7 +219,7 @@ defmodule Bumblebee do
          {:ok, params} <-
            load_params(
              model,
-             model_id,
+             repository,
              opts
              |> Keyword.take([:revision, :cache_dir])
              |> Keyword.put(:base_model_prefix, module.base_model_prefix())
@@ -219,18 +228,14 @@ defmodule Bumblebee do
     end
   end
 
-  defp load_params(model, model_id, opts) do
-    opts = Keyword.validate!(opts, [:revision, :cache_dir, :base_model_prefix])
-    revision = opts[:revision]
-    cache_dir = opts[:cache_dir]
+  defp load_params(model, repository, opts) do
     base_model_prefix = opts[:base_model_prefix]
+
     # TODO: support format: :auto | :axon | :pytorch
     format = :pytorch
     filename = @params_filename[format]
 
-    url = HuggingFace.Hub.file_url(model_id, filename, revision)
-
-    with {:ok, path} <- HuggingFace.Hub.cached_download(url, cache_dir: cache_dir) do
+    with {:ok, path} <- download(repository, filename, opts) do
       params =
         Bumblebee.Conversion.PyTorch.load_params!(model, path,
           base_model_prefix: base_model_prefix
@@ -238,5 +243,24 @@ defmodule Bumblebee do
 
       {:ok, params}
     end
+  end
+
+  defp download({:local, dir}, filename, _opts) do
+    path = Path.join(dir, filename)
+
+    if File.exists?(path) do
+      {:ok, path}
+    else
+      {:error, "local file #{inspect(path)} does not exist"}
+    end
+  end
+
+  defp download(model_id, filename, opts) do
+    revision = opts[:revision]
+    cache_dir = opts[:cache_dir]
+
+    url = HuggingFace.Hub.file_url(model_id, filename, revision)
+
+    HuggingFace.Hub.cached_download(url, cache_dir: cache_dir)
   end
 end
