@@ -25,6 +25,11 @@ jobs:
 
       - uses: actions/cache@v2
         with:
+          path: ~/.cache/bumblebee
+          key: downloads
+
+      - uses: actions/cache@v2
+        with:
           path: |
             deps
             _build

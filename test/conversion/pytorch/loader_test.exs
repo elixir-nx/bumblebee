@@ -1,5 +1,5 @@
 defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias Bumblebee.Conversion.PyTorch.Loader
 
