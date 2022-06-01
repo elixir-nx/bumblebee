@@ -5,7 +5,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
   alias Bumblebee.Conversion.PyTorch
 
-  @dir Path.expand("../fixtures/pytorch", __DIR__)
+  @dir Path.expand("../../fixtures/pytorch", __DIR__)
 
   describe "load_params!/3" do
     defp base_model() do

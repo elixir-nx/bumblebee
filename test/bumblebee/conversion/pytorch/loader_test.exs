@@ -3,7 +3,7 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
 
   alias Bumblebee.Conversion.PyTorch.Loader
 
-  @dir Path.expand("../../fixtures/pytorch", __DIR__)
+  @dir Path.expand("../../../fixtures/pytorch", __DIR__)
 
   for format <- ["zip", "legacy"] do
     @format format
