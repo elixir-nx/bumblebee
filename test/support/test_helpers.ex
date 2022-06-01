@@ -3,6 +3,17 @@ defmodule Bumblebee.TestHelpers do
 
   import ExUnit.Assertions
 
+  defmacro assert_equal(left, right) do
+    # Assert against binary backend tensors to show diff on failure
+    quote do
+      assert unquote(left) |> to_binary_backend() == unquote(right) |> to_binary_backend()
+    end
+  end
+
+  def to_binary_backend(tensor) do
+    Nx.backend_copy(tensor, Nx.BinaryBackend)
+  end
+
   def assert_all_close(left, right, opts \\ []) do
     atol = opts[:atol] || 1.0e-4
     rtol = opts[:rtol] || 1.0e-4
