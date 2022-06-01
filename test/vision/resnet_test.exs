@@ -5,7 +5,7 @@ defmodule Bumblebee.Vision.ResNetTest do
   require Axon
 
   describe "integration" do
-    @tag capture_log: true
+    @tag :capture_log
     @tag :slow
     test "base model" do
       assert {:ok, model, params, config} =
