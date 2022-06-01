@@ -28,6 +28,7 @@ defmodule Bumblebee.MixProject do
       {:unpickler, github: "dashbitco/unpickler"},
       {:castore, "~> 0.1.0"},
       {:jason, "~> 1.3.0"},
+      {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false}
     ]
   end

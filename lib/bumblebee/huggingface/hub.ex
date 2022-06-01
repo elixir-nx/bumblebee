@@ -42,7 +42,7 @@ defmodule Bumblebee.HuggingFace.Hub do
         {:ok, %{"etag" => ^etag}} ->
           {:ok, entry_path}
 
-        :error ->
+        _ ->
           tmp_path = get_tmp_path()
 
           with :ok <- HTTP.download(download_url, tmp_path) |> finish_request() do
