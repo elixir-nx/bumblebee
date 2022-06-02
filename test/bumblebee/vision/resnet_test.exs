@@ -9,7 +9,7 @@ defmodule Bumblebee.Vision.ResNetTest do
     @tag :slow
     test "base model" do
       assert {:ok, model, params, config} =
-               Bumblebee.load_model("microsoft/resnet-50", architecture: :base)
+               Bumblebee.load_model({:hf, "microsoft/resnet-50"}, architecture: :base)
 
       assert %Bumblebee.Vision.ResNet{architecture: :base} = config
 
@@ -27,7 +27,7 @@ defmodule Bumblebee.Vision.ResNetTest do
 
     @tag :slow
     test "image classification model" do
-      assert {:ok, model, params, config} = Bumblebee.load_model("microsoft/resnet-50")
+      assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
 
       assert %Bumblebee.Vision.ResNet{architecture: :for_image_classification} = config
 

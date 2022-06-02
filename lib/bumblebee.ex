@@ -18,12 +18,12 @@ defmodule Bumblebee do
 
   Can be either:
 
-    * `string` - repository id on Hugging Face
+    * `{:hf, repository_id}` - the repository on Hugging Face
 
-    * `{:local, dir}` - the directory containing model files
+    * `{:local, directory}` - the directory containing model files
 
   """
-  @type repository :: String.t() | {:local, Path.t()}
+  @type repository :: {:hf, String.t()} | {:local, Path.t()}
 
   @doc """
   Builds new model configuration.
@@ -85,15 +85,16 @@ defmodule Bumblebee do
 
   ## Examples
 
-      {:ok, config} = Bumblebee.load_config("microsoft/resnet-50")
+      {:ok, config} = Bumblebee.load_config({:hf, "microsoft/resnet-50"})
 
   You can explicitly specify a different architecture:
 
-      {:ok, config} = Bumblebee.load_config("microsoft/resnet-50", architecture: :base)
+      {:ok, config} = Bumblebee.load_config({:hf, "microsoft/resnet-50"}, architecture: :base)
 
   """
   @spec load_config(repository(), keyword()) :: {:ok, map()} | {:error, String.t()}
   def load_config(repository, opts \\ []) do
+    validate_repository!(repository)
     opts = Keyword.validate!(opts, [:module, :architecture, :revision, :cache_dir])
     module = opts[:module]
     architecture = opts[:architecture]
@@ -192,23 +193,25 @@ defmodule Bumblebee do
   By default the model type is inferred from configuration, so loading
   is as simple as:
 
-      {:ok, model, params, config} = Bumblebee.load_model("microsoft/resnet-50")
+      {:ok, model, params, config} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
 
   You can explicitly specify a different architecture, in which case
   matching parameters are still loaded:
 
-      {:ok, model, params, config} = Bumblebee.load_model("microsoft/resnet-50", architecture: :base)
+      {:ok, model, params, config} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, architecture: :base)
 
   To further customize the model, you can also pass the configuration:
 
-      {:ok, config} = Bumblebee.load_config("microsoft/resnet-50")
+      {:ok, config} = Bumblebee.load_config({:hf, "microsoft/resnet-50"})
       config = Bumblebee.update_config(config, num_labels: 10)
-      {:ok, model, params, config} = Bumblebee.load_model("microsoft/resnet-50", config: config)
+      {:ok, model, params, config} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, config: config)
 
   """
   @spec load_model(repository(), keyword()) ::
           {:ok, Axon.t(), params :: map(), config :: map()} | {:error, String.t()}
   def load_model(repository, opts \\ []) do
+    validate_repository!(repository)
+
     config_response =
       if config = opts[:config] do
         {:ok, config}
@@ -261,12 +264,20 @@ defmodule Bumblebee do
     end
   end
 
-  defp download(model_id, filename, opts) do
+  defp download({:hf, repository_id}, filename, opts) do
     revision = opts[:revision]
     cache_dir = opts[:cache_dir]
 
-    url = HuggingFace.Hub.file_url(model_id, filename, revision)
+    url = HuggingFace.Hub.file_url(repository_id, filename, revision)
 
     HuggingFace.Hub.cached_download(url, cache_dir: cache_dir)
+  end
+
+  defp validate_repository!({:hf, repository_id}) when is_binary(repository_id), do: :ok
+  defp validate_repository!({:local, dir}) when is_binary(dir), do: :ok
+
+  defp validate_repository!(other) do
+    raise ArgumentError,
+          "expected repository to be either {:hf, repository_id} or {:local, directory}, got: #{inspect(other)}"
   end
 end

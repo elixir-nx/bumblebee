@@ -9,9 +9,9 @@ defmodule Bumblebee.HuggingFace.Hub do
   Returns a URL pointing to the given file in a Hugging Face repository.
   """
   @spec file_url(String.t(), String.t(), String.t() | nil) :: String.t()
-  def file_url(model_id, filename, revision) do
+  def file_url(repository_id, filename, revision) do
     revision = revision || "main"
-    @huggingface_endpoint <> "/#{model_id}/resolve/#{revision}/#{filename}"
+    @huggingface_endpoint <> "/#{repository_id}/resolve/#{revision}/#{filename}"
   end
 
   @doc """
