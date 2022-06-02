@@ -138,20 +138,13 @@ defmodule Bumblebee do
     end
   end
 
-  defp infer_module_and_architecture(%{"architectures" => [class_name]}) do
-    {:consolidated, impls} = HuggingFace.Transformers.Config.__protocol__(:impls)
+  @transformers_class_to_model %{
+    "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
+    "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification}
+  }
 
-    impls
-    |> Enum.find_value(fn impl ->
-      impl
-      |> struct!()
-      |> HuggingFace.Transformers.Config.architecture_mapping()
-      |> Enum.find_value(fn
-        {architecture, ^class_name} -> {impl, architecture}
-        _ -> nil
-      end)
-    end)
-    |> case do
+  defp infer_module_and_architecture(%{"architectures" => [class_name]}) do
+    case @transformers_class_to_model[class_name] do
       nil ->
         {:error,
          "could not match the class name #{inspect(class_name)} to any of the supported models"}

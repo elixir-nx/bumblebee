@@ -249,13 +249,6 @@ defmodule Bumblebee.Vision.ResNet do
   defp get_channels(%Axon{output_shape: shape}), do: elem(shape, 1)
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    def architecture_mapping(_struct) do
-      %{
-        base: "ResNetModel",
-        for_image_classification: "ResNetForImageClassification"
-      }
-    end
-
     def load(config, data) do
       data
       |> Shared.atomize_values(["layer_type", "hidden_act"])
