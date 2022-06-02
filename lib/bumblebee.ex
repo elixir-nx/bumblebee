@@ -27,6 +27,9 @@ defmodule Bumblebee do
 
   @doc """
   Builds new model configuration.
+
+  This function is primarily useful in combination with `build_model/1`
+  when building a fresh model for training.
   """
   @spec build_config(module(), atom(), keyword()) :: Bumblebee.ModelSpec.t()
   def build_config(module, architecture, config_opts \\ []) do
@@ -37,6 +40,9 @@ defmodule Bumblebee do
 
   @doc """
   Updates model configuration from options.
+
+  This function is primarily useful for adjusting pre-trained model,
+  see `load_model/2` for examples.
   """
   @spec update_config(Bumblebee.ModelSpec.t(), keyword()) :: Bumblebee.ModelSpec.t()
   def update_config(%module{} = config, config_opts \\ []) do
