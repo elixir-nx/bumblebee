@@ -53,26 +53,46 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
 
     images =
       images
-      |> Enum.map(fn %StbImage{} = img ->
-        cond do
-          not config.do_resize ->
-            to_tensor(img)
+      |> Enum.map(fn
+        %StbImage{} = img ->
+          cond do
+            not config.do_resize ->
+              to_tensor(img)
 
-          config.size >= 384 ->
+            config.size >= 384 ->
+              img
+              |> StbImage.resize(config.size, config.size)
+              |> to_tensor()
+
+            true ->
+              scale_size = floor(config.size / config.crop_pct)
+
+              img
+              |> resize_short(scale_size)
+              |> to_tensor()
+              |> center_crop(config.size, config.size)
+          end
+
+        %Nx.Tensor{} = img ->
+          size = config.size
+
+          if config.do_resize do
+            case Nx.shape(img) do
+              {_channels, ^size, ^size} ->
+                img
+
+              shape ->
+                # TODO: implement resizing in Nx and unify the resizing step
+                raise ArgumentError,
+                      "expected an image tensor to be already resized to shape {*, #{size}, #{size}}, got: #{inspect(shape)}"
+            end
+          else
             img
-            |> StbImage.resize(config.size, config.size)
-            |> to_tensor()
-
-          true ->
-            scale_size = floor(config.size / config.crop_pct)
-
-            img
-            |> resize_short(scale_size)
-            |> to_tensor()
-            |> center_crop(config.size, config.size)
-        end
+          end
       end)
       |> Nx.stack(name: :batch)
+
+    images = Nx.divide(images, 255.0)
 
     if config.do_normalize do
       normalize(images, config.image_mean, config.image_std)
@@ -100,7 +120,6 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
     img
     |> StbImage.to_nx()
     |> Nx.transpose(axes: [:channels, :height, :width])
-    |> Nx.divide(255.0)
   end
 
   defp center_crop(%Nx.Tensor{} = img, out_height, out_width) do
