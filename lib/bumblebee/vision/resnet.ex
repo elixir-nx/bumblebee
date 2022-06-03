@@ -1,19 +1,232 @@
 defmodule Bumblebee.Vision.ResNet do
-  @moduledoc """
-  ResNet-50 Architecture.
-  """
-  # TODO: These are the HF config defaults for ResNet config and should be
-  # somehow included in the function which builds the model
-  # @num_channels 3
-  @embedding_size 64
-  @hidden_sizes [256, 512, 1024, 2048]
-  @depths [3, 4, 6, 3]
-  @layer_type :bottleneck
-  @hidden_act :relu
-  @downsample_in_first_stage false
+  @common_keys [:id2label, :label2id, :num_labels, :output_hidden_states]
 
-  def conv_layer(%Axon{} = x, out_channels, opts \\ []) do
-    opts = Keyword.validate!(opts, kernel_size: 3, strides: 1, activation: :relu)
+  @moduledoc """
+  Models based on the ResNet architecture.
+
+  ## Architectures
+
+    * `:base` - plain ResNet without any head on top
+
+    * `:for_image_classification` - ResNet with a classification head.
+      The head consists of a single dense layer on top of the pooled
+      features
+
+  ## Configuration
+
+    * `:num_channels` - the number of input channels. Defaults to `3`
+
+    * `:embedding_size` - dimensionality (hidden size) for the
+      embedding layer. Defaults to `64`
+
+    * `:hidden_sizes` - dimensionality (hidden size) at each stage.
+      Defaults to `[256, 512, 1024, 2048]`
+
+    * `:depths` - depth (number of layers) for each stage. Defaults
+      to `[3, 4, 6, 3]`
+
+    * `:layer_type` - the layer to use, either `:basic` (used for
+      smaller models, like ResNet-18 or ResNet-34) or `:bottleneck`
+      (used for larger models like ResNet-50 and above). Defaults to
+      `:bottleneck`
+
+    * `:hidden_act` - the activation function in each block. Defaults
+      to `:relu`
+
+    * `:downsample_in_first_stage` - whether the first stage should
+      downsample the inputs using a stride of 2. Defaults to `false`
+
+  ### Common options
+
+  #{Bumblebee.Shared.common_config_docs(@common_keys)}
+  """
+
+  alias Bumblebee.Shared
+
+  defstruct [
+              architecture: :base,
+              num_channels: 3,
+              embedding_size: 64,
+              hidden_sizes: [256, 512, 1024, 2048],
+              depths: [3, 4, 6, 3],
+              layer_type: :bottleneck,
+              hidden_act: :relu,
+              downsample_in_first_stage: false
+            ] ++ Shared.common_config_defaults(@common_keys)
+
+  @behaviour Bumblebee.ModelSpec
+
+  @impl true
+  def architectures(), do: [:base, :for_image_classification]
+
+  @impl true
+  def base_model_prefix(), do: "resnet"
+
+  @impl true
+  def config(config, opts \\ []) do
+    opts = Shared.add_common_computed_options(opts)
+    Shared.put_config_attrs(config, opts)
+  end
+
+  @impl true
+  def model(%__MODULE__{architecture: :for_image_classification} = config) do
+    resnet = base_model(config, "resnet")
+
+    outputs = Bumblebee.Utils.Axon.unwrap_container(resnet)
+
+    logits =
+      outputs.pooler_output
+      |> Axon.flatten(name: "classifier.0")
+      |> Axon.dense(config.num_labels, name: "classifier.1")
+
+    Axon.container(%{logits: logits, hidden_states: outputs.hidden_states})
+  end
+
+  def model(%__MODULE__{architecture: :base} = config) do
+    base_model(config, nil)
+  end
+
+  defp base_model(config, name) do
+    name = if(name, do: name <> ".", else: "")
+
+    # TODO: Correct initialization for layer types
+
+    {encoder_output, hidden_states} =
+      Axon.input({nil, config.num_channels, 224, 224})
+      |> embedding_layer(config, name: name <> "embedder")
+      |> encoder(config, name: name <> "encoder")
+
+    pooled_output =
+      Axon.adaptive_avg_pool(encoder_output, output_size: {1, 1}, name: name <> "pooler")
+
+    Axon.container(%{
+      last_hidden_state: encoder_output,
+      pooler_output: pooled_output,
+      hidden_states: if(config.output_hidden_states, do: hidden_states, else: {})
+    })
+  end
+
+  defp embedding_layer(%Axon{} = x, config, opts) do
+    name = opts[:name]
+
+    x
+    |> conv_layer(config.embedding_size,
+      kernel_size: 7,
+      strides: 2,
+      activation: config.hidden_act,
+      name: name <> ".embedder"
+    )
+    |> Axon.max_pool(
+      kernel_size: 3,
+      strides: 2,
+      padding: [{1, 1}, {1, 1}],
+      name: name <> ".pooler"
+    )
+  end
+
+  defp encoder(%Axon{} = x, config, opts) do
+    name = opts[:name]
+
+    stages = config.hidden_sizes |> Enum.zip(config.depths) |> Enum.with_index()
+
+    for {{size, depth}, idx} <- stages, reduce: {x, {x}} do
+      {x, hidden_states} ->
+        strides = if idx == 0 and not config.downsample_in_first_stage, do: 1, else: 2
+        x = stage(x, size, config, depth: depth, strides: strides, name: name <> ".stages.#{idx}")
+        {x, Tuple.append(hidden_states, x)}
+    end
+  end
+
+  defp stage(%Axon{} = x, out_channels, config, opts) do
+    opts = Keyword.validate!(opts, [:name, strides: 2, depth: 2])
+    name = opts[:name]
+    strides = opts[:strides]
+    depth = opts[:depth]
+
+    layer =
+      case config.layer_type do
+        :bottleneck -> &bottleneck_layer/3
+        :basic -> &basic_layer/3
+      end
+
+    x =
+      layer.(x, out_channels,
+        strides: strides,
+        activation: config.hidden_act,
+        name: name <> ".layers.0"
+      )
+
+    for idx <- 1..(depth - 1), reduce: x do
+      x ->
+        layer.(x, out_channels, activation: config.hidden_act, name: name <> ".layers.#{idx}")
+    end
+  end
+
+  defp basic_layer(%Axon{} = x, out_channels, opts) do
+    opts = Keyword.validate!(opts, [:name, strides: 1, activation: :relu])
+    name = opts[:name]
+    strides = opts[:strides]
+    activation = opts[:activation]
+
+    should_apply_shortcut? = get_channels(x) != out_channels or strides != 1
+
+    residual =
+      if should_apply_shortcut? do
+        shortcut_layer(x, out_channels, strides: strides, name: name <> ".shortcut")
+      else
+        x
+      end
+
+    x
+    |> conv_layer(out_channels, strides: strides, name: name <> ".layer.0")
+    |> conv_layer(out_channels, activation: :linear, name: name <> ".layer.1")
+    |> Axon.add(residual)
+    |> Axon.activation(activation, name: name <> ".activation")
+  end
+
+  defp bottleneck_layer(%Axon{} = x, out_channels, opts) do
+    opts = Keyword.validate!(opts, [:name, strides: 1, activation: :relu, reduction: 4])
+    name = opts[:name]
+    strides = opts[:strides]
+    activation = opts[:activation]
+    reduction = opts[:reduction]
+
+    should_apply_shortcut? = get_channels(x) != out_channels or strides != 1
+    reduces_channels = div(out_channels, reduction)
+
+    residual =
+      if should_apply_shortcut? do
+        shortcut_layer(x, out_channels, strides: strides, name: name <> ".shortcut")
+      else
+        x
+      end
+
+    x
+    |> conv_layer(reduces_channels, kernel_size: 1, name: name <> ".layer.0")
+    |> conv_layer(reduces_channels, strides: strides, name: name <> ".layer.1")
+    |> conv_layer(out_channels, kernel_size: 1, activation: :linear, name: name <> ".layer.2")
+    |> Axon.add(residual)
+    |> Axon.activation(activation, name: name <> ".activation")
+  end
+
+  defp shortcut_layer(%Axon{} = x, out_channels, opts) do
+    opts = Keyword.validate!(opts, [:name, strides: 2])
+    name = opts[:name]
+    strides = opts[:strides]
+
+    x
+    |> Axon.conv(out_channels,
+      kernel_size: 1,
+      strides: strides,
+      use_bias: false,
+      name: name <> ".convolution"
+    )
+    |> Axon.batch_norm(name: name <> ".normalization")
+  end
+
+  defp conv_layer(%Axon{} = x, out_channels, opts) do
+    opts = Keyword.validate!(opts, [:name, kernel_size: 3, strides: 1, activation: :relu])
+    name = opts[:name]
     kernel_size = opts[:kernel_size]
     strides = opts[:strides]
     activation = opts[:activation]
@@ -26,163 +239,21 @@ defmodule Bumblebee.Vision.ResNet do
       kernel_size: kernel_size,
       strides: strides,
       padding: padding_config,
-      use_bias: false
+      use_bias: false,
+      name: name <> ".convolution"
     )
-    |> Axon.batch_norm()
-    |> Axon.activation(activation)
+    |> Axon.batch_norm(name: name <> ".normalization")
+    |> Axon.activation(activation, name: name <> ".activation")
   end
 
-  def embedding_layer(%Axon{} = x) do
-    x
-    |> conv_layer(@embedding_size, kernel_size: 7, strides: 2, activation: @hidden_act)
-    |> Axon.max_pool(kernel_size: 3, strides: 2, padding: [{1, 1}, {1, 1}])
-  end
+  defp get_channels(%Axon{output_shape: shape}), do: elem(shape, 1)
 
-  def shortcut_layer(%Axon{} = x, out_channels, opts \\ []) do
-    opts = Keyword.validate!(opts, strides: 2)
-    strides = opts[:strides]
-
-    x
-    |> Axon.conv(out_channels, kernel_size: 1, strides: strides, use_bias: false)
-    |> Axon.batch_norm()
-  end
-
-  def basic_layer(%Axon{} = x, out_channels, opts \\ []) do
-    opts = Keyword.validate!(opts, strides: 1, activation: :relu)
-    strides = opts[:strides]
-    activation = opts[:activation]
-
-    # init
-    should_apply_shortcut = get_channels(x) != out_channels or strides != 1
-
-    shortcut =
-      if should_apply_shortcut do
-        &shortcut_layer(&1, out_channels, strides: strides)
-      else
-        & &1
-      end
-
-    layer = fn x ->
-      x
-      |> conv_layer(out_channels, strides: strides)
-      |> conv_layer(out_channels, activation: :linear)
+  defimpl Bumblebee.HuggingFace.Transformers.Config do
+    def load(config, data) do
+      data
+      |> Shared.atomize_values(["layer_type", "hidden_act"])
+      |> Shared.cast_common_values()
+      |> Shared.data_into_config(config)
     end
-
-    activation = &Axon.activation(&1, activation)
-
-    # forward
-    residual = x
-    hidden_state = layer.(x)
-    residual = shortcut.(residual)
-    hidden_state = Axon.add(hidden_state, residual)
-    hidden_state = activation.(hidden_state)
-
-    hidden_state
-  end
-
-  def bottleneck_layer(%Axon{} = x, out_channels, opts \\ []) do
-    opts = Keyword.validate!(opts, strides: 1, activation: :relu, reduction: 4)
-    strides = opts[:strides]
-    activation = opts[:activation]
-    reduction = opts[:reduction]
-
-    # init
-    should_apply_shortcut = get_channels(x) != out_channels or strides != 1
-    reduces_channels = div(out_channels, reduction)
-
-    shortcut =
-      if should_apply_shortcut do
-        &shortcut_layer(&1, out_channels, strides: strides)
-      else
-        & &1
-      end
-
-    layer = fn x ->
-      x
-      |> conv_layer(reduces_channels, kernel_size: 1)
-      |> conv_layer(reduces_channels, strides: strides)
-      |> conv_layer(out_channels, kernel_size: 1, activation: :linear)
-    end
-
-    activation = &Axon.activation(&1, activation)
-
-    # forward
-    residual = x
-    hidden_state = layer.(x)
-    residual = shortcut.(residual)
-    hidden_state = Axon.add(hidden_state, residual)
-    hidden_state = activation.(hidden_state)
-
-    hidden_state
-  end
-
-  def stage(%Axon{} = x, out_channels, opts \\ []) do
-    opts = Keyword.validate!(opts, strides: 2, depth: 2)
-    strides = opts[:strides]
-    depth = opts[:depth]
-
-    # init
-    layer =
-      case @layer_type do
-        :bottleneck ->
-          &bottleneck_layer/3
-
-        _ ->
-          &basic_layer/3
-      end
-
-    # forward
-    x = layer.(x, out_channels, strides: strides, activation: @hidden_act)
-
-    for _ <- 1..(depth - 1), reduce: x do
-      x ->
-        layer.(x, out_channels, activation: @hidden_act)
-    end
-  end
-
-  def encoder(%Axon{} = x) do
-    # init
-    [first_hidden_size | hidden_sizes] = @hidden_sizes
-    [first_depth | depths] = @depths
-    first_strides = if @downsample_in_first_stage, do: 2, else: 1
-
-    first_stage = &stage(&1, first_hidden_size, strides: first_strides, depth: first_depth)
-
-    rest_of_stages =
-      for {size, depth} <- Enum.zip(hidden_sizes, depths) do
-        &stage(&1, size, depth: depth)
-      end
-
-    stages = [first_stage | rest_of_stages]
-
-    # forward
-    for stage <- stages, reduce: x do
-      hidden_state ->
-        # TODO: output_hidden_states per HF model
-        stage.(hidden_state)
-    end
-  end
-
-  def model(%Axon{} = x) do
-    # TODO: Correct initialization for layer types
-    # init
-    embedder = &embedding_layer/1
-    encoder = &encoder/1
-    pooler = &Axon.adaptive_avg_pool(&1, output_size: {1, 1})
-
-    # forward
-    embedding_output = embedder.(x)
-    encoder_output = encoder.(embedding_output)
-    pooled_output = pooler.(encoder_output)
-
-    Axon.container(%{
-      last_hidden_state: encoder_output,
-      pooler_output: pooled_output
-    })
-  end
-
-  defp get_channels(%Axon{output_shape: shape}) do
-    # TODO: Should be flexible NCHW or NHWC
-    elem(shape, 1)
   end
 end

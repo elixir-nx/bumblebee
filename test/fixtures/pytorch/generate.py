@@ -27,5 +27,26 @@ for fmt in ["zip", "legacy"]:
 
     save("ordered_dict", fmt, OrderedDict([("x", 1), ("y", 2)]))
 
-    transposed_tensor = torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.int64).t()
+    transposed_tensor = torch.tensor(
+        [[1, 2, 3], [4, 5, 6]], dtype=torch.int64).t()
     save("noncontiguous_tensor", fmt, transposed_tensor)
+
+# Model parameters
+
+save("state_dict_base", "zip", OrderedDict([
+    ("conv.weight", torch.ones(2, 3, 2, 2)),
+    ("conv.bias", torch.zeros(2)),
+]))
+
+save("state_dict_full", "zip", OrderedDict([
+    ("base.conv.weight", torch.ones(2, 3, 2, 2)),
+    ("base.conv.bias", torch.zeros(2)),
+    # Unexpected shape
+    ("classifier.layers.0.weight", torch.ones(1, 1)),
+    ("classifier.layers.0.bias", torch.zeros(1)),
+    # Missing
+    # "classifier.layers.1.weight"
+    # "classifier.layers.1.bias"
+    # Extra
+    ("extra.weight", torch.ones(1))
+]))
