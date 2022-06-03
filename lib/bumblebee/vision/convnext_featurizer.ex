@@ -48,7 +48,9 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
   end
 
   @impl true
-  def apply(config, images) when is_list(images) do
+  def apply(config, images) do
+    images = List.wrap(images)
+
     images =
       images
       |> Enum.map(fn %StbImage{} = img ->
