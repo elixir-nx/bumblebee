@@ -46,12 +46,12 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
-  Merges the given list of attributes into a model configuration.
+  Merges the given list of attributes into a configuration struct.
 
   Attributes that are not present in the configuration struct are
   ignored.
   """
-  @spec put_config_attrs(Bumblebee.ModelSpec.t(), keyword()) :: Bumblebee.ModelSpec.t()
+  @spec put_config_attrs(struct(), keyword()) :: struct()
   def put_config_attrs(config, opts) do
     Enum.reduce(opts, config, fn {key, value}, config ->
       case config do
@@ -125,9 +125,9 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
-  Loads the given parsed JSON data into a model configuration.
+  Loads the given parsed JSON data into a configuration struct.
   """
-  @spec data_into_config(map(), Bumblebee.ModelSpec.t()) :: Bumblebee.ModelSpec.t()
+  @spec data_into_config(map(), struct()) :: struct()
   def data_into_config(data, %module{} = config) do
     opts =
       Enum.reduce(Map.keys(config) -- [:architecture], [], fn key, opts ->
