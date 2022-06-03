@@ -9,7 +9,7 @@ defmodule Bumblebee.Featurizer do
   """
 
   @typedoc """
-  Futurizer configuration and metadata.
+  Featurizer configuration and metadata.
   """
   @type t :: %{
           optional(atom()) => term(),

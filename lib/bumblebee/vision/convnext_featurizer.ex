@@ -52,21 +52,22 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
     images =
       images
       |> Enum.map(fn %StbImage{} = img ->
-        if config.do_resize do
-          if config.size >= 384 do
+        cond do
+          not config.do_resize ->
+            to_tensor(img)
+
+          config.size >= 384 ->
             img
             |> StbImage.resize(config.size, config.size)
             |> to_tensor()
-          else
+          
+          true ->
             scale_size = floor(config.size / config.crop_pct)
 
             img
             |> resize_short(scale_size)
             |> to_tensor()
             |> center_crop(config.size, config.size)
-          end
-        else
-          to_tensor(img)
         end
       end)
       |> Nx.stack(name: :batch)
