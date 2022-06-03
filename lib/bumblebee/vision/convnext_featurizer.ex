@@ -84,7 +84,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
               shape ->
                 # TODO: implement resizing in Nx and unify the resizing step
                 raise ArgumentError,
-                      "expected an image tensor to be already resized to shape {*, #{size}, #{size}}, got: #{inspect(shape)}"
+                      "expected an image tensor to be already resized to shape {channels, #{size}, #{size}}, got: #{inspect(shape)}"
             end
           else
             img
