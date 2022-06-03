@@ -54,32 +54,32 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
     images =
       images
       |> Enum.map(fn
-        img when is_struct(img, StbImage) ->
+        image when is_struct(image, StbImage) ->
           cond do
             not config.do_resize ->
-              to_tensor(img)
+              to_tensor(image)
 
             config.size >= 384 ->
-              img
+              image
               |> StbImage.resize(config.size, config.size)
               |> to_tensor()
 
             true ->
               scale_size = floor(config.size / config.crop_pct)
 
-              img
+              image
               |> resize_short(scale_size)
               |> to_tensor()
               |> center_crop(config.size, config.size)
           end
 
-        %Nx.Tensor{} = img ->
+        %Nx.Tensor{} = image ->
           size = config.size
 
           if config.do_resize do
-            case Nx.shape(img) do
+            case Nx.shape(image) do
               {_channels, ^size, ^size} ->
-                img
+                image
 
               shape ->
                 # TODO: implement resizing in Nx and unify the resizing step
@@ -87,7 +87,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
                       "expected an image tensor to be already resized to shape {channels, #{size}, #{size}}, got: #{inspect(shape)}"
             end
           else
-            img
+            image
           end
       end)
       |> Nx.stack(name: :batch)
@@ -102,8 +102,8 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
   end
 
   # Scales the image such that the short edge matches `size`
-  defp resize_short(%StbImage{} = img, size) when is_integer(size) do
-    {height, width, _channels} = img.shape
+  defp resize_short(%StbImage{} = image, size) when is_integer(size) do
+    {height, width, _channels} = image.shape
 
     {short, long} = if height < width, do: {height, width}, else: {width, height}
 
@@ -113,17 +113,17 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
     {out_height, out_width} =
       if height < width, do: {out_short, out_long}, else: {out_long, out_short}
 
-    StbImage.resize(img, out_height, out_width)
+    StbImage.resize(image, out_height, out_width)
   end
 
-  defp to_tensor(%StbImage{} = img) do
-    img
+  defp to_tensor(%StbImage{} = image) do
+    image
     |> StbImage.to_nx()
     |> Nx.transpose(axes: [:channels, :height, :width])
   end
 
-  defp center_crop(%Nx.Tensor{} = img, out_height, out_width) do
-    {_channels, height, width} = Nx.shape(img)
+  defp center_crop(%Nx.Tensor{} = image, out_height, out_width) do
+    {_channels, height, width} = Nx.shape(image)
 
     top = div(height - out_height, 2)
     bottom = top + out_height
@@ -132,7 +132,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
 
     pad_config = [{0, 0, 0}, {-top, bottom - height, 0}, {-left, right - width, 0}]
 
-    Nx.pad(img, 0, pad_config)
+    Nx.pad(image, 0, pad_config)
   end
 
   defp normalize(%Nx.Tensor{} = images, mean, std) do
