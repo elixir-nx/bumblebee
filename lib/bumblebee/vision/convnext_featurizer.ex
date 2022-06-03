@@ -60,7 +60,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
             img
             |> StbImage.resize(config.size, config.size)
             |> to_tensor()
-          
+
           true ->
             scale_size = floor(config.size / config.crop_pct)
 
