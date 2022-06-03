@@ -11,6 +11,7 @@ defmodule Bumblebee do
   alias Bumblebee.HuggingFace
 
   @config_filename "config.json"
+  @featurizer_filename "preprocessor_config.json"
   @params_filename %{pytorch: "pytorch_model.bin"}
 
   @typedoc """
@@ -102,7 +103,7 @@ defmodule Bumblebee do
     with {:ok, path} <- download(repository, @config_filename, opts),
          {:ok, data} <- decode_config(path) do
       {inferred_module, inferred_architecture, inferrence_error} =
-        case infer_module_and_architecture(data) do
+        case infer_model_type(data) do
           {:ok, module, architecture} -> {module, architecture, nil}
           {:error, error} -> {nil, nil, error}
         end
@@ -111,7 +112,7 @@ defmodule Bumblebee do
       architecture = architecture || inferred_architecture
 
       unless module do
-        raise "#{inferrence_error}, please specify the :model and :architecture options"
+        raise "#{inferrence_error}, please specify the :module and :architecture options"
       end
 
       architectures = module.architectures()
@@ -143,7 +144,7 @@ defmodule Bumblebee do
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification}
   }
 
-  defp infer_module_and_architecture(%{"architectures" => [class_name]}) do
+  defp infer_model_type(%{"architectures" => [class_name]}) do
     case @transformers_class_to_model[class_name] do
       nil ->
         {:error,
@@ -154,7 +155,7 @@ defmodule Bumblebee do
     end
   end
 
-  defp infer_module_and_architecture(_data) do
+  defp infer_model_type(_data) do
     {:error, "could not infer model type from the configuration"}
   end
 
@@ -245,6 +246,95 @@ defmodule Bumblebee do
 
       {:ok, params}
     end
+  end
+
+  @doc """
+  Builds new featurizer.
+
+  The featurizer can be then used with the `featurize/2` function to
+  convert raw data into model input features.
+  """
+  @spec build_featurizer(module(), keyword()) :: Bumblebee.Featurizer.t()
+  def build_featurizer(module, config_opts \\ []) do
+    config = struct!(module)
+    module.config(config, config_opts)
+  end
+
+  @doc """
+  Featurizes `input` with the given featurizer.
+
+  ## Examples
+
+      featurizer = Bumblebee.build_featurizer(Bumblebee.Vision.ConvNextFeaturizer)
+      {:ok, img} = StbImage.read_file(path)
+      input = Bumblebee.featurize(featurizer, [img])
+
+  """
+  @spec featurize(Bumblebee.Featurizer.t(), any()) :: any()
+  def featurize(%module{} = featurizer, input) do
+    module.apply(featurizer, input)
+  end
+
+  @doc """
+  Loads featurizer from a model repository.
+
+  ## Options
+
+    * `:module` - the featurizer module. By default it is inferred
+      from the preprocessor configuration file, if that is not possible,
+      it must be specified explicitly
+
+    * `:revision` - the specific model version to use, it can be any
+      valid git identifier, such as branch name, tag name, or a commit
+      hash
+
+    * `:cache_dir` - the directory to store the downloaded files in.
+      Defaults to the standard cache location for the given operating
+      system
+
+  ## Examples
+
+      {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "microsoft/resnet-50"})
+
+  """
+  @spec load_featurizer(repository(), keyword()) :: {:ok, map()} | {:error, String.t()}
+  def load_featurizer(repository, opts \\ []) do
+    validate_repository!(repository)
+    opts = Keyword.validate!(opts, [:module, :revision, :cache_dir])
+    module = opts[:module]
+
+    with {:ok, path} <- download(repository, @featurizer_filename, opts),
+         {:ok, data} <- decode_config(path) do
+      module =
+        module ||
+          case infer_featurizer_type(data) do
+            {:ok, module} -> module
+            {:error, error} -> raise "#{error}, please specify the :module option"
+          end
+
+      config = struct!(module)
+      config = HuggingFace.Transformers.Config.load(config, data)
+      {:ok, config}
+    end
+  end
+
+  @transformers_class_to_featurizer %{
+    "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer
+  }
+
+  defp infer_featurizer_type(%{"feature_extractor_type" => class_name}) do
+    case @transformers_class_to_featurizer[class_name] do
+      nil ->
+        {:error,
+         "could not match the class name #{inspect(class_name)} to any of the supported featurizers"}
+
+      module ->
+        {:ok, module}
+    end
+  end
+
+  defp infer_featurizer_type(_data) do
+    {:error, "could not infer featurizer type from the configuration"}
   end
 
   defp download({:local, dir}, filename, _opts) do
