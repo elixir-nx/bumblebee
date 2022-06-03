@@ -31,7 +31,7 @@ defmodule Bumblebee.MixProject do
       {:axon, "~> 0.1.0-dev", axon_opts()},
       {:exla, github: "elixir-nx/nx", sparse: "exla", override: true},
       {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-      {:stb_image, "~> 0.5.0"},
+      {:stb_image, "~> 0.5.0", optional: true},
       {:unpickler, github: "dashbitco/unpickler"},
       {:castore, "~> 0.1.0"},
       {:jason, "~> 1.3.0"},

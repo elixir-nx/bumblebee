@@ -54,7 +54,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
     images =
       images
       |> Enum.map(fn
-        %StbImage{} = img ->
+        img when is_struct(img, StbImage) ->
           cond do
             not config.do_resize ->
               to_tensor(img)
