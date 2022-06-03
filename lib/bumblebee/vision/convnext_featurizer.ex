@@ -33,6 +33,8 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
 
   @behaviour Bumblebee.Featurizer
 
+  @compile {:no_warn_undefined, StbImage}
+
   defstruct do_resize: true,
             size: 224,
             # TODO: add support for configurable resampling
@@ -102,7 +104,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
   end
 
   # Scales the image such that the short edge matches `size`
-  defp resize_short(%StbImage{} = image, size) when is_integer(size) do
+  defp resize_short(image, size) when is_struct(image, StbImage) and is_integer(size) do
     {height, width, _channels} = image.shape
 
     {short, long} = if height < width, do: {height, width}, else: {width, height}
@@ -116,7 +118,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
     StbImage.resize(image, out_height, out_width)
   end
 
-  defp to_tensor(%StbImage{} = image) do
+  defp to_tensor(image) when is_struct(image, StbImage) do
     image
     |> StbImage.to_nx()
     |> Nx.transpose(axes: [:channels, :height, :width])
