@@ -84,11 +84,7 @@ defmodule Bumblebee.Layers do
     Axon.layer(op, [x, kernel],
       name: opts[:name],
       shape: output_shape,
-<<<<<<< HEAD
       op_name: :dense_transposed
-=======
-      layer_op: :dense_transposed
->>>>>>> Align with the new API and add models with head
     )
   end
 
