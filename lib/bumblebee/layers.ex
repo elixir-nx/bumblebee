@@ -6,63 +6,77 @@ defmodule Bumblebee.Layers do
   import Nx.Defn
 
   @doc """
-  Converts mask to bias.
+  Converts attention mask to bias.
   """
-  defn attention_bias(attention_mask, _params) do
+  defn attention_bias(attention_mask, _opts \\ []) do
     attention_mask =
       attention_mask
-      |> Nx.new_axis(-3)
+      |> Nx.new_axis(-2)
       |> Nx.new_axis(-2)
 
-    mask = Nx.greater(attention_mask, 0)
-    on_true = Nx.broadcast(0, attention_mask)
-    on_false = Nx.broadcast(-1.0e10, attention_mask)
-
-    Nx.select(mask, on_true, on_false)
+    Nx.select(attention_mask > 0, 0, -1.0e10)
   end
 
   @doc """
   Computes attention weights.
   """
-  defn dot_product_attention_weights(query, key, bias, _params, opts \\ []) do
-    opts = keyword!(opts, [:axes])
-    axes = transform(opts[:axes], fn
-      nil ->
-        Enum.to_list(1..Nx.rank(key) - 3)
-      axes ->
-        axes
-    end)
+  defn attention_weights(query, key, bias, _opts \\ []) do
+    key = Nx.transpose(key, axes: [0, 2, 1, 3])
+    query = Nx.transpose(query, axes: [0, 2, 1, 3])
 
-    depth = elem(Nx.shape(query), Nx.rank(query) - 1)
-    n = transform(key, &Nx.rank(&1))
+    depth = Nx.axis_size(query, -1)
+    scaled_query = query / Nx.sqrt(depth)
 
-    {_batch_dims, qk_perm} = transform({axes, n}, fn {axes, n} ->
-      batch_dims = Enum.to_list(0..n - 1) -- (axes ++ [n - 1])
-      qk_perm = batch_dims ++ axes ++ [n - 1]
-      {batch_dims, qk_perm}
-    end)
-
-    key = Nx.transpose(key, axes: qk_perm)
-    query = Nx.transpose(query, axes: qk_perm)
-    scaled_query = Nx.divide(query, Nx.sqrt(depth))
-
-    # TODO: Batch dims are wrong :(
-    weights = Nx.dot(scaled_query, [n - 1], [0, 1], key, [n - 1], [0, 1])
+    weights = Nx.dot(scaled_query, [3], [0, 1], key, [3], [0, 1])
     weights = weights + bias
-
-    norm_dims = transform({axes, Nx.rank(weights)}, fn {axes, weights_ndim} ->
-      Enum.to_list((weights_ndim - length(axes))..(weights_ndim - 1))
-    end)
-
-    Axon.Activations.softmax(weights, axis: norm_dims)
+    Axon.Activations.softmax(weights, axis: -1)
   end
 
   @doc """
   Computes attention outputs.
   """
-  defn dot_product_attention_output(attn_weights, value, _params) do
+  defn attention_output(attention_weights, value, _opts \\ []) do
     value = Nx.transpose(value, axes: [0, 2, 1, 3])
-    out = Nx.dot(attn_weights, [3], [0, 1], value, [2], [0, 1])
+    out = Nx.dot(attention_weights, [3], [0, 1], value, [2], [0, 1])
     Nx.transpose(out, axes: [0, 2, 1, 3])
+  end
+
+  @doc """
+  Adds a dense layer to the network.
+
+  The kernel parameter is transposed with respect to `Axon.dense/3`.
+
+  ## Options
+
+    * `:name` - layer name
+
+    * `:kernel_initializer` - initializer for `kernel` weights.
+      Defaults to `:glorot_uniform`
+
+  """
+  def dense_transposed_layer(%Axon{output_shape: parent_shape} = x, units, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, kernel_initializer: :glorot_uniform])
+
+    kernel_shape = Axon.Shape.dense_kernel(parent_shape, units)
+    output_shape = Axon.Shape.dense(parent_shape, units)
+
+    # We expect a transposed kernel
+    kernel_shape =
+      kernel_shape
+      |> Tuple.to_list()
+      |> Enum.reverse()
+      |> List.to_tuple()
+
+    kernel = Axon.param("kernel", kernel_shape, initializer: opts[:kernel_initializer])
+
+    op = fn x, kernel, _opts ->
+      Nx.dot(x, [-1], kernel, [1])
+    end
+
+    Axon.layer(op, [x, kernel],
+      name: opts[:name],
+      shape: output_shape,
+      layer_op: :dense_transposed
+    )
   end
 end

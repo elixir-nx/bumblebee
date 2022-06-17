@@ -141,7 +141,16 @@ defmodule Bumblebee do
 
   @transformers_class_to_model %{
     "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
-    "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification}
+    "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
+    "BertModel" => {Bumblebee.Text.Bert, :base},
+    "BertForMaskedLM" => {Bumblebee.Text.Bert, :for_masked_language_modeling},
+    "BertLMHeadModel" => {Bumblebee.Text.Bert, :for_causal_language_modeling},
+    "BertForSequenceClassification" => {Bumblebee.Text.Bert, :for_sequence_classification},
+    "BertForTokenClassification" => {Bumblebee.Text.Bert, :for_token_classification},
+    "BertForQuestionAnswering" => {Bumblebee.Text.Bert, :for_question_answering},
+    "BertForMultipleChoice" => {Bumblebee.Text.Bert, :for_multiple_choice},
+    "BertForNextSentencePrediction" => {Bumblebee.Text.Bert, :for_next_sentence_prediction},
+    "BertForPreTraining" => {Bumblebee.Text.Bert, :for_pre_training}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do
