@@ -76,7 +76,7 @@ defmodule Bumblebee.Layers do
     Axon.layer(op, [x, kernel],
       name: opts[:name],
       shape: output_shape,
-      layer_op: :dense_transposed
+      op_name: :dense_transposed
     )
   end
 end
