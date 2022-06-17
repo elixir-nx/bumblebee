@@ -20,7 +20,8 @@ defmodule Bumblebee.Text.BertTest do
         "input_ids" => input_ids,
         "attention_mask" => attention_mask,
         "token_type_ids" => Nx.broadcast(0, input_ids),
-        "position_ids" => Nx.iota(input_ids, axis: -1)
+        "position_ids" => Nx.iota(input_ids, axis: -1),
+        "head_mask" => Nx.broadcast(1, {config.num_hidden_layers, config.num_attention_heads})
       }
 
       output = Axon.predict(model, params, input, compiler: EXLA)
@@ -48,7 +49,8 @@ defmodule Bumblebee.Text.BertTest do
         "input_ids" => input_ids,
         "attention_mask" => attention_mask,
         "token_type_ids" => Nx.broadcast(0, input_ids),
-        "position_ids" => Nx.iota(input_ids, axis: -1)
+        "position_ids" => Nx.iota(input_ids, axis: -1),
+        "head_mask" => Nx.broadcast(1, {config.num_hidden_layers, config.num_attention_heads})
       }
 
       output = Axon.predict(model, params, input, compiler: EXLA)

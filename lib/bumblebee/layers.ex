@@ -33,6 +33,14 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  Applies head mask to the attention weights for the given layer.
+  """
+  defn apply_layer_head_mask(attention_weights, layer_head_mask, _opts \\ []) do
+    layer_head_mask = Nx.reshape(layer_head_mask, {1, :auto, 1, 1})
+    Nx.multiply(attention_weights, layer_head_mask)
+  end
+
+  @doc """
   Computes attention outputs.
   """
   defn attention_output(attention_weights, value, _opts \\ []) do
