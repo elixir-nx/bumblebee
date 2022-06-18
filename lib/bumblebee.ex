@@ -140,6 +140,10 @@ defmodule Bumblebee do
   end
 
   @transformers_class_to_model %{
+    # ConvNeXT
+    "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
+    "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification},
+    # ResNet
     "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
     "BertModel" => {Bumblebee.Text.Bert, :base},
