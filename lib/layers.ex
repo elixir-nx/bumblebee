@@ -26,21 +26,25 @@ defmodule Bumblebee.Layers do
   """
   defn dot_product_attention_weights(query, key, bias, _params, opts \\ []) do
     opts = keyword!(opts, [:axes])
-    axes = transform(opts[:axes], fn
-      nil ->
-        Enum.to_list(1..Nx.rank(key) - 3)
-      axes ->
-        axes
-    end)
+
+    axes =
+      transform(opts[:axes], fn
+        nil ->
+          Enum.to_list(1..(Nx.rank(key) - 3))
+
+        axes ->
+          axes
+      end)
 
     depth = elem(Nx.shape(query), Nx.rank(query) - 1)
     n = transform(key, &Nx.rank(&1))
 
-    {_batch_dims, qk_perm} = transform({axes, n}, fn {axes, n} ->
-      batch_dims = Enum.to_list(0..n - 1) -- (axes ++ [n - 1])
-      qk_perm = batch_dims ++ axes ++ [n - 1]
-      {batch_dims, qk_perm}
-    end)
+    {_batch_dims, qk_perm} =
+      transform({axes, n}, fn {axes, n} ->
+        batch_dims = Enum.to_list(0..(n - 1)) -- (axes ++ [n - 1])
+        qk_perm = batch_dims ++ axes ++ [n - 1]
+        {batch_dims, qk_perm}
+      end)
 
     key = Nx.transpose(key, axes: qk_perm)
     query = Nx.transpose(query, axes: qk_perm)
@@ -50,9 +54,10 @@ defmodule Bumblebee.Layers do
     weights = Nx.dot(scaled_query, [n - 1], [0, 1], key, [n - 1], [0, 1])
     weights = weights + bias
 
-    norm_dims = transform({axes, Nx.rank(weights)}, fn {axes, weights_ndim} ->
-      Enum.to_list((weights_ndim - length(axes))..(weights_ndim - 1))
-    end)
+    norm_dims =
+      transform({axes, Nx.rank(weights)}, fn {axes, weights_ndim} ->
+        Enum.to_list((weights_ndim - length(axes))..(weights_ndim - 1))
+      end)
 
     Axon.Activations.softmax(weights, axis: norm_dims)
   end

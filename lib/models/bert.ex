@@ -36,8 +36,13 @@ defmodule Bert do
 
   def bert_embeddings(input_ids, token_type_ids, position_ids, opts \\ []) do
     word_embeddings = &Axon.embedding(&1, @vocab_size, @hidden_size, kernel_initializer: :normal)
-    position_embeddings = &Axon.embedding(&1, @max_position_embedding, @hidden_size, kernel_initializer: :normal)
-    token_type_embeddings = &Axon.embedding(&1, @type_vocab_size, @hidden_size, kernel_initializer: :normal)
+
+    position_embeddings =
+      &Axon.embedding(&1, @max_position_embedding, @hidden_size, kernel_initializer: :normal)
+
+    token_type_embeddings =
+      &Axon.embedding(&1, @type_vocab_size, @hidden_size, kernel_initializer: :normal)
+
     layer_norm = &Axon.layer_norm(&1, eps: @layer_norm_eps)
     dropout = &Axon.dropout(&1, rate: @hidden_dropout_prob)
 
@@ -67,7 +72,10 @@ defmodule Bert do
     # TODO: Layer head mask
 
     attn_bias = Axon.layer([attention_mask], &attention_bias/2, %{})
-    attn_weights = Axon.layer([query_states, key_states, attn_bias], &dot_product_attention_weights/4, %{})
+
+    attn_weights =
+      Axon.layer([query_states, key_states, attn_bias], &dot_product_attention_weights/4, %{})
+
     attn_output = Axon.layer([attn_weights, value_states], &dot_product_attention_output/3, %{})
     attn_output = Axon.reshape(attn_output, {:auto, @num_attention_heads * head_dim})
 
@@ -133,10 +141,13 @@ defmodule Bert do
       for _ <- 1..@num_hidden_layers, reduce: {hidden_states, [], []} do
         {hidden_states, all_hidden_states, all_attention_outputs} ->
           {hidden_states, attention_weights} = bert_layer(hidden_states, attention_mask)
-          {hidden_states, [hidden_states | all_hidden_states], [attention_weights | all_attention_outputs]}
+
+          {hidden_states, [hidden_states | all_hidden_states],
+           [attention_weights | all_attention_outputs]}
       end
 
-    {last_hidden_state, List.to_tuple(Enum.reverse(hidden_states)), List.to_tuple(Enum.reverse(attentions))}
+    {last_hidden_state, List.to_tuple(Enum.reverse(hidden_states)),
+     List.to_tuple(Enum.reverse(attentions))}
   end
 
   def bert_encoder(hidden_states, attention_mask) do
@@ -145,16 +156,21 @@ defmodule Bert do
 
   def bert_pooler(hidden_states) do
     dense = &Axon.dense(&1, @hidden_size, kernel_initializer: :normal)
-    slice = &Axon.nx(&1, fn x ->
-      {_, squeeze_axes} =
-        x
-        |> Nx.shape()
-        |> Tuple.to_list()
-        |> Enum.with_index()
-        |> Enum.filter(fn {x, _} -> x == 1 end)
-        |> Enum.unzip()
-      squeeze_axes = squeeze_axes -- [0]
-      Nx.slice_along_axis(x, 0, 1, axis: -1) |> Nx.squeeze(axes: squeeze_axes) end)
+
+    slice =
+      &Axon.nx(&1, fn x ->
+        {_, squeeze_axes} =
+          x
+          |> Nx.shape()
+          |> Tuple.to_list()
+          |> Enum.with_index()
+          |> Enum.filter(fn {x, _} -> x == 1 end)
+          |> Enum.unzip()
+
+        squeeze_axes = squeeze_axes -- [0]
+        Nx.slice_along_axis(x, 0, 1, axis: -1) |> Nx.squeeze(axes: squeeze_axes)
+      end)
+
     tanh = &Axon.tanh(&1)
 
     cls_hidden_state = slice.(hidden_states)
