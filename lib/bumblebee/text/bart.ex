@@ -149,11 +149,14 @@ defmodule Bumblebee.Text.Bart do
   end
 
   defp bart(inputs, config) do
+    # TODO: I'm not sure if this is a config option, but they seem to use
+    # a shared embedding?
     {encoder_last_hidden_state, encoder_hidden_states, encoder_attentions} =
-      encoder(inputs, config)
+      encoder(inputs, config, name: "encoder")
 
-    {decoder_last_hidden_state, decoder_hidden_states, decoder_attentions,
-     decoder_cross_attentions} = decoder(inputs, encoder_last_hidden_state, config)
+    {decoder_last_hidden_state, _, decoder_hidden_states, decoder_attentions,
+     decoder_cross_attentions} =
+      decoder(inputs, encoder_last_hidden_state, config, name: "decoder")
 
     %{
       last_hidden_state: decoder_last_hidden_state,
@@ -166,12 +169,15 @@ defmodule Bumblebee.Text.Bart do
     }
   end
 
-  defp encoder(inputs, config) do
+  defp encoder(inputs, config, opts) do
+    name = opts[:name]
+
     input_ids = flatten_leading(inputs["input_ids"])
 
     input_embeds =
       Axon.embedding(input_ids, config.vocab_size, config.d_model,
-        kernel_initializer: kernel_initializer(config)
+        kernel_initializer: kernel_initializer(config),
+        name: "shared"
       )
 
     input_embeds =
@@ -184,22 +190,26 @@ defmodule Bumblebee.Text.Bart do
     offset_position_ids = Axon.nx(inputs["position_ids"], fn x -> Nx.add(x, 2) end)
 
     pos_embeds =
-      Axon.embedding(offset_position_ids, config.max_position_embeddings, config.d_model)
-
-    hidden_states = Axon.add(input_embeds, pos_embeds)
-    hidden_states = Axon.layer_norm(hidden_states, epsilon: 1.0e-5)
-    hidden_states = Axon.dropout(hidden_states, rate: config.dropout)
+      Axon.embedding(offset_position_ids, config.max_position_embeddings + 2, config.d_model,
+        name: join(name, "embed_positions")
+      )
 
     # TODO: Perhaps this should output a map? BERT as well then?
-    encoder_layer_collection(hidden_states, inputs["attention_mask"], config)
+    input_embeds
+    |> Axon.add(pos_embeds)
+    |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
+    |> Axon.dropout(rate: config.dropout)
+    |> encoder_layer_collection(inputs["attention_mask"], config, name: name)
   end
 
-  defp encoder_layer_collection(hidden_states, attention_mask, config) do
+  defp encoder_layer_collection(hidden_states, attention_mask, config, opts) do
+    name = opts[:name]
+
     last_hidden_state = hidden_states
     all_hidden_states = {last_hidden_state}
     all_attentions = {}
 
-    for _idx <- 0..(config.encoder_layers - 1),
+    for idx <- 0..(config.encoder_layers - 1),
         reduce: {last_hidden_state, all_hidden_states, all_attentions} do
       {last, states, attentions} = state ->
         dropout_prob = :rand.uniform()
@@ -207,46 +217,66 @@ defmodule Bumblebee.Text.Bart do
         if config.encoder_layerdrop >= dropout_prob do
           state
         else
-          {next_state, next_attention} = encoder_layer(last, attention_mask, config)
+          layer_name = join(name, "layers.#{idx}")
+
+          {next_state, next_attention} =
+            encoder_layer(last, attention_mask, config, name: layer_name)
+
           {next_state, Tuple.append(states, next_state), Tuple.append(attentions, next_attention)}
         end
     end
   end
 
-  defp encoder_layer(hidden_states, attention_mask, config) do
+  defp encoder_layer(hidden_states, attention_mask, config, opts) do
+    name = opts[:name]
+
     residual = hidden_states
 
     {hidden_states, self_attention_weights, _} =
       self_attention(hidden_states, attention_mask, nil, nil, config,
-        num_heads: config.encoder_attention_heads
+        num_heads: config.encoder_attention_heads,
+        name: join(name, "self_attn")
       )
 
     hidden_states =
       hidden_states
-      |> Axon.dropout(rate: config.dropout)
-      |> Axon.add(residual)
-      |> Axon.layer_norm(epsilon: 1.0e-5)
+      |> Axon.dropout(rate: config.dropout, name: join(name, "dropout.0"))
+      |> Axon.add(residual, name: join(name, "residual.0"))
+      |> Axon.layer_norm(
+        channel_index: 2,
+        epsilon: 1.0e-5,
+        name: join(name, "self_attn_layer_norm")
+      )
 
     residual = hidden_states
 
     hidden_states =
       hidden_states
-      |> Axon.dense(config.encoder_ffn_dim, kernel_initializer: kernel_initializer(config))
-      |> Axon.activation(config.activation_function)
-      |> Axon.dropout(rate: config.activation_dropout)
-      |> Axon.dense(config.d_model, kernel_initializer: kernel_initializer(config))
-      |> Axon.add(residual)
-      |> Axon.layer_norm(epsilon: 1.0e-5)
+      |> Axon.dense(config.encoder_ffn_dim,
+        kernel_initializer: kernel_initializer(config),
+        name: join(name, "fc1")
+      )
+      |> Axon.activation(config.activation_function, name: join(name, "activation"))
+      |> Axon.dropout(rate: config.activation_dropout, name: join(name, "dropout.1"))
+      |> Axon.dense(config.d_model,
+        kernel_initializer: kernel_initializer(config),
+        name: join(name, "fc2")
+      )
+      |> Axon.add(residual, name: join(name, "residual.1"))
+      |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "final_layer_norm"))
 
     {hidden_states, self_attention_weights}
   end
 
-  defp decoder(inputs, encoder_hidden_states, config) do
+  defp decoder(inputs, encoder_hidden_states, config, opts) do
+    name = opts[:name]
+
     input_ids = flatten_leading(inputs["input_ids"])
 
     input_embeds =
       Axon.embedding(input_ids, config.vocab_size, config.d_model,
-        kernel_initializer: kernel_initializer(config)
+        kernel_initializer: kernel_initializer(config),
+        name: "shared"
       )
 
     input_embeds =
@@ -261,21 +291,22 @@ defmodule Bumblebee.Text.Bart do
     pos_embeds =
       Axon.embedding(
         offset_position_ids,
-        config.max_position_embeddings,
-        config.d_model
+        config.max_position_embeddings + 2,
+        config.d_model,
+        name: join(name, "embed_positions")
       )
 
-    hidden_states = Axon.add(input_embeds, pos_embeds)
-    hidden_states = Axon.layer_norm(hidden_states, epsilon: 1.0e-5)
-    hidden_states = Axon.dropout(hidden_states, rate: config.dropout)
-
     # TODO: Perhaps this should output a map? BERT as well then?
-    decoder_layer_collection(
-      hidden_states,
+    input_embeds
+    |> Axon.add(pos_embeds)
+    |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
+    |> Axon.dropout(rate: config.dropout)
+    |> decoder_layer_collection(
       inputs["decoder_attention_mask"],
       encoder_hidden_states,
       inputs["attention_mask"],
-      config
+      config,
+      name: name
     )
   end
 
@@ -284,10 +315,13 @@ defmodule Bumblebee.Text.Bart do
          attention_mask,
          encoder_hidden_states,
          encoder_attention_mask,
-         config
+         config,
+         opts
        ) do
+    name = opts[:name]
+
     last_hidden_state = hidden_states
-    past_key_values = {}
+    past_key_values = nil
     all_hidden_states = {last_hidden_state}
     all_attentions = {}
     all_cross_attentions = {}
@@ -306,10 +340,12 @@ defmodule Bumblebee.Text.Bart do
         else
           past_key_values =
             if config.use_cache do
-              if tuple_size(pkv) == 0, do: nil, else: elem(pkv, idx - 1)
+              pkv
             else
               nil
             end
+
+          layer_name = join(name, "layers.#{idx}")
 
           {next_state, next_attention, next_cross_attention, past_key_value} =
             decoder_layer(
@@ -318,10 +354,13 @@ defmodule Bumblebee.Text.Bart do
               encoder_hidden_states,
               encoder_attention_mask,
               past_key_values,
-              config
+              config,
+              name: layer_name
             )
 
-          next_cache = if config.use_cache, do: Tuple.append(pkv, past_key_value), else: pkv
+          # TODO: Should we append to a cache which collects all past kvs
+          # or just accumulate one step back?
+          next_cache = if config.use_cache, do: past_key_values, else: pkv
 
           {
             next_state,
@@ -340,8 +379,11 @@ defmodule Bumblebee.Text.Bart do
          encoder_hidden_states,
          encoder_attention_mask,
          past_key_value,
-         config
+         config,
+         opts
        ) do
+    name = opts[:name]
+
     residual = hidden_states
 
     {past_key_value, cross_attention_past_key_value} =
@@ -361,14 +403,20 @@ defmodule Bumblebee.Text.Bart do
         past_key_value,
         config,
         causal: true,
-        num_heads: config.decoder_attention_heads
+        num_heads: config.decoder_attention_heads,
+        is_decoder: true,
+        name: join(name, "self_attn")
       )
 
     hidden_states =
       hidden_states
       |> Axon.dropout(rate: config.dropout)
       |> Axon.add(residual)
-      |> Axon.layer_norm(epsilon: 1.0e-5)
+      |> Axon.layer_norm(
+        channel_index: 2,
+        epsilon: 1.0e-5,
+        name: join(name, "self_attn_layer_norm")
+      )
 
     {hidden_states, cross_attention_weights, cross_attention_present_key_value} =
       if encoder_hidden_states do
@@ -381,14 +429,20 @@ defmodule Bumblebee.Text.Bart do
             encoder_hidden_states,
             cross_attention_past_key_value,
             config,
-            num_heads: config.decoder_attention_heads
+            num_heads: config.decoder_attention_heads,
+            is_decoder: true,
+            name: join(name, "encoder_attn")
           )
 
         hidden_states =
           hidden_states
           |> Axon.dropout(rate: config.dropout)
           |> Axon.add(residual)
-          |> Axon.layer_norm(epsilon: 1.0e-5)
+          |> Axon.layer_norm(
+            channel_index: 2,
+            epsilon: 1.0e-5,
+            name: join(name, "encoder_attn_layer_norm")
+          )
 
         {hidden_states, cross_attention_weights, cross_attention_present_key_value}
       else
@@ -399,13 +453,13 @@ defmodule Bumblebee.Text.Bart do
 
     hidden_states =
       hidden_states
-      |> Axon.dense(config.decoder_ffn_dim)
-      |> Axon.activation(config.activation_function)
-      |> Axon.dropout(rate: config.activation_dropout)
-      |> Axon.dense(config.d_model)
-      |> Axon.dropout(rate: config.dropout)
+      |> Axon.dense(config.decoder_ffn_dim, name: join(name, "fc1"))
+      |> Axon.activation(config.activation_function, name: join(name, "activation"))
+      |> Axon.dropout(rate: config.activation_dropout, name: join(name, "dropout.1"))
+      |> Axon.dense(config.d_model, name: join(name, "fc2"))
+      |> Axon.dropout(rate: config.dropout, name: join(name, "dropout.2"))
       |> Axon.add(residual)
-      |> Axon.layer_norm(epsilon: 1.0e-5)
+      |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "final_layer_norm"))
 
     {hidden_states, self_attention_weights, cross_attention_weights,
      {present_key_value, cross_attention_present_key_value}}
@@ -419,13 +473,18 @@ defmodule Bumblebee.Text.Bart do
          config,
          opts
        ) do
+    name = opts[:name]
+    num_heads = opts[:num_heads]
     causal = Keyword.get(opts, :causal, false)
-    num_heads = Keyword.get(opts, :num_heads)
+    is_decoder = Keyword.get(opts, :is_decoder, false)
 
     head_dim = div(config.d_model, num_heads)
 
     query_states =
-      Axon.dense(hidden_states, config.d_model, kernel_initializer: kernel_initializer(config))
+      Axon.dense(hidden_states, config.d_model,
+        kernel_initializer: kernel_initializer(config),
+        name: join(name, "q_proj")
+      )
 
     {key_states, value_states} =
       case {key_value_states, past_key_value} do
@@ -434,14 +493,20 @@ defmodule Bumblebee.Text.Bart do
           # key-value states, this is just a regular self attention
           # and we compute key and value states from hidden state
           key_states =
-            Axon.dense(hidden_states, config.d_model,
-              kernel_initializer: kernel_initializer(config)
+            hidden_states
+            |> Axon.dense(config.d_model,
+              kernel_initializer: kernel_initializer(config),
+              name: join(name, "k_proj")
             )
+            |> reshape_key_value(:auto, num_heads, head_dim)
 
           value_states =
-            Axon.dense(hidden_states, config.d_model,
-              kernel_initializer: kernel_initializer(config)
+            hidden_states
+            |> Axon.dense(config.d_model,
+              kernel_initializer: kernel_initializer(config),
+              name: join(name, "v_proj")
             )
+            |> reshape_key_value(:auto, num_heads, head_dim)
 
           {key_states, value_states}
 
@@ -451,40 +516,63 @@ defmodule Bumblebee.Text.Bart do
           # recompute key-value states from the given input key-value
           # states
           key_states =
-            Axon.dense(key_value_states, config.d_model,
-              kernel_initializer: kernel_initializer(config)
+            key_value_states
+            |> Axon.dense(config.d_model,
+              kernel_initializer: kernel_initializer(config),
+              name: join(name, "k_proj")
             )
+            |> reshape_key_value(:auto, num_heads, head_dim)
 
           value_states =
-            Axon.dense(key_value_states, config.d_model,
-              kernel_initializer: kernel_initializer(config)
+            key_value_states
+            |> Axon.dense(config.d_model,
+              kernel_initializer: kernel_initializer(config),
+              name: join(name, "v_proj")
             )
+            |> reshape_key_value(:auto, num_heads, head_dim)
 
           {key_states, value_states}
 
         {nil, {past_key, past_value}} ->
           key_states =
             hidden_states
-            |> Axon.dense(config.d_model, kernel_initializer: kernel_initializer(config))
+            |> Axon.dense(config.d_model,
+              kernel_initializer: kernel_initializer(config),
+              name: join(name, "k_proj")
+            )
             |> reshape_key_value(:auto, num_heads, head_dim)
 
           value_states =
             hidden_states
-            |> Axon.dense(config.d_model, kernel_initializer: kernel_initializer(config))
+            |> Axon.dense(config.d_model,
+              kernel_initializer: kernel_initializer(config),
+              name: join(name, "v_proj")
+            )
             |> reshape_key_value(:auto, num_heads, head_dim)
 
           key_states = Axon.concatenate([past_key, key_states], axis: 2)
           value_states = Axon.concatenate([past_value, value_states], axis: 2)
           {key_states, value_states}
+
+        {_, {past_key, past_value}} ->
+          {past_key, past_value}
+      end
+
+    past_key_value =
+      if is_decoder do
+        {key_states, value_states}
+      else
+        past_key_value
       end
 
     query_states = split_heads(query_states, num_heads, head_dim)
-    key_states = split_heads(key_states, num_heads, head_dim)
-    value_states = split_heads(value_states, num_heads, head_dim)
+    key_states = Axon.transpose(key_states, [0, 2, 1, 3], ignore_batch?: false)
+    value_states = Axon.transpose(value_states, [0, 2, 1, 3], ignore_batch?: false)
 
     # TODO: Causal mask
 
-    attention_bias = Axon.layer(&Layers.attention_bias/2, [attention_mask])
+    attention_bias = Axon.constant(Nx.tensor(0.0))
+    # attention_bias = Axon.layer(&Layers.attention_bias/2, [attention_mask])
 
     attention_weights =
       Axon.layer(&Layers.attention_weights/4, [query_states, key_states, attention_bias])
@@ -499,9 +587,12 @@ defmodule Bumblebee.Text.Bart do
     attention_output =
       attention_output
       |> Axon.reshape({:auto, num_heads * head_dim})
-      |> Axon.dense(config.d_model, kernel_initializer: kernel_initializer(config))
+      |> Axon.dense(config.d_model,
+        kernel_initializer: kernel_initializer(config),
+        name: join(name, "out_proj")
+      )
 
-    {attention_output, attention_weights, {key_states, value_states}}
+    {attention_output, attention_weights, past_key_value}
   end
 
   defp flatten_leading(%Axon{} = x) do
@@ -535,6 +626,8 @@ defmodule Bumblebee.Text.Bart do
   defp kernel_initializer(config) do
     Axon.Initializers.normal(scale: config.init_std)
   end
+
+  defp join(lhs, rhs), do: lhs <> "." <> rhs
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
