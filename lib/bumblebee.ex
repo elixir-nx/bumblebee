@@ -142,6 +142,12 @@ defmodule Bumblebee do
   @transformers_class_to_model %{
     "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
+    # Beit
+    "BeitModel" => {Bumblebee.Vision.Beit, :base},
+    "BeitForImageClassification" => {Bumblebee.Vision.Beit, :for_image_classification},
+    "BeitForMaskedImageModeling" => {Bumblebee.Vision.Beit, :for_masked_image_modeling},
+    "BeitForSemanticSegmentation" => {Bumblebee.Vision.Beit, :for_semantic_segmentation},
+    # Bert
     "BertModel" => {Bumblebee.Text.Bert, :base},
     "BertForMaskedLM" => {Bumblebee.Text.Bert, :for_masked_language_modeling},
     "BertLMHeadModel" => {Bumblebee.Text.Bert, :for_causal_language_modeling},

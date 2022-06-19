@@ -83,7 +83,11 @@ defmodule Bumblebee.Conversion.PyTorch do
         {{layer_name, Map.new(params)}, diff}
       end)
 
-    params = Map.new(params)
+    # We cannot just call Map.new here because it will remove duplicated
+    # keys, when in reality what we want is to merge duplicated keys. This
+    # is the case when PyTorch has a layer which makes use of other layers
+    # but also has multiple parameters inside
+    params = params_from_list(params)
 
     diff = %{
       missing: Enum.reverse(diff.missing),
@@ -92,6 +96,15 @@ defmodule Bumblebee.Conversion.PyTorch do
     }
 
     {params, diff}
+  end
+
+  defp params_from_list(params) do
+    Enum.reduce(params, %{}, fn {layer_key, layer_params}, param_map ->
+      Map.update(param_map, layer_key, layer_params, fn existing_params ->
+        # Merge existing with layer values, if exists
+        Map.merge(layer_params, existing_params)
+      end)
+    end)
   end
 
   defp prepend(diff, key, values), do: Map.update!(diff, key, &(values ++ &1))
