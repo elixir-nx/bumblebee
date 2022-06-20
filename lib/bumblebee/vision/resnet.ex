@@ -12,6 +12,11 @@ defmodule Bumblebee.Vision.ResNet do
       The head consists of a single dense layer on top of the pooled
       features and it returns logits corresponding to possible classes
 
+  ## Inputs
+
+  These models have a single tensor input, representing a 224x224 image
+  in the NCHW order.
+
   ## Configuration
 
     * `:num_channels` - the number of input channels. Defaults to `3`
@@ -90,7 +95,7 @@ defmodule Bumblebee.Vision.ResNet do
     name = opts[:name]
 
     {encoder_output, hidden_states} =
-      Axon.input({nil, config.num_channels, 224, 224}, "input")
+      Axon.input({nil, config.num_channels, 224, 224}, "pixel_values")
       |> embedding_layer(config, name: join(name, "embedder"))
       |> encoder(config, name: join(name, "encoder"))
 
