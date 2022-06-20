@@ -150,7 +150,9 @@ defmodule Bumblebee do
     "BertForQuestionAnswering" => {Bumblebee.Text.Bert, :for_question_answering},
     "BertForMultipleChoice" => {Bumblebee.Text.Bert, :for_multiple_choice},
     "BertForNextSentencePrediction" => {Bumblebee.Text.Bert, :for_next_sentence_prediction},
-    "BertForPreTraining" => {Bumblebee.Text.Bert, :for_pre_training}
+    "BertForPreTraining" => {Bumblebee.Text.Bert, :for_pre_training},
+    "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
+    "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do
