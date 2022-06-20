@@ -140,8 +140,6 @@ defmodule Bumblebee do
   end
 
   @transformers_class_to_model %{
-    "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
-    "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
     # Beit
     "BeitModel" => {Bumblebee.Vision.Beit, :base},
     "BeitForImageClassification" => {Bumblebee.Vision.Beit, :for_image_classification},
@@ -157,8 +155,12 @@ defmodule Bumblebee do
     "BertForMultipleChoice" => {Bumblebee.Text.Bert, :for_multiple_choice},
     "BertForNextSentencePrediction" => {Bumblebee.Text.Bert, :for_next_sentence_prediction},
     "BertForPreTraining" => {Bumblebee.Text.Bert, :for_pre_training},
+    # ConvNext
     "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
-    "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification}
+    "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification},
+    # ResNet
+    "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
+    "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do

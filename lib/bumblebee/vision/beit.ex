@@ -101,8 +101,6 @@ defmodule Bumblebee.Vision.Beit do
   #{Bumblebee.Shared.common_config_docs(@common_keys)}
   """
 
-  import Nx.Defn
-
   alias Bumblebee.Layers
   alias Bumblebee.Shared
 
@@ -362,12 +360,6 @@ defmodule Bumblebee.Vision.Beit do
   defp beit_layer(hidden_states, shared_relative_position_bias, config, opts) do
     name = opts[:name]
 
-    lambda_1 =
-      Axon.param("lambda_1", {config.hidden_size}, initializer: scale_initializer(config))
-
-    lambda_2 =
-      Axon.param("lambda_2", {config.hidden_size}, initializer: scale_initializer(config))
-
     drop_path_rate = opts[:drop_path_rate]
 
     normalized_states =
@@ -384,13 +376,11 @@ defmodule Bumblebee.Vision.Beit do
 
     attention_output =
       if config.layer_scale_init_value > 0 do
-        Axon.layer(
-          fn scale, out, _opts -> Nx.multiply(scale, out) end,
-          [
-            lambda_1,
-            attention_output
-          ],
-          name: name
+        Layers.scale_layer(attention_output,
+          name: name,
+          scale_name: "lambda_1",
+          scale_init_value: config.layer_scale_init_value,
+          channel_index: 2
         )
       else
         attention_output
@@ -398,7 +388,7 @@ defmodule Bumblebee.Vision.Beit do
 
     hidden_states =
       attention_output
-      |> drop_path(rate: drop_path_rate, name: join(name, "drop_path.0"))
+      |> Layers.drop_path_layer(rate: drop_path_rate, name: join(name, "drop_path.0"))
       |> Axon.add(hidden_states, name: join(name, "residual.0"))
 
     layer_output =
@@ -413,8 +403,11 @@ defmodule Bumblebee.Vision.Beit do
 
     output =
       if config.layer_scale_init_value > 0 do
-        Axon.layer(fn scale, out, _opts -> Nx.multiply(scale, out) end, [lambda_2, layer_output],
-          name: name
+        Layers.scale_layer(layer_output,
+          name: name,
+          scale_name: "lambda_2",
+          scale_init_value: config.layer_scale_init_value,
+          channel_index: 2
         )
       else
         layer_output
@@ -422,7 +415,7 @@ defmodule Bumblebee.Vision.Beit do
 
     output =
       output
-      |> drop_path(rate: drop_path_rate, name: join(name, "drop_path.1"))
+      |> Layers.drop_path_layer(rate: drop_path_rate, name: join(name, "drop_path.1"))
       |> Axon.add(hidden_states, name: join(name, "residual.1"))
 
     {output, attentions}
@@ -594,33 +587,6 @@ defmodule Bumblebee.Vision.Beit do
     end
   end
 
-  defp drop_path(inputs, opts) do
-    Axon.layer(&drop_path_impl/2, [inputs], opts)
-  end
-
-  defnp drop_path_impl(inputs, opts \\ []) do
-    opts = keyword!(opts, rate: 0.0, mode: :inference)
-
-    transform({inputs, opts[:rate], opts[:mode]}, fn
-      {x, _rate, :inference} ->
-        x
-
-      {x, rate, :training} ->
-        keep_prob = 1.0 - rate
-        input_shape = Nx.shape(x)
-        shape = [elem(input_shape, 0) | List.duplicate(1, Nx.rank(x) - 1)]
-        shape = List.to_tuple(shape)
-
-        if rate == 0 do
-          x
-        else
-          random_tensor = Nx.add(keep_prob, Nx.random_uniform(shape))
-          binary_tensor = Nx.floor(random_tensor)
-          Nx.multiply(Nx.divide(inputs, keep_prob), binary_tensor)
-        end
-    end)
-  end
-
   defp get_patch_tokens(%Axon{} = states) do
     Axon.nx(states, fn x -> x[[0..-1//1, 1..-1//1, 0..-1//1]] end)
   end
@@ -637,14 +603,6 @@ defmodule Bumblebee.Vision.Beit do
 
   defp kernel_initializer(config) do
     Axon.Initializers.normal(scale: config.initializer_range)
-  end
-
-  defp scale_initializer(config) do
-    fn shape, type ->
-      ones = Axon.Initializers.ones()
-      ones_data = ones.(shape, type)
-      Nx.multiply(ones_data, config.layer_scale_init_value)
-    end
   end
 
   defp shape(%Axon{output_shape: shape}), do: shape
