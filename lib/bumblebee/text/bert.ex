@@ -266,7 +266,7 @@ defmodule Bumblebee.Text.Bert do
           num_choices = Nx.axis_size(input_ids, 1)
           Nx.reshape(logits, {:auto, num_choices})
         end,
-        [logits, inputs.input_ids]
+        [logits, inputs["input_ids"]]
       )
 
     Axon.container(%{
@@ -315,20 +315,20 @@ defmodule Bumblebee.Text.Bert do
 
   defp inputs(input_shape, config) do
     %{
-      input_ids: Axon.input(input_shape, "input_ids"),
-      attention_mask:
+      "input_ids" => Axon.input(input_shape, "input_ids"),
+      "attention_mask" =>
         Axon.input(input_shape, "attention_mask",
           default: fn inputs -> Nx.broadcast(1, inputs["input_ids"]) end
         ),
-      token_type_ids:
+      "token_type_ids" =>
         Axon.input(input_shape, "token_type_ids",
           default: fn inputs -> Nx.broadcast(0, inputs["input_ids"]) end
         ),
-      position_ids:
+      "position_ids" =>
         Axon.input(input_shape, "position_ids",
           default: fn inputs -> Nx.iota(inputs["input_ids"], axis: -1) end
         ),
-      head_mask:
+      "head_mask" =>
         Axon.input({config.num_hidden_layers, config.num_attention_heads}, "head_mask",
           default: fn _inputs ->
             Nx.broadcast(1, {config.num_hidden_layers, config.num_attention_heads})
@@ -341,12 +341,12 @@ defmodule Bumblebee.Text.Bert do
     name = opts[:name]
 
     hidden_states =
-      embeddings(inputs.input_ids, inputs.token_type_ids, inputs.position_ids, config,
+      embeddings(inputs["input_ids"], inputs["token_type_ids"], inputs["position_ids"], config,
         name: join(name, "embeddings")
       )
 
     {last_hidden_state, hidden_states, attentions} =
-      encoder(hidden_states, inputs.attention_mask, inputs.head_mask, config,
+      encoder(hidden_states, inputs["attention_mask"], inputs["head_mask"], config,
         name: join(name, "encoder")
       )
 
