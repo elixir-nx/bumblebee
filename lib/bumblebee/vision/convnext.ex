@@ -209,9 +209,7 @@ defmodule Bumblebee.Vision.ConvNext do
         hidden_states
       end
 
-    # This is essentially the same as calling `with_index`, but
-    # will ensure that we error out if for some reason we didn't
-    # compute drop_path_rates right (e.g. it doesn't match the depth)
+    # Ensure the rates have been computed properly
     ^depth = length(drop_path_rates)
 
     for {drop_path_rate, idx} <- Enum.zip(drop_path_rates, 0..(depth - 1)), reduce: downsampled do
