@@ -212,7 +212,7 @@ defmodule Bumblebee.Vision.ConvNext do
     # Ensure the rates have been computed properly
     ^depth = length(drop_path_rates)
 
-    for {drop_path_rate, idx} <- Enum.zip(drop_path_rates, 0..(depth - 1)), reduce: downsampled do
+    for {drop_path_rate, idx} <- Enum.with_index(drop_path_rates), reduce: downsampled do
       x ->
         layer_name = join("layers", "#{idx}")
 
