@@ -13,15 +13,9 @@ defmodule Bumblebee.Text.BertTest do
 
       assert %Bumblebee.Text.Bert{architecture: :base} = config
 
-      input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-      attention_mask = Nx.tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
-
       input = %{
-        "input_ids" => input_ids,
-        "attention_mask" => attention_mask,
-        "token_type_ids" => Nx.broadcast(0, input_ids),
-        "position_ids" => Nx.iota(input_ids, axis: -1),
-        "head_mask" => Nx.broadcast(1, {config.num_hidden_layers, config.num_attention_heads})
+        "input_ids" => Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]),
+        "attention_mask" => Nx.tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
       output = Axon.predict(model, params, input)
@@ -42,15 +36,9 @@ defmodule Bumblebee.Text.BertTest do
 
       assert %Bumblebee.Text.Bert{architecture: :for_masked_language_modeling} = config
 
-      input_ids = Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]])
-      attention_mask = Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1]])
-
       input = %{
-        "input_ids" => input_ids,
-        "attention_mask" => attention_mask,
-        "token_type_ids" => Nx.broadcast(0, input_ids),
-        "position_ids" => Nx.iota(input_ids, axis: -1),
-        "head_mask" => Nx.broadcast(1, {config.num_hidden_layers, config.num_attention_heads})
+        "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]]),
+        "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
       output = Axon.predict(model, params, input)

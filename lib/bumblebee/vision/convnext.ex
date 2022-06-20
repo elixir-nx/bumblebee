@@ -12,6 +12,11 @@ defmodule Bumblebee.Vision.ConvNext do
       The head consists of a single dense layer on top of the pooled
       features
 
+  ## Inputs
+
+  These models have a single tensor input, representing a 224x224 image
+  in the CHW order.
+
   ## Configuration
 
     * `:num_channels` - the number of input channels. Defaults to `3`

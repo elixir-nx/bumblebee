@@ -39,6 +39,24 @@ defmodule Bumblebee.Text.Bert do
     * `:for_pre_training` - BERT with both MLM and NSP heads as done
       during the pre-training
 
+  ## Inputs
+
+    * `:input_ids` - indices of input sequence tokens in the vocabulary
+
+    * `:attention_mask` - a mask indicating which tokens to attend to.
+      This is used to ignore padding tokens, which are added when
+      processing a batch of sequences with different length
+
+    * `:token_type_ids` - a mask distinguishing groups in the input
+      sequence. This is used in when the input sequence is a semantically
+      a pair of sequences
+
+    * `:position_ids` - indices of positions of each input sequence
+      tokens in the position embeddings
+
+    * `:head_mask` - a mask to nullify selected heads of the self-attention
+      blocks
+
   ## Configuration
 
     * `:vocab_size` - vocabulary size of the model. Defines the number
@@ -298,11 +316,24 @@ defmodule Bumblebee.Text.Bert do
   defp inputs(input_shape, config) do
     %{
       input_ids: Axon.input(input_shape, "input_ids"),
-      attention_mask: Axon.input(input_shape, "attention_mask"),
-      token_type_ids: Axon.input(input_shape, "token_type_ids"),
-      position_ids: Axon.input(input_shape, "position_ids"),
-      # TODO: use a default input, see https://github.com/elixir-nx/axon/issues/285
-      head_mask: Axon.input({config.num_hidden_layers, config.num_attention_heads}, "head_mask")
+      attention_mask:
+        Axon.input(input_shape, "attention_mask",
+          default: fn inputs -> Nx.broadcast(1, inputs["input_ids"]) end
+        ),
+      token_type_ids:
+        Axon.input(input_shape, "token_type_ids",
+          default: fn inputs -> Nx.broadcast(0, inputs["input_ids"]) end
+        ),
+      position_ids:
+        Axon.input(input_shape, "position_ids",
+          default: fn inputs -> Nx.iota(inputs["input_ids"], axis: -1) end
+        ),
+      head_mask:
+        Axon.input({config.num_hidden_layers, config.num_attention_heads}, "head_mask",
+          default: fn _inputs ->
+            Nx.broadcast(1, {config.num_hidden_layers, config.num_attention_heads})
+          end
+        )
     }
   end
 
