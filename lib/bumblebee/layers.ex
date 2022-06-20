@@ -87,4 +87,87 @@ defmodule Bumblebee.Layers do
       op_name: :dense_transposed
     )
   end
+
+  @doc """
+  Adds a scaling layer to the network.
+
+  The scaling layer scales inputs by a learned scale parameter.
+
+  ## Options
+
+      * `:name` - layer name
+
+      * `:scale_name` - scale parameter name
+
+      * `:scale_init_value` - initial value of scale parameter
+
+  """
+  def scale_layer(%Axon{output_shape: parent_shape} = x, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [
+        :name,
+        scale_name: "layer_scale_parameter",
+        scale_init_value: 1.0e-6,
+        channel_index: 1
+      ])
+
+    name = opts[:name]
+    scale_name = opts[:scale_name]
+    scale_init_value = opts[:scale_init_value]
+    channel_index = opts[:channel_index]
+
+    out_channels = elem(parent_shape, channel_index)
+
+    scale_param =
+      Axon.param(scale_name, {out_channels},
+        initializer: fn shape, _ ->
+          Nx.broadcast(scale_init_value, shape)
+        end
+      )
+
+    Axon.layer(fn input, scale, _opts -> Nx.multiply(input, scale) end, [x, scale_param],
+      name: name,
+      op_name: :scale
+    )
+  end
+
+  @doc """
+  Adds a drop-path layer to the network for stochastic
+  depth.
+
+  ## Options
+
+    * `:name` - layer name
+
+    * `:rate` - drop path rate
+  """
+  def drop_path_layer(%Axon{} = input, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, rate: 0.0])
+
+    if opts[:rate] > 0.0 do
+      Axon.layer(&drop_path/2, [input], name: opts[:name], rate: opts[:rate])
+    else
+      input
+    end
+  end
+
+  defnp drop_path(x, opts \\ []) do
+    opts = keyword!(opts, rate: 0.0, mode: :train)
+
+    transform({x, opts[:rate], opts[:mode]}, fn
+      {x, rate, :train} when Elixir.Kernel.!=(rate, 0.0) ->
+        keep_prob = 1 - rate
+        shape = elem(Nx.shape(x), 0)
+
+        random_tensor =
+          keep_prob
+          |> Nx.add(Nx.random_uniform(shape))
+          |> Nx.floor()
+
+        x |> Nx.divide(keep_prob) |> Nx.multiply(random_tensor)
+
+      {x, _rate, _mode} ->
+        x
+    end)
+  end
 end
