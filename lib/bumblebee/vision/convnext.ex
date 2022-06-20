@@ -280,27 +280,18 @@ defmodule Bumblebee.Vision.ConvNext do
 
   defp get_drop_path_rates(depths, rate) do
     sum_of_depths = Enum.sum(depths)
-    # It's a linspace from 0..sum_of_depths
-    step = rate / (sum_of_depths - 1)
-    rates = Nx.iota({sum_of_depths}) |> Nx.multiply(step)
-    # Split so that we have same number of rates that match
-    # each depth
-    {_, final_rates} =
-      for depth <- depths, reduce: {rates, []} do
-        {rates, acc} ->
-          rate_slice = rates[0..(depth - 1)//1]
 
-          rates =
-            if depth == Nx.size(rates) do
-              rates
-            else
-              rates[depth..-1//1]
-            end
+    rates =
+      Nx.iota({sum_of_depths})
+      |> Nx.multiply(rate / sum_of_depths - 1)
+      |> Nx.to_flat_list()
 
-          {rates, [Nx.to_flat_list(rate_slice) | acc]}
-      end
+    {final_rates, _} =
+      Enum.map_reduce(depths, rates, fn depth, rates ->
+        Enum.split(rates, depth)
+      end)
 
-    Enum.reverse(final_rates)
+    final_rates
   end
 
   defp kernel_initializer(config) do
