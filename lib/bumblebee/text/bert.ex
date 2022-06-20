@@ -41,20 +41,20 @@ defmodule Bumblebee.Text.Bert do
 
   ## Inputs
 
-    * `:input_ids` - indices of input sequence tokens in the vocabulary
+    * `"input_ids"` - indices of input sequence tokens in the vocabulary
 
-    * `:attention_mask` - a mask indicating which tokens to attend to.
+    * `"attention_mask"` - a mask indicating which tokens to attend to.
       This is used to ignore padding tokens, which are added when
       processing a batch of sequences with different length
 
-    * `:token_type_ids` - a mask distinguishing groups in the input
+    * `"token_type_ids"` - a mask distinguishing groups in the input
       sequence. This is used in when the input sequence is a semantically
       a pair of sequences
 
-    * `:position_ids` - indices of positions of each input sequence
+    * `"position_ids"` - indices of positions of each input sequence
       tokens in the position embeddings
 
-    * `:head_mask` - a mask to nullify selected heads of the self-attention
+    * `"head_mask"` - a mask to nullify selected heads of the self-attention
       blocks
 
   ## Configuration
