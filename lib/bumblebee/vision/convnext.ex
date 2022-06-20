@@ -298,6 +298,7 @@ defmodule Bumblebee.Vision.ConvNext do
     Axon.Initializers.normal(scale: config.initializer_range)
   end
 
+  defp join(nil, rhs), do: rhs
   defp join(lhs, rhs), do: lhs <> "." <> rhs
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
