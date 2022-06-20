@@ -103,7 +103,7 @@ defmodule Bumblebee.Vision.ConvNext do
     |> Axon.container()
   end
 
-  defp convnext(config, opts) do
+  defp convnext(config, opts \\ []) do
     name = opts[:name]
 
     pixel_values = Axon.input({nil, config.num_channels, 224, 224}, "pixel_values")
