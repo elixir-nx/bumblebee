@@ -9,12 +9,12 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
   describe "load_params!/3" do
     defp base_model() do
-      Axon.input({nil, 3, 4, 4})
+      Axon.input({nil, 3, 4, 4}, "input")
       |> Axon.conv(2, kernel_size: 2, name: "conv")
     end
 
     defp full_model() do
-      Axon.input({nil, 3, 4, 4})
+      Axon.input({nil, 3, 4, 4}, "input")
       |> Axon.conv(2, kernel_size: 2, name: "base.conv")
       |> Axon.flatten()
       |> Axon.dense(2, name: "classifier.layers.0")
@@ -33,7 +33,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
           assert_equal(params["conv"]["bias"], Nx.broadcast(0.0, {2}))
         end)
 
-      assert log == ""
+      refute log =~ "parameters"
     end
 
     test "logs parameters diff" do

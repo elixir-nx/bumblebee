@@ -58,7 +58,7 @@ defmodule Bumblebee.Conversion.PyTorch do
         {params, diff} =
           Enum.reduce(layer.parameters, {[], diff}, fn param, {params, diff} ->
             {value, diff} =
-              case param_from_pytorch(layer.op, param.name, pytorch_state, source_layer_name) do
+              case param_from_pytorch(layer.op_name, param.name, pytorch_state, source_layer_name) do
                 {:ok, value, keys} ->
                   diff = prepend(diff, :used_keys, keys)
 
@@ -153,7 +153,6 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp format_list(items), do: Enum.map_join(items, "\n", &("  * " <> &1))
 
-  # TODO: change this to use layer metadata once it is available in Axon
   defp param_from_pytorch(:dense, "kernel", pytorch_state, layer_name) do
     with {:ok, kernel, key} <- lookup_param(pytorch_state, layer_name, ["weight"]) do
       [out_features, in_features] = Nx.axes(kernel)

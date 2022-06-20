@@ -21,14 +21,21 @@ defmodule Bumblebee.Utils.Axon do
     Enum.reverse(nodes)
   end
 
-  defp nodes(%Axon{op: :container, parent: [container]} = axon, ids, nodes) do
-    {ids, nodes} = Nx.Container.reduce(container, {ids, nodes}, &nodes_reducer/2)
-    maybe_add_node(axon, ids, nodes)
+  defp nodes(axon, ids, nodes) do
+    if MapSet.member?(ids, axon.id) do
+      {ids, nodes}
+    else
+      {ids, nodes} = do_nodes(axon, ids, nodes)
+      {MapSet.put(ids, axon.id), [axon | nodes]}
+    end
   end
 
-  defp nodes(%Axon{parent: parent} = axon, ids, nodes) do
-    {ids, nodes} = Enum.reduce(parent || [], {ids, nodes}, &nodes_reducer/2)
-    maybe_add_node(axon, ids, nodes)
+  defp do_nodes(%Axon{op: :container, parent: [container]}, ids, nodes) do
+    Nx.Container.reduce(container, {ids, nodes}, &nodes_reducer/2)
+  end
+
+  defp do_nodes(%Axon{parent: parent}, ids, nodes) do
+    Enum.reduce(parent || [], {ids, nodes}, &nodes_reducer/2)
   end
 
   defp nodes_reducer(%Axon{} = axon, {ids, nodes}) do
@@ -37,14 +44,6 @@ defmodule Bumblebee.Utils.Axon do
 
   defp nodes_reducer(container, {ids, nodes}) do
     Nx.Container.reduce(container, {ids, nodes}, &nodes_reducer/2)
-  end
-
-  defp maybe_add_node(axon, ids, nodes) do
-    if MapSet.member?(ids, axon.id) do
-      {ids, nodes}
-    else
-      {MapSet.put(ids, axon.id), [axon | nodes]}
-    end
   end
 
   @doc """
@@ -65,13 +64,20 @@ defmodule Bumblebee.Utils.Axon do
     case param.shape do
       {:tuple, shapes} ->
         shapes
-        |> Enum.map(fn shape ->
-          apply(Axon.Initializers, param.initializer, [[type: dtype, shape: shape]])
-        end)
+        |> Enum.map(fn shape -> apply_initializer(param.initializer, shape, dtype) end)
         |> List.to_tuple()
 
       shape ->
-        apply(Axon.Initializers, param.initializer, [[type: dtype, shape: shape]])
+        apply_initializer(param.initializer, shape, dtype)
     end
+  end
+
+  defp apply_initializer(initializer, shape, type) when is_atom(initializer) do
+    fun = apply(Axon.Initializers, initializer, [])
+    fun.(shape, type)
+  end
+
+  defp apply_initializer(initializer, shape, type) when is_function(initializer, 2) do
+    initializer.(shape, type)
   end
 end

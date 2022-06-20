@@ -1,5 +1,5 @@
 defmodule Bumblebee.Vision.ResNet do
-  @common_keys [:id2label, :label2id, :num_labels, :output_hidden_states]
+  @common_keys [:output_hidden_states, :id2label, :label2id, :num_labels]
 
   @moduledoc """
   Models based on the ResNet architecture.
@@ -10,17 +10,17 @@ defmodule Bumblebee.Vision.ResNet do
 
     * `:for_image_classification` - ResNet with a classification head.
       The head consists of a single dense layer on top of the pooled
-      features
+      features and it returns logits corresponding to possible classes
 
   ## Configuration
 
     * `:num_channels` - the number of input channels. Defaults to `3`
 
-    * `:embedding_size` - dimensionality (hidden size) for the
-      embedding layer. Defaults to `64`
+    * `:embedding_size` - dimensionality for the embedding layer.
+      Defaults to `64`
 
-    * `:hidden_sizes` - dimensionality (hidden size) at each stage.
-      Defaults to `[256, 512, 1024, 2048]`
+    * `:hidden_sizes` - dimensionality at each stage. Defaults to
+      `[256, 512, 1024, 2048]`
 
     * `:depths` - depth (number of layers) for each stage. Defaults
       to `[3, 4, 6, 3]`
@@ -69,10 +69,14 @@ defmodule Bumblebee.Vision.ResNet do
   end
 
   @impl true
-  def model(%__MODULE__{architecture: :for_image_classification} = config) do
-    resnet = base_model(config, "resnet")
+  def model(%__MODULE__{architecture: :base} = config) do
+    config
+    |> resnet()
+    |> Axon.container()
+  end
 
-    outputs = Bumblebee.Utils.Axon.unwrap_container(resnet)
+  def model(%__MODULE__{architecture: :for_image_classification} = config) do
+    outputs = resnet(config, name: "resnet")
 
     logits =
       outputs.pooler_output
@@ -82,29 +86,26 @@ defmodule Bumblebee.Vision.ResNet do
     Axon.container(%{logits: logits, hidden_states: outputs.hidden_states})
   end
 
-  def model(%__MODULE__{architecture: :base} = config) do
-    base_model(config, nil)
-  end
-
-  defp base_model(config, name) do
-    name = if(name, do: name <> ".", else: "")
-
-    # TODO: Correct initialization for layer types
+  defp resnet(config, opts \\ []) do
+    name = opts[:name]
 
     {encoder_output, hidden_states} =
-      Axon.input({nil, config.num_channels, 224, 224})
-      |> embedding_layer(config, name: name <> "embedder")
-      |> encoder(config, name: name <> "encoder")
+      Axon.input({nil, config.num_channels, 224, 224}, "input")
+      |> embedding_layer(config, name: join(name, "embedder"))
+      |> encoder(config, name: join(name, "encoder"))
 
     pooled_output =
-      Axon.adaptive_avg_pool(encoder_output, output_size: {1, 1}, name: name <> "pooler")
+      Axon.adaptive_avg_pool(encoder_output, output_size: {1, 1}, name: join(name, "pooler"))
 
-    Axon.container(%{
+    %{
       last_hidden_state: encoder_output,
       pooler_output: pooled_output,
       hidden_states: if(config.output_hidden_states, do: hidden_states, else: {})
-    })
+    }
   end
+
+  defp join(nil, suffix), do: suffix
+  defp join(base, suffix), do: base <> "." <> suffix
 
   defp embedding_layer(%Axon{} = x, config, opts) do
     name = opts[:name]
@@ -219,9 +220,10 @@ defmodule Bumblebee.Vision.ResNet do
       kernel_size: 1,
       strides: strides,
       use_bias: false,
+      kernel_initializer: conv_kernel_initializer(),
       name: name <> ".convolution"
     )
-    |> Axon.batch_norm(name: name <> ".normalization")
+    |> Axon.batch_norm(gamma_initializer: :ones, name: name <> ".normalization")
   end
 
   defp conv_layer(%Axon{} = x, out_channels, opts) do
@@ -240,10 +242,15 @@ defmodule Bumblebee.Vision.ResNet do
       strides: strides,
       padding: padding_config,
       use_bias: false,
+      kernel_initializer: conv_kernel_initializer(),
       name: name <> ".convolution"
     )
-    |> Axon.batch_norm(name: name <> ".normalization")
+    |> Axon.batch_norm(gamma_initializer: :ones, name: name <> ".normalization")
     |> Axon.activation(activation, name: name <> ".activation")
+  end
+
+  defp conv_kernel_initializer() do
+    Axon.Initializers.variance_scaling(scale: 2.0, mode: :fan_out, distribution: :normal)
   end
 
   defp get_channels(%Axon{output_shape: shape}), do: elem(shape, 1)

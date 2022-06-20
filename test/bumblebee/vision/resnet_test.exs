@@ -1,12 +1,12 @@
 defmodule Bumblebee.Vision.ResNetTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
   require Axon
 
   describe "integration" do
-    @tag :capture_log
     @tag :slow
+    @tag :capture_log
     test "base model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "microsoft/resnet-50"}, architecture: :base)

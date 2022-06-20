@@ -9,6 +9,7 @@ defmodule Bumblebee.Shared do
   def common_config_defaults(keys) do
     [
       output_hidden_states: false,
+      output_attentions: false,
       id2label: %{},
       label2id: %{},
       num_labels: 2
@@ -25,6 +26,9 @@ defmodule Bumblebee.Shared do
     docs = [
       output_hidden_states: """
       whether the model should return all hidden states. Defaults to `false`
+      """,
+      output_attentions: """
+      whether the model should return all attentions. Defaults to `false`
       """,
       id2label: """
       a map from class index to label. Defaults to `%{}`
