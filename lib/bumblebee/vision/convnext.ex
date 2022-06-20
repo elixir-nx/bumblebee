@@ -99,7 +99,7 @@ defmodule Bumblebee.Vision.ConvNext do
   @impl true
   def model(%__MODULE__{architecture: :base} = config) do
     config
-    |> convnext(name: "convnext")
+    |> convnext()
     |> Axon.container()
   end
 
