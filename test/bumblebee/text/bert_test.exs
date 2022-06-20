@@ -24,7 +24,7 @@ defmodule Bumblebee.Text.BertTest do
         "head_mask" => Nx.broadcast(1, {config.num_hidden_layers, config.num_attention_heads})
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.last_hidden_state) == {1, 11, 768}
 
@@ -53,7 +53,7 @@ defmodule Bumblebee.Text.BertTest do
         "head_mask" => Nx.broadcast(1, {config.num_hidden_layers, config.num_attention_heads})
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.logits) == {1, 9, 30522}
 

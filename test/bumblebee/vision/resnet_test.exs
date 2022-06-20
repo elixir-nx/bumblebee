@@ -14,7 +14,7 @@ defmodule Bumblebee.Vision.ResNetTest do
       assert %Bumblebee.Vision.ResNet{architecture: :base} = config
 
       input = Nx.broadcast(0.5, {1, 3, 224, 224})
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.pooler_output) == {1, 2048, 1, 1}
 
@@ -32,7 +32,7 @@ defmodule Bumblebee.Vision.ResNetTest do
       assert %Bumblebee.Vision.ResNet{architecture: :for_image_classification} = config
 
       input = Nx.broadcast(0.5, {1, 3, 224, 224})
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.logits) == {1, 1000}
 
