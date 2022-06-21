@@ -172,9 +172,10 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Slices the hidden state corresponding to the first token.
+  Takes the first element along the given axis.
 
-  This is a common operation in many architectures.
+  This is a common operation in many architectures. It reduces
+  dimensionality by dropping the given axis.
 
   ## Options
 
