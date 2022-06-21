@@ -188,7 +188,6 @@ defmodule Bumblebee.Layers do
 
     input
     |> Axon.nx(fn x ->
-      # Take the hidden state corresponding to the first token 
       x
       |> Nx.slice_along_axis(0, 1, axis: opts[:axis])
       |> Nx.squeeze(axes: [opts[:axis]])
