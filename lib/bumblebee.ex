@@ -159,7 +159,7 @@ defmodule Bumblebee do
     "DeiTModel" => {Bumblebee.Vision.Deit, :base},
     "DeiTForImageClassification" => {Bumblebee.Vision.Deit, :for_image_classification},
     "DeiTForImageClassificationWithTeacher" =>
-      {Bumblebee.Vision.Deit, :for_image_classification_with_teacher},
+      {Bumblebee.Vision.Deit, :for_image_classification_with_teacher}
     # "DeiTForMaskedImageModeling" => {Bumblebee.Vision.Deit, :for_masked_image_modeling}
   }
 
