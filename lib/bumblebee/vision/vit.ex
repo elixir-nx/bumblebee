@@ -185,6 +185,7 @@ defmodule Bumblebee.Vision.Vit do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "projection")
     )
+    |> Axon.nx(&Nx.transpose(&1, axes: [0, 2, 3, 1]))
     |> Axon.reshape({:auto, config.hidden_size}, name: join(name, "reshape"))
   end
 
