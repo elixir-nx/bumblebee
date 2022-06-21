@@ -154,8 +154,13 @@ defmodule Bumblebee do
     "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
     "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification},
     "ViTModel" => {Bumblebee.Vision.Vit, :base},
-    "ViTForImageClassification" => {Bumblebee.Vision.Vit, :for_image_classification}
+    "ViTForImageClassification" => {Bumblebee.Vision.Vit, :for_image_classification},
     # "ViTForMaskedImageModeling" => {Bumblebee.Vision.Vit, :for_masked_image_modeling}
+    "DeiTModel" => {Bumblebee.Vision.Deit, :base},
+    "DeiTForImageClassification" => {Bumblebee.Vision.Deit, :for_image_classification},
+    "DeiTForImageClassificationWithTeacher" =>
+      {Bumblebee.Vision.Deit, :for_image_classification_with_teacher},
+    # "DeiTForMaskedImageModeling" => {Bumblebee.Vision.Deit, :for_masked_image_modeling}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do

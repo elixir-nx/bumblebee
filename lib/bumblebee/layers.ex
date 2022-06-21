@@ -180,16 +180,18 @@ defmodule Bumblebee.Layers do
   ## Options
 
     * `:name` - layer name
-
+    
     * `:axis` - axis to slice token from
+
+    * `:index` - index to slice head. Defaults to 0
   """
   def take_head_layer(%Axon{} = input, opts \\ []) do
-    opts = Keyword.validate!(opts, [:axis, :name])
+    opts = Keyword.validate!(opts, [:axis, :name, index: 0])
 
     input
     |> Axon.nx(fn x ->
       x
-      |> Nx.slice_along_axis(0, 1, axis: opts[:axis])
+      |> Nx.slice_along_axis(opts[:index], 1, axis: opts[:axis])
       |> Nx.squeeze(axes: [opts[:axis]])
     end)
   end
