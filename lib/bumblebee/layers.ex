@@ -170,4 +170,27 @@ defmodule Bumblebee.Layers do
         x
     end)
   end
+
+  @doc """
+  Slices the hidden state corresponding to the first token.
+
+  This is a common operation in many architectures.
+
+  ## Options
+
+    * `:name` - layer name
+
+    * `:axis` - axis to slice token from
+  """
+  def take_head_layer(%Axon{} = input, opts \\ []) do
+    opts = Keyword.validate!(opts, [:axis, :name])
+
+    input
+    |> Axon.nx(fn x -> 
+      # Take the hidden state corresponding to the first token 
+      x 
+      |> Nx.slice_along_axis(0, 1, axis: opts[:axis]) 
+      |> Nx.squeeze(axes: [opts[:axis]]) 
+    end) 
+  end
 end

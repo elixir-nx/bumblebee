@@ -103,11 +103,11 @@ defmodule Bumblebee.Vision.Vit do
 
   @impl true
   def model(%__MODULE__{architecture: :for_image_classification} = config) do
-    outputs = vit(config, add_pooling_layer: false, name: "vit")
+    outputs = vit(config, name: "vit")
 
     logits =
       outputs.last_hidden_state
-      |> Axon.nx(fn x -> x[[0..-1//1, 0, 0..-1//1]] end)
+      |> Layers.take_head_layer(axis: 1, name: join("vit", "head"))
       |> Axon.dense(config.num_labels,
         kernel_initializer: kernel_initializer(config),
         name: "classifier"
@@ -126,13 +126,12 @@ defmodule Bumblebee.Vision.Vit do
 
   def model(%__MODULE__{architecture: :base} = config) do
     config
-    |> vit(add_pooling_layer: false)
+    |> vit()
     |> Axon.container()
   end
 
-  defp vit(config, opts) do
+  defp vit(config, opts \\ []) do
     name = opts[:name]
-    add_pooling_layer = Keyword.get(opts, :add_pooling_layer, true)
 
     input_shape = {nil, config.num_channels, config.image_size, config.image_size}
     pixel_values = Axon.input(input_shape, "pixel_values")
@@ -150,12 +149,7 @@ defmodule Bumblebee.Vision.Vit do
         name: join(name, "layernorm")
       )
 
-    pooled =
-      if add_pooling_layer do
-        pooler(last_hidden_state, config, name: join(name, "pooler"))
-      else
-        {}
-      end
+    pooled = pooler(last_hidden_state, config, name: join(name, "pooler"))
 
     %{
       last_hidden_state: last_hidden_state,
@@ -365,7 +359,7 @@ defmodule Bumblebee.Vision.Vit do
     name = opts[:name]
 
     hidden_states
-    |> Axon.nx(fn x -> x[[0..-1//1, 0, 0..-1//1]] end)
+    |> Layers.take_head_layer(axis: 1, name: join(name, "head"))
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
