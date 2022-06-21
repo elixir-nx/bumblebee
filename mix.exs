@@ -32,6 +32,8 @@ defmodule Bumblebee.MixProject do
       {:exla, github: "elixir-nx/nx", sparse: "exla", override: true},
       {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
       {:stb_image, "~> 0.5.0", optional: true},
+      {:tokenizers, github: "elixir-nx/tokenizers", optional: true},
+      {:rustler, ">= 0.0.0", optional: true},
       {:unpickler, github: "dashbitco/unpickler"},
       {:castore, "~> 0.1.0"},
       {:jason, "~> 1.3.0"},
