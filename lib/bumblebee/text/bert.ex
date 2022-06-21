@@ -536,12 +536,7 @@ defmodule Bumblebee.Text.Bert do
     name = opts[:name]
 
     hidden_states
-    |> Axon.nx(fn x ->
-      # Take the hidden state corresponding to the first token
-      x
-      |> Nx.slice_along_axis(0, 1, axis: 1)
-      |> Nx.squeeze(axes: [1])
-    end)
+    |> Layers.take_head_layer(axis: 1, name: join(name, "head"))
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: name <> ".dense"

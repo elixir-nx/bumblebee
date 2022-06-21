@@ -170,4 +170,27 @@ defmodule Bumblebee.Layers do
         x
     end)
   end
+
+  @doc """
+  Takes the first element along the given axis.
+
+  This is a common operation in many architectures. It reduces
+  dimensionality by dropping the given axis.
+
+  ## Options
+
+    * `:name` - layer name
+
+    * `:axis` - axis to slice token from
+  """
+  def take_head_layer(%Axon{} = input, opts \\ []) do
+    opts = Keyword.validate!(opts, [:axis, :name])
+
+    input
+    |> Axon.nx(fn x ->
+      x
+      |> Nx.slice_along_axis(0, 1, axis: opts[:axis])
+      |> Nx.squeeze(axes: [opts[:axis]])
+    end)
+  end
 end
