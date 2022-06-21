@@ -185,7 +185,7 @@ defmodule Bumblebee.Layers do
 
     * `:index` - index to slice head. Defaults to 0
   """
-  def take_head_layer(%Axon{} = input, opts \\ []) do
+  def take_token_layer(%Axon{} = input, opts \\ []) do
     opts = Keyword.validate!(opts, [:axis, :name, index: 0])
 
     input

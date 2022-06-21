@@ -127,7 +127,7 @@ defmodule Bumblebee.Vision.Deit do
 
     logits =
       outputs.last_hidden_state
-      |> Layers.take_head_layer(axis: 1, name: "cls_head")
+      |> Layers.take_token_layer(index: 0, axis: 1, name: "cls_head")
       |> Axon.dense(config.num_labels,
         kernel_initializer: kernel_initializer(config),
         name: "cls_classifier"
@@ -148,11 +148,11 @@ defmodule Bumblebee.Vision.Deit do
 
     cls_head =
       outputs.last_hidden_state
-      |> Layers.take_head_layer(index: 0, axis: 1, name: "cls_head")
+      |> Layers.take_token_layer(index: 0, axis: 1, name: "cls_head")
 
     dist_head =
       outputs.last_hidden_state
-      |> Layers.take_head_layer(index: 1, axis: 1, name: "dist_head")
+      |> Layers.take_token_layer(index: 1, axis: 1, name: "dist_head")
 
     cls_logits =
       cls_head
@@ -310,7 +310,7 @@ defmodule Bumblebee.Vision.Deit do
         Nx.concatenate([cls_token, distillation_token, embeddings], axis: 1)
         |> Nx.add(position_embeddings)
       end,
-      [embeddings, cls_cls_tokenen, distillation_token, position_embeddings],
+      [embeddings, cls_token, distillation_token, position_embeddings],
       name: name
     )
   end
@@ -465,7 +465,7 @@ defmodule Bumblebee.Vision.Deit do
     name = opts[:name]
 
     hidden_states
-    |> Layers.take_head_layer(axis: 1, name: join(name, "head"))
+    |> Layers.take_token_layer(index: 0, axis: 1, name: join(name, "head"))
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
