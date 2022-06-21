@@ -183,7 +183,7 @@ defmodule Bumblebee.Vision.Vit do
     |> Axon.reshape({:auto, config.hidden_size}, name: join(name, "reshape"))
   end
 
-  defp position_embeddings(embeds, config, opts) do
+  defp position_embeddings(embeddings, config, opts) do
     name = opts[:name]
 
     num_patches =
@@ -197,14 +197,14 @@ defmodule Bumblebee.Vision.Vit do
       )
 
     Axon.layer(
-      fn inp, tok, pos, _opts ->
-        batch_size = Nx.axis_size(inp, 0)
-        tok = Nx.broadcast(tok, {batch_size, 1, config.hidden_size})
+      fn embeddings, cls_token, position_embeddings, _opts ->
+        batch_size = Nx.axis_size(embeddings, 0)
+        cls_token = Nx.broadcast(cls_token, {batch_size, 1, config.hidden_size})
 
-        Nx.concatenate([tok, inp], axis: 1)
-        |> Nx.add(pos)
+        Nx.concatenate([cls_token, embeddings], axis: 1)
+        |> Nx.add(position_embeddings)
       end,
-      [embeds, cls_token, position_embeddings],
+      [embeddings, cls_token, position_embeddings],
       name: name
     )
   end
