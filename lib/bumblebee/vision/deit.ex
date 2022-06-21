@@ -285,7 +285,7 @@ defmodule Bumblebee.Vision.Deit do
     )
   end
 
-  defp position_embeddings(embeds, config, opts) do
+  defp position_embeddings(embeddings, config, opts) do
     name = opts[:name]
 
     num_patches =
@@ -302,15 +302,15 @@ defmodule Bumblebee.Vision.Deit do
       )
 
     Axon.layer(
-      fn inp, tok, dis, pos, _opts ->
-        batch_size = Nx.axis_size(inp, 0)
-        tok = Nx.broadcast(tok, {batch_size, 1, config.hidden_size})
-        dis = Nx.broadcast(dis, {batch_size, 1, config.hidden_size})
+      fn embeddings, cls_token, distillation_token, position_embeddings, _opts ->
+        batch_size = Nx.axis_size(embeddings, 0)
+        cls_token = Nx.broadcast(cls_token, {batch_size, 1, config.hidden_size})
+        distillation_token = Nx.broadcast(distillation_token, {batch_size, 1, config.hidden_size})
 
-        Nx.concatenate([tok, dis, inp], axis: 1)
-        |> Nx.add(pos)
+        Nx.concatenate([cls_token, distillation_token, embeddings], axis: 1)
+        |> Nx.add(position_embeddings)
       end,
-      [embeds, cls_token, distillation_token, position_embeddings],
+      [embeddings, cls_cls_tokenen, distillation_token, position_embeddings],
       name: name
     )
   end
