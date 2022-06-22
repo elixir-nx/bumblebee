@@ -7,8 +7,6 @@ defmodule Bumblebee.Text.BertTokenizer do
 
   alias Tokenizers.{Tokenizer, Encoding}
 
-  @compile {:no_warn_undefined, [Tokenizers.Tokenizer, Tokenizers.Encoding]}
-
   @behaviour Bumblebee.Tokenizer
 
   @impl true
@@ -57,8 +55,6 @@ defmodule Bumblebee.Text.BertTokenizer do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    @compile {:no_warn_undefined, Tokenizers.Tokenizer}
-
     def load(config, %{"tokenizer_file" => path}) do
       tokenizer =
         case Tokenizers.Tokenizer.from_file(path) do
