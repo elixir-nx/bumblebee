@@ -20,31 +20,6 @@ defmodule Bumblebee.Tokenizer do
   @type token :: String.t()
   @type token_id :: non_neg_integer()
 
-  @doc """
-  Performs tokenization and encoding on the given input.
-  """
-  @callback apply(t(), input() | list(input), add_special_tokens :: boolean()) :: any()
-
-  @doc """
-  Decodes a list of token ids into a sentence.
-  """
-  @callback decode(t(), list(token_id())) :: String.t()
-
-  @doc """
-  Converts the given token into the corresponding numeric id.
-  """
-  @callback token_to_id(t(), token()) :: token_id()
-
-  @doc """
-  Converts the given token id the corresponding token.
-  """
-  @callback id_to_token(t(), token_id()) :: token()
-
-  @doc """
-  Returns a map with special tokens.
-  """
-  @callback special_tokens(t()) :: %{special_token_type() => token()}
-
   @typedoc """
   A type corresponding to a special token in the vocabulary.
 
@@ -69,6 +44,31 @@ defmodule Bumblebee.Tokenizer do
 
   """
   @type special_token_type :: atom()
+
+  @doc """
+  Performs tokenization and encoding on the given input.
+  """
+  @callback apply(t(), input() | list(input()), add_special_tokens :: boolean()) :: any()
+
+  @doc """
+  Decodes a list of token ids into a sentence.
+  """
+  @callback decode(t(), list(token_id())) :: String.t()
+
+  @doc """
+  Converts the given token into the corresponding numeric id.
+  """
+  @callback token_to_id(t(), token()) :: token_id()
+
+  @doc """
+  Converts the given token id the corresponding token.
+  """
+  @callback id_to_token(t(), token_id()) :: token()
+
+  @doc """
+  Returns a map with special tokens.
+  """
+  @callback special_tokens(t()) :: %{special_token_type() => token()}
 
   @doc """
   Decodes a list of token ids into a sentence.

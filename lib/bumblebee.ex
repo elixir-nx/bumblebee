@@ -279,11 +279,11 @@ defmodule Bumblebee do
 
       featurizer = Bumblebee.build_featurizer(Bumblebee.Vision.ConvNextFeaturizer)
       {:ok, img} = StbImage.read_file(path)
-      input = Bumblebee.featurize(featurizer, [img])
+      input = Bumblebee.apply_featurizer(featurizer, [img])
 
   """
-  @spec featurize(Bumblebee.Featurizer.t(), any()) :: any()
-  def featurize(%module{} = featurizer, input) do
+  @spec apply_featurizer(Bumblebee.Featurizer.t(), any()) :: any()
+  def apply_featurizer(%module{} = featurizer, input) do
     module.apply(featurizer, input)
   end
 
@@ -361,15 +361,15 @@ defmodule Bumblebee do
   ## Examples
 
       tokenizer = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
-      inputs = Bumblebee.tokenize(tokenizer, [The capital of France is [MASK]."])
+      inputs = Bumblebee.apply_tokenizer(tokenizer, ["The capital of France is [MASK]."])
 
   """
-  @spec tokenize(
+  @spec apply_tokenizer(
           Bumblebee.Tokenizer.t(),
           Bumblebee.Tokenizer.input() | list(Bumblebee.Tokenizer.input()),
           keyword()
         ) :: any()
-  def tokenize(%module{} = tokenizer, input, opts \\ []) do
+  def apply_tokenizer(%module{} = tokenizer, input, opts \\ []) do
     opts = Keyword.validate!(opts, add_special_tokens: true)
     module.apply(tokenizer, input, opts[:add_special_tokens])
   end
