@@ -12,7 +12,10 @@ defmodule Bumblebee.Text.BertTokenizerTest do
       assert %Bumblebee.Text.BertTokenizer{} = tokenizer
 
       inputs =
-        Bumblebee.tokenize(tokenizer, ["Test sentence with [MASK].", {"Question?", "Answer"}])
+        Bumblebee.apply_tokenizer(tokenizer, [
+          "Test sentence with [MASK].",
+          {"Question?", "Answer"}
+        ])
 
       assert_equal(
         inputs["input_ids"],
