@@ -36,6 +36,26 @@ defmodule Bumblebee.Text.BertTokenizer do
     }
   end
 
+  @impl true
+  def decode(%{tokenizer: tokenizer}, ids) do
+    Tokenizer.decode(tokenizer, ids)
+  end
+
+  @impl true
+  def id_to_token(%{tokenizer: tokenizer}, id) do
+    Tokenizer.id_to_token(tokenizer, id)
+  end
+
+  @impl true
+  def token_to_id(%{tokenizer: tokenizer}, token) do
+    Tokenizer.token_to_id(tokenizer, token)
+  end
+
+  @impl true
+  def special_tokens(_tokenizer) do
+    %{unknown: "[UNK]", separator: "[SEP]", padding: "[PAD]", class: "[CLS]", mask: "[MASK]"}
+  end
+
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     @compile {:no_warn_undefined, Tokenizers.Tokenizer}
 
