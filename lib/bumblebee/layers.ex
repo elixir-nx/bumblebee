@@ -95,11 +95,11 @@ defmodule Bumblebee.Layers do
 
   ## Options
 
-      * `:name` - layer name
+    * `:name` - layer name
 
-      * `:scale_name` - scale parameter name
+    * `:scale_name` - scale parameter name
 
-      * `:scale_init_value` - initial value of scale parameter
+    * `:scale_init_value` - initial value of scale parameter
 
   """
   def scale_layer(%Axon{output_shape: parent_shape} = x, opts \\ []) do

@@ -15,7 +15,6 @@ defmodule Bumblebee.MixProject do
     ]
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger, :inets, :ssl]
@@ -25,7 +24,6 @@ defmodule Bumblebee.MixProject do
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
-  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:axon, "~> 0.1.0-dev", axon_opts()},
@@ -58,10 +56,19 @@ defmodule Bumblebee.MixProject do
       source_ref: "v#{@version}",
       groups_for_modules: [
         Models: [
-          Bumblebee.Vision.ResNet
+          Bumblebee.Text.Bert,
+          Bumblebee.Vision.ConvNext,
+          Bumblebee.Vision.ResNet,
+          Bumblebee.Vision.Vit
+        ],
+        Preprocessors: [
+          Bumblebee.Text.BertTokenizer,
+          Bumblebee.Vision.ConvNextFeaturizer
         ],
         Interfaces: [
           Bumblebee.ModelSpec,
+          Bumblebee.Featurizer,
+          Bumblebee.Tokenizer,
           Bumblebee.HuggingFace.Transformers.Config
         ]
       ]
