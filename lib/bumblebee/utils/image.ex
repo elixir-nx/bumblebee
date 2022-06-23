@@ -28,7 +28,7 @@ defmodule Bumblebee.Utils.Image do
   end
 
   @doc """
-  Crops images at the center.
+  Crops an image at the center.
 
   If the image is too small to be cropped to the desired size, it gets
   padded with zeros.
@@ -36,6 +36,9 @@ defmodule Bumblebee.Utils.Image do
   ## Options
 
     * `:size` - the target image size specified as `{height, width}`
+
+    * `:channels` - channels location, either `:first` or `:last`.
+      Defaults to `:first`
 
   ## Examples
 
@@ -67,25 +70,32 @@ defmodule Bumblebee.Utils.Image do
       >
 
   """
-  defn center_crop(images, opts \\ []) do
-    opts = keyword!(opts, [:size])
+  defn center_crop(input, opts \\ []) do
+    opts = keyword!(opts, [:size, channels: :first])
 
     pad_config =
-      transform({images, opts[:size]}, fn {images, {out_height, out_width}} ->
-        {height, width} = size(images)
-        top = div(height - out_height, 2)
-        bottom = top + out_height
-        left = div(width - out_width, 2)
-        right = left + out_width
-
-        [{0, 0, 0}, {0, 0, 0}, {-top, bottom - height, 0}, {-left, right - width, 0}]
+      transform({input, opts}, fn {input, opts} ->
+        for {axis, size, out_size} <- spatial_axes_with_sizes(input, opts),
+            reduce: List.duplicate({0, 0, 0}, Nx.rank(input)) do
+          pad_config ->
+            low = div(size - out_size, 2)
+            high = low + out_size
+            List.replace_at(pad_config, axis, {-low, high - size, 0})
+        end
       end)
 
-    Nx.pad(images, 0, pad_config)
+    Nx.pad(input, 0, pad_config)
+  end
+
+  defnp spatial_axes_with_sizes(input, opts \\ []) do
+    {height_axis, width_axis} = spatial_axes(input, channels: opts[:channels])
+    {height, width} = size(input, channels: opts[:channels])
+    {out_height, out_width} = opts[:size]
+    [{height_axis, height, out_height}, {width_axis, width, out_width}]
   end
 
   @doc """
-  Resizes the images.
+  Resizes an image.
 
   ## Options
 
@@ -94,6 +104,9 @@ defmodule Bumblebee.Utils.Image do
     * `:method` - the resizing method to use, either of `:nearest`,
       `:linear`, `:cubic`, `:lanczos3`, `:lanczos5`. Defaults to
       `:linear`
+
+    * `:channels` - channels location, either `:first` or `:last`.
+      Defaults to `:first`
 
   ## Examples
 
@@ -126,36 +139,34 @@ defmodule Bumblebee.Utils.Image do
       >
 
   """
-  defn resize(images, opts \\ []) do
-    opts = keyword!(opts, [:size, method: :linear])
+  defn resize(input, opts \\ []) do
+    opts = keyword!(opts, [:size, channels: :first, method: :linear])
 
-    transform({images, opts[:size], opts[:method]}, fn {images, size, method} ->
-      {batch, channels, height, width} = Nx.shape(images)
-      {out_height, out_width} = size
+    transform({input, opts}, fn {input, opts} ->
+      {spatial_axes, out_shape} =
+        input
+        |> spatial_axes_with_sizes(opts)
+        |> Enum.reject(fn {_axis, size, out_size} -> Elixir.Kernel.==(size, out_size) end)
+        |> Enum.map_reduce(Nx.shape(input), fn {axis, _size, out_size}, out_shape ->
+          {axis, put_elem(out_shape, axis, out_size)}
+        end)
 
-      output_shape = {batch, channels, out_height, out_width}
-
-      spacial_axes =
-        for {axis, size, out_size} <- [{2, height, out_height}, {3, width, out_width}],
-            Elixir.Kernel.!=(size, out_size),
-            do: axis
-
-      resized_images =
-        case method do
+      resized_input =
+        case opts[:method] do
           :nearest ->
-            resize_nearest(images, output_shape, spacial_axes)
+            resize_nearest(input, out_shape, spatial_axes)
 
           :linear ->
-            resize_with_kernel(images, output_shape, spacial_axes, &fill_linear_kernel/1)
+            resize_with_kernel(input, out_shape, spatial_axes, &fill_linear_kernel/1)
 
           :cubic ->
-            resize_with_kernel(images, output_shape, spacial_axes, &fill_cubic_kernel/1)
+            resize_with_kernel(input, out_shape, spatial_axes, &fill_cubic_kernel/1)
 
           :lanczos3 ->
-            resize_with_kernel(images, output_shape, spacial_axes, &fill_lanczos_kernel(3, &1))
+            resize_with_kernel(input, out_shape, spatial_axes, &fill_lanczos_kernel(3, &1))
 
           :lanczos5 ->
-            resize_with_kernel(images, output_shape, spacial_axes, &fill_lanczos_kernel(5, &1))
+            resize_with_kernel(input, out_shape, spatial_axes, &fill_lanczos_kernel(5, &1))
 
           method ->
             raise ArgumentError,
@@ -163,7 +174,23 @@ defmodule Bumblebee.Utils.Image do
                     ":lanczos3, :lanczos5, got: #{inspect(method)}"
         end
 
-      cast_to(resized_images, images)
+      cast_to(resized_input, input)
+    end)
+  end
+
+  defnp spatial_axes(input, opts \\ []) do
+    channels = opts[:channels]
+
+    transform({input, channels}, fn {input, channels} ->
+      axes =
+        case channels do
+          :first -> [-2, -1]
+          :last -> [-3, -2]
+        end
+
+      axes
+      |> Enum.map(&Nx.axis_index(input, &1))
+      |> List.to_tuple()
     end)
   end
 
@@ -173,15 +200,15 @@ defmodule Bumblebee.Utils.Image do
     |> Nx.reshape(left, names: Nx.names(right))
   end
 
-  defnp resize_nearest(images, output_shape, spacial_axes) do
-    transform({images, output_shape, spacial_axes}, fn {images, output_shape, spacial_axes} ->
-      singular_shape = List.duplicate(1, Nx.rank(images)) |> List.to_tuple()
+  defnp resize_nearest(input, out_shape, spatial_axes) do
+    transform({input, out_shape, spatial_axes}, fn {input, out_shape, spatial_axes} ->
+      singular_shape = List.duplicate(1, Nx.rank(input)) |> List.to_tuple()
 
-      for axis <- spacial_axes, reduce: images do
-        images ->
-          input_shape = Nx.shape(images)
+      for axis <- spatial_axes, reduce: input do
+        input ->
+          input_shape = Nx.shape(input)
           input_size = elem(input_shape, axis)
-          output_size = elem(output_shape, axis)
+          output_size = elem(out_shape, axis)
           inv_scale = input_size / output_size
           offset = (Nx.iota({output_size}) + 0.5) * inv_scale
           offset = offset |> Nx.floor() |> Nx.as_type({:s, 32})
@@ -191,20 +218,20 @@ defmodule Bumblebee.Utils.Image do
             |> Nx.reshape(put_elem(singular_shape, axis, output_size))
             |> Nx.broadcast(put_elem(input_shape, axis, output_size))
 
-          Nx.take_along_axis(images, offset, axis: axis)
+          Nx.take_along_axis(input, offset, axis: axis)
       end
     end)
   end
 
   @f32_eps :math.pow(2, -23)
 
-  defnp resize_with_kernel(images, output_shape, spacial_axes, kernel_fun) do
-    transform({images, output_shape, spacial_axes}, fn {images, output_shape, spacial_axes} ->
-      for axis <- spacial_axes, reduce: images do
-        images ->
-          input_shape = Nx.shape(images)
+  defnp resize_with_kernel(input, out_shape, spatial_axes, kernel_fun) do
+    transform({input, out_shape, spatial_axes}, fn {input, out_shape, spatial_axes} ->
+      for axis <- spatial_axes, reduce: input do
+        input ->
+          input_shape = Nx.shape(input)
           input_size = elem(input_shape, axis)
-          output_size = elem(output_shape, axis)
+          output_size = elem(out_shape, axis)
 
           inv_scale = input_size / output_size
           kernel_scale = Nx.max(1, inv_scale)
@@ -218,9 +245,9 @@ defmodule Bumblebee.Utils.Image do
           weights =
             Nx.select(Nx.abs(weights) > 1000 * @f32_eps, safe_divide(weights, weights_sum), 0)
 
-          images = Nx.dot(images, [axis], weights, [0])
+          input = Nx.dot(input, [axis], weights, [0])
           # The transformed axis is moved to the end, so we transpose back
-          Nx.transpose(images, axes: List.insert_at([0, 1, 2], axis, 3))
+          reorder_axis(input, -1, axis)
       end
     end)
   end
@@ -248,8 +275,17 @@ defmodule Bumblebee.Utils.Image do
     x / Nx.select(y != 0, y, 1)
   end
 
+  defnp reorder_axis(tensor, axis, target_axis) do
+    transform({tensor, axis, target_axis}, fn {tensor, axis, target_axis} ->
+      axes = Nx.axes(tensor)
+      {source_axis, axes} = List.pop_at(axes, axis)
+      axes = List.insert_at(axes, target_axis, source_axis)
+      Nx.transpose(tensor, axes: axes)
+    end)
+  end
+
   @doc """
-  Scales images such that the short edge matches the given size.
+  Scales an image such that the short edge matches the given size.
 
   ## Options
 
@@ -257,17 +293,21 @@ defmodule Bumblebee.Utils.Image do
 
     * `:method` - the resizing method to use, same as `resize/2`
 
+    * `:channels` - channels location, either `:first` or `:last`.
+      Defaults to `:first`
+
   """
-  defn resize_short(images, opts \\ []) do
-    opts = keyword!(opts, [:size, method: :linear])
+  defn resize_short(input, opts \\ []) do
+    opts = keyword!(opts, [:size, channels: :first, method: :linear])
 
     size = opts[:size]
     method = opts[:method]
+    channels = opts[:channels]
 
-    {height, width} = size(images)
+    {height, width} = size(input, channels: channels)
     {out_height, out_width} = transform({height, width, size}, &resize_short_size/1)
 
-    resize(images, size: {out_height, out_width}, method: method)
+    resize(input, size: {out_height, out_width}, method: method, channels: channels)
   end
 
   defp resize_short_size({height, width, size}) do
@@ -281,9 +321,16 @@ defmodule Bumblebee.Utils.Image do
 
   @doc """
   Returns the image size as `{height, width}`.
+
+  ## Options
+
+      * `:channels` - channels location, either `:first` or `:last`.
+      Defaults to `:first`
+
   """
-  defn size(images) do
-    {_batch, _channels, height, width} = Nx.shape(images)
-    {height, width}
+  defn size(input, opts \\ []) do
+    opts = keyword!(opts, channels: :first)
+    {height_axis, width_axis} = spatial_axes(input, channels: opts[:channels])
+    {Nx.axis_size(input, height_axis), Nx.axis_size(input, width_axis)}
   end
 end
