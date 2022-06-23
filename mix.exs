@@ -29,6 +29,9 @@ defmodule Bumblebee.MixProject do
   defp deps do
     [
       {:axon, "~> 0.1.0-dev", axon_opts()},
+      {:tokenizers, github: "elixir-nx/tokenizers"},
+      # TODO: Comment me when using tokenizers from release
+      {:rustler, ">= 0.0.0", optional: true},
       {:exla, github: "elixir-nx/nx", sparse: "exla", override: true},
       {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
       {:stb_image, "~> 0.5.0", optional: true},

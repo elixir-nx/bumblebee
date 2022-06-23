@@ -12,6 +12,7 @@ defmodule Bumblebee do
 
   @config_filename "config.json"
   @featurizer_filename "preprocessor_config.json"
+  @tokenizer_filename "tokenizer.json"
   @params_filename %{pytorch: "pytorch_model.bin"}
 
   @typedoc """
@@ -281,11 +282,11 @@ defmodule Bumblebee do
 
       featurizer = Bumblebee.build_featurizer(Bumblebee.Vision.ConvNextFeaturizer)
       {:ok, img} = StbImage.read_file(path)
-      input = Bumblebee.featurize(featurizer, [img])
+      input = Bumblebee.apply_featurizer(featurizer, [img])
 
   """
-  @spec featurize(Bumblebee.Featurizer.t(), any()) :: any()
-  def featurize(%module{} = featurizer, input) do
+  @spec apply_featurizer(Bumblebee.Featurizer.t(), any()) :: any()
+  def apply_featurizer(%module{} = featurizer, input) do
     module.apply(featurizer, input)
   end
 
@@ -311,7 +312,8 @@ defmodule Bumblebee do
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "microsoft/resnet-50"})
 
   """
-  @spec load_featurizer(repository(), keyword()) :: {:ok, map()} | {:error, String.t()}
+  @spec load_featurizer(repository(), keyword()) ::
+          {:ok, Bumblebee.Featurizer.t()} | {:error, String.t()}
   def load_featurizer(repository, opts \\ []) do
     validate_repository!(repository)
     opts = Keyword.validate!(opts, [:module, :revision, :cache_dir])
@@ -349,6 +351,94 @@ defmodule Bumblebee do
 
   defp infer_featurizer_type(_data) do
     {:error, "could not infer featurizer type from the configuration"}
+  end
+
+  @doc """
+  Tokenizes and encodes `input` with the given tokenizer.
+
+  ## Options
+
+    * `:add_special_tokens` - whether to add special tokens. Defaults
+      to `true`
+
+  ## Examples
+
+      tokenizer = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+      inputs = Bumblebee.apply_tokenizer(tokenizer, ["The capital of France is [MASK]."])
+
+  """
+  @spec apply_tokenizer(
+          Bumblebee.Tokenizer.t(),
+          Bumblebee.Tokenizer.input() | list(Bumblebee.Tokenizer.input()),
+          keyword()
+        ) :: any()
+  def apply_tokenizer(%module{} = tokenizer, input, opts \\ []) do
+    opts = Keyword.validate!(opts, add_special_tokens: true)
+    module.apply(tokenizer, input, opts[:add_special_tokens])
+  end
+
+  @doc """
+  Loads tokenizer from a model repository.
+
+  ## Options
+
+    * `:module` - the tokenizer module. By default it is inferred from
+      the configuration files, if that is not possible, it must be
+      specified explicitly
+
+    * `:revision` - the specific model version to use, it can be any
+      valid git identifier, such as branch name, tag name, or a commit
+      hash
+
+    * `:cache_dir` - the directory to store the downloaded files in.
+      Defaults to the standard cache location for the given operating
+      system
+
+  ## Examples
+
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+
+  """
+  @spec load_tokenizer(repository(), keyword()) ::
+          {:ok, Bumblebee.Tokenizer.t()} | {:error, String.t()}
+  def load_tokenizer(repository, opts \\ []) do
+    validate_repository!(repository)
+    opts = Keyword.validate!(opts, [:module, :revision, :cache_dir])
+    module = opts[:module]
+
+    with {:ok, path} <- download(repository, @config_filename, opts),
+         {:ok, config} <- decode_config(path),
+         {:ok, path} <- download(repository, @tokenizer_filename, opts) do
+      module =
+        module ||
+          case infer_tokenizer_type(config) do
+            {:ok, module} -> module
+            {:error, error} -> raise "#{error}, please specify the :module option"
+          end
+
+      config = struct!(module)
+      config = HuggingFace.Transformers.Config.load(config, %{"tokenizer_file" => path})
+      {:ok, config}
+    end
+  end
+
+  @model_type_to_tokenizer %{
+    "bert" => Bumblebee.Text.BertTokenizer
+  }
+
+  defp infer_tokenizer_type(%{"model_type" => model_type}) do
+    case @model_type_to_tokenizer[model_type] do
+      nil ->
+        {:error,
+         "could not match model type #{inspect(model_type)} to any of the supported tokenizers"}
+
+      module ->
+        {:ok, module}
+    end
+  end
+
+  defp infer_tokenizer_type(_data) do
+    {:error, "could not infer tokenizer type from the model configuration"}
   end
 
   defp download({:local, dir}, filename, _opts) do
