@@ -5,9 +5,6 @@ defmodule Bumblebee.Layers do
 
   import Nx.Defn
 
-  @false_tensor Nx.tensor(0, type: {:u, 8})
-  @true_tensor Nx.tensor(1, type: {:u, 8})
-
   @doc """
   Converts attention mask to bias.
   """
@@ -57,7 +54,7 @@ defmodule Bumblebee.Layers do
   """
   defn update_cache(query_states, key_states, value_states, attention_mask, cache, _opts \\ []) do
     %{key: cached_key, value: cached_value, index: index} = cache
-    {batch, max_length, num_heads, head_dim} = Nx.shape(cached_value)
+    {batch, max_length, _num_heads, _head_dim} = Nx.shape(cached_value)
     indices = [0, 0, Nx.as_type(index, {:s, 64}), 0]
     key = Nx.put_slice(cached_key, indices, key_states)
     value = Nx.put_slice(cached_value, indices, value_states)
@@ -265,14 +262,14 @@ defmodule Bumblebee.Layers do
   def maybe(%Axon{} = maybe_value, %Axon{} = default_value, opts \\ []) do
     opts = Keyword.validate!(opts, [:name])
 
-    Axon.cond(
-      maybe_value,
+    Axon.layer(
       fn
-        nil -> @false_tensor
-        _ -> @true_tensor
+        nil, default_value, _opts -> default_value
+        maybe_value, _, _opts -> maybe_value
       end,
-      maybe_value,
-      default_value
+      [maybe_value, default_value],
+      name: opts[:name],
+      op_name: :maybe
     )
   end
 end

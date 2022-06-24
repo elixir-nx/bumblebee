@@ -192,15 +192,19 @@ defmodule Bumblebee.Text.Bart do
       Axon.input(
         {config.decoder_layers, config.decoder_attention_heads},
         "cross_attention_head_mask",
-        default: nil
+        default: fn _inputs ->
+          Nx.broadcast(1, {config.decoder_layers, config.decoder_attention_heads})
+        end
       )
 
     encoder_outputs = Axon.input(hidden_state_shape, "encoder_outputs", default: nil)
 
     past_key_values =
       Axon.input(cache_shape(input_shape, config), "past_key_values",
-        default: fn _inputs ->
+        default: fn inputs ->
           head_dim = div(config.d_model, config.decoder_attention_heads)
+          # TODO: Check input_ids or input_embeds
+          {batch_size, seq_len} = Nx.shape(inputs["input_ids"])
           single_entry_shape = {batch_size, seq_len, config.decoder_attention_heads, head_dim}
           kv_tensor = Nx.broadcast(0.0, single_entry_shape)
           index = Nx.tensor(0)
@@ -740,9 +744,7 @@ defmodule Bumblebee.Text.Bart do
 
     # TODO: Causal mask
 
-    attention_bias = Axon.constant(Nx.tensor(0))
-    # TODO: This results in a shape error
-    # attention_bias = Axon.layer(&Layers.attention_bias/2, [attention_mask])
+    attention_bias = Axon.nx(attention_mask, fn x -> Nx.select(Nx.greater(x, 0), 0, -1.0e10) end)
 
     attention_weights =
       Axon.layer(&Layers.attention_weights/4, [query_states, key_states, attention_bias])
@@ -787,8 +789,12 @@ defmodule Bumblebee.Text.Bart do
           layer_cache
         ])
 
-      {Axon.nx(out, &elem(&1, 0)), Axon.nx(out, &elem(&1, 1)), Axon.nx(out, &elem(&1, 2)),
-       Axon.nx(out, &elem(&1, 3))}
+      {
+        Axon.nx(out, &elem(&1, 0)),
+        Axon.nx(out, &elem(&1, 1)),
+        Axon.nx(out, &elem(&1, 2)),
+        Axon.nx(out, &elem(&1, 3))
+      }
     else
       # If the cache is not initialized just return the states,
       # mask, and cache as is
