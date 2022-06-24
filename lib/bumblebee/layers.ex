@@ -5,6 +5,9 @@ defmodule Bumblebee.Layers do
 
   import Nx.Defn
 
+  @false_tensor Nx.tensor(0, type: {:u, 8})
+  @true_tensor Nx.tensor(1, type: {:u, 8})
+
   @doc """
   Converts attention mask to bias.
   """
@@ -47,6 +50,27 @@ defmodule Bumblebee.Layers do
     value = Nx.transpose(value, axes: [0, 2, 1, 3])
     out = Nx.dot(attention_weights, [3], [0, 1], value, [2], [0, 1])
     Nx.transpose(out, axes: [0, 2, 1, 3])
+  end
+
+  @doc """
+  Updates cache for fast autoregressive decoding.
+  """
+  defn update_cache(query_states, key_states, value_states, attention_mask, cache, _opts \\ []) do
+    %{key: cached_key, value: cached_value, index: index} = cache
+    {batch, max_length, num_heads, head_dim} = Nx.shape(cached_value)
+    indices = [0, 0, Nx.as_type(index, {:s, 64}), 0]
+    key = Nx.put_slice(cached_key, indices, key_states)
+    value = Nx.put_slice(cached_value, indices, value_states)
+    num_updated_cache_vectors = Nx.axis_size(query_states, 1)
+
+    pad_mask =
+      Nx.iota({max_length})
+      |> Nx.less(Nx.add(index, num_updated_cache_vectors))
+      |> Nx.broadcast({batch, 1, num_updated_cache_vectors, max_length})
+
+    attention_mask = Nx.logical_and(pad_mask, attention_mask)
+    updated_cache = %{key: key, value: value, index: index}
+    {key, value, attention_mask, updated_cache}
   end
 
   @doc """
@@ -231,6 +255,24 @@ defmodule Bumblebee.Layers do
       end,
       [embeds, bool_masked_pos, mask_token],
       name: name
+
+  @doc """
+  A conditional layer which checks the presence of
+  a value and returns another graph value otherwise.
+
+  Similar to Haskell's `maybe` function.
+  """
+  def maybe(%Axon{} = maybe_value, %Axon{} = default_value, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name])
+
+    Axon.cond(
+      maybe_value,
+      fn
+        nil -> @false_tensor
+        _ -> @true_tensor
+      end,
+      maybe_value,
+      default_value
     )
   end
 end

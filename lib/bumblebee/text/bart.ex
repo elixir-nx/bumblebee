@@ -23,6 +23,13 @@ defmodule Bumblebee.Text.Bart do
     * `:for_question_answering` - BERT with a span classification head.
       The head returns logits for the span start and end positions
 
+  ## Inputs
+
+    * `"input_ids"` - tokenized inputs of shape `{batch_size, seq_len}`.
+      This or `"input_embeds"` must be present
+
+    * `""`
+
   ## Configuration
 
     * `:vocab_size` - vocabulary size of the model. Defines the number
@@ -81,9 +88,10 @@ defmodule Bumblebee.Text.Bart do
   #{Bumblebee.Shared.common_config_docs(@common_keys)}
   """
 
+  alias Bumblebee.Layers
   alias Bumblebee.Shared
 
-  alias Bumblebee.Layers
+  import Nx.Defn
 
   defstruct [
               architecture: :base,
@@ -105,7 +113,13 @@ defmodule Bumblebee.Text.Bart do
               init_std: 0.02,
               classifier_dropout: 0.0,
               scale_embedding: false,
-              use_cache: true
+              use_cache: true,
+              pad_token_id: 1,
+              bos_token_id: 0,
+              eos_token_id: 2,
+              is_encoder_decoder: true,
+              decoder_start_token_id: 2,
+              forced_eos_token_id: 2
             ] ++ Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
@@ -131,32 +145,148 @@ defmodule Bumblebee.Text.Bart do
 
   @impl true
   def model(%__MODULE__{architecture: :base} = config) do
-    inputs({nil, 11})
+    # TODO: Non-static seq len
+    input_shape = {nil, 11}
+
+    input_shape
+    |> inputs(config)
     |> bart(config)
     |> Axon.container()
   end
 
-  defp inputs(input_shape) do
+  # TODO: In all of the decoder_x inputs, there is a possible
+  # target_seq_len that is potentially different than src_seq_len,
+  # when we differentiate we also need to update the logic for the
+  # default attention mask to account for this
+  defp inputs({batch_size, seq_len} = input_shape, config) do
+    hidden_state_shape = {batch_size, seq_len, config.d_model}
+
+    input_ids = Axon.input(input_shape, "input_ids", default: nil)
+
+    decoder_input_ids =
+      Axon.input(input_shape, "decoder_input_ids",
+        default:
+          &default_decoder_input_ids(&1, config.pad_token_id, config.decoder_start_token_id)
+      )
+
+    attention_mask = Axon.input(input_shape, "attention_mask", default: &default_attention_mask/1)
+
+    decoder_attention_mask =
+      Axon.input(input_shape, "decoder_attention_mask", default: &default_attention_mask/1)
+
+    head_mask =
+      Axon.input({config.encoder_layers, config.encoder_attention_heads}, "head_mask",
+        default: fn _inputs ->
+          Nx.broadcast(1, {config.encoder_layers, config.encoder_attention_heads})
+        end
+      )
+
+    decoder_head_mask =
+      Axon.input({config.decoder_layers, config.decoder_attention_heads}, "decoder_head_mask",
+        default: fn _inputs ->
+          Nx.broadcast(1, {config.decoder_layers, config.decoder_attention_heads})
+        end
+      )
+
+    cross_attention_head_mask =
+      Axon.input(
+        {config.decoder_layers, config.decoder_attention_heads},
+        "cross_attention_head_mask",
+        default: nil
+      )
+
+    encoder_outputs = Axon.input(hidden_state_shape, "encoder_outputs", default: nil)
+
+    past_key_values =
+      Axon.input(cache_shape(input_shape, config), "past_key_values",
+        default: fn _inputs ->
+          head_dim = div(config.d_model, config.decoder_attention_heads)
+          single_entry_shape = {batch_size, seq_len, config.decoder_attention_heads, head_dim}
+          kv_tensor = Nx.broadcast(0.0, single_entry_shape)
+          index = Nx.tensor(0)
+          entry = %{key: kv_tensor, value: kv_tensor, index: index}
+
+          {entry, entry}
+          |> List.duplicate(config.decoder_layers)
+          |> List.to_tuple()
+        end
+      )
+
+    input_embeds = Axon.input(hidden_state_shape, "input_embeds", default: nil)
+    decoder_input_embeds = Axon.input(hidden_state_shape, "decoder_input_embeds", default: nil)
+
     %{
-      "input_ids" => Axon.input(input_shape, "input_ids"),
-      # TODO: Target sequence length for decoder inputs
-      "decoder_input_ids" => Axon.input(input_shape, "decoder_input_ids"),
-      "attention_mask" => Axon.input(input_shape, "attention_mask"),
-      "decoder_attention_mask" => Axon.input(input_shape, "decoder_attention_mask"),
-      "position_ids" => Axon.input(input_shape, "position_ids"),
-      "decoder_position_ids" => Axon.input(input_shape, "decoder_position_ids")
+      "input_ids" => input_ids,
+      "decoder_input_ids" => decoder_input_ids,
+      "attention_mask" => attention_mask,
+      "decoder_attention_mask" => decoder_attention_mask,
+      "head_mask" => head_mask,
+      "decoder_head_mask" => decoder_head_mask,
+      "cross_attention_head_mask" => cross_attention_head_mask,
+      "encoder_outputs" => encoder_outputs,
+      "past_key_values" => past_key_values,
+      "input_embeds" => input_embeds,
+      "decoder_input_embeds" => decoder_input_embeds
     }
   end
 
+  defnp default_attention_mask(inputs) do
+    transform(inputs, fn inputs ->
+      if Map.has_key?(inputs, "input_ids") do
+        # If input_ids is present in the input map
+        # then we use it's shape
+        Nx.broadcast(1, inputs["input_ids"])
+      else
+        # Otherwise we use the embedding shape except for
+        # with the hidden size
+        {batch_size, seq_len, _} = Nx.shape(inputs["input_embeds"])
+        Nx.broadcast(1, {batch_size, seq_len})
+      end
+    end)
+  end
+
+  defnp default_decoder_input_ids(inputs, pad_token_id, decoder_start_token_id) do
+    transform(inputs, fn inputs ->
+      if Map.has_key?(inputs, "decoder_input_embeds") do
+        # If decoder_input_embeds is present in the input map
+        # then we don't need decoder_input_ids at all
+        nil
+      else
+        # If it's not then we just shift the input ids right
+        # to compute the decoder input ids (e.g. the pre-training
+        # task)
+        decoder_start_token_id
+        |> Nx.broadcast(inputs["input_ids"])
+        |> Nx.put_slice(1, inputs[[0..-1//1, 0..-2//1]])
+        |> then(&Nx.select(Nx.equal(&1, -100), pad_token_id, &1))
+      end
+    end)
+  end
+
+  defp cache_shape({batch_size, seq_len}, config) do
+    head_dim = div(config.d_model, config.decoder_attention_heads)
+    kv_shape = {batch_size, seq_len, config.decoder_attention_heads, head_dim}
+    entry = %{key: kv_shape, value: kv_shape, index: {}}
+
+    {entry, entry}
+    |> List.duplicate(config.decoder_layers)
+    |> List.to_tuple()
+  end
+
   defp bart(inputs, config) do
-    # TODO: I'm not sure if this is a config option, but they seem to use
-    # a shared embedding?
+    # TODO: Tie embedding weights together
+
     {encoder_last_hidden_state, encoder_hidden_states, encoder_attentions} =
       encoder(inputs, config, name: "encoder")
 
-    {decoder_last_hidden_state, _, decoder_hidden_states, decoder_attentions,
-     decoder_cross_attentions} =
-      decoder(inputs, encoder_last_hidden_state, config, name: "decoder")
+    # TODO: This does not work yet because we cannot return containers from
+    # maybe layers
+    # {encoder_last_hidden_state, encoder_hidden_states, encoder_attentions} =
+    #   Layers.maybe(inputs["encoder_outputs"], encoder(inputs, config, name: "encoder"))
+
+    {decoder_last_hidden_state, decoder_hidden_states, decoder_attentions,
+     decoder_cross_attentions,
+     _} = decoder(inputs, encoder_last_hidden_state, config, name: "decoder")
 
     %{
       last_hidden_state: decoder_last_hidden_state,
@@ -172,68 +302,97 @@ defmodule Bumblebee.Text.Bart do
   defp encoder(inputs, config, opts) do
     name = opts[:name]
 
-    input_ids = flatten_leading(inputs["input_ids"])
-
+    # TODO: It has to be only input_ids or only input_embeds
+    # so perhaps we should also have a `Layers.only` which
+    # enforces this relationship, or maybe it doesn't
+    # matter
     input_embeds =
-      Axon.embedding(input_ids, config.vocab_size, config.d_model,
-        kernel_initializer: kernel_initializer(config),
-        name: "shared"
-      )
+      Layers.maybe(inputs["input_embeds"], embed_tokens(inputs["input_ids"], config, name))
 
-    input_embeds =
-      if config.scale_embedding do
-        Axon.nx(input_embeds, fn x -> Nx.multiply(x, Nx.sqrt(config.d_model)) end)
-      else
-        input_embeds
-      end
+    pos_embeds = embed_positions(input_embeds, config, name)
 
-    offset_position_ids = Axon.nx(inputs["position_ids"], fn x -> Nx.add(x, 2) end)
-
-    pos_embeds =
-      Axon.embedding(offset_position_ids, config.max_position_embeddings + 2, config.d_model,
-        name: join(name, "embed_positions")
-      )
+    attention_mask = inputs["attention_mask"]
+    head_mask = inputs["head_mask"]
 
     # TODO: Perhaps this should output a map? BERT as well then?
     input_embeds
     |> Axon.add(pos_embeds)
     |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
     |> Axon.dropout(rate: config.dropout)
-    |> encoder_layer_collection(inputs["attention_mask"], config, name: name)
+    |> encoder_layer_collection(attention_mask, head_mask, config, name: name)
   end
 
-  defp encoder_layer_collection(hidden_states, attention_mask, config, opts) do
+  defp embed_tokens(input_ids, config, _name) do
+    # TODO: This embedding may or may not be shared, depending
+    # on how the model is initialized
+    input_embeds =
+      Axon.embedding(input_ids, config.vocab_size, config.d_model,
+        kernel_initializer: kernel_initializer(config),
+        name: "shared"
+      )
+
+    # TODO: This is basically a scale_layer, is there a way to unify
+    # learned vs. unlearned scaling?
+    if config.scale_embedding do
+      Axon.nx(input_embeds, fn x -> Nx.multiply(x, Nx.sqrt(config.d_model)) end)
+    else
+      input_embeds
+    end
+  end
+
+  defp embed_positions(input_embeds, config, name) do
+    offset = 2
+
+    # TODO: Offset with past_key_value_length
+    offset_position_ids =
+      Axon.nx(input_embeds, fn embeds ->
+        seq_len = Nx.axis_size(embeds, 1)
+        positions = Nx.iota({seq_len})
+        Nx.add(positions, offset)
+      end)
+
+    Axon.embedding(offset_position_ids, config.max_position_embeddings + offset, config.d_model,
+      name: join(name, "embed_positions")
+    )
+  end
+
+  defp encoder_layer_collection(hidden_states, attention_mask, head_mask, config, opts) do
     name = opts[:name]
 
     last_hidden_state = hidden_states
     all_hidden_states = {last_hidden_state}
     all_attentions = {}
 
+    # TODO: Generalize this logic to a higher-level function
     for idx <- 0..(config.encoder_layers - 1),
         reduce: {last_hidden_state, all_hidden_states, all_attentions} do
-      {last, states, attentions} = state ->
-        dropout_prob = :rand.uniform()
+      {last, states, attentions} ->
+        layer_head_mask = Axon.nx(head_mask, & &1[idx])
 
-        if config.encoder_layerdrop >= dropout_prob do
-          state
-        else
-          layer_name = join(name, "layers.#{idx}")
+        # TODO: Wrap encoder layer in a layer_drop combinator
+        # that skips this connection dynamically
+        layer_name = join(name, "layers.#{idx}")
 
-          {next_state, next_attention} =
-            encoder_layer(last, attention_mask, config, name: layer_name)
+        {next_state, next_attention} =
+          encoder_layer(last, attention_mask, layer_head_mask, config, name: layer_name)
 
-          {next_state, Tuple.append(states, next_state), Tuple.append(attentions, next_attention)}
-        end
+        {next_state, Tuple.append(states, next_state), Tuple.append(attentions, next_attention)}
     end
   end
 
-  defp encoder_layer(hidden_states, attention_mask, config, opts) do
+  defp encoder_layer(hidden_states, attention_mask, layer_head_mask, config, opts) do
     name = opts[:name]
 
     residual = hidden_states
 
-    {hidden_states, self_attention_weights, _} =
-      self_attention(hidden_states, attention_mask, nil, nil, config,
+    {hidden_states, attention_weights, _} =
+      attention(
+        hidden_states,
+        attention_mask,
+        nil,
+        layer_head_mask,
+        nil,
+        config,
         num_heads: config.encoder_attention_heads,
         name: join(name, "self_attn")
       )
@@ -265,36 +424,29 @@ defmodule Bumblebee.Text.Bart do
       |> Axon.add(residual, name: join(name, "residual.1"))
       |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "final_layer_norm"))
 
-    {hidden_states, self_attention_weights}
+    {hidden_states, attention_weights}
   end
 
-  defp decoder(inputs, encoder_hidden_states, config, opts) do
+  defp decoder(inputs, encoder_last_hidden_state, config, opts) do
     name = opts[:name]
 
-    input_ids = flatten_leading(inputs["input_ids"])
-
+    # TODO: It has to be only input_ids or only input_embeds
+    # so perhaps we should also have a `Layers.only` which
+    # enforces this relationship, or maybe it doesn't
+    # matter
     input_embeds =
-      Axon.embedding(input_ids, config.vocab_size, config.d_model,
-        kernel_initializer: kernel_initializer(config),
-        name: "shared"
+      Layers.maybe(
+        inputs["decoder_input_embeds"],
+        embed_tokens(inputs["decoder_input_ids"], config, name)
       )
 
-    input_embeds =
-      if config.scale_embedding do
-        Axon.nx(input_embeds, fn x -> Nx.multiply(x, Nx.sqrt(config.d_model)) end)
-      else
-        input_embeds
-      end
+    pos_embeds = embed_positions(input_embeds, config, name)
 
-    offset_position_ids = Axon.nx(inputs["decoder_position_ids"], fn x -> Nx.add(x, 2) end)
-
-    pos_embeds =
-      Axon.embedding(
-        offset_position_ids,
-        config.max_position_embeddings + 2,
-        config.d_model,
-        name: join(name, "embed_positions")
-      )
+    attention_mask = inputs["decoder_attention_mask"]
+    encoder_attention_mask = inputs["attention_mask"]
+    head_mask = inputs["decoder_head_mask"]
+    cross_attention_head_mask = inputs["cross_attention_head_mask"]
+    past_key_values = inputs["past_key_values"]
 
     # TODO: Perhaps this should output a map? BERT as well then?
     input_embeds
@@ -302,9 +454,12 @@ defmodule Bumblebee.Text.Bart do
     |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
     |> Axon.dropout(rate: config.dropout)
     |> decoder_layer_collection(
-      inputs["decoder_attention_mask"],
-      encoder_hidden_states,
-      inputs["attention_mask"],
+      attention_mask,
+      encoder_last_hidden_state,
+      encoder_attention_mask,
+      head_mask,
+      cross_attention_head_mask,
+      past_key_values,
       config,
       name: name
     )
@@ -315,13 +470,15 @@ defmodule Bumblebee.Text.Bart do
          attention_mask,
          encoder_hidden_states,
          encoder_attention_mask,
+         head_mask,
+         cross_attention_head_mask,
+         past_key_values,
          config,
          opts
        ) do
     name = opts[:name]
 
     last_hidden_state = hidden_states
-    past_key_values = nil
     all_hidden_states = {last_hidden_state}
     all_attentions = {}
     all_cross_attentions = {}
@@ -330,46 +487,79 @@ defmodule Bumblebee.Text.Bart do
         reduce:
           {last_hidden_state, past_key_values, all_hidden_states, all_attentions,
            all_cross_attentions} do
-      {lhs, pkv, states, attentions, cross_attentions} = state ->
-        # Layer drop, this randomly skips an entire layer by just forwarding
-        # the current state as-is
-        dropout_prob = :rand.uniform()
+      {lhs, pkv_cache, states, attentions, cross_attentions} ->
+        layer_head_mask = Axon.nx(head_mask, & &1[idx])
+        cross_attention_layer_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
 
-        if config.decoder_layerdrop >= dropout_prob do
-          state
-        else
-          past_key_values =
-            if config.use_cache do
-              pkv
-            else
-              nil
-            end
+        # TODO: Wrap entire layer in layer_drop to dynamically
+        # skip layers
+        {self_attention_layer_cache, cross_attention_layer_cache} =
+          if config.use_cache do
+            self_attention_cache = Axon.nx(pkv_cache, &elem(elem(&1, idx), 0))
+            cross_attention_cache = Axon.nx(pkv_cache, &elem(elem(&1, idx), 1))
+            {self_attention_cache, cross_attention_cache}
+          else
+            {nil, nil}
+          end
 
-          layer_name = join(name, "layers.#{idx}")
+        layer_name = join(name, "layers.#{idx}")
 
-          {next_state, next_attention, next_cross_attention, past_key_value} =
-            decoder_layer(
-              lhs,
-              attention_mask,
-              encoder_hidden_states,
-              encoder_attention_mask,
-              past_key_values,
-              config,
-              name: layer_name
+        {next_state, next_attention, next_cross_attention, layer_cache} =
+          decoder_layer(
+            lhs,
+            attention_mask,
+            encoder_hidden_states,
+            encoder_attention_mask,
+            layer_head_mask,
+            cross_attention_layer_head_mask,
+            self_attention_layer_cache,
+            cross_attention_layer_cache,
+            config,
+            name: layer_name
+          )
+
+        updated_cache =
+          if config.use_cache do
+            {self_attention_cache, cross_attention_cache} = layer_cache
+
+            pkv_cache
+            |> then(
+              &Axon.layer(
+                fn pkv_cache, self_attention_cache, _opts ->
+                  cache_at_this_index = elem(pkv_cache, idx)
+
+                  updated_cache_at_this_index =
+                    put_elem(cache_at_this_index, 0, self_attention_cache)
+
+                  put_elem(pkv_cache, idx, updated_cache_at_this_index)
+                end,
+                [&1, self_attention_cache]
+              )
             )
+            |> then(
+              &Axon.layer(
+                fn pkv_cache, cross_attention_cache, _opts ->
+                  cache_at_this_index = elem(pkv_cache, idx)
 
-          # TODO: Should we append to a cache which collects all past kvs
-          # or just accumulate one step back?
-          next_cache = if config.use_cache, do: past_key_values, else: pkv
+                  updated_cache_at_this_index =
+                    put_elem(cache_at_this_index, 1, cross_attention_cache)
 
-          {
-            next_state,
-            next_cache,
-            Tuple.append(states, next_state),
-            Tuple.append(attentions, next_attention),
-            Tuple.append(cross_attentions, next_cross_attention)
-          }
-        end
+                  put_elem(pkv_cache, idx, updated_cache_at_this_index)
+                end,
+                [&1, cross_attention_cache]
+              )
+            )
+          else
+            pkv_cache
+          end
+
+        {
+          next_state,
+          updated_cache,
+          Tuple.append(states, next_state),
+          Tuple.append(attentions, next_attention),
+          Tuple.append(cross_attentions, next_cross_attention)
+        }
     end
   end
 
@@ -378,7 +568,10 @@ defmodule Bumblebee.Text.Bart do
          attention_mask,
          encoder_hidden_states,
          encoder_attention_mask,
-         past_key_value,
+         layer_head_mask,
+         cross_attention_layer_head_mask,
+         self_attention_layer_cache,
+         cross_attention_layer_cache,
          config,
          opts
        ) do
@@ -386,23 +579,14 @@ defmodule Bumblebee.Text.Bart do
 
     residual = hidden_states
 
-    {past_key_value, cross_attention_past_key_value} =
-      case past_key_value do
-        nil ->
-          {nil, nil}
-
-        {pkv, cpkv} ->
-          {pkv, cpkv}
-      end
-
-    {hidden_states, self_attention_weights, present_key_value} =
-      self_attention(
+    {hidden_states, self_attention_weights, self_attention_layer_cache} =
+      attention(
         hidden_states,
         attention_mask,
         nil,
-        past_key_value,
+        layer_head_mask,
+        self_attention_layer_cache,
         config,
-        causal: true,
         num_heads: config.decoder_attention_heads,
         is_decoder: true,
         name: join(name, "self_attn")
@@ -418,16 +602,17 @@ defmodule Bumblebee.Text.Bart do
         name: join(name, "self_attn_layer_norm")
       )
 
-    {hidden_states, cross_attention_weights, cross_attention_present_key_value} =
+    {hidden_states, cross_attention_weights, cross_attention_layer_cache} =
       if encoder_hidden_states do
         residual = hidden_states
 
-        {hidden_states, cross_attention_weights, cross_attention_present_key_value} =
-          self_attention(
+        {hidden_states, cross_attention_weights, cross_attention_layer_cache} =
+          attention(
             hidden_states,
             encoder_attention_mask,
             encoder_hidden_states,
-            cross_attention_past_key_value,
+            cross_attention_layer_head_mask,
+            cross_attention_layer_cache,
             config,
             num_heads: config.decoder_attention_heads,
             is_decoder: true,
@@ -444,7 +629,7 @@ defmodule Bumblebee.Text.Bart do
             name: join(name, "encoder_attn_layer_norm")
           )
 
-        {hidden_states, cross_attention_weights, cross_attention_present_key_value}
+        {hidden_states, cross_attention_weights, cross_attention_layer_cache}
       else
         {hidden_states, nil, nil}
       end
@@ -461,117 +646,102 @@ defmodule Bumblebee.Text.Bart do
       |> Axon.add(residual)
       |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "final_layer_norm"))
 
-    {hidden_states, self_attention_weights, cross_attention_weights,
-     {present_key_value, cross_attention_present_key_value}}
+    layer_cache = {self_attention_layer_cache, cross_attention_layer_cache}
+
+    {
+      hidden_states,
+      self_attention_weights,
+      cross_attention_weights,
+      layer_cache
+    }
   end
 
-  defp self_attention(
+  defp attention(
          hidden_states,
          attention_mask,
          key_value_states,
-         past_key_value,
+         layer_head_mask,
+         layer_cache,
          config,
          opts
        ) do
     name = opts[:name]
     num_heads = opts[:num_heads]
-    causal = Keyword.get(opts, :causal, false)
     is_decoder = Keyword.get(opts, :is_decoder, false)
 
     head_dim = div(config.d_model, num_heads)
 
     query_states =
-      Axon.dense(hidden_states, config.d_model,
+      hidden_states
+      |> Axon.dense(config.d_model,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "q_proj")
       )
 
     {key_states, value_states} =
-      case {key_value_states, past_key_value} do
-        {nil, nil} ->
-          # If there are no past key-values and there are no given
-          # key-value states, this is just a regular self attention
-          # and we compute key and value states from hidden state
+      case key_value_states do
+        nil ->
+          # It is a self-attention, e.g. there is no last
+          # encoder hidden state present
           key_states =
             hidden_states
-            |> Axon.dense(config.d_model,
+            |> Axon.dense(
+              config.d_model,
               kernel_initializer: kernel_initializer(config),
               name: join(name, "k_proj")
             )
-            |> reshape_key_value(:auto, num_heads, head_dim)
 
           value_states =
             hidden_states
-            |> Axon.dense(config.d_model,
+            |> Axon.dense(
+              config.d_model,
               kernel_initializer: kernel_initializer(config),
               name: join(name, "v_proj")
             )
-            |> reshape_key_value(:auto, num_heads, head_dim)
 
           {key_states, value_states}
 
-        {key_value_states, nil} ->
-          # If key-value states is present, but there are no cached
-          # key-value states from previous iterations, then we will
-          # recompute key-value states from the given input key-value
-          # states
+        key_value_states ->
+          # It is a cross-attention, e.g. we've been given
+          # an encoder hidden state
           key_states =
             key_value_states
-            |> Axon.dense(config.d_model,
+            |> Axon.dense(
+              config.d_model,
               kernel_initializer: kernel_initializer(config),
               name: join(name, "k_proj")
             )
-            |> reshape_key_value(:auto, num_heads, head_dim)
 
           value_states =
             key_value_states
-            |> Axon.dense(config.d_model,
+            |> Axon.dense(
+              config.d_model,
               kernel_initializer: kernel_initializer(config),
               name: join(name, "v_proj")
             )
-            |> reshape_key_value(:auto, num_heads, head_dim)
 
           {key_states, value_states}
-
-        {nil, {past_key, past_value}} ->
-          key_states =
-            hidden_states
-            |> Axon.dense(config.d_model,
-              kernel_initializer: kernel_initializer(config),
-              name: join(name, "k_proj")
-            )
-            |> reshape_key_value(:auto, num_heads, head_dim)
-
-          value_states =
-            hidden_states
-            |> Axon.dense(config.d_model,
-              kernel_initializer: kernel_initializer(config),
-              name: join(name, "v_proj")
-            )
-            |> reshape_key_value(:auto, num_heads, head_dim)
-
-          key_states = Axon.concatenate([past_key, key_states], axis: 2)
-          value_states = Axon.concatenate([past_value, value_states], axis: 2)
-          {key_states, value_states}
-
-        {_, {past_key, past_value}} ->
-          {past_key, past_value}
       end
 
-    past_key_value =
-      if is_decoder do
-        {key_states, value_states}
-      else
-        past_key_value
-      end
-
+    # Split attention heads to leading heads
     query_states = split_heads(query_states, num_heads, head_dim)
-    key_states = Axon.transpose(key_states, [0, 2, 1, 3], ignore_batch?: false)
-    value_states = Axon.transpose(value_states, [0, 2, 1, 3], ignore_batch?: false)
+    key_states = split_heads(key_states, num_heads, head_dim)
+    value_states = split_heads(value_states, num_heads, head_dim)
+
+    # If this is a decoder, then we will update the cache
+    # for this layer and return the appropriate key-value
+    # states, attention mask, and updated cache
+    {key_states, value_states, attention_mask, layer_cache} =
+      if is_decoder do
+        concatenate_to_cache(query_states, key_states, value_states, attention_mask, layer_cache)
+      else
+        {key_states, value_states, attention_mask, layer_cache}
+      end
 
     # TODO: Causal mask
 
-    attention_bias = Axon.constant(Nx.tensor(0.0))
+    attention_bias = Axon.constant(Nx.tensor(0))
+    # TODO: This results in a shape error
     # attention_bias = Axon.layer(&Layers.attention_bias/2, [attention_mask])
 
     attention_weights =
@@ -581,6 +751,9 @@ defmodule Bumblebee.Text.Bart do
       Axon.dropout(attention_weights,
         rate: config.attention_dropout
       )
+
+    attention_weights =
+      Axon.layer(&Layers.apply_layer_head_mask/3, [attention_weights, layer_head_mask])
 
     attention_output = Axon.layer(&Layers.attention_output/3, [attention_weights, value_states])
 
@@ -592,19 +765,7 @@ defmodule Bumblebee.Text.Bart do
         name: join(name, "out_proj")
       )
 
-    {attention_output, attention_weights, past_key_value}
-  end
-
-  defp flatten_leading(%Axon{} = x) do
-    Axon.nx(x, fn x ->
-      shape =
-        x
-        |> Nx.shape()
-        |> Tuple.delete_at(0)
-        |> put_elem(0, :auto)
-
-      Nx.reshape(x, shape)
-    end)
+    {attention_output, attention_weights, layer_cache}
   end
 
   defp split_heads(states, num_heads, head_dim) do
@@ -615,12 +776,24 @@ defmodule Bumblebee.Text.Bart do
     end)
   end
 
-  defp reshape_key_value(key_value, seq_len, num_heads, head_dim) do
-    Axon.nx(key_value, fn kv ->
-      shape = Nx.shape(kv)
-      new_shape = {elem(shape, 0), seq_len, num_heads, head_dim}
-      kv |> Nx.reshape(new_shape) |> Nx.transpose(axes: [0, 2, 1, 3])
-    end)
+  defp concatenate_to_cache(query_states, key_states, value_states, attention_mask, layer_cache) do
+    if layer_cache do
+      out =
+        Axon.layer(&Layers.update_cache/6, [
+          query_states,
+          key_states,
+          value_states,
+          attention_mask,
+          layer_cache
+        ])
+
+      {Axon.nx(out, &elem(&1, 0)), Axon.nx(out, &elem(&1, 1)), Axon.nx(out, &elem(&1, 2)),
+       Axon.nx(out, &elem(&1, 3))}
+    else
+      # If the cache is not initialized just return the states,
+      # mask, and cache as is
+      {key_states, value_states, attention_mask, layer_cache}
+    end
   end
 
   defp kernel_initializer(config) do

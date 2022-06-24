@@ -20,9 +20,7 @@ defmodule Bumblebee.Text.BertTest do
         "input_ids" => input_ids,
         "decoder_input_ids" => input_ids,
         "attention_mask" => attention_mask,
-        "decoder_attention_mask" => attention_mask,
-        "position_ids" => Nx.iota(input_ids, axis: -1),
-        "decoder_position_ids" => Nx.iota(input_ids, axis: -1)
+        "decoder_attention_mask" => attention_mask
       }
 
       output = Axon.predict(model, params, input, compiler: EXLA)
