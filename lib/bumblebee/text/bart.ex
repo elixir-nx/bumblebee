@@ -20,7 +20,7 @@ defmodule Bumblebee.Text.Bart do
       classification head. The head returns logits corresponding to
       possible classes
 
-    * `:for_question_answering` - BERT with a span classification head.
+    * `:for_question_answering` - BART with a span classification head.
       The head returns logits for the span start and end positions
 
   ## Inputs
@@ -181,9 +181,12 @@ defmodule Bumblebee.Text.Bart do
     input_shape = {nil, 11}
 
     inputs = inputs(input_shape, config)
-    outputs = bart(inputs, config)
+    outputs = bart(inputs, config, name: "model")
 
-    eos_mask = Nx.equal(inputs["input_ids"], config.eos_token_id)
+    eos_mask =
+      Axon.nx(inputs["input_ids"], fn ids ->
+        Nx.equal(ids, config.eos_token_id)
+      end)
 
     sentence_representation =
       Axon.layer(
@@ -206,7 +209,7 @@ defmodule Bumblebee.Text.Bart do
         [eos_mask, outputs.last_hidden_state]
       )
 
-    logits = classification_head(sentence_representation, config)
+    logits = classification_head(sentence_representation, config, name: "classification_head")
 
     Axon.container(%{
       logits: logits,
@@ -226,7 +229,7 @@ defmodule Bumblebee.Text.Bart do
     outputs =
       input_shape
       |> inputs(config)
-      |> bart(config)
+      |> bart(config, name: "model")
 
     logits =
       Axon.dense(outputs.last_hidden_state, 2,
@@ -234,8 +237,8 @@ defmodule Bumblebee.Text.Bart do
         name: "qa_outputs"
       )
 
-    start_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 0]]) |> Nx.squeeze(axes: [-1])
-    end_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 1]]) |> Nx.squeeze(axes: [-1])
+    start_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 0]])
+    end_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 1]])
 
     Axon.container(%{
       start_logits: start_logits,
@@ -245,7 +248,7 @@ defmodule Bumblebee.Text.Bart do
       cross_attentions: outputs.cross_attentions,
       encoder_last_hidden_state: outputs.encoder_last_hidden_state,
       encoder_hidden_states: outputs.encoder_hidden_states,
-      encoder_attentions: outputs.encoder_attentions
+      encoder_attentions: outputs.encoder_attentions,
     })
   end
 
@@ -408,15 +411,18 @@ defmodule Bumblebee.Text.Bart do
     |> List.to_tuple()
   end
 
-  defp bart(inputs, config) do
-    encoder_outputs = encoder(inputs, config, name: "encoder")
+  defp bart(inputs, config, opts \\ []) do
+    name = opts[:name]
+
+    encoder_outputs = encoder(inputs, config, name: join(name, "encoder"))
 
     # TODO: This does not work yet because we cannot return containers from
     # maybe layers
     # {encoder_last_hidden_state, encoder_hidden_states, encoder_attentions} =
     #   Layers.maybe(inputs["encoder_outputs"], encoder(inputs, config, name: "encoder"))
 
-    decoder_outputs = decoder(inputs, encoder_outputs.last_hidden_state, config, name: "decoder")
+    decoder_outputs =
+      decoder(inputs, encoder_outputs.last_hidden_state, config, name: join(name, "decoder"))
 
     %{
       last_hidden_state: decoder_outputs.last_hidden_state,
@@ -912,15 +918,20 @@ defmodule Bumblebee.Text.Bart do
     {attention_output, attention_weights, layer_cache}
   end
 
-  defp classification_head(hidden_states, config) do
+  defp classification_head(hidden_states, config, opts) do
+    name = opts[:name]
+
     hidden_states
     |> Axon.dropout(rate: config.classifier_dropout)
-    |> Axon.dense(config.d_model, kernel_initializer: kernel_initializer(config), name: "dense")
-    |> Axon.activation(:tanh, name: "dense.tanh")
+    |> Axon.dense(config.d_model,
+      kernel_initializer: kernel_initializer(config),
+      name: join(name, "dense")
+    )
+    |> Axon.activation(:tanh, name: join(name, "dense.tanh"))
     |> Axon.dropout(rate: config.classifier_dropout)
     |> Axon.dense(config.num_labels,
       kernel_initializer: kernel_initializer(config),
-      name: "out_proj"
+      name: join(name, "out_proj")
     )
   end
 
@@ -976,6 +987,7 @@ defmodule Bumblebee.Text.Bart do
     Axon.Initializers.normal(scale: config.init_std)
   end
 
+  defp join(nil, rhs), do: rhs
   defp join(lhs, rhs), do: lhs <> "." <> rhs
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
