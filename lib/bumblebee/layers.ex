@@ -259,7 +259,7 @@ defmodule Bumblebee.Layers do
 
   Similar to Haskell's `maybe` function.
   """
-  def maybe(%Axon{} = maybe_value, %Axon{} = default_value, opts \\ []) do
+  def maybe_layer(%Axon{} = maybe_value, %Axon{} = default_value, opts \\ []) do
     opts = Keyword.validate!(opts, [:name])
 
     Axon.layer(
