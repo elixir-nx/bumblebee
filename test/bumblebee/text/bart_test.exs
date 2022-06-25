@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.BertTest do
+defmodule Bumblebee.Text.BartTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
