@@ -259,10 +259,10 @@ defmodule Bumblebee.Text.Bart do
         # If it's not then we just shift the input ids right
         # to compute the decoder input ids (e.g. the pre-training
         # task)
-        decoder_start_token_id
-        |> Nx.broadcast(inputs["input_ids"])
-        |> Nx.put_slice(1, inputs[[0..-1//1, 0..-2//1]])
-        |> then(&Nx.select(Nx.equal(&1, -100), pad_token_id, &1))
+        batch_size = Nx.axis_size(inputs["input_ids"], 0)
+        start_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
+        shifted_input_ids = Nx.concatenate([start_ids, inputs[[0..-1//1, 0..-2//1]]], axis: 1)
+        Nx.select(Nx.equal(shifted_input_ids, -100), pad_token_id, shifted_input_ids)
       end
     end)
   end
