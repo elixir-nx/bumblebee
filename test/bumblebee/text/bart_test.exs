@@ -63,6 +63,7 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     @tag :slow
+    @tag timeout: 120_000
     test "sequence classification model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "valhalla/bart-large-sst2"})
@@ -87,6 +88,7 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     @tag :slow
+    @tag timeout: 120_000
     test "question answering model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "valhalla/bart-large-finetuned-squadv1"})
@@ -124,6 +126,13 @@ defmodule Bumblebee.Text.BartTest do
                  architecture: :for_causal_language_modeling
                )
 
+      # The checkpoint doesn't have an lm_head weight set, so
+      # we manually set to pin
+      params =
+        Map.update(params, "lm_head", nil, fn _kernel ->
+          %{"kernel" => Nx.broadcast(1.0e-3, {768, 50265})}
+        end)
+
       assert %Bumblebee.Text.Bart{architecture: :for_causal_language_modeling} = config
 
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -138,11 +147,7 @@ defmodule Bumblebee.Text.BartTest do
 
       assert_all_close(
         output.logits[[0, 1..3, 1..3]],
-        Nx.tensor([
-          [-1.7658, -1.1057, -0.6313],
-          [-1.0344, 4.4774, 0.5581],
-          [-1.3625, 2.6272, -0.6478]
-        ]),
+        Nx.tensor([[0.0335, 0.0335, 0.0335], [0.0451, 0.0451, 0.0451], [0.0401, 0.0401, 0.0401]]),
         atol: 1.0e-4
       )
     end

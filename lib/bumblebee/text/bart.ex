@@ -264,9 +264,10 @@ defmodule Bumblebee.Text.Bart do
     # TODO: Tie lm-head to word embedding as a config option
     lm_logits =
       outputs.last_hidden_state
-      |> Layers.dense_transposed_layer(config.vocab_size,
+      |> Axon.dense(config.vocab_size,
         kernel_initializer: kernel_initializer(config),
-        name: "decoder.embed_tokens.embedding"
+        name: "lm_head",
+        use_bias: false
       )
 
     Axon.container(%{
@@ -438,12 +439,24 @@ defmodule Bumblebee.Text.Bart do
   defp encoder(inputs, config, opts) do
     name = opts[:name]
 
+    base_name =
+      case String.split(name, ".") do
+        [base, _] ->
+          base
+
+        [_] ->
+          nil
+      end
+
     # TODO: It has to be only input_ids or only input_embeds
     # so perhaps we should also have a `Layers.only` which
     # enforces this relationship, or maybe it doesn't
     # matter
     input_embeds =
-      Layers.maybe_layer(inputs["input_embeds"], embed_tokens(inputs["input_ids"], config, name))
+      Layers.maybe_layer(
+        inputs["input_embeds"],
+        embed_tokens(inputs["input_ids"], config, base_name)
+      )
 
     pos_embeds = embed_positions(input_embeds, config, name)
 
@@ -457,13 +470,13 @@ defmodule Bumblebee.Text.Bart do
     |> encoder_layer_collection(attention_mask, head_mask, config, name: name)
   end
 
-  defp embed_tokens(input_ids, config, _name) do
+  defp embed_tokens(input_ids, config, name) do
     # TODO: This embedding may or may not be shared, depending
     # on how the model is initialized
     input_embeds =
       Axon.embedding(input_ids, config.vocab_size, config.d_model,
         kernel_initializer: kernel_initializer(config),
-        name: "shared"
+        name: join(name, "shared")
       )
 
     if config.scale_embedding do
@@ -574,6 +587,15 @@ defmodule Bumblebee.Text.Bart do
   defp decoder(inputs, encoder_last_hidden_state, config, opts) do
     name = opts[:name]
 
+    base_name =
+      case String.split(name, ".") do
+        [base, _] ->
+          base
+
+        [_] ->
+          nil
+      end
+
     # TODO: It has to be only input_ids or only input_embeds
     # so perhaps we should also have a `Layers.only` which
     # enforces this relationship, or maybe it doesn't
@@ -581,7 +603,7 @@ defmodule Bumblebee.Text.Bart do
     input_embeds =
       Layers.maybe_layer(
         inputs["decoder_input_embeds"],
-        embed_tokens(inputs["decoder_input_ids"], config, name)
+        embed_tokens(inputs["decoder_input_ids"], config, base_name)
       )
 
     pos_embeds = embed_positions(input_embeds, config, name)
@@ -775,7 +797,10 @@ defmodule Bumblebee.Text.Bart do
 
         {hidden_states, cross_attention_weights, cross_attention_layer_cache}
       else
-        {hidden_states, nil, nil}
+        # TODO: Semantically these should actually be `nil`, but
+        # we update the cross_attention_cache with them internally
+        # so we can't just leave them blank
+        {hidden_states, Axon.container({}), Axon.container({})}
       end
 
     residual = hidden_states
