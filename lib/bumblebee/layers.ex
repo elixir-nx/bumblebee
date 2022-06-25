@@ -59,6 +59,7 @@ defmodule Bumblebee.Layers do
     key = Nx.put_slice(cached_key, indices, key_states)
     value = Nx.put_slice(cached_value, indices, value_states)
     num_updated_cache_vectors = Nx.axis_size(query_states, 1)
+    index = index + num_updated_cache_vectors
 
     pad_mask =
       Nx.iota({max_length})
