@@ -33,6 +33,7 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     @tag :slow
+    @tag :capture_log
     test "conditional generation model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "facebook/bart-base"},
@@ -63,20 +64,20 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     @tag :slow
+    @tag :capture_log
     @tag timeout: 120_000
     test "sequence classification model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "valhalla/bart-large-sst2"})
 
       assert %Bumblebee.Text.Bart{architecture: :for_sequence_classification} = config
-
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
       input = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input, compiler: EXLA, debug: true)
 
       assert Nx.shape(output.logits) == {1, 2}
 
@@ -88,6 +89,7 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     @tag :slow
+    @tag :capture_log
     @tag timeout: 120_000
     test "question answering model" do
       assert {:ok, model, params, config} =
@@ -101,7 +103,7 @@ defmodule Bumblebee.Text.BartTest do
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input, compiler: EXLA, debug: true)
 
       assert Nx.shape(output.start_logits) == {1, 11}
       assert Nx.shape(output.end_logits) == {1, 11}
@@ -120,6 +122,7 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     @tag :slow
+    @tag :capture_log
     test "causal language model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "facebook/bart-base"},
