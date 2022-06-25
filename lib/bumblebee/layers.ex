@@ -72,6 +72,34 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  Makes a causal attention mask for bidirectional self-attention.
+  """
+  defn make_causal_mask(input) do
+    size = Nx.axis_size(input, -1)
+
+    Nx.iota({size})
+    |> Nx.broadcast(input)
+    |> then(&make_attention_mask(&1, &1))
+  end
+
+  @doc """
+  Makes an attention mask.
+  """
+  defn make_attention_mask(query, key, pairwise_fn \\ &Nx.greater_equal/2) do
+    query
+    |> Nx.new_axis(-1)
+    |> pairwise_fn.(Nx.new_axis(key, -2))
+    |> Nx.new_axis(-3)
+  end
+
+  @doc """
+  Combines attention masks.
+  """
+  defn combine_mask(left_mask, right_mask, _opts \\ []) do
+    Nx.logical_and(left_mask, right_mask)
+  end
+
+  @doc """
   Adds a dense layer to the network.
 
   The kernel parameter is transposed with respect to `Axon.dense/3`.

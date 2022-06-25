@@ -278,28 +278,23 @@ defmodule Bumblebee.Text.Bart do
   end
 
   defp bart(inputs, config) do
-    # TODO: Tie embedding weights together
-
-    {encoder_last_hidden_state, encoder_hidden_states, encoder_attentions} =
-      encoder(inputs, config, name: "encoder")
+    encoder_outputs = encoder(inputs, config, name: "encoder")
 
     # TODO: This does not work yet because we cannot return containers from
     # maybe layers
     # {encoder_last_hidden_state, encoder_hidden_states, encoder_attentions} =
     #   Layers.maybe(inputs["encoder_outputs"], encoder(inputs, config, name: "encoder"))
 
-    {decoder_last_hidden_state, decoder_hidden_states, decoder_attentions,
-     decoder_cross_attentions,
-     _} = decoder(inputs, encoder_last_hidden_state, config, name: "decoder")
+    decoder_outputs = decoder(inputs, encoder_outputs.last_hidden_state, config, name: "decoder")
 
     %{
-      last_hidden_state: decoder_last_hidden_state,
-      decoder_hidden_states: decoder_hidden_states,
-      decoder_attentions: decoder_attentions,
-      cross_attentions: decoder_cross_attentions,
-      encoder_last_hidden_states: encoder_last_hidden_state,
-      encoder_hidden_states: encoder_hidden_states,
-      encoder_attentions: encoder_attentions
+      last_hidden_state: decoder_outputs.last_hidden_state,
+      decoder_hidden_states: decoder_outputs.hidden_states,
+      decoder_attentions: decoder_outputs.attentions,
+      cross_attentions: decoder_outputs.cross_attentions,
+      encoder_last_hidden_state: encoder_outputs.last_hidden_state,
+      encoder_hidden_states: encoder_outputs.hidden_states,
+      encoder_attentions: encoder_outputs.attentions
     }
   end
 
@@ -311,14 +306,13 @@ defmodule Bumblebee.Text.Bart do
     # enforces this relationship, or maybe it doesn't
     # matter
     input_embeds =
-      Layers.maybe(inputs["input_embeds"], embed_tokens(inputs["input_ids"], config, name))
+      Layers.maybe_layer(inputs["input_embeds"], embed_tokens(inputs["input_ids"], config, name))
 
     pos_embeds = embed_positions(input_embeds, config, name)
 
     attention_mask = inputs["attention_mask"]
     head_mask = inputs["head_mask"]
 
-    # TODO: Perhaps this should output a map? BERT as well then?
     input_embeds
     |> Axon.add(pos_embeds)
     |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
@@ -335,8 +329,6 @@ defmodule Bumblebee.Text.Bart do
         name: "shared"
       )
 
-    # TODO: This is basically a scale_layer, is there a way to unify
-    # learned vs. unlearned scaling?
     if config.scale_embedding do
       Axon.nx(input_embeds, fn x -> Nx.multiply(x, Nx.sqrt(config.d_model)) end)
     else
@@ -363,14 +355,15 @@ defmodule Bumblebee.Text.Bart do
   defp encoder_layer_collection(hidden_states, attention_mask, head_mask, config, opts) do
     name = opts[:name]
 
-    last_hidden_state = hidden_states
-    all_hidden_states = {last_hidden_state}
-    all_attentions = {}
+    initial_encoder_state = %{
+      last_hidden_state: hidden_states,
+      hidden_states: {hidden_states},
+      attentions: {}
+    }
 
     # TODO: Generalize this logic to a higher-level function
-    for idx <- 0..(config.encoder_layers - 1),
-        reduce: {last_hidden_state, all_hidden_states, all_attentions} do
-      {last, states, attentions} ->
+    for idx <- 0..(config.encoder_layers - 1), reduce: initial_encoder_state do
+      encoder_state ->
         layer_head_mask = Axon.nx(head_mask, & &1[idx])
 
         # TODO: Wrap encoder layer in a layer_drop combinator
@@ -378,9 +371,19 @@ defmodule Bumblebee.Text.Bart do
         layer_name = join(name, "layers.#{idx}")
 
         {next_state, next_attention} =
-          encoder_layer(last, attention_mask, layer_head_mask, config, name: layer_name)
+          encoder_layer(
+            encoder_state.last_hidden_state,
+            attention_mask,
+            layer_head_mask,
+            config,
+            name: layer_name
+          )
 
-        {next_state, Tuple.append(states, next_state), Tuple.append(attentions, next_attention)}
+        %{
+          last_hidden_state: next_state,
+          hidden_states: Tuple.append(encoder_state.hidden_states, next_state),
+          attentions: Tuple.append(encoder_state.attentions, next_attention)
+        }
     end
   end
 
@@ -439,7 +442,7 @@ defmodule Bumblebee.Text.Bart do
     # enforces this relationship, or maybe it doesn't
     # matter
     input_embeds =
-      Layers.maybe(
+      Layers.maybe_layer(
         inputs["decoder_input_embeds"],
         embed_tokens(inputs["decoder_input_ids"], config, name)
       )
@@ -452,7 +455,6 @@ defmodule Bumblebee.Text.Bart do
     cross_attention_head_mask = inputs["cross_attention_head_mask"]
     past_key_values = inputs["past_key_values"]
 
-    # TODO: Perhaps this should output a map? BERT as well then?
     input_embeds
     |> Axon.add(pos_embeds)
     |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
@@ -482,16 +484,16 @@ defmodule Bumblebee.Text.Bart do
        ) do
     name = opts[:name]
 
-    last_hidden_state = hidden_states
-    all_hidden_states = {last_hidden_state}
-    all_attentions = {}
-    all_cross_attentions = {}
+    initial_decoder_state = %{
+      last_hidden_state: hidden_states,
+      hidden_states: {hidden_states},
+      attentions: {},
+      cross_attentions: {},
+      cache: past_key_values
+    }
 
-    for idx <- 0..(config.decoder_layers - 1),
-        reduce:
-          {last_hidden_state, past_key_values, all_hidden_states, all_attentions,
-           all_cross_attentions} do
-      {lhs, pkv_cache, states, attentions, cross_attentions} ->
+    for idx <- 0..(config.decoder_layers - 1), reduce: initial_decoder_state do
+      decoder_state ->
         layer_head_mask = Axon.nx(head_mask, & &1[idx])
         cross_attention_layer_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
 
@@ -499,8 +501,8 @@ defmodule Bumblebee.Text.Bart do
         # skip layers
         {self_attention_layer_cache, cross_attention_layer_cache} =
           if config.use_cache do
-            self_attention_cache = Axon.nx(pkv_cache, &elem(elem(&1, idx), 0))
-            cross_attention_cache = Axon.nx(pkv_cache, &elem(elem(&1, idx), 1))
+            self_attention_cache = Axon.nx(decoder_state.cache, &elem(elem(&1, idx), 0))
+            cross_attention_cache = Axon.nx(decoder_state.cache, &elem(elem(&1, idx), 1))
             {self_attention_cache, cross_attention_cache}
           else
             {nil, nil}
@@ -510,7 +512,7 @@ defmodule Bumblebee.Text.Bart do
 
         {next_state, next_attention, next_cross_attention, layer_cache} =
           decoder_layer(
-            lhs,
+            decoder_state.last_hidden_state,
             attention_mask,
             encoder_hidden_states,
             encoder_attention_mask,
@@ -526,7 +528,7 @@ defmodule Bumblebee.Text.Bart do
           if config.use_cache do
             {self_attention_cache, cross_attention_cache} = layer_cache
 
-            pkv_cache
+            decoder_state.cache
             |> then(
               &Axon.layer(
                 fn pkv_cache, self_attention_cache, _opts ->
@@ -554,15 +556,15 @@ defmodule Bumblebee.Text.Bart do
               )
             )
           else
-            pkv_cache
+            decoder_state.cache
           end
 
-        {
-          next_state,
-          updated_cache,
-          Tuple.append(states, next_state),
-          Tuple.append(attentions, next_attention),
-          Tuple.append(cross_attentions, next_cross_attention)
+        %{
+          last_hidden_state: next_state,
+          hidden_states: Tuple.append(decoder_state.hidden_states, next_state),
+          attentions: Tuple.append(decoder_state.attentions, next_attention),
+          cross_attentions: Tuple.append(decoder_state.cross_attentions, next_cross_attention),
+          cache: updated_cache
         }
     end
   end
@@ -593,6 +595,7 @@ defmodule Bumblebee.Text.Bart do
         config,
         num_heads: config.decoder_attention_heads,
         is_decoder: true,
+        is_causal: true,
         name: join(name, "self_attn")
       )
 
@@ -672,6 +675,7 @@ defmodule Bumblebee.Text.Bart do
     name = opts[:name]
     num_heads = opts[:num_heads]
     is_decoder = Keyword.get(opts, :is_decoder, false)
+    is_causal = Keyword.get(opts, :is_causal, false)
 
     head_dim = div(config.d_model, num_heads)
 
@@ -732,6 +736,15 @@ defmodule Bumblebee.Text.Bart do
     key_states = split_heads(key_states, num_heads, head_dim)
     value_states = split_heads(value_states, num_heads, head_dim)
 
+    # Prepare causal mask and combine with attention mask
+    attention_mask =
+      if is_causal do
+        causal_mask = prepare_causal_mask(layer_cache, query_states, config)
+        Axon.layer(&Layers.combine_mask/3, [attention_mask, causal_mask])
+      else
+        attention_mask
+      end
+
     # If this is a decoder, then we will update the cache
     # for this layer and return the appropriate key-value
     # states, attention mask, and updated cache
@@ -741,8 +754,6 @@ defmodule Bumblebee.Text.Bart do
       else
         {key_states, value_states, attention_mask, layer_cache}
       end
-
-    # TODO: Causal mask
 
     attention_bias = Axon.nx(attention_mask, fn x -> Nx.select(Nx.greater(x, 0), 0, -1.0e10) end)
 
@@ -776,6 +787,22 @@ defmodule Bumblebee.Text.Bart do
       new_shape = {elem(shape, 0), elem(shape, 1), num_heads, head_dim}
       Nx.reshape(hidden, new_shape)
     end)
+  end
+
+  defp prepare_causal_mask(layer_cache, query, config) do
+    Axon.layer(
+      fn
+        %{key: cached_key, index: cached_index}, query, _opts ->
+          causal_mask =
+            Layers.make_causal_mask(Nx.broadcast(1, {1, config.max_position_embeddings}))
+
+          query_length = Nx.axis_size(query, 1)
+          max_decoder_length = Nx.axis_size(cached_key, 1)
+          mask_shift = Nx.as_type(cached_index, {:s, 64})
+          Nx.slice(causal_mask, [0, 0, mask_shift, 0], [1, 1, query_length, max_decoder_length])
+      end,
+      [layer_cache, query]
+    )
   end
 
   defp concatenate_to_cache(query_states, key_states, value_states, attention_mask, layer_cache) do
