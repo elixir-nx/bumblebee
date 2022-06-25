@@ -157,12 +157,10 @@ defmodule Bumblebee.Text.Bart do
       |> bart(config)
 
     # TODO: Tie lm-head to word embedding as a config option
-    # TODO: Tying this somehow causes inference to fail?
     lm_logits =
       outputs.last_hidden_state
-      |> Axon.dense(config.vocab_size,
+      |> Layers.dense_transposed_layer(config.vocab_size,
         kernel_initializer: kernel_initializer(config),
-        use_bias: false,
         name: "shared"
       )
       |> Axon.add(final_logits_bias)
@@ -261,12 +259,10 @@ defmodule Bumblebee.Text.Bart do
       |> decoder(nil, config, name: "decoder")
 
     # TODO: Tie lm-head to word embedding as a config option
-    # TODO: Tying this somehow causes inference to fail?
     lm_logits =
       outputs.last_hidden_state
-      |> Axon.dense(config.vocab_size,
+      |> Layers.dense_transposed_layer(config.vocab_size,
         kernel_initializer: kernel_initializer(config),
-        use_bias: false,
         name: "decoder.embed_tokens.embedding"
       )
 
