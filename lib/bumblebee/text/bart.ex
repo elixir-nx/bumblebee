@@ -248,7 +248,7 @@ defmodule Bumblebee.Text.Bart do
       cross_attentions: outputs.cross_attentions,
       encoder_last_hidden_state: outputs.encoder_last_hidden_state,
       encoder_hidden_states: outputs.encoder_hidden_states,
-      encoder_attentions: outputs.encoder_attentions,
+      encoder_attentions: outputs.encoder_attentions
     })
   end
 
