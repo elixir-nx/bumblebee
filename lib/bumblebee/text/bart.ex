@@ -28,7 +28,7 @@ defmodule Bumblebee.Text.Bart do
     * `"input_ids"` - tokenized inputs of shape `{batch_size, seq_len}`.
       This or `"input_embeds"` must be present
 
-    * `""`
+    * `""` - TODO
 
   ## Configuration
 
