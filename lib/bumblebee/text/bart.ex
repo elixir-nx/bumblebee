@@ -144,6 +144,140 @@ defmodule Bumblebee.Text.Bart do
   end
 
   @impl true
+  def model(%__MODULE__{architecture: :for_conditional_generation} = config) do
+    input_shape = {nil, 11}
+
+    # TODO: Flax uses this as a parameter, but PyTorch uses it
+    # as a buffer
+    final_logits_bias = Axon.constant(Nx.broadcast(0, {1, config.vocab_size}))
+
+    outputs =
+      input_shape
+      |> inputs(config)
+      |> bart(config)
+
+    # TODO: Tie lm-head to word embedding as a config option
+    # TODO: Tying this somehow causes inference to fail?
+    lm_logits =
+      outputs.last_hidden_state
+      |> Axon.dense(config.vocab_size,
+        kernel_initializer: kernel_initializer(config),
+        use_bias: false,
+        name: "shared"
+      )
+      |> Axon.add(final_logits_bias)
+
+    Axon.container(%{
+      logits: lm_logits,
+      decoder_hidden_states: outputs.decoder_hidden_states,
+      decoder_attentions: outputs.decoder_attentions,
+      cross_attentions: outputs.cross_attentions,
+      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+      encoder_hidden_states: outputs.encoder_hidden_states,
+      encoder_attentions: outputs.encoder_attentions
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
+    # TODO: Non-static seq len
+    input_shape = {nil, 11}
+
+    inputs = inputs(input_shape, config)
+    outputs = bart(inputs, config)
+
+    eos_mask = Nx.equal(inputs["input_ids"], config.eos_token_id)
+
+    sentence_representation =
+      Axon.layer(
+        fn eos_mask, hidden_states, _opts ->
+          seq_len = Nx.axis_size(eos_mask, 1)
+
+          eos_mask =
+            eos_mask
+            |> Nx.add(Nx.iota({seq_len}))
+            |> Nx.multiply(1.0e-6)
+            |> then(fn x ->
+              max_val = x |> Nx.reduce_max(axes: [1]) |> Nx.reshape({:auto, 1})
+              Nx.select(Nx.equal(x, max_val), 1, 0)
+            end)
+
+          hidden_states
+          |> Nx.multiply(Nx.new_axis(eos_mask, -1))
+          |> Nx.sum(axes: [1])
+        end,
+        [eos_mask, outputs.last_hidden_state]
+      )
+
+    logits = classification_head(sentence_representation, config)
+
+    Axon.container(%{
+      logits: logits,
+      decoder_hidden_states: outputs.decoder_hidden_states,
+      decoder_attentions: outputs.decoder_attentions,
+      cross_attentions: outputs.cross_attentions,
+      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+      encoder_hidden_states: outputs.encoder_hidden_states,
+      encoder_attentions: outputs.encoder_attentions
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_question_answering} = config) do
+    # TODO: Non-static seq len
+    input_shape = {nil, 11}
+
+    outputs =
+      input_shape
+      |> inputs(config)
+      |> bart(config)
+
+    logits =
+      Axon.dense(outputs.last_hidden_state, 2,
+        kernel_initializer: kernel_initializer(config),
+        name: "qa_outputs"
+      )
+
+    start_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 0]]) |> Nx.squeeze(axes: [-1])
+    end_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 1]]) |> Nx.squeeze(axes: [-1])
+
+    Axon.container(%{
+      start_logits: start_logits,
+      end_logits: end_logits,
+      decoder_hidden_states: outputs.decoder_hidden_states,
+      decoder_attentions: outputs.decoder_attentions,
+      cross_attentions: outputs.cross_attentions,
+      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+      encoder_hidden_states: outputs.encoder_hidden_states,
+      encoder_attentions: outputs.encoder_attentions
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
+    # TODO: Non-static seq len
+    input_shape = {nil, 11}
+
+    outputs =
+      input_shape
+      |> inputs(config)
+      |> decoder(nil, config, name: "decoder")
+
+    # TODO: Tie lm-head to word embedding as a config option
+    # TODO: Tying this somehow causes inference to fail?
+    lm_logits =
+      outputs.last_hidden_state
+      |> Axon.dense(config.vocab_size,
+        kernel_initializer: kernel_initializer(config),
+        use_bias: false,
+        name: "decoder.embed_tokens.embedding"
+      )
+
+    Axon.container(%{
+      logits: lm_logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions,
+      cross_attentions: outputs.cross_attentions
+    })
+  end
+
   def model(%__MODULE__{architecture: :base} = config) do
     # TODO: Non-static seq len
     input_shape = {nil, 11}
@@ -259,7 +393,8 @@ defmodule Bumblebee.Text.Bart do
         # If it's not then we just shift the input ids right
         # to compute the decoder input ids (e.g. the pre-training
         # task)
-        batch_size = Nx.axis_size(inputs["input_ids"], 0)
+        inputs = inputs["input_ids"]
+        batch_size = Nx.axis_size(inputs, 0)
         start_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
         shifted_input_ids = Nx.concatenate([start_ids, inputs[[0..-1//1, 0..-2//1]]], axis: 1)
         Nx.select(Nx.equal(shifted_input_ids, -100), pad_token_id, shifted_input_ids)
@@ -779,6 +914,18 @@ defmodule Bumblebee.Text.Bart do
       )
 
     {attention_output, attention_weights, layer_cache}
+  end
+
+  defp classification_head(hidden_states, config) do
+    hidden_states
+    |> Axon.dropout(rate: config.classifier_dropout)
+    |> Axon.dense(config.d_model, kernel_initializer: kernel_initializer(config), name: "dense")
+    |> Axon.activation(:tanh, name: "dense.tanh")
+    |> Axon.dropout(rate: config.classifier_dropout)
+    |> Axon.dense(config.num_labels,
+      kernel_initializer: kernel_initializer(config),
+      name: "out_proj"
+    )
   end
 
   defp split_heads(states, num_heads, head_dim) do
