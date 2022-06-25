@@ -8,7 +8,7 @@ defmodule Bumblebee.Text.Bart do
 
     * `:base` - plain BART without any head on top
 
-    * `:for_causal_language_modeling` - BERT with a language modeling
+    * `:for_causal_language_modeling` - BART with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
