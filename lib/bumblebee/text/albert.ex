@@ -186,6 +186,105 @@ defmodule Bumblebee.Text.Albert do
     })
   end
 
+  def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
+    outputs = inputs({nil, 9}) |> albert(config, name: "albert")
+
+    logits =
+      outputs.pooler_output
+      |> Axon.dropout(rate: classifier_dropout_rate(config))
+      |> Axon.dense(config.num_labels,
+        kernel_initializer: kernel_initializer(config),
+        name: "classifier"
+      )
+
+    Axon.container(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
+    inputs = inputs({nil, nil, 9})
+    flat_inputs = Map.new(inputs, fn {key, input} -> {key, flatten_leading(input)} end)
+    outputs = albert(flat_inputs, config, name: "albert")
+
+    logits =
+      outputs.pooler_output
+      |> Axon.dropout(rate: classifier_dropout_rate(config), name: "dropout")
+      |> Axon.dense(1,
+        kernel_initializer: kernel_initializer(config),
+        name: "classifier"
+      )
+
+    # The final shape depends on the dynamic batch size and number
+    # of choices, so we do a custom reshape at runtime
+    logits =
+      Axon.layer(
+        fn logits, input_ids, _opts ->
+          num_choices = Nx.axis_size(input_ids, 1)
+          Nx.reshape(logits, {:auto, num_choices})
+        end,
+        [logits, inputs["input_ids"]]
+      )
+
+    Axon.container(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_token_classification} = config) do
+    # TODO: Non-static seq len
+    input_shape = {nil, 9}
+
+    outputs =
+      input_shape
+      |> inputs()
+      |> albert(config, name: "albert")
+
+    logits =
+      outputs.last_hidden_state
+      |> Axon.dropout(rate: classifier_dropout_rate(config))
+      |> Axon.dense(config.num_labels,
+        kernel_initializer: kernel_initializer(config),
+        name: "classifier"
+      )
+
+    Axon.container(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_question_answering} = config) do
+    # TODO: Non-static seq len
+    input_shape = {nil, 9}
+
+    outputs =
+      input_shape
+      |> inputs()
+      |> albert(config, name: "albert")
+
+    logits =
+      Axon.dense(outputs.last_hidden_state, 2,
+        kernel_initializer: kernel_initializer(config),
+        name: "qa_outputs"
+      )
+
+    start_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 0]])
+    end_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 1]])
+
+    Axon.container(%{
+      start_logits: start_logits,
+      end_logits: end_logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
+  end
+
   defp inputs(input_shape) do
     %{
       "input_ids" => Axon.input(input_shape, "input_ids"),
@@ -411,9 +510,9 @@ defmodule Bumblebee.Text.Albert do
     |> Layers.take_head_layer(axis: 1)
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
-      name: join(name, "pooler")
+      name: name
     )
-    |> Axon.tanh(name: join(name, "pooler.tanh"))
+    |> Axon.tanh(name: join(name, "tanh"))
   end
 
   defp lm_prediction_head(hidden_state, config, opts) do
@@ -445,6 +544,22 @@ defmodule Bumblebee.Text.Albert do
       name: name <> ".LayerNorm",
       channel_index: 2
     )
+  end
+
+  defp flatten_leading(%Axon{} = x) do
+    Axon.nx(x, fn x ->
+      shape =
+        x
+        |> Nx.shape()
+        |> Tuple.delete_at(0)
+        |> put_elem(0, :auto)
+
+      Nx.reshape(x, shape)
+    end)
+  end
+
+  defp classifier_dropout_rate(config) do
+    config.classifier_dropout_prob || config.hidden_dropout_prob
   end
 
   defp kernel_initializer(config) do

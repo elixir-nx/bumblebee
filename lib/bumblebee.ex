@@ -146,7 +146,6 @@ defmodule Bumblebee do
     # Albert
     "AlbertModel" => {Bumblebee.Text.Albert, :base},
     "AlbertForMaskedLM" => {Bumblebee.Text.Albert, :for_masked_language_modeling},
-    "AlbertLMHeadModel" => {Bumblebee.Text.Albert, :for_causal_language_modeling},
     "AlbertForSequenceClassification" => {Bumblebee.Text.Albert, :for_sequence_classification},
     "AlbertForTokenClassification" => {Bumblebee.Text.Albert, :for_token_classification},
     "AlbertForQuestionAnswering" => {Bumblebee.Text.Albert, :for_question_answering},
