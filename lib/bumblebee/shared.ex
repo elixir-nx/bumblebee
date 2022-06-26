@@ -1,6 +1,10 @@
 defmodule Bumblebee.Shared do
   @moduledoc false
 
+  import Nx.Defn
+
+  @pi 3.14159265358979323
+
   @doc """
   Returns a subset of common config attributes with their default
   values.
@@ -142,5 +146,26 @@ defmodule Bumblebee.Shared do
       end)
 
     module.config(config, opts)
+  end
+
+  @doc """
+  Maps activations to known axon activations.
+  """
+  @spec map_activations(map()) :: map()
+  def map_activations(data) do
+    activation_keys = ["hidden_act"]
+
+    Enum.reduce(activation_keys, data, fn key, data ->
+      Map.replace(data, key, axon_activation(data[key]))
+    end)
+  end
+
+  defp axon_activation(:gelu_new), do: &gelu_new/2
+  defp axon_activation(activation), do: activation
+
+  # TODO: We should add pi to Nx
+  defnp gelu_new(input, _opts \\ []) do
+    0.5 * input *
+      (1.0 + Nx.tanh(Nx.sqrt(2.0 / @pi) * (input + 0.044715 * Nx.power(input, 3.0))))
   end
 end
