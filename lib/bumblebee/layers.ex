@@ -72,14 +72,12 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Makes a causal attention mask for bidirectional self-attention.
+  Builds a causal attention mask for bidirectional self-attention.
   """
-  defn make_causal_mask(input) do
+  defn build_causal_mask(input) do
     size = Nx.axis_size(input, -1)
-
-    Nx.iota({size})
-    |> Nx.broadcast(input)
-    |> then(&make_attention_mask(&1, &1))
+    idx = Nx.iota({size}) |> Nx.broadcast(input)
+    make_attention_mask(idx, idx)
   end
 
   @doc """
