@@ -843,50 +843,24 @@ defmodule Bumblebee.Text.Bart do
         name: join(name, "q_proj")
       )
 
-    {key_states, value_states} =
-      case key_value_states do
-        nil ->
-          # It is a self-attention, e.g. there is no last
-          # encoder hidden state present
-          key_states =
-            hidden_states
-            |> Axon.dense(
-              config.d_model,
-              kernel_initializer: kernel_initializer(config),
-              name: join(name, "k_proj")
-            )
+    # For cross-attention we are given encoder hidden state
+    projection_states = key_value_states || hidden_states
 
-          value_states =
-            hidden_states
-            |> Axon.dense(
-              config.d_model,
-              kernel_initializer: kernel_initializer(config),
-              name: join(name, "v_proj")
-            )
+    key_states =
+      projection_states
+      |> Axon.dense(
+        config.d_model,
+        kernel_initializer: kernel_initializer(config),
+        name: join(name, "k_proj")
+      )
 
-          {key_states, value_states}
-
-        key_value_states ->
-          # It is a cross-attention, e.g. we've been given
-          # an encoder hidden state
-          key_states =
-            key_value_states
-            |> Axon.dense(
-              config.d_model,
-              kernel_initializer: kernel_initializer(config),
-              name: join(name, "k_proj")
-            )
-
-          value_states =
-            key_value_states
-            |> Axon.dense(
-              config.d_model,
-              kernel_initializer: kernel_initializer(config),
-              name: join(name, "v_proj")
-            )
-
-          {key_states, value_states}
-      end
+    value_states =
+      projection_states
+      |> Axon.dense(
+        config.d_model,
+        kernel_initializer: kernel_initializer(config),
+        name: join(name, "v_proj")
+      )
 
     # Split attention heads to leading heads
     query_states = split_heads(query_states, num_heads, head_dim)
