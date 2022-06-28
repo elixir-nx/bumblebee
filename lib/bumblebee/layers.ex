@@ -77,7 +77,7 @@ defmodule Bumblebee.Layers do
   defn build_causal_mask(input) do
     size = Nx.axis_size(input, -1)
     idx = Nx.iota({size}) |> Nx.broadcast(input)
-    make_attention_mask(idx, idx)
+    build_attention_mask(idx, idx)
   end
 
   @doc """

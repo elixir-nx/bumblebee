@@ -686,29 +686,14 @@ defmodule Bumblebee.Text.Bart do
         updated_cache =
           if config.use_cache do
             {self_attention_cache, cross_attention_cache} = layer_cache
-
-            decoder_state.cache
-            |> then(
-              &Axon.layer(
-                fn pkv_cache, self_attention_cache, _opts ->
-                  cache_at_this_index = elem(pkv_cache, idx)
-
-                  updated_cache_at_this_index =
-                    put_elem(cache_at_this_index, 0, self_attention_cache)
-
-                  put_elem(pkv_cache, idx, updated_cache_at_this_index)
+            Axon.layer(
+                fn pkv_cache, self_attention_cache, cross_attention_cache, _opts ->
+                  pkv_cache
+                  |> put_in([Access.elem(idx), Access.elem(0)], self_attention_cache)
+                  |> put_in([Access.elem(idx), Access.elem(1)], cross_attention_cache)
                 end,
-                [&1, self_attention_cache]
+                [decoder_state.cache, self_attention_cache, cross_attention_cache]
               )
-            )
-            |> then(
-              &Axon.layer(
-                fn pkv_cache, cross_attention_cache, _opts ->
-                  put_in(pkv_cache, [Access.elem(idx), Access.elem(1)], self_attention_cache)
-                end,
-                [&1, cross_attention_cache]
-              )
-            )
           else
             decoder_state.cache
           end
@@ -842,6 +827,7 @@ defmodule Bumblebee.Text.Bart do
         kernel_initializer: kernel_initializer(config),
         name: join(name, "q_proj")
       )
+      |> split_heads(num_heads, head_dim)
 
     # For cross-attention we are given encoder hidden state
     projection_states = key_value_states || hidden_states
@@ -853,6 +839,7 @@ defmodule Bumblebee.Text.Bart do
         kernel_initializer: kernel_initializer(config),
         name: join(name, "k_proj")
       )
+      |> split_heads(num_heads, head_dim)
 
     value_states =
       projection_states
@@ -861,11 +848,7 @@ defmodule Bumblebee.Text.Bart do
         kernel_initializer: kernel_initializer(config),
         name: join(name, "v_proj")
       )
-
-    # Split attention heads to leading heads
-    query_states = split_heads(query_states, num_heads, head_dim)
-    key_states = split_heads(key_states, num_heads, head_dim)
-    value_states = split_heads(value_states, num_heads, head_dim)
+      |> split_heads(num_heads, head_dim)
 
     # Prepare causal mask and combine with attention mask
     attention_mask =
@@ -942,7 +925,7 @@ defmodule Bumblebee.Text.Bart do
       fn
         %{key: cached_key, index: cached_index}, query, _opts ->
           causal_mask =
-            Layers.make_causal_mask(Nx.broadcast(1, {1, config.max_position_embeddings}))
+            Layers.build_causal_mask(Nx.broadcast(1, {1, config.max_position_embeddings}))
 
           query_length = Nx.axis_size(query, 1)
           max_decoder_length = Nx.axis_size(cached_key, 1)
