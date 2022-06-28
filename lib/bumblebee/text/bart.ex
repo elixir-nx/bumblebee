@@ -704,12 +704,7 @@ defmodule Bumblebee.Text.Bart do
             |> then(
               &Axon.layer(
                 fn pkv_cache, cross_attention_cache, _opts ->
-                  cache_at_this_index = elem(pkv_cache, idx)
-
-                  updated_cache_at_this_index =
-                    put_elem(cache_at_this_index, 1, cross_attention_cache)
-
-                  put_elem(pkv_cache, idx, updated_cache_at_this_index)
+                  put_in(pkv_cache, [Access.elem(idx), Access.elem(1)], self_attention_cache)
                 end,
                 [&1, cross_attention_cache]
               )
