@@ -83,12 +83,15 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Makes an attention mask.
+  Builds an attention mask.
+  
+  Expects a batched, flat inputs of length corresponding to query and key
+  length respectively.
   """
-  defn make_attention_mask(query, key, pairwise_fn \\ &Nx.greater_equal/2) do
-    query
+  defn build_attention_mask(query_input, key_input) do
+    query_input
     |> Nx.new_axis(-1)
-    |> pairwise_fn.(Nx.new_axis(key, -2))
+    |> Nx.greater_equal(Nx.new_axis(key_input, -2))
     |> Nx.new_axis(-3)
   end
 
