@@ -195,4 +195,45 @@ defmodule Bumblebee.Layers do
       |> Nx.squeeze(axes: [opts[:axis]])
     end)
   end
+
+  @doc """
+  Implements position masking for embedded patches of visual
+  inputs.
+
+  This layer expects computed patch embeddings and an optional
+  mask. If the mask is not specified, it will skip position masking
+  altogether.
+
+  ## Options
+
+    * `:name` - layer name
+
+    * `:mask_size` - size of mask
+  """
+  def vision_position_mask_layer(embeds, bool_masked_pos, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, :mask_size])
+    name = opts[:name]
+    mask_size = opts[:mask_size]
+
+    mask_token = Axon.param("mask_token", {1, 1, mask_size}, initializer: :zeros)
+
+    Axon.layer(
+      fn embeds, bool_mask, toks, _opts ->
+        if bool_mask do
+          batch_size = Nx.axis_size(embeds, 0)
+          seq_len = Nx.axis_size(embeds, 1)
+          mask_tokens = Nx.broadcast(toks, {batch_size, seq_len, mask_size})
+          mask = bool_mask |> Nx.new_axis(-1)
+
+          embeds
+          |> Nx.multiply(Nx.subtract(1.0, mask))
+          |> Nx.add(Nx.multiply(mask_tokens, mask))
+        else
+          embeds
+        end
+      end,
+      [embeds, bool_masked_pos, mask_token],
+      name: name
+    )
+  end
 end

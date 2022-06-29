@@ -232,7 +232,10 @@ defmodule Bumblebee.Vision.Deit do
 
     pixel_values
     |> patch_embeddings(config, name: join(name, "patch_embeddings"))
-    |> maybe_mask(bool_masked_pos, config, name: join(name, "mask_tokens"))
+    |> Layers.vision_position_mask_layer(bool_masked_pos,
+      mask_size: config.hidden_size,
+      name: join(name, "mask_tokens")
+    )
     |> position_embeddings(config, name: name)
     |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
   end
@@ -250,30 +253,6 @@ defmodule Bumblebee.Vision.Deit do
     )
     |> Axon.nx(&Nx.transpose(&1, axes: [0, 2, 3, 1]))
     |> Axon.reshape({:auto, config.hidden_size}, name: join(name, "reshape"))
-  end
-
-  defp maybe_mask(embeds, bool_masked_pos, config, opts) do
-    name = opts[:name]
-    mask_token = Axon.param("mask_token", {1, 1, config.hidden_size}, initializer: :zeros)
-
-    Axon.layer(
-      fn embeds, bool_mask, toks, _opts ->
-        if bool_mask do
-          batch_size = Nx.axis_size(embeds, 0)
-          seq_len = Nx.axis_size(embeds, 1)
-          mask_tokens = Nx.broadcast(toks, {batch_size, seq_len, config.hidden_size})
-          mask = bool_mask |> Nx.new_axis(-1)
-
-          embeds
-          |> Nx.multiply(Nx.subtract(1.0, mask))
-          |> Nx.add(Nx.multiply(mask_tokens, mask))
-        else
-          embeds
-        end
-      end,
-      [embeds, bool_masked_pos, mask_token],
-      name: name
-    )
   end
 
   defp position_embeddings(embeddings, config, opts) do

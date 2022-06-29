@@ -14,8 +14,9 @@ defmodule Bumblebee.Vision.ResNet do
 
   ## Inputs
 
-  These models have a single tensor input, representing a 224x224 image
-  in the NCHW order.
+    * `"pixel_values"` - featurized image pixel values in NCHW format
+
+    * `"bool_masked_pos"` - position mask
 
   ## Configuration
 

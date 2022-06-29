@@ -19,6 +19,8 @@ defmodule Bumblebee.Vision.Vit do
 
     * `"pixel_values"` - featurized image pixel values in NCHW format
 
+    * `"bool_masked_pos"` - position mask
+
   ## Config
 
     * `:hidden_size` - dimensionality of the encoder layers and the pooler
@@ -107,7 +109,10 @@ defmodule Bumblebee.Vision.Vit do
 
   @impl true
   def model(%__MODULE__{architecture: :for_image_classification} = config) do
-    outputs = vit(config, name: "vit")
+    outputs =
+      config
+      |> inputs()
+      |> vit(config, name: "vit")
 
     logits =
       outputs.last_hidden_state
@@ -130,17 +135,24 @@ defmodule Bumblebee.Vision.Vit do
 
   def model(%__MODULE__{architecture: :base} = config) do
     config
-    |> vit()
+    |> inputs()
+    |> vit(config)
     |> Axon.container()
   end
 
-  defp vit(config, opts \\ []) do
+  defp inputs(config) do
+    input_shape = {nil, config.num_channels, config.image_size, config.image_size}
+
+    %{
+      "pixel_values" => Axon.input(input_shape, "pixel_values"),
+      "bool_masked_pos" => Axon.input({nil, nil}, "bool_masked_pos", default: nil)
+    }
+  end
+
+  defp vit(inputs, config, opts \\ []) do
     name = opts[:name]
 
-    input_shape = {nil, config.num_channels, config.image_size, config.image_size}
-    pixel_values = Axon.input(input_shape, "pixel_values")
-
-    hidden_states = embeddings(pixel_values, config, name: join(name, "embeddings"))
+    hidden_states = embeddings(inputs, config, name: join(name, "embeddings"))
 
     {hidden_states, all_hidden_states, all_attentions} =
       encoder(hidden_states, config, name: join(name, "encoder"))
@@ -163,11 +175,15 @@ defmodule Bumblebee.Vision.Vit do
     }
   end
 
-  defp embeddings(pixel_values, config, opts) do
+  defp embeddings(inputs, config, opts) do
     name = opts[:name]
 
-    pixel_values
+    inputs["pixel_values"]
     |> patch_embeddings(config, name: join(name, "patch_embeddings"))
+    |> Layers.vision_position_mask_layer(inputs["bool_masked_pos"],
+      mask_size: config.hidden_size,
+      name: join(name, "mask_tokens")
+    )
     |> position_embeddings(config, name: name)
     |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
   end
