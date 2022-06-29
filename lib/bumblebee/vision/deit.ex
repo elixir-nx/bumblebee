@@ -256,11 +256,9 @@ defmodule Bumblebee.Vision.Deit do
     name = opts[:name]
     mask_token = Axon.param("mask_token", {1, 1, config.hidden_size}, initializer: :zeros)
 
-    mask_graph =
-      Axon.layer(
-        fn embeds, bool_mask, toks, _opts ->
-          bool_mask = if bool_mask, do: bool_mask, else: Nx.tensor(0)
-
+    Axon.layer(
+      fn embeds, bool_mask, toks, _opts ->
+        if bool_mask do
           batch_size = Nx.axis_size(embeds, 0)
           seq_len = Nx.axis_size(embeds, 1)
           mask_tokens = Nx.broadcast(toks, {batch_size, seq_len, config.hidden_size})
@@ -269,19 +267,12 @@ defmodule Bumblebee.Vision.Deit do
           embeds
           |> Nx.multiply(Nx.subtract(1.0, mask))
           |> Nx.add(Nx.multiply(mask_tokens, mask))
-        end,
-        [embeds, bool_masked_pos, mask_token],
-        name: name
-      )
-
-    Axon.cond(
-      bool_masked_pos,
-      fn
-        nil -> Nx.tensor(0, type: {:u, 8})
-        _ -> Nx.tensor(1, type: {:u, 8})
+        else
+          embeds
+        end
       end,
-      embeds,
-      mask_graph
+      [embeds, bool_masked_pos, mask_token],
+      name: name
     )
   end
 

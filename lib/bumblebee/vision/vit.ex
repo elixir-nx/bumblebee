@@ -12,8 +12,12 @@ defmodule Bumblebee.Vision.Vit do
       The head consists of a single dense layer on top of the pooled
       features
 
-    * `:for_masked_image_modeling` - BEiT with a language modeling
+    * `:for_masked_image_modeling` - ViT with a language modeling
       head on top for predicting visual tokens
+
+  ## Inputs
+
+    * `"pixel_values"` - featurized image pixel values in NCHW format
 
   ## Config
 
