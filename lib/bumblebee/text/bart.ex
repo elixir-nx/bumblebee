@@ -25,10 +25,65 @@ defmodule Bumblebee.Text.Bart do
 
   ## Inputs
 
-    * `"input_ids"` - tokenized inputs of shape `{batch_size, seq_len}`.
-      This or `"input_embeds"` must be present
+    * `"input_ids"` - indices of input sequence tokens in the vocabulary
+      with shape `{batch_size, seq_len}`
 
-    * `""` - TODO
+    * `"attention_mask"` - a mask indicating which tokens to attend to.
+      This is used to ignore padding tokens, which are added when
+      processing a batch of sequences with different length. Defaults to
+      no masked input tokens, e.g. `Nx.broadcast(1, {batch_size, seq_len})`
+
+    * `"decoder_input_ids"` - indices of decoder input sequence tokens in
+      the vocabulary with shape `{batch_size, target_seq_len}`. If not present
+      and `"input_ids"` is, it will take on the value of shifting each token in
+      `"input_ids"` to the right once. Otherwise it will take on a `nil` value
+
+    * `"decoder_attention_mask"` - a mask indicating which decoder tokens to
+      attend to. This is used to ignore padding tokens, which are added when
+      processing a batch of sequences with different length. Defaults to
+      no masked input tokens, e.g. `Nx.broadcast(1, {batch_size, target_seq_len})`
+
+    * `"head_mask"` - a mask to nullify selected heads of the self-attention
+      blocks in the encoder with shape `{encoder_layers, encoder_attention_heads}`
+      Defaults to no masked heads, e.g. `Nx.broadcast(1, shape)`
+
+    * `"decoder_head_mask"` - a mask to nullify selected heads of the
+      self-attention blocks in the decoder with shape `{decoder_layers, decoder_attention_heads}`.
+      Defaults to no masked heads, e.g. `Nx.broadcast(1, shape)`
+
+    * `"cross_attn_head_mask"` - a mask to nullify selected heads of the
+      cross-attention blocks in the decoder with shape `{decoder_layers, decoder_attention_heads}`
+      Defaults to no masked heads, e.g. `Nx.broadcast(1, shape)`
+
+    * `"encoder_last_hidden_state"` - last hidden state output from the
+      encoder with shape `{batch_size, seq_len, hidden_size}`. Encoder last
+      hidden state is used in cross-attention blocks in the decoder. If specified,
+      the model will skip the encoding process and use this value directly
+      for cross-attentions in the decoder
+
+    * `"cache"` - contains pre-computed hidden states for self-attention and
+      cross-attention blocks in the decoder. When `config.use_cache` is set
+      to `true`, the cache will be used to speed up sequential decoding. Rather
+      than recomputing hidden states for past tokens, the cache keeps a history
+      of past hidden states. The cache consists of a tuple of maps, where the
+      number of entries in the tuple corresponds to `decoder_layers` (e.g. one
+      cache per decoder layer), and each entry is a map of tensors:
+      `%{key: cached_key, value: cached_value, index: index}`. Both `cached_key`
+      and `cached_value` have shapes `{batch_size, seq_len, heads, head_dim}` and
+      `index` is a scalar which maintains an index of the current token in the
+      sequence to decode
+
+    * `"input_embeds"` - embedded representation of `"input_ids"` with shape
+      `{batch_size, seq_len, hidden_size}` which can be specified for more
+      control over how `"input_ids"` are embedded than the model's internal
+      embedding lookup. If `"input_embeds"` are present, then `"input_ids"`
+      will be completely ignored
+
+    * `"decoder_input_embeds"` - embedded representation of `"decoder_input_ids"`
+      with shape `{batch_size, seq_len, hidden_size}` which can be specified
+      for more control over how `"decoder_input_ids"` are embedded than the model's
+      internal embedding lookup. If `"decoder_input_embeds"` are present, then
+      `"decoder_input_ids"` will be completely ignored
 
   ## Configuration
 
@@ -331,10 +386,11 @@ defmodule Bumblebee.Text.Bart do
         end
       )
 
-    encoder_outputs = Axon.input(hidden_state_shape, "encoder_outputs", default: nil)
+    encoder_last_hidden_state =
+      Axon.input(hidden_state_shape, "encoder_last_hidden_state", default: nil)
 
-    past_key_values =
-      Axon.input(cache_shape(input_shape, config), "past_key_values",
+    cache =
+      Axon.input(cache_shape(input_shape, config), "cache",
         default: fn inputs ->
           head_dim = div(config.d_model, config.decoder_attention_heads)
 
@@ -368,8 +424,8 @@ defmodule Bumblebee.Text.Bart do
       "head_mask" => head_mask,
       "decoder_head_mask" => decoder_head_mask,
       "cross_attention_head_mask" => cross_attention_head_mask,
-      "encoder_outputs" => encoder_outputs,
-      "past_key_values" => past_key_values,
+      "encoder_last_hidden_state" => encoder_last_hidden_state,
+      "cache" => cache,
       "input_embeds" => input_embeds,
       "decoder_input_embeds" => decoder_input_embeds
     }
@@ -436,13 +492,11 @@ defmodule Bumblebee.Text.Bart do
 
     encoder_outputs = encoder(inputs, input_embeds, config, name: join(name, "encoder"))
 
-    # TODO: This does not work yet because we cannot return containers from
-    # maybe layers
-    # {encoder_last_hidden_state, encoder_hidden_states, encoder_attentions} =
-    #   Layers.maybe(inputs["encoder_outputs"], encoder(inputs, config, name: "encoder"))
+    encoder_last_hidden_state =
+      Layers.maybe_layer(inputs["encoder_last_hidden_state"], encoder_outputs.last_hidden_state)
 
     decoder_outputs =
-      decoder(inputs, decoder_input_embeds, encoder_outputs.last_hidden_state, config,
+      decoder(inputs, decoder_input_embeds, encoder_last_hidden_state, config,
         name: join(name, "decoder")
       )
 
@@ -451,6 +505,7 @@ defmodule Bumblebee.Text.Bart do
       decoder_hidden_states: decoder_outputs.hidden_states,
       decoder_attentions: decoder_outputs.attentions,
       cross_attentions: decoder_outputs.cross_attentions,
+      cache: decoder_outputs.cache,
       encoder_last_hidden_state: encoder_outputs.last_hidden_state,
       encoder_hidden_states: encoder_outputs.hidden_states,
       encoder_attentions: encoder_outputs.attentions
@@ -592,7 +647,7 @@ defmodule Bumblebee.Text.Bart do
     encoder_attention_mask = inputs["attention_mask"]
     head_mask = inputs["decoder_head_mask"]
     cross_attention_head_mask = inputs["cross_attention_head_mask"]
-    past_key_values = inputs["past_key_values"]
+    cache = inputs["cache"]
 
     input_embeds
     |> Axon.add(pos_embeds)
@@ -604,7 +659,7 @@ defmodule Bumblebee.Text.Bart do
       encoder_attention_mask,
       head_mask,
       cross_attention_head_mask,
-      past_key_values,
+      cache,
       config,
       name: name
     )
@@ -617,7 +672,7 @@ defmodule Bumblebee.Text.Bart do
          encoder_attention_mask,
          head_mask,
          cross_attention_head_mask,
-         past_key_values,
+         cache,
          config,
          opts
        ) do
@@ -628,7 +683,7 @@ defmodule Bumblebee.Text.Bart do
       hidden_states: {hidden_states},
       attentions: {},
       cross_attentions: {},
-      cache: past_key_values
+      cache: cache
     }
 
     for idx <- 0..(config.decoder_layers - 1), reduce: initial_decoder_state do
