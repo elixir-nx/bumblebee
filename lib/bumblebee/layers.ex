@@ -82,7 +82,7 @@ defmodule Bumblebee.Layers do
 
   @doc """
   Builds an attention mask.
-  
+
   Expects a batched, flat inputs of length corresponding to query and key
   length respectively.
   """

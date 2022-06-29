@@ -147,10 +147,6 @@ defmodule Bumblebee.Text.Bart do
   def model(%__MODULE__{architecture: :for_conditional_generation} = config) do
     input_shape = {nil, 11}
 
-    # TODO: Flax uses this as a parameter, but PyTorch uses it
-    # as a buffer
-    final_logits_bias = Axon.constant(Nx.broadcast(0, {1, config.vocab_size}))
-
     outputs =
       input_shape
       |> inputs(config)
@@ -163,7 +159,6 @@ defmodule Bumblebee.Text.Bart do
         kernel_initializer: kernel_initializer(config),
         name: "shared"
       )
-      |> Axon.add(final_logits_bias)
 
     Axon.container(%{
       logits: lm_logits,
@@ -256,10 +251,15 @@ defmodule Bumblebee.Text.Bart do
     # TODO: Non-static seq len
     input_shape = {nil, 11}
 
-    outputs =
-      input_shape
-      |> inputs(config)
-      |> decoder(nil, config, name: "decoder")
+    inputs = inputs(input_shape, config)
+
+    input_embeds =
+      Layers.maybe_layer(
+        inputs["input_embeds"],
+        embed_tokens(inputs["input_ids"], config, "decoder.embed_tokens")
+      )
+
+    outputs = decoder(inputs, input_embeds, nil, config, name: "decoder")
 
     # TODO: Tie lm-head to word embedding as a config option
     lm_logits =
@@ -337,8 +337,15 @@ defmodule Bumblebee.Text.Bart do
       Axon.input(cache_shape(input_shape, config), "past_key_values",
         default: fn inputs ->
           head_dim = div(config.d_model, config.decoder_attention_heads)
-          # TODO: Check input_ids or input_embeds
-          {batch_size, seq_len} = Nx.shape(inputs["input_ids"])
+
+          {batch_size, seq_len} =
+            if Map.has_key?(inputs, "input_embeds") do
+              {batch_size, seq_len, _} = Nx.shape(inputs["input_embeds"])
+              {batch_size, seq_len}
+            else
+              Nx.shape(inputs["input_ids"])
+            end
+
           single_entry_shape = {batch_size, seq_len, config.decoder_attention_heads, head_dim}
           kv_tensor = Nx.broadcast(0.0, single_entry_shape)
           index = Nx.tensor(0)
@@ -415,7 +422,19 @@ defmodule Bumblebee.Text.Bart do
   defp bart(inputs, config, opts \\ []) do
     name = opts[:name]
 
-    encoder_outputs = encoder(inputs, config, name: join(name, "encoder"))
+    input_embeds =
+      Layers.maybe_layer(
+        inputs["input_embeds"],
+        embed_tokens(inputs["input_ids"], config, join(name, "shared"))
+      )
+
+    decoder_input_embeds =
+      Layers.maybe_layer(
+        inputs["decoder_input_embeds"],
+        embed_tokens(inputs["decoder_input_ids"], config, join(name, "shared"))
+      )
+
+    encoder_outputs = encoder(inputs, input_embeds, config, name: join(name, "encoder"))
 
     # TODO: This does not work yet because we cannot return containers from
     # maybe layers
@@ -423,7 +442,9 @@ defmodule Bumblebee.Text.Bart do
     #   Layers.maybe(inputs["encoder_outputs"], encoder(inputs, config, name: "encoder"))
 
     decoder_outputs =
-      decoder(inputs, encoder_outputs.last_hidden_state, config, name: join(name, "decoder"))
+      decoder(inputs, decoder_input_embeds, encoder_outputs.last_hidden_state, config,
+        name: join(name, "decoder")
+      )
 
     %{
       last_hidden_state: decoder_outputs.last_hidden_state,
@@ -436,27 +457,8 @@ defmodule Bumblebee.Text.Bart do
     }
   end
 
-  defp encoder(inputs, config, opts) do
+  defp encoder(inputs, input_embeds, config, opts) do
     name = opts[:name]
-
-    base_name =
-      case String.split(name, ".") do
-        [base, _] ->
-          base
-
-        [_] ->
-          nil
-      end
-
-    # TODO: It has to be only input_ids or only input_embeds
-    # so perhaps we should also have a `Layers.only` which
-    # enforces this relationship, or maybe it doesn't
-    # matter
-    input_embeds =
-      Layers.maybe_layer(
-        inputs["input_embeds"],
-        embed_tokens(inputs["input_ids"], config, base_name)
-      )
 
     pos_embeds = embed_positions(input_embeds, config, name)
 
@@ -471,12 +473,10 @@ defmodule Bumblebee.Text.Bart do
   end
 
   defp embed_tokens(input_ids, config, name) do
-    # TODO: This embedding may or may not be shared, depending
-    # on how the model is initialized
     input_embeds =
       Axon.embedding(input_ids, config.vocab_size, config.d_model,
         kernel_initializer: kernel_initializer(config),
-        name: join(name, "shared")
+        name: name
       )
 
     if config.scale_embedding do
@@ -511,7 +511,6 @@ defmodule Bumblebee.Text.Bart do
       attentions: {}
     }
 
-    # TODO: Generalize this logic to a higher-level function
     for idx <- 0..(config.encoder_layers - 1), reduce: initial_encoder_state do
       encoder_state ->
         layer_head_mask = Axon.nx(head_mask, & &1[idx])
@@ -584,27 +583,8 @@ defmodule Bumblebee.Text.Bart do
     {hidden_states, attention_weights}
   end
 
-  defp decoder(inputs, encoder_last_hidden_state, config, opts) do
+  defp decoder(inputs, input_embeds, encoder_last_hidden_state, config, opts) do
     name = opts[:name]
-
-    base_name =
-      case String.split(name, ".") do
-        [base, _] ->
-          base
-
-        [_] ->
-          nil
-      end
-
-    # TODO: It has to be only input_ids or only input_embeds
-    # so perhaps we should also have a `Layers.only` which
-    # enforces this relationship, or maybe it doesn't
-    # matter
-    input_embeds =
-      Layers.maybe_layer(
-        inputs["decoder_input_embeds"],
-        embed_tokens(inputs["decoder_input_ids"], config, base_name)
-      )
 
     pos_embeds = embed_positions(input_embeds, config, name)
 
@@ -686,14 +666,15 @@ defmodule Bumblebee.Text.Bart do
         updated_cache =
           if config.use_cache do
             {self_attention_cache, cross_attention_cache} = layer_cache
+
             Axon.layer(
-                fn pkv_cache, self_attention_cache, cross_attention_cache, _opts ->
-                  pkv_cache
-                  |> put_in([Access.elem(idx), Access.elem(0)], self_attention_cache)
-                  |> put_in([Access.elem(idx), Access.elem(1)], cross_attention_cache)
-                end,
-                [decoder_state.cache, self_attention_cache, cross_attention_cache]
-              )
+              fn pkv_cache, self_attention_cache, cross_attention_cache, _opts ->
+                pkv_cache
+                |> put_in([Access.elem(idx), Access.elem(0)], self_attention_cache)
+                |> put_in([Access.elem(idx), Access.elem(1)], cross_attention_cache)
+              end,
+              [decoder_state.cache, self_attention_cache, cross_attention_cache]
+            )
           else
             decoder_state.cache
           end
