@@ -503,8 +503,6 @@ defmodule Bumblebee.Text.Albert do
   defp pooler(hidden_states, config, opts) do
     name = opts[:name]
 
-    # TODO: This is an option passed to the model, but
-    # we don't have an interface for that yet
     hidden_states
     |> Layers.take_head_layer(axis: 1)
     |> Axon.dense(config.hidden_size,
