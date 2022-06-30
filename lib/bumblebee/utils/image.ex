@@ -3,6 +3,8 @@ defmodule Bumblebee.Utils.Image do
 
   import Nx.Defn
 
+  @compile {:no_warn_undefined, StbImage}
+
   @doc """
   Converts the given term to a batch of images.
   """
@@ -333,4 +335,26 @@ defmodule Bumblebee.Utils.Image do
     {height_axis, width_axis} = spatial_axes(input, channels: opts[:channels])
     {Nx.axis_size(input, height_axis), Nx.axis_size(input, width_axis)}
   end
+
+  @doc """
+  Normalizes an image according to the given per-channel mean and
+  standard deviation.
+  """
+  defn normalize(input, mean, std) do
+    type = Nx.type(input)
+    mean = mean |> Nx.as_type(type) |> Nx.reshape({1, :auto, 1, 1})
+    std = std |> Nx.as_type(type) |> Nx.reshape({1, :auto, 1, 1})
+    (input - mean) / std
+  end
+
+  @doc """
+  Normalizes an image size to a `{height, width}` tuple.
+
+  Accepts either an existing tuple or a single number used for both
+  dimensions.
+  """
+  def normalize_size(size)
+
+  def normalize_size({height, width}), do: {height, width}
+  def normalize_size(size) when is_integer(size), do: {size, size}
 end
