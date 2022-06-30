@@ -282,6 +282,8 @@ defmodule Bumblebee.Layers do
       end,
       [embeds, bool_masked_pos, mask_token],
       name: name
+    )
+  end
 
   @doc """
   A conditional layer which checks the presence of
