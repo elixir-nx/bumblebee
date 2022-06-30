@@ -14,9 +14,7 @@ defmodule Bumblebee.Vision.ConvNext do
 
   ## Inputs
 
-    * `"pixel_values"` - featurized image pixel values in NCHW format
-
-    * `"bool_masked_pos"` - position mask
+    * `"pixel_values"` - featurized image pixel values in NCHW format (224x224)
 
   ## Configuration
 
