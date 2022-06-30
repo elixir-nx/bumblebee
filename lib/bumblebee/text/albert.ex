@@ -106,10 +106,6 @@ defmodule Bumblebee.Text.Albert do
       head. If not specified, the value of `:hidden_dropout_prob` is
       used instead
 
-    * `:position_embedding_type` - type of position embedding. One of
-      `:absolute`, `:relative`, `:relative_key_query`. Defaults to
-      `:absolute`
-
   ### Common options
 
   #{Bumblebee.Shared.common_config_docs(@common_keys)}
@@ -206,7 +202,10 @@ defmodule Bumblebee.Text.Albert do
 
   def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
     inputs = inputs({nil, nil, 9})
-    flat_inputs = Map.new(inputs, fn {key, input} -> {key, flatten_leading(input)} end)
+
+    flat_inputs =
+      Map.new(inputs, fn {key, input} -> {key, Layers.flatten_leading_layer(input)} end)
+
     outputs = albert(flat_inputs, config, name: "albert")
 
     logits =
@@ -423,7 +422,7 @@ defmodule Bumblebee.Text.Albert do
         kernel_initializer: kernel_initializer(config),
         name: join(name, "ffn")
       )
-      |> Axon.activation(config.hidden_act, name: join(name, "ffn.activation"))
+      |> Layers.activation_layer(config.hidden_act, name: join(name, "ffn.activation"))
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "ffn_output")
@@ -538,24 +537,12 @@ defmodule Bumblebee.Text.Albert do
       kernel_initializer: kernel_initializer(config),
       name: name <> ".dense"
     )
-    |> Axon.activation(config.hidden_act, name: name <> ".activation")
+    |> Layers.activation_layer(config.hidden_act, name: name <> ".activation")
     |> Axon.layer_norm(
       epsilon: config.layer_norm_eps,
       name: name <> ".LayerNorm",
       channel_index: 2
     )
-  end
-
-  defp flatten_leading(%Axon{} = x) do
-    Axon.nx(x, fn x ->
-      shape =
-        x
-        |> Nx.shape()
-        |> Tuple.delete_at(0)
-        |> put_elem(0, :auto)
-
-      Nx.reshape(x, shape)
-    end)
   end
 
   defp classifier_dropout_rate(config) do
@@ -573,7 +560,6 @@ defmodule Bumblebee.Text.Albert do
     def load(config, data) do
       data
       |> Shared.atomize_values(["position_embedding_type", "hidden_act"])
-      |> Shared.map_activations()
       |> Shared.cast_common_values()
       |> Shared.data_into_config(config)
     end

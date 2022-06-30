@@ -247,7 +247,10 @@ defmodule Bumblebee.Text.Bert do
 
   def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
     inputs = inputs({nil, nil, 35}, config)
-    flat_inputs = Map.new(inputs, fn {key, input} -> {key, flatten_leading(input)} end)
+
+    flat_inputs =
+      Map.new(inputs, fn {key, input} -> {key, Layers.flatten_leading_layer(input)} end)
+
     outputs = bert(flat_inputs, config, name: "bert")
 
     logits =
@@ -512,7 +515,7 @@ defmodule Bumblebee.Text.Bert do
       kernel_initializer: kernel_initializer(config),
       name: name <> ".dense"
     )
-    |> Axon.activation(config.hidden_act, name: name <> ".activation")
+    |> Layers.activation_layer(config.hidden_act, name: name <> ".activation")
   end
 
   defp output(hidden_states, attention_output, config, opts) do
@@ -568,24 +571,12 @@ defmodule Bumblebee.Text.Bert do
       kernel_initializer: kernel_initializer(config),
       name: name <> ".dense"
     )
-    |> Axon.activation(config.hidden_act, name: name <> ".activation")
+    |> Layers.activation_layer(config.hidden_act, name: name <> ".activation")
     |> Axon.layer_norm(
       epsilon: config.layer_norm_eps,
       name: name <> ".LayerNorm",
       channel_index: 2
     )
-  end
-
-  defp flatten_leading(%Axon{} = x) do
-    Axon.nx(x, fn x ->
-      shape =
-        x
-        |> Nx.shape()
-        |> Tuple.delete_at(0)
-        |> put_elem(0, :auto)
-
-      Nx.reshape(x, shape)
-    end)
   end
 
   defp flatten_trailing(%Axon{} = x) do
