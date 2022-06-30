@@ -3,8 +3,6 @@ defmodule Bumblebee.Shared do
 
   import Nx.Defn
 
-  @pi 3.14159265358979323
-
   @doc """
   Returns a subset of common config attributes with their default
   values.
