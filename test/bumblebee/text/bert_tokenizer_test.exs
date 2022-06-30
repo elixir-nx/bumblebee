@@ -2,7 +2,6 @@ defmodule Bumblebee.Text.BertTokenizerTest do
   use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
-  require Axon
 
   describe "integration" do
     @tag :slow
