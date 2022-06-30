@@ -210,11 +210,11 @@ defmodule Bumblebee.Layers do
 
     * `:mask_size` - size of mask
   """
-  def vision_position_mask_layer(embeds, bool_masked_pos, opts \\ []) do
+  def vision_position_mask_layer(%Axon{output_shape: shape} = embeds, bool_masked_pos, opts \\ []) do
     opts = Keyword.validate!(opts, [:name, :mask_size])
     name = opts[:name]
-    mask_size = opts[:mask_size]
 
+    mask_size = elem(shape, 2)
     mask_token = Axon.param("mask_token", {1, 1, mask_size}, initializer: :zeros)
 
     Axon.layer(

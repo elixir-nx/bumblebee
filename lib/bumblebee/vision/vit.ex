@@ -19,7 +19,7 @@ defmodule Bumblebee.Vision.Vit do
 
     * `"pixel_values"` - featurized image pixel values in NCHW format
 
-    * `"bool_masked_pos"` - position mask
+    * `"patch_mask"` - mask for extracted patches
 
   ## Config
 
@@ -145,7 +145,7 @@ defmodule Bumblebee.Vision.Vit do
 
     %{
       "pixel_values" => Axon.input(input_shape, "pixel_values"),
-      "bool_masked_pos" => Axon.input({nil, nil}, "bool_masked_pos", default: nil)
+      "patch_mask" => Axon.input({nil, nil}, "patch_mask", default: nil)
     }
   end
 
@@ -180,7 +180,7 @@ defmodule Bumblebee.Vision.Vit do
 
     inputs["pixel_values"]
     |> patch_embeddings(config, name: join(name, "patch_embeddings"))
-    |> Layers.vision_position_mask_layer(inputs["bool_masked_pos"],
+    |> Layers.vision_position_mask_layer(inputs["patch_mask"],
       mask_size: config.hidden_size,
       name: join(name, "mask_tokens")
     )
