@@ -1,8 +1,6 @@
 defmodule Bumblebee.Shared do
   @moduledoc false
 
-  import Nx.Defn
-
   @doc """
   Returns a subset of common config attributes with their default
   values.

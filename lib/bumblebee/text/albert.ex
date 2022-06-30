@@ -504,7 +504,7 @@ defmodule Bumblebee.Text.Albert do
     name = opts[:name]
 
     hidden_states
-    |> Layers.take_head_layer(axis: 1)
+    |> Layers.take_token_layer(axis: 1)
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: name

@@ -240,7 +240,8 @@ defmodule Bumblebee.Layers do
           embeds
         end
       end,
-      [embeds, bool_masked_pos, mask_token]
+      [embeds, bool_masked_pos, mask_token],
+      name: name
     )
   end
 
