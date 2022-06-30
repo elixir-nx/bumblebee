@@ -19,7 +19,7 @@ defmodule Bumblebee.Text.BartTest do
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.last_hidden_state) == {1, 11, 768}
 
@@ -48,7 +48,7 @@ defmodule Bumblebee.Text.BartTest do
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.logits) == {1, 11, 50265}
 
@@ -77,7 +77,7 @@ defmodule Bumblebee.Text.BartTest do
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.logits) == {1, 2}
 
@@ -103,7 +103,7 @@ defmodule Bumblebee.Text.BartTest do
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.start_logits) == {1, 11}
       assert Nx.shape(output.end_logits) == {1, 11}
@@ -144,7 +144,7 @@ defmodule Bumblebee.Text.BartTest do
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.logits) == {1, 11, 50265}
 

@@ -5,6 +5,9 @@ defmodule Bumblebee.Layers do
 
   import Nx.Defn
 
+  @unsupported_activations [:gelu_new]
+  @pi :math.pi()
+
   @doc """
   Converts attention mask to bias.
   """
@@ -98,6 +101,14 @@ defmodule Bumblebee.Layers do
   """
   defn combine_mask(left_mask, right_mask, _opts \\ []) do
     Nx.logical_and(left_mask, right_mask)
+  end
+
+  @doc """
+  Implements the GeLU new activation from Huggingface.
+  """
+  defn gelu_new(input, _opts \\ []) do
+    0.5 * input *
+      (1.0 + Nx.tanh(Nx.sqrt(2.0 / @pi) * (input + 0.044715 * Nx.power(input, 3.0))))
   end
 
   @doc """
@@ -231,7 +242,7 @@ defmodule Bumblebee.Layers do
   ## Options
 
     * `:name` - layer name
-    
+
     * `:axis` - axis to slice token from
 
     * `:index` - index to slice head. Defaults to 0
@@ -302,6 +313,54 @@ defmodule Bumblebee.Layers do
       [maybe_value, default_value],
       name: opts[:name],
       op_name: :maybe
+    )
+  end
+
+  @doc """
+  Returns an activation layer supported by Axon.
+
+  This is necessary as some activations are not directly
+  supported by Axon.
+
+  ## Options
+
+    * `:name` - layer name
+  """
+  def activation_layer(%Axon{} = input, activation, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name])
+    name = opts[:name]
+
+    if activation in @unsupported_activations do
+      Axon.activation(input, &apply(__MODULE__, activation, [&1, &2]), name: name)
+    else
+      Axon.activation(input, activation, name: name)
+    end
+  end
+
+  @doc """
+  Adds a layer to the network which flattens the leading
+  axes of the input.
+
+  ## Options
+
+    * `:name` - layer name
+  """
+  def flatten_leading_layer(%Axon{} = x, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name])
+    name = opts[:name]
+
+    Axon.nx(
+      x,
+      fn x ->
+        shape =
+          x
+          |> Nx.shape()
+          |> Tuple.delete_at(0)
+          |> put_elem(0, :auto)
+
+        Nx.reshape(x, shape)
+      end,
+      name: name
     )
   end
 end

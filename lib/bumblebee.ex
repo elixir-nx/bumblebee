@@ -144,6 +144,14 @@ defmodule Bumblebee do
     # ResNet
     "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
+    # Albert
+    "AlbertModel" => {Bumblebee.Text.Albert, :base},
+    "AlbertForMaskedLM" => {Bumblebee.Text.Albert, :for_masked_language_modeling},
+    "AlbertForSequenceClassification" => {Bumblebee.Text.Albert, :for_sequence_classification},
+    "AlbertForTokenClassification" => {Bumblebee.Text.Albert, :for_token_classification},
+    "AlbertForQuestionAnswering" => {Bumblebee.Text.Albert, :for_question_answering},
+    "AlbertForMultipleChoice" => {Bumblebee.Text.Albert, :for_multiple_choice},
+    "AlbertForPreTraining" => {Bumblebee.Text.Albert, :for_pre_training},
     # Bert
     "BertModel" => {Bumblebee.Text.Bert, :base},
     "BertForMaskedLM" => {Bumblebee.Text.Bert, :for_masked_language_modeling},
@@ -154,8 +162,10 @@ defmodule Bumblebee do
     "BertForMultipleChoice" => {Bumblebee.Text.Bert, :for_multiple_choice},
     "BertForNextSentencePrediction" => {Bumblebee.Text.Bert, :for_next_sentence_prediction},
     "BertForPreTraining" => {Bumblebee.Text.Bert, :for_pre_training},
+    # ConvNext
     "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
     "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification},
+    # ViT
     "ViTModel" => {Bumblebee.Vision.Vit, :base},
     "ViTForImageClassification" => {Bumblebee.Vision.Vit, :for_image_classification},
     # "ViTForMaskedImageModeling" => {Bumblebee.Vision.Vit, :for_masked_image_modeling}
