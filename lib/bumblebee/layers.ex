@@ -180,17 +180,57 @@ defmodule Bumblebee.Layers do
   ## Options
 
     * `:name` - layer name
-
+    
     * `:axis` - axis to slice token from
+
+    * `:index` - index to slice head. Defaults to 0
   """
-  def take_head_layer(%Axon{} = input, opts \\ []) do
-    opts = Keyword.validate!(opts, [:axis, :name])
+  def take_token_layer(%Axon{} = input, opts \\ []) do
+    opts = Keyword.validate!(opts, [:axis, :name, index: 0])
 
     input
     |> Axon.nx(fn x ->
       x
-      |> Nx.slice_along_axis(0, 1, axis: opts[:axis])
+      |> Nx.slice_along_axis(opts[:index], 1, axis: opts[:axis])
       |> Nx.squeeze(axes: [opts[:axis]])
     end)
+  end
+
+  @doc """
+  Implements position masking for embedded patches of visual
+  inputs.
+
+  This layer expects computed patch embeddings and an optional
+  mask. If the mask is not specified, it will skip position masking
+  altogether.
+
+  ## Options
+
+    * `:name` - layer name
+
+    * `:mask_size` - size of mask
+  """
+  def vision_position_mask_layer(%Axon{output_shape: shape} = embeds, bool_masked_pos, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, :mask_size])
+    name = opts[:name]
+
+    mask_size = elem(shape, 2)
+    mask_token = Axon.param("mask_token", {1, 1, mask_size}, initializer: :zeros)
+
+    Axon.layer(
+      fn embeds, bool_mask, toks, _opts ->
+        if bool_mask do
+          batch_size = Nx.axis_size(embeds, 0)
+          seq_len = Nx.axis_size(embeds, 1)
+          mask_tokens = Nx.broadcast(toks, {batch_size, seq_len, mask_size})
+          mask = bool_mask |> Nx.new_axis(-1) |> Nx.broadcast({batch_size, seq_len, mask_size})
+          Nx.select(mask, mask_tokens, embeds)
+        else
+          embeds
+        end
+      end,
+      [embeds, bool_masked_pos, mask_token],
+      name: name
+    )
   end
 end

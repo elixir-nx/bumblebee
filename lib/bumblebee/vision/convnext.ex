@@ -14,8 +14,7 @@ defmodule Bumblebee.Vision.ConvNext do
 
   ## Inputs
 
-  These models have a single tensor input, representing a 224x224 image
-  in the NCHW order.
+    * `"pixel_values"` - featurized image pixel values in NCHW format (224x224)
 
   ## Configuration
 

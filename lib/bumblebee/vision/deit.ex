@@ -1,18 +1,23 @@
-defmodule Bumblebee.Vision.Vit do
+defmodule Bumblebee.Vision.Deit do
   @common_keys [:id2label, :label2id, :num_labels, :output_hidden_states]
 
   @moduledoc """
-  Models based on the ViT architecture.
+  Models based on the DeiT architecture.
 
   ## Architectures
 
-    * `:base` - plain ViT without any head on top
+    * `:base` - plain DeiT without any head on top
 
-    * `:for_image_classification` - ViT with a classification head.
-      The head consists of a single dense layer on top of the pooled
-      features
+    * `:for_image_classification` - DeiT with a classification head.
+      The head consists of two dense layers on top of the final
+      hidden state of the CLS token
 
-    * `:for_masked_image_modeling` - ViT with a language modeling
+    * `:for_image_classification_with teacher` - DeiT with a
+      classification head. The head consists of two dense layers
+      on top of the final hidden state of the CLS token and the
+      final hidden state of the distillation token
+
+    * `:for_masked_image_modeling` - DEiT with a language modeling
       head on top for predicting visual tokens
 
   ## Inputs
@@ -96,10 +101,16 @@ defmodule Bumblebee.Vision.Vit do
   @behaviour Bumblebee.ModelSpec
 
   @impl true
-  def architectures(), do: [:base, :for_image_classification, :for_masked_image_modeling]
+  def architectures(),
+    do: [
+      :base,
+      :for_image_classification,
+      :for_image_classification_with_teacher,
+      :for_masked_image_modeling
+    ]
 
   @impl true
-  def base_model_prefix(), do: "vit"
+  def base_model_prefix(), do: "deit"
 
   @impl true
   def config(config, opts \\ []) do
@@ -112,18 +123,56 @@ defmodule Bumblebee.Vision.Vit do
     outputs =
       config
       |> inputs()
-      |> vit(config, name: "vit")
+      |> deit(config, name: "deit")
 
     logits =
       outputs.last_hidden_state
-      |> Layers.take_token_layer(index: 0, axis: 1, name: join("vit", "head"))
+      |> Layers.take_token_layer(index: 0, axis: 1, name: "cls_head")
       |> Axon.dense(config.num_labels,
         kernel_initializer: kernel_initializer(config),
-        name: "classifier"
+        name: "cls_classifier"
       )
 
     Axon.container(%{
       logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_image_classification_with_teacher} = config) do
+    outputs =
+      config
+      |> inputs()
+      |> deit(config, name: "deit")
+
+    cls_head =
+      outputs.last_hidden_state
+      |> Layers.take_token_layer(index: 0, axis: 1, name: "cls_head")
+
+    dist_head =
+      outputs.last_hidden_state
+      |> Layers.take_token_layer(index: 1, axis: 1, name: "dist_head")
+
+    cls_logits =
+      cls_head
+      |> Axon.dense(config.num_labels, name: "cls_classifier")
+
+    dist_logits =
+      dist_head
+      |> Axon.dense(config.num_labels, name: "distillation_classifier")
+
+    # TODO: Replace with mean layer in Axon
+
+    logits =
+      cls_logits
+      |> Axon.add(dist_logits)
+      |> Axon.nx(&Nx.divide(&1, 2))
+
+    Axon.container(%{
+      logits: logits,
+      cls_logits: cls_logits,
+      distillation_logits: dist_logits,
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions
     })
@@ -136,7 +185,7 @@ defmodule Bumblebee.Vision.Vit do
   def model(%__MODULE__{architecture: :base} = config) do
     config
     |> inputs()
-    |> vit(config)
+    |> deit(config)
     |> Axon.container()
   end
 
@@ -149,7 +198,7 @@ defmodule Bumblebee.Vision.Vit do
     }
   end
 
-  defp vit(inputs, config, opts \\ []) do
+  defp deit(inputs, config, opts \\ []) do
     name = opts[:name]
 
     hidden_states = embeddings(inputs, config, name: join(name, "embeddings"))
@@ -178,9 +227,12 @@ defmodule Bumblebee.Vision.Vit do
   defp embeddings(inputs, config, opts) do
     name = opts[:name]
 
-    inputs["pixel_values"]
+    pixel_values = inputs["pixel_values"]
+    patch_mask = inputs["patch_mask"]
+
+    pixel_values
     |> patch_embeddings(config, name: join(name, "patch_embeddings"))
-    |> Layers.vision_position_mask_layer(inputs["patch_mask"],
+    |> Layers.vision_position_mask_layer(patch_mask,
       mask_size: config.hidden_size,
       name: join(name, "mask_tokens")
     )
@@ -211,20 +263,24 @@ defmodule Bumblebee.Vision.Vit do
 
     cls_token = Axon.param("cls_token", {1, 1, config.hidden_size}, initializer: :zeros)
 
+    distillation_token =
+      Axon.param("distillation_token", {1, 1, config.hidden_size}, initializer: :zeros)
+
     position_embeddings =
-      Axon.param("position_embeddings", {1, num_patches + 1, config.hidden_size},
+      Axon.param("position_embeddings", {1, num_patches + 2, config.hidden_size},
         initializer: :zeros
       )
 
     Axon.layer(
-      fn embeddings, cls_token, position_embeddings, _opts ->
+      fn embeddings, cls_token, distillation_token, position_embeddings, _opts ->
         batch_size = Nx.axis_size(embeddings, 0)
         cls_token = Nx.broadcast(cls_token, {batch_size, 1, config.hidden_size})
+        distillation_token = Nx.broadcast(distillation_token, {batch_size, 1, config.hidden_size})
 
-        Nx.concatenate([cls_token, embeddings], axis: 1)
+        Nx.concatenate([cls_token, distillation_token, embeddings], axis: 1)
         |> Nx.add(position_embeddings)
       end,
-      [embeddings, cls_token, position_embeddings],
+      [embeddings, cls_token, distillation_token, position_embeddings],
       name: name
     )
   end
