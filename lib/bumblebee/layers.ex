@@ -223,11 +223,8 @@ defmodule Bumblebee.Layers do
           batch_size = Nx.axis_size(embeds, 0)
           seq_len = Nx.axis_size(embeds, 1)
           mask_tokens = Nx.broadcast(toks, {batch_size, seq_len, mask_size})
-          mask = bool_mask |> Nx.new_axis(-1)
-
-          embeds
-          |> Nx.multiply(Nx.subtract(1.0, mask))
-          |> Nx.add(Nx.multiply(mask_tokens, mask))
+          mask = bool_mask |> Nx.new_axis(-1) |> Nx.broadcast({batch_size, seq_len, mask_size})
+          Nx.select(mask, mask_tokens, embeds)
         else
           embeds
         end
