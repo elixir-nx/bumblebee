@@ -1,42 +1,38 @@
-defmodule Bumblebee.Text.Bert do
+defmodule Bumblebee.Text.Albert do
   @common_keys [:output_hidden_states, :output_attentions, :id2label, :label2id, :num_labels]
 
   @moduledoc """
-  Models based on the BERT architecture.
+  Models based on the ALBERT architecture.
 
   ## Architectures
 
-    * `:base` - plain BERT without any head on top
+    * `:base` - plain ALBERT without any head on top
 
-    * `:for_masked_language_modeling` - BERT with a language modeling
+    * `:for_masked_language_modeling` - ALBERT with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_causal_language_modeling` - BERT with a language modeling
+    * `:for_causal_language_modeling` - ALBERT with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - BERT with a sequence
+    * `:for_sequence_classification` - ALBERT with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
-    * `:for_token_classification` - BERT with a token classification
+    * `:for_token_classification` - ALBERT with a token classification
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_question_answering` - BERT with a span classification head.
+    * `:for_question_answering` - ALBERT with a span classification head.
       The head returns logits for the span start and end positions
 
-    * `:for_multiple_choice` - BERT with a multiple choice prediction
+    * `:for_multiple_choice` - ALBERT with a multiple choice prediction
       head. Each input in the batch consists of several sequences to
       choose from and the model returns logits corresponding to those
       choices
 
-    * `:for_next_sentence_prediction` - BERT with a next sentence
-      prediction head. The head returns logits predicting whether the
-      second sentence is random or in context
-
-    * `:for_pre_training` - BERT with both MLM and NSP heads as done
+    * `:for_pre_training` - ALBERT with both MLM and NSP heads as done
       during the pre-training
 
   ## Inputs
@@ -54,27 +50,33 @@ defmodule Bumblebee.Text.Bert do
     * `"position_ids"` - indices of positions of each input sequence
       tokens in the position embeddings
 
-    * `"head_mask"` - a mask to nullify selected heads of the self-attention
-      blocks
-
   ## Configuration
 
     * `:vocab_size` - vocabulary size of the model. Defines the number
       of distinct tokens that can be represented by the in model input
-      and output. Defaults to `30522`
+      and output. Defaults to `30000`
+
+    * `:embedding_size` - dimensionality of vocab embeddings. Defaults
+      to 128
 
     * `:hidden_size` - dimensionality of the encoder layers and the
-      pooler layer. Defaults to `768`
+      pooler layer. Defaults to `4096`
 
     * `:num_hidden_layers` - the number of hidden layers in the
       Transformer encoder. Defaults to `12`
+
+    * `:num_hidden_groups` - the number of groups for hidden layers,
+      parameters in the same group are shared. Defaults to `1`
 
     * `:num_attention_heads` - the number of attention heads for each
       attention layer in the Transformer encoder. Defaults to `12`
 
     * `:intermediate_size` - dimensionality of the "intermediate"
       (often named feed-forward) layer in the Transformer encoder.
-      Defaults to `3072`
+      Defaults to `16384`
+
+    * `:inner_group_num` - number of inner repetition of attention
+      and ffn. Defaults to 1
 
     * `:hidden_act` - the activation function in the encoder and
       pooler. Defaults to `:gelu`
@@ -100,7 +102,7 @@ defmodule Bumblebee.Text.Bert do
     * `:layer_norm_eps` - the epsilon used by the layer normalization
       layers. Defaults to `1.0e-12`
 
-    * `:classifier_dropout` - the dropout ratio for the classification
+    * `:classifier_dropout_prob` - the dropout ratio for the classification
       head. If not specified, the value of `:hidden_dropout_prob` is
       used instead
 
@@ -115,22 +117,32 @@ defmodule Bumblebee.Text.Bert do
 
   defstruct [
               architecture: :base,
-              vocab_size: 30522,
-              hidden_size: 768,
+              vocab_size: 30000,
+              embedding_size: 128,
+              hidden_size: 4096,
               num_hidden_layers: 12,
+              num_hidden_groups: 1,
               num_attention_heads: 12,
-              intermediate_size: 3072,
+              intermediate_size: 16384,
+              inner_group_num: 1,
               hidden_act: :gelu,
-              hidden_dropout_prob: 0.1,
-              attention_probs_dropout_prob: 0.1,
+              hidden_dropout_prob: 0.0,
+              attention_probs_dropout_prob: 0.0,
               max_position_embeddings: 512,
               type_vocab_size: 2,
               initializer_range: 0.02,
               layer_norm_eps: 1.0e-12,
-              classifier_dropout: nil
+              classifier_dropout_prob: 0.1,
+              position_embedding_type: :absolute,
+              pad_token_id: 0,
+              bos_token_id: 2,
+              eos_token_id: 3
             ] ++ Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
+
+  @impl true
+  def base_model_prefix(), do: "albert"
 
   @impl true
   def architectures(),
@@ -142,12 +154,8 @@ defmodule Bumblebee.Text.Bert do
       :for_token_classification,
       :for_question_answering,
       :for_multiple_choice,
-      :for_next_sentence_prediction,
       :for_pre_training
     ]
-
-  @impl true
-  def base_model_prefix(), do: "bert"
 
   @impl true
   def config(config, opts \\ []) do
@@ -157,27 +165,15 @@ defmodule Bumblebee.Text.Bert do
 
   @impl true
   def model(%__MODULE__{architecture: :base} = config) do
-    inputs({nil, 11}, config)
-    |> bert(config)
+    inputs({nil, 11})
+    |> albert(config, name: "albert")
     |> Axon.container()
   end
 
   def model(%__MODULE__{architecture: :for_masked_language_modeling} = config) do
-    outputs = inputs({nil, 9}, config) |> bert(config, name: "bert")
+    outputs = inputs({nil, 9}) |> albert(config, name: "albert")
 
-    logits = lm_prediction_head(outputs.last_hidden_state, config, name: "cls.predictions")
-
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
-  end
-
-  def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
-    outputs = inputs({nil, 8}, config) |> bert(config, name: "bert")
-
-    logits = lm_prediction_head(outputs.last_hidden_state, config, name: "cls.predictions")
+    logits = lm_prediction_head(outputs.last_hidden_state, config, name: "predictions")
 
     Axon.container(%{
       logits: logits,
@@ -187,11 +183,11 @@ defmodule Bumblebee.Text.Bert do
   end
 
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
-    outputs = inputs({nil, 11}, config) |> bert(config, name: "bert")
+    outputs = inputs({nil, 9}) |> albert(config, name: "albert")
 
     logits =
       outputs.pooler_output
-      |> Axon.dropout(rate: classifier_dropout_rate(config), name: "dropout")
+      |> Axon.dropout(rate: classifier_dropout_rate(config))
       |> Axon.dense(config.num_labels,
         kernel_initializer: kernel_initializer(config),
         name: "classifier"
@@ -199,59 +195,18 @@ defmodule Bumblebee.Text.Bert do
 
     Axon.container(%{
       logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
-  end
-
-  def model(%__MODULE__{architecture: :for_token_classification} = config) do
-    outputs = inputs({nil, 13}, config) |> bert(config, name: "bert")
-
-    logits =
-      outputs.last_hidden_state
-      |> Axon.dropout(rate: classifier_dropout_rate(config), name: "dropout")
-      |> Axon.dense(config.num_labels,
-        kernel_initializer: kernel_initializer(config),
-        name: "classifier"
-      )
-
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
-  end
-
-  def model(%__MODULE__{architecture: :for_question_answering} = config) do
-    outputs = inputs({nil, 16}, config) |> bert(config, name: "bert")
-
-    logits =
-      outputs.last_hidden_state
-      |> Axon.dropout(rate: classifier_dropout_rate(config), name: "dropout")
-      |> Axon.dense(2,
-        kernel_initializer: kernel_initializer(config),
-        name: "qa_outputs"
-      )
-
-    {start_logits, end_logits} = Axon.split(logits, 2, axis: -1)
-    start_logits = flatten_trailing(start_logits)
-    end_logits = flatten_trailing(end_logits)
-
-    Axon.container(%{
-      start_logits: start_logits,
-      end_logits: end_logits,
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions
     })
   end
 
   def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
-    inputs = inputs({nil, nil, 35}, config)
+    inputs = inputs({nil, nil, 9})
 
     flat_inputs =
       Map.new(inputs, fn {key, input} -> {key, Layers.flatten_leading_layer(input)} end)
 
-    outputs = bert(flat_inputs, config, name: "bert")
+    outputs = albert(flat_inputs, config, name: "albert")
 
     logits =
       outputs.pooler_output
@@ -279,14 +234,21 @@ defmodule Bumblebee.Text.Bert do
     })
   end
 
-  def model(%__MODULE__{architecture: :for_next_sentence_prediction} = config) do
-    outputs = inputs({nil, 38}, config) |> bert(config, name: "bert")
+  def model(%__MODULE__{architecture: :for_token_classification} = config) do
+    # TODO: Non-static seq len
+    input_shape = {nil, 9}
+
+    outputs =
+      input_shape
+      |> inputs()
+      |> albert(config, name: "albert")
 
     logits =
-      outputs.pooler_output
-      |> Axon.dense(2,
+      outputs.last_hidden_state
+      |> Axon.dropout(rate: classifier_dropout_rate(config))
+      |> Axon.dense(config.num_labels,
         kernel_initializer: kernel_initializer(config),
-        name: "cls.seq_relationship"
+        name: "classifier"
       )
 
     Axon.container(%{
@@ -296,27 +258,33 @@ defmodule Bumblebee.Text.Bert do
     })
   end
 
-  def model(%__MODULE__{architecture: :for_pre_training} = config) do
-    outputs = inputs({nil, 8}, config) |> bert(config, name: "bert")
+  def model(%__MODULE__{architecture: :for_question_answering} = config) do
+    # TODO: Non-static seq len
+    input_shape = {nil, 9}
 
-    prediction_logits =
-      lm_prediction_head(outputs.last_hidden_state, config, name: "cls.predictions")
+    outputs =
+      input_shape
+      |> inputs()
+      |> albert(config, name: "albert")
 
-    seq_relationship_logits =
-      Axon.dense(outputs.pooler_output, 2,
+    logits =
+      Axon.dense(outputs.last_hidden_state, 2,
         kernel_initializer: kernel_initializer(config),
-        name: "cls.seq_relationship"
+        name: "qa_outputs"
       )
 
+    start_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 0]])
+    end_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 1]])
+
     Axon.container(%{
-      prediction_logits: prediction_logits,
-      seq_relationship_logits: seq_relationship_logits,
+      start_logits: start_logits,
+      end_logits: end_logits,
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions
     })
   end
 
-  defp inputs(input_shape, config) do
+  defp inputs(input_shape) do
     %{
       "input_ids" => Axon.input(input_shape, "input_ids"),
       "attention_mask" =>
@@ -330,28 +298,17 @@ defmodule Bumblebee.Text.Bert do
       "position_ids" =>
         Axon.input(input_shape, "position_ids",
           default: fn inputs -> Nx.iota(inputs["input_ids"], axis: -1) end
-        ),
-      "head_mask" =>
-        Axon.input({config.num_hidden_layers, config.num_attention_heads}, "head_mask",
-          default: fn _inputs ->
-            Nx.broadcast(1, {config.num_hidden_layers, config.num_attention_heads})
-          end
         )
     }
   end
 
-  defp bert(inputs, config, opts \\ []) do
+  defp albert(inputs, config, opts) do
     name = opts[:name]
 
-    hidden_states =
-      embeddings(inputs["input_ids"], inputs["token_type_ids"], inputs["position_ids"], config,
-        name: join(name, "embeddings")
-      )
+    hidden_states = embeddings(inputs, config, name: join(name, "embeddings"))
 
     {last_hidden_state, hidden_states, attentions} =
-      encoder(hidden_states, inputs["attention_mask"], inputs["head_mask"], config,
-        name: join(name, "encoder")
-      )
+      encoder(inputs, hidden_states, config, name: join(name, "encoder"))
 
     pooler_output = pooler(last_hidden_state, config, name: join(name, "pooler"))
 
@@ -363,26 +320,27 @@ defmodule Bumblebee.Text.Bert do
     }
   end
 
-  defp join(nil, suffix), do: suffix
-  defp join(base, suffix), do: base <> "." <> suffix
-
-  defp embeddings(input_ids, token_type_ids, position_ids, config, opts) do
+  defp embeddings(inputs, config, opts) do
     name = opts[:name]
 
+    input_ids = inputs["input_ids"]
+    position_ids = inputs["position_ids"]
+    token_type_ids = inputs["token_type_ids"]
+
     inputs_embeds =
-      Axon.embedding(input_ids, config.vocab_size, config.hidden_size,
+      Axon.embedding(input_ids, config.vocab_size, config.embedding_size,
         kernel_initializer: kernel_initializer(config),
         name: name <> ".word_embeddings"
       )
 
     position_embeds =
-      Axon.embedding(position_ids, config.max_position_embeddings, config.hidden_size,
+      Axon.embedding(position_ids, config.max_position_embeddings, config.embedding_size,
         kernel_initializer: kernel_initializer(config),
         name: name <> ".position_embeddings"
       )
 
     token_type_embeds =
-      Axon.embedding(token_type_ids, config.type_vocab_size, config.hidden_size,
+      Axon.embedding(token_type_ids, config.type_vocab_size, config.embedding_size,
         kernel_initializer: kernel_initializer(config),
         name: name <> ".token_type_embeddings"
       )
@@ -396,50 +354,91 @@ defmodule Bumblebee.Text.Bert do
     |> Axon.dropout(rate: config.hidden_dropout_prob, name: name <> ".dropout")
   end
 
-  defp encoder(hidden_states, attention_mask, head_mask, config, opts) do
+  defp encoder(inputs, hidden_states, config, opts) do
     name = opts[:name]
 
-    for idx <- 0..(config.num_hidden_layers - 1), reduce: {hidden_states, {hidden_states}, {}} do
-      {hidden_states, all_hidden_states, all_attention_outputs} ->
-        layer_head_mask = Axon.nx(head_mask, & &1[idx])
+    hidden_states =
+      Axon.dense(hidden_states, config.hidden_size,
+        kernel_initializer: kernel_initializer(config),
+        name: join(name, "embedding_hidden_mapping_in")
+      )
 
-        {hidden_states, attention_weights} =
-          bert_layer(hidden_states, attention_mask, layer_head_mask, config,
-            name: name <> ".layer.#{idx}"
-          )
+    albert_layer_groups(inputs, hidden_states, config, name: name)
+  end
+
+  defp albert_layer_groups(inputs, hidden_states, config, opts) do
+    name = opts[:name]
+
+    last_hidden_state = hidden_states
+    all_hidden_states = {last_hidden_state}
+    all_attentions = {}
+
+    initial_state = {last_hidden_state, all_hidden_states, all_attentions}
+
+    for idx <- 0..(config.num_hidden_layers - 1), reduce: initial_state do
+      {last, states, attentions} ->
+        group_idx = div(idx, div(config.num_hidden_layers, config.num_hidden_groups))
+        group_name = join(name, "albert_layer_groups.#{group_idx}")
+        albert_layer_collection(inputs, last, states, attentions, config, name: group_name)
+    end
+  end
+
+  defp albert_layer_collection(
+         inputs,
+         hidden_states,
+         all_hidden_states,
+         all_attentions,
+         config,
+         opts
+       ) do
+    name = opts[:name]
+
+    initial_state = {hidden_states, all_hidden_states, all_attentions}
+
+    for idx <- 0..(config.inner_group_num - 1), reduce: initial_state do
+      {last, states, attentions} ->
+        layer_name = join(name, "albert_layers.#{idx}")
+        {next_state, next_attention} = albert_layer(inputs, last, config, name: layer_name)
 
         {
-          hidden_states,
-          Tuple.append(all_hidden_states, hidden_states),
-          Tuple.append(all_attention_outputs, attention_weights)
+          next_state,
+          Tuple.append(states, next_state),
+          Tuple.append(attentions, next_attention)
         }
     end
   end
 
-  defp bert_layer(hidden_states, attention_mask, layer_head_mask, config, opts) do
-    name = opts[:name]
-
-    {attention_outputs, attention_weights} =
-      attention(hidden_states, attention_mask, layer_head_mask, config, name: name <> ".attention")
-
-    hidden_states = intermediate(attention_outputs, config, name: name <> ".intermediate")
-    hidden_states = output(hidden_states, attention_outputs, config, name: name <> ".output")
-
-    {hidden_states, attention_weights}
-  end
-
-  defp attention(hidden_states, attention_mask, layer_head_mask, config, opts) do
+  defp albert_layer(inputs, hidden_states, config, opts) do
     name = opts[:name]
 
     {attention_output, attention_weights} =
-      self_attention(hidden_states, attention_mask, layer_head_mask, config, name: name <> ".self")
+      self_attention(hidden_states, inputs["attention_mask"], config,
+        name: join(name, "attention")
+      )
 
-    hidden_states = self_output(attention_output, hidden_states, config, name: name <> ".output")
+    hidden_states =
+      attention_output
+      |> Axon.dense(config.intermediate_size,
+        kernel_initializer: kernel_initializer(config),
+        name: join(name, "ffn")
+      )
+      |> Layers.activation_layer(config.hidden_act, name: join(name, "ffn.activation"))
+      |> Axon.dense(config.hidden_size,
+        kernel_initializer: kernel_initializer(config),
+        name: join(name, "ffn_output")
+      )
+      |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "ffn_output.dropout"))
+      |> Axon.add(attention_output, name: join(name, "ffn.residual"))
+      |> Axon.layer_norm(
+        epsilon: config.layer_norm_eps,
+        name: join(name, "full_layer_layer_norm"),
+        channel_index: 2
+      )
 
     {hidden_states, attention_weights}
   end
 
-  defp self_attention(hidden_states, attention_mask, layer_head_mask, config, opts) do
+  defp self_attention(hidden_states, attention_mask, config, opts) do
     name = opts[:name]
 
     head_dim = div(config.hidden_size, config.num_attention_heads)
@@ -448,7 +447,7 @@ defmodule Bumblebee.Text.Bert do
       hidden_states
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
-        name: name <> ".query"
+        name: join(name, "query")
       )
       |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
 
@@ -456,7 +455,7 @@ defmodule Bumblebee.Text.Bert do
       hidden_states
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
-        name: name <> ".value"
+        name: join(name, "value")
       )
       |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
 
@@ -464,7 +463,7 @@ defmodule Bumblebee.Text.Bert do
       hidden_states
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
-        name: name <> ".key"
+        name: join(name, "key")
       )
       |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
 
@@ -476,75 +475,41 @@ defmodule Bumblebee.Text.Bert do
     attention_weights =
       Axon.dropout(attention_weights,
         rate: config.attention_probs_dropout_prob,
-        name: name <> ".dropout"
+        name: join(name, "dropout")
       )
-
-    attention_weights =
-      Axon.layer(&Layers.apply_layer_head_mask/3, [attention_weights, layer_head_mask])
 
     attention_output = Axon.layer(&Layers.attention_output/3, [attention_weights, value_states])
 
     attention_output =
       Axon.reshape(attention_output, {:auto, config.num_attention_heads * head_dim})
 
-    {attention_output, attention_weights}
-  end
+    projected =
+      attention_output
+      |> Axon.dense(config.hidden_size,
+        kernel_initializer: kernel_initializer(config),
+        name: join(name, "dense")
+      )
+      |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dense.dropout"))
+      |> Axon.add(hidden_states)
+      |> Axon.layer_norm(
+        epsilon: config.layer_norm_eps,
+        name: join(name, "LayerNorm"),
+        channel_index: 2
+      )
 
-  defp self_output(hidden_states, input, config, opts) do
-    name = opts[:name]
-
-    hidden_states
-    |> Axon.dense(config.hidden_size,
-      kernel_initializer: kernel_initializer(config),
-      name: name <> ".dense"
-    )
-    |> Axon.dropout(rate: config.hidden_dropout_prob, name: name <> ".dropout")
-    |> Axon.add(input)
-    |> Axon.layer_norm(
-      epsilon: config.layer_norm_eps,
-      name: name <> ".LayerNorm",
-      channel_index: 2
-    )
-  end
-
-  defp intermediate(hidden_states, config, opts) do
-    name = opts[:name]
-
-    hidden_states
-    |> Axon.dense(config.intermediate_size,
-      kernel_initializer: kernel_initializer(config),
-      name: name <> ".dense"
-    )
-    |> Layers.activation_layer(config.hidden_act, name: name <> ".activation")
-  end
-
-  defp output(hidden_states, attention_output, config, opts) do
-    name = opts[:name]
-
-    hidden_states
-    |> Axon.dense(config.hidden_size,
-      kernel_initializer: kernel_initializer(config),
-      name: name <> ".dense"
-    )
-    |> Axon.dropout(rate: config.hidden_dropout_prob, name: name <> ".dropout")
-    |> Axon.add(attention_output)
-    |> Axon.layer_norm(
-      epsilon: config.layer_norm_eps,
-      name: name <> ".LayerNorm",
-      channel_index: 2
-    )
+    {projected, attention_weights}
   end
 
   defp pooler(hidden_states, config, opts) do
     name = opts[:name]
 
     hidden_states
-    |> Layers.take_token_layer(index: 0, axis: 1, name: join(name, "head"))
+    |> Layers.take_token_layer(axis: 1)
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
-      name: name <> ".dense"
+      name: name
     )
-    |> Axon.tanh()
+    |> Axon.tanh(name: join(name, "tanh"))
   end
 
   defp lm_prediction_head(hidden_state, config, opts) do
@@ -554,20 +519,19 @@ defmodule Bumblebee.Text.Bert do
     # if config.tie_word_embeddings is true (relevant for training)
 
     hidden_state
-    |> lm_prediction_head_transform(config, name: name <> ".transform")
+    |> lm_prediction_head_transform(config, name: name)
     # We reuse the kernel of input embeddings and add bias for each token
     |> Layers.dense_transposed_layer(config.vocab_size,
       kernel_initializer: kernel_initializer(config),
-      name: name <> ".decoder"
+      name: join(name, "decoder")
     )
-    |> Axon.bias(name: name)
   end
 
   defp lm_prediction_head_transform(hidden_state, config, opts) do
     name = opts[:name]
 
     hidden_state
-    |> Axon.dense(config.hidden_size,
+    |> Axon.dense(config.embedding_size,
       kernel_initializer: kernel_initializer(config),
       name: name <> ".dense"
     )
@@ -579,32 +543,21 @@ defmodule Bumblebee.Text.Bert do
     )
   end
 
-  defp flatten_trailing(%Axon{} = x) do
-    Axon.nx(x, fn x ->
-      shape = Nx.shape(x)
-      rank = tuple_size(shape)
-
-      shape =
-        shape
-        |> Tuple.delete_at(rank - 1)
-        |> put_elem(rank - 2, :auto)
-
-      Nx.reshape(x, shape)
-    end)
-  end
-
   defp classifier_dropout_rate(config) do
-    config.classifier_dropout || config.hidden_dropout_prob
+    config.classifier_dropout_prob || config.hidden_dropout_prob
   end
 
   defp kernel_initializer(config) do
     Axon.Initializers.normal(scale: config.initializer_range)
   end
 
+  defp join(nil, rhs), do: rhs
+  defp join(lhs, rhs), do: lhs <> "." <> rhs
+
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
       data
-      |> Shared.atomize_values(["hidden_act"])
+      |> Shared.atomize_values(["position_embedding_type", "hidden_act"])
       |> Shared.cast_common_values()
       |> Shared.data_into_config(config)
     end
