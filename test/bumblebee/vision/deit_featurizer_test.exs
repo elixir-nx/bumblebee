@@ -13,7 +13,7 @@ defmodule Bumblebee.Vision.DeitFeaturizerTest do
 
       input = Bumblebee.apply_featurizer(featurizer, image)
 
-      assert Nx.shape(input) == {1, 3, 224, 224}
+      assert Nx.shape(input["pixel_values"]) == {1, 3, 224, 224}
     end
   end
 end

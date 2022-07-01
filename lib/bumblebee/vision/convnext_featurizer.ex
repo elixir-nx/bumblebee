@@ -77,11 +77,14 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
 
     images = Nx.divide(images, 255.0)
 
-    if config.do_normalize do
-      Image.normalize(images, Nx.tensor(config.image_mean), Nx.tensor(config.image_std))
-    else
-      images
-    end
+    images =
+      if config.do_normalize do
+        Image.normalize(images, Nx.tensor(config.image_mean), Nx.tensor(config.image_std))
+      else
+        images
+      end
+
+    %{"pixel_values" => images}
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
