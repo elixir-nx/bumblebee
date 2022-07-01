@@ -35,22 +35,22 @@ defmodule Bumblebee.SharedTest do
     end
   end
 
-  describe "atomize_values/2" do
+  describe "convert_to_atom/2" do
     test "converts specified keys to atoms" do
-      assert Shared.atomize_values(
+      assert Shared.convert_to_atom(
                %{"key1" => "value", "key2" => 1, "key3" => "value"},
                ["key3"]
              ) == %{"key1" => "value", "key2" => 1, "key3" => :value}
     end
 
     test "leaves nils unchanged" do
-      assert Shared.atomize_values(%{"key" => nil}, ["key"]) == %{"key" => nil}
+      assert Shared.convert_to_atom(%{"key" => nil}, ["key"]) == %{"key" => nil}
     end
   end
 
-  describe "cast_common_values/1" do
+  describe "convert_common/1" do
     test "converts id2label keys to numbers" do
-      assert Shared.cast_common_values(%{
+      assert Shared.convert_common(%{
                "id2label" => %{"0" => "cat", "1" => "dog"}
              }) == %{"id2label" => %{0 => "cat", 1 => "dog"}}
     end

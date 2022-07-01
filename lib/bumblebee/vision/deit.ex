@@ -33,32 +33,32 @@ defmodule Bumblebee.Vision.Deit do
 
     * `:num_hidden_layers` - number of hidden layers in the transformer
       encoder. Defaults to `12`
-    
+
     * `:num_attention_heads` - number of attention heads for each attention
       layer in the transformer encoder. Defaults to `12`
-    
+
     * `:intermediate_size` - dimensionality of the intermediate layer in
       the transformer encoder. Defaults to `3072`
-    
+
     * `:hidden_act` - non-linear activation function in the encoder and
       pooler. Defaults to `:gelu`
-    
+
     * `:hidden_dropout_prob` - dropout probability for all fully connected
       layers in the embeddings, encoder, and pooler. Defaults to `0.0`
-    
+
     * `:attention_probs_dropout_prob` - dropout ratio for attention
       probabilities. Defaults to `0.0`
 
     * `:initializer_range` - standard deviation of the truncated normal
       initializer for initializing all weight matrices. Defaults to `0.02`
-    
+
     * `:layer_norm_eps` - epsilon used for layer norm layers. Defaults to
       `1.0e-12`
 
     * `:image_size` - resolution of each image. Defaults to `224`
-    
+
     * `:patch_size` - resolution of each patch. Defaults to `16`
-    
+
     * `:num_channels` - number of input channels. Defaults to `3`
 
     * `:qkv_bias` - whether to use bias in query, key, and value
@@ -179,7 +179,7 @@ defmodule Bumblebee.Vision.Deit do
   end
 
   # TODO: This requires a PixelShuffle implementation in Axon
-  # def model(%__MODULE__{architecture: :for_masked_image_modeling} = config) do    
+  # def model(%__MODULE__{architecture: :for_masked_image_modeling} = config) do
   # end
 
   def model(%__MODULE__{architecture: :base} = config) do
@@ -454,9 +454,9 @@ defmodule Bumblebee.Vision.Deit do
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
       data
-      |> Shared.atomize_values(["hidden_act"])
-      |> Shared.cast_common_values()
-      |> Shared.data_into_config(config)
+      |> Shared.convert_to_atom(["hidden_act"])
+      |> Shared.convert_common()
+      |> Shared.data_into_config(config, except: [:architecture])
     end
   end
 end
