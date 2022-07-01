@@ -55,31 +55,4 @@ jobs:
         run: mix test --only slow ${{ env.GIT_DIFF_FILTERED }}
         if: ${{ github.event_name == 'pull_request' && env.GIT_DIFF_FILTERED != '' }}
 
-  slow:
-    needs: [main]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-
-      - uses: erlef/setup-beam@v1
-        with:
-          otp-version: ${{env.otp}}
-          elixir-version: ${{env.elixir}}
-
-      - uses: actions/cache@v2
-        with:
-          path: ~/.cache/bumblebee
-          key: downloads
-
-      - uses: actions/cache@v2
-        with:
-          path: |
-            deps
-            _build
-          key: ${{ runner.os }}-mix-${{env.elixir}}-${{env.otp}}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-mix-
-
-      - run: mix deps.get
-
       - run: mix test --only slow
