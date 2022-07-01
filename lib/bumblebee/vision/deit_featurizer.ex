@@ -11,8 +11,8 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
       or a `{height, width}` tuple. Only has an effect if `:do_resize`
       is `true`. Defaults to `256`
 
-    * `:resample` - the resizing method, either of `:nearest`, `:linear`,
-      `:cubic`, `:lanczos3`, `:lanczos5`. Defaults to `:cubic`
+    * `:resample` - the resizing method, either of `:nearest`, `:bilinear`,
+      `:bicubic`, `:lanczos3`, `:lanczos5`. Defaults to `:bicubic`
 
     * `:do_center_crop` - whether to crop the input at the center. If
       the input size is smaller than `:crop_size` along any edge, the
@@ -41,7 +41,7 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
 
   defstruct do_resize: true,
             size: 256,
-            resample: :cubic,
+            resample: :bicubic,
             do_center_crop: true,
             crop_size: 224,
             do_normalize: true,

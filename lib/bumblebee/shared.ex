@@ -138,8 +138,8 @@ defmodule Bumblebee.Shared do
       case data[key] do
         0 -> :nearest
         1 -> :lanczos3
-        2 -> :linear
-        3 -> :cubic
+        2 -> :bilinear
+        3 -> :bicubic
         _ -> nil
       end
 

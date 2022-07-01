@@ -11,8 +11,8 @@ defmodule Bumblebee.Vision.VitFeaturizer do
       or a `{height, width}` tuple. Only has an effect if `:do_resize`
       is `true`. Defaults to `224`
 
-    * `:resample` - the resizing method, either of `:nearest`, `:linear`,
-      `:cubic`, `:lanczos3`, `:lanczos5`. Defaults to `:linear`
+    * `:resample` - the resizing method, either of `:nearest`, `:bilinear`,
+      `:bicubic`, `:lanczos3`, `:lanczos5`. Defaults to `:bilinear`
 
     * `:do_normalize` - whether or not to normalize the input with
       mean and standard deviation. Defaults to `true`
@@ -33,7 +33,7 @@ defmodule Bumblebee.Vision.VitFeaturizer do
 
   defstruct do_resize: true,
             size: 224,
-            resample: :linear,
+            resample: :bilinear,
             do_normalize: true,
             image_mean: [0.5, 0.5, 0.5],
             image_std: [0.5, 0.5, 0.5]
