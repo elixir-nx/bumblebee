@@ -1,24 +1,26 @@
-defmodule Bumblebee.Vision.ConvNextFeaturizer do
+defmodule Bumblebee.Vision.DeitFeaturizer do
   @moduledoc """
-  ConvNeXT featurizer for image data.
+  DeiT featurizer for image data.
 
   ## Configuration
 
     * `:do_resize` - whether to resize (and optionally center crop)
       the input to the given `:size`. Defaults to `true`
 
-    * `:size` - the size to resize the input to. If 384 or larger,
-      the image is resized to (`:size`, `:size`). Otherwise, the
-      shorter edge of the image is matched to `:size` / `:crop_pct`,
-      then image is cropped to `:size`. Only has an effect if
-      `:do_resize` is `true`. Defaults to `224`
+    * `:size` - the size to resize the input to. Either a single number
+      or a `{height, width}` tuple. Only has an effect if `:do_resize`
+      is `true`. Defaults to `256`
 
     * `:resample` - the resizing method, either of `:nearest`, `:linear`,
       `:cubic`, `:lanczos3`, `:lanczos5`. Defaults to `:cubic`
 
-    * `:crop_pct` - the percentage of the image to crop. Only has
-      an effect if `:do_resize` is `true` and `:size` < 384. Defaults
-      to `224 / 256`
+    * `:do_center_crop` - whether to crop the input at the center. If
+      the input size is smaller than `:crop_size` along any edge, the
+      image is padded with zeros and then center cropped. Defaults to
+      `true`
+
+    * `:crop_size` - the size to center crop the image to. Only has an
+      effect if `:do_center_crop` is `true`. Defaults to `224`
 
     * `:do_normalize` - whether or not to normalize the input with
       mean and standard deviation. Defaults to `true`
@@ -38,9 +40,10 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
   @behaviour Bumblebee.Featurizer
 
   defstruct do_resize: true,
-            size: 224,
+            size: 256,
             resample: :cubic,
-            crop_pct: 224 / 256,
+            do_center_crop: true,
+            crop_size: 224,
             do_normalize: true,
             image_mean: [0.485, 0.456, 0.406],
             image_std: [0.229, 0.224, 0.225]
@@ -58,24 +61,23 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
       for image <- images do
         images = image |> Image.to_batched_tensor() |> Nx.as_type(:f32)
 
-        cond do
-          not config.do_resize ->
-            images
-
-          config.size >= 384 ->
-            Image.resize(images, size: {config.size, config.size}, method: config.resample)
-
-          true ->
-            scale_size = floor(config.size / config.crop_pct)
-
-            images
-            |> Image.resize_short(size: scale_size, method: config.resample)
-            |> Image.center_crop(size: {config.size, config.size})
+        if config.do_resize do
+          size = Image.normalize_size(config.size)
+          Image.resize(images, size: size, method: config.resample)
+        else
+          images
         end
       end
       |> Nx.concatenate()
 
     images = Nx.divide(images, 255.0)
+
+    images =
+      if config.do_center_crop do
+        Image.center_crop(images, size: {config.crop_size, config.crop_size})
+      else
+        images
+      end
 
     if config.do_normalize do
       Image.normalize(images, Nx.tensor(config.image_mean), Nx.tensor(config.image_std))

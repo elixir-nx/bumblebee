@@ -359,13 +359,15 @@ defmodule Bumblebee do
 
   @transformers_class_to_featurizer %{
     "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer,
-    "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer
+    "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer,
+    "DeiTFeatureExtractor" => Bumblebee.Vision.DeitFeaturizer
   }
 
   @model_type_to_featurizer %{
     "resnet" => Bumblebee.Vision.ConvNextFeaturizer,
     "convnext" => Bumblebee.Vision.ConvNextFeaturizer,
-    "vit" => Bumblebee.Vision.VitFeaturizer
+    "vit" => Bumblebee.Vision.VitFeaturizer,
+    "deit" => Bumblebee.Vision.DeitFeaturizer
   }
 
   defp infer_featurizer_type(%{"feature_extractor_type" => class_name}, _repository, _opts) do
