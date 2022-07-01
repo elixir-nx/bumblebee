@@ -1,6 +1,6 @@
-defmodule Bumblebee.Text.BertTokenizer do
+defmodule Bumblebee.Text.BartTokenizer do
   @doc """
-  BERT tokenizer.
+  BART tokenizer.
   """
 
   defstruct [:tokenizer]
@@ -9,7 +9,7 @@ defmodule Bumblebee.Text.BertTokenizer do
 
   @impl true
   def apply(%{tokenizer: tokenizer}, input, add_special_tokens) do
-    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, add_special_tokens, "[PAD]")
+    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, add_special_tokens, "<pad>")
   end
 
   @impl true
@@ -29,7 +29,15 @@ defmodule Bumblebee.Text.BertTokenizer do
 
   @impl true
   def special_tokens(_tokenizer) do
-    %{unknown: "[UNK]", separator: "[SEP]", padding: "[PAD]", class: "[CLS]", mask: "[MASK]"}
+    %{
+      bos: "<s>",
+      eos: "</s>",
+      unknown: "<unk>",
+      separator: "</s>",
+      padding: "<pad>",
+      class: "<s>",
+      mask: "<mask>"
+    }
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
