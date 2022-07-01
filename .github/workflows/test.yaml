@@ -1,27 +1,25 @@
 name: Test
+
 on:
   pull_request:
   push:
     branches:
       - main
+
+env:
+  elixir: 1.13.0
+  otp: 24.0
+
 jobs:
   main:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - pair:
-              elixir: 1.13.0
-              otp: 24.0
-            lint: true
     steps:
       - uses: actions/checkout@v2
 
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{matrix.pair.otp}}
-          elixir-version: ${{matrix.pair.elixir}}
+          otp-version: ${{ env.otp }}
+          elixir-version: ${{ env.elixir }}
 
       - uses: actions/cache@v2
         with:
@@ -33,21 +31,56 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{matrix.pair.elixir}}-${{matrix.pair.otp}}-${{ hashFiles('**/mix.lock') }}
+          key: ${{ runner.os }}-mix-${{env.elixir}}-${{env.otp}}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-
 
       - run: mix deps.get
 
       - run: mix format --check-formatted
-        if: ${{ matrix.lint }}
 
       - run: mix deps.unlock --check-unused
-        if: ${{ matrix.lint }}
 
       - run: mix deps.compile
 
       - run: mix compile --warnings-as-errors
-        if: ${{ matrix.lint }}
 
-      - run: mix test --include slow
+      - run: mix test
+
+      - name: Changed slow tests
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.sha }}
+          changed_files="$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} test/**/*_test.exs)"
+          if [ -n "$changed_files" ]; then
+            mix test --only slow $changed_files
+          fi
+        if: ${{ github.event_name == 'pull_request' }}
+
+  slow:
+    needs: [main]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{env.otp}}
+          elixir-version: ${{env.elixir}}
+
+      - uses: actions/cache@v2
+        with:
+          path: ~/.cache/bumblebee
+          key: downloads
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{env.elixir}}-${{env.otp}}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - run: mix deps.get
+
+      - run: mix test --only slow
