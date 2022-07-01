@@ -104,8 +104,8 @@ defmodule Bumblebee.Utils.Image do
     * `:size` - the target image size specified as `{height, width}`
 
     * `:method` - the resizing method to use, either of `:nearest`,
-      `:linear`, `:cubic`, `:lanczos3`, `:lanczos5`. Defaults to
-      `:linear`
+      `:bilinear`, `:bicubic`, `:lanczos3`, `:lanczos5`. Defaults to
+      `:bilinear`
 
     * `:channels` - channels location, either `:first` or `:last`.
       Defaults to `:first`
@@ -126,7 +126,7 @@ defmodule Bumblebee.Utils.Image do
           ]
         ]
       >
-      iex> Bumblebee.Utils.Image.resize(images, size: {3, 3}, method: :linear)
+      iex> Bumblebee.Utils.Image.resize(images, size: {3, 3}, method: :bilinear)
       #Nx.Tensor<
         f32[1][1][3][3]
         [
@@ -142,7 +142,7 @@ defmodule Bumblebee.Utils.Image do
 
   """
   defn resize(input, opts \\ []) do
-    opts = keyword!(opts, [:size, channels: :first, method: :linear])
+    opts = keyword!(opts, [:size, channels: :first, method: :bilinear])
 
     transform({input, opts}, fn {input, opts} ->
       {spatial_axes, out_shape} =
@@ -158,10 +158,10 @@ defmodule Bumblebee.Utils.Image do
           :nearest ->
             resize_nearest(input, out_shape, spatial_axes)
 
-          :linear ->
+          :bilinear ->
             resize_with_kernel(input, out_shape, spatial_axes, &fill_linear_kernel/1)
 
-          :cubic ->
+          :bicubic ->
             resize_with_kernel(input, out_shape, spatial_axes, &fill_cubic_kernel/1)
 
           :lanczos3 ->
@@ -172,7 +172,7 @@ defmodule Bumblebee.Utils.Image do
 
           method ->
             raise ArgumentError,
-                  "expected :method to be either of :nearest, :linear, :cubic, " <>
+                  "expected :method to be either of :nearest, :bilinear, :bicubic, " <>
                     ":lanczos3, :lanczos5, got: #{inspect(method)}"
         end
 
@@ -300,7 +300,7 @@ defmodule Bumblebee.Utils.Image do
 
   """
   defn resize_short(input, opts \\ []) do
-    opts = keyword!(opts, [:size, channels: :first, method: :linear])
+    opts = keyword!(opts, [:size, channels: :first, method: :bilinear])
 
     size = opts[:size]
     method = opts[:method]

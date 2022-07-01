@@ -13,11 +13,11 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
       then image is cropped to `:size`. Only has an effect if
       `:do_resize` is `true`. Defaults to `224`
 
-    * `:resample` - the resizing method, either of `:nearest`, `:linear`,
-      `:cubic`, `:lanczos3`, `:lanczos5`. Defaults to `:cubic`
+    * `:resample` - the resizing method, either of `:nearest`, `:bilinear`,
+      `:bicubic`, `:lanczos3`, `:lanczos5`. Defaults to `:bicubic`
 
     * `:crop_pct` - the percentage of the image to crop. Only has
-      an effect if `:do_resize` is `:true` and `:size` < 384. Defaults
+      an effect if `:do_resize` is `true` and `:size` < 384. Defaults
       to `224 / 256`
 
     * `:do_normalize` - whether or not to normalize the input with
@@ -39,7 +39,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
 
   defstruct do_resize: true,
             size: 224,
-            resample: :cubic,
+            resample: :bicubic,
             crop_pct: 224 / 256,
             do_normalize: true,
             image_mean: [0.485, 0.456, 0.406],
@@ -77,11 +77,14 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
 
     images = Nx.divide(images, 255.0)
 
-    if config.do_normalize do
-      Image.normalize(images, Nx.tensor(config.image_mean), Nx.tensor(config.image_std))
-    else
-      images
-    end
+    images =
+      if config.do_normalize do
+        Image.normalize(images, Nx.tensor(config.image_mean), Nx.tensor(config.image_std))
+      else
+        images
+      end
+
+    %{"pixel_values" => images}
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do

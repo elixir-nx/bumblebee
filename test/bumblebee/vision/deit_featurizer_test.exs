@@ -1,12 +1,13 @@
-defmodule Bumblebee.Vision.VitFeaturizerTest do
+defmodule Bumblebee.Vision.DeitFeaturizerTest do
   use ExUnit.Case, async: true
 
   describe "integration" do
     @tag :slow
     test "encoding model input" do
-      assert {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "google/vit-base-patch16-224"})
+      assert {:ok, featurizer} =
+               Bumblebee.load_featurizer({:hf, "facebook/deit-base-distilled-patch16-224"})
 
-      assert %Bumblebee.Vision.VitFeaturizer{} = featurizer
+      assert %Bumblebee.Vision.DeitFeaturizer{} = featurizer
 
       image = Nx.tensor([[50, 100], [150, 200]]) |> Nx.broadcast({3, 2, 2})
 
