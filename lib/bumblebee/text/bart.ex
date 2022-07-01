@@ -190,7 +190,7 @@ defmodule Bumblebee.Text.Bart do
     ]
 
   @impl true
-  def base_model_prefix(), do: "bart"
+  def base_model_prefix(), do: "model"
 
   @impl true
   def config(config, opts \\ []) do
@@ -311,18 +311,17 @@ defmodule Bumblebee.Text.Bart do
     input_embeds =
       Layers.maybe_layer(
         inputs["input_embeds"],
-        embed_tokens(inputs["input_ids"], config, "decoder.embed_tokens")
+        embed_tokens(inputs["input_ids"], config, "model.decoder.embed_tokens")
       )
 
-    outputs = decoder(inputs, input_embeds, nil, config, name: "decoder")
+    outputs = decoder(inputs, input_embeds, nil, config, name: "model.decoder")
 
     # TODO: Tie lm-head to word embedding as a config option
     lm_logits =
       outputs.last_hidden_state
-      |> Axon.dense(config.vocab_size,
+      |> Layers.dense_transposed_layer(config.vocab_size,
         kernel_initializer: kernel_initializer(config),
-        name: "lm_head",
-        use_bias: false
+        name: "shared"
       )
 
     Axon.container(%{
