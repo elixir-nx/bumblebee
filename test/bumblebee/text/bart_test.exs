@@ -65,7 +65,6 @@ defmodule Bumblebee.Text.BartTest do
 
     @tag :slow
     @tag :capture_log
-    @tag timeout: 120_000
     test "sequence classification model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "valhalla/bart-large-sst2"})
@@ -90,7 +89,6 @@ defmodule Bumblebee.Text.BartTest do
 
     @tag :slow
     @tag :capture_log
-    @tag timeout: 120_000
     test "question answering model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "valhalla/bart-large-finetuned-squadv1"})
