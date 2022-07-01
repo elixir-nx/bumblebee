@@ -2,8 +2,8 @@ defmodule Bumblebee.Shared do
   @moduledoc false
 
   @doc """
-  Returns a subset of common config attributes with their default
-  values.
+  Returns a subset of common model config attributes with their
+  default values.
   """
   @spec common_config_defaults(list(atom())) :: keyword()
   def common_config_defaults(keys) do
@@ -18,8 +18,8 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
-  Returns a docstring describing the given subset of common config
-  attributes.
+  Returns a docstring describing the given subset of common model
+  config attributes.
   """
   @spec common_config_docs(list(atom())) :: String.t()
   def common_config_docs(keys) do
@@ -66,8 +66,8 @@ defmodule Bumblebee.Shared do
   end
 
   # @doc """
-  # Sets common configuration attributes that are computed based on
-  # other attributes.
+  # Sets common model configuration attributes that are computed
+  # based on other attributes.
   # """
   @spec add_common_computed_options(keyword()) :: keyword()
   def add_common_computed_options(opts) do
@@ -101,8 +101,8 @@ defmodule Bumblebee.Shared do
   @doc """
   Converts values for the given keys to atoms.
   """
-  @spec atomize_values(map(), list(String.t())) :: map()
-  def atomize_values(data, keys) do
+  @spec convert_to_atom(map(), list(String.t())) :: map()
+  def convert_to_atom(data, keys) do
     Enum.reduce(keys, data, fn key, data ->
       update(data, key, fn
         nil -> nil
@@ -112,10 +112,10 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
-  Transforms values for common options wherever necessary.
+  Converts values for common model options wherever necessary.
   """
-  @spec cast_common_values(map()) :: map()
-  def cast_common_values(data) do
+  @spec convert_common(map()) :: map()
+  def convert_common(data) do
     update(data, "id2label", fn id2label ->
       Map.new(id2label, fn {key, value} -> {String.to_integer(key), value} end)
     end)
@@ -152,11 +152,18 @@ defmodule Bumblebee.Shared do
 
   @doc """
   Loads the given parsed JSON data into a configuration struct.
+
+  ## Options
+
+    * `:except` - a list of struct keys to keep unchanged
+
   """
-  @spec data_into_config(map(), struct()) :: struct()
-  def data_into_config(data, %module{} = config) do
+  @spec data_into_config(map(), struct(), keyword()) :: struct()
+  def data_into_config(data, %module{} = config, opts \\ []) do
+    except = opts[:except] || []
+
     opts =
-      Enum.reduce(Map.keys(config) -- [:architecture], [], fn key, opts ->
+      Enum.reduce(Map.keys(config) -- except, [], fn key, opts ->
         case Map.fetch(data, Atom.to_string(key)) do
           {:ok, value} -> [{key, value} | opts]
           :error -> opts

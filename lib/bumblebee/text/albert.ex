@@ -557,9 +557,9 @@ defmodule Bumblebee.Text.Albert do
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
       data
-      |> Shared.atomize_values(["position_embedding_type", "hidden_act"])
-      |> Shared.cast_common_values()
-      |> Shared.data_into_config(config)
+      |> Shared.convert_to_atom(["position_embedding_type", "hidden_act"])
+      |> Shared.convert_common()
+      |> Shared.data_into_config(config, except: [:architecture])
     end
   end
 end
