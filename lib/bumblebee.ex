@@ -141,6 +141,7 @@ defmodule Bumblebee do
   end
 
   @transformers_class_to_model %{
+    # ResNet
     "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
     # Albert
@@ -171,8 +172,14 @@ defmodule Bumblebee do
     "DeiTModel" => {Bumblebee.Vision.Deit, :base},
     "DeiTForImageClassification" => {Bumblebee.Vision.Deit, :for_image_classification},
     "DeiTForImageClassificationWithTeacher" =>
-      {Bumblebee.Vision.Deit, :for_image_classification_with_teacher}
+      {Bumblebee.Vision.Deit, :for_image_classification_with_teacher},
     # "DeiTForMaskedImageModeling" => {Bumblebee.Vision.Deit, :for_masked_image_modeling}
+    # Bart
+    "BartModel" => {Bumblebee.Text.Bart, :base},
+    "BartForCausalLM" => {Bumblebee.Text.Bart, :for_causal_language_modeling},
+    "BartForConditionalGeneration" => {Bumblebee.Text.Bart, :for_conditional_generation},
+    "BartForSequenceClassification" => {Bumblebee.Text.Bart, :for_sequence_classification},
+    "BartForQuestionAnswering" => {Bumblebee.Text.Bart, :for_question_answering}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do

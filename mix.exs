@@ -26,7 +26,7 @@ defmodule Bumblebee.MixProject do
 
   defp deps do
     [
-      {:axon, "~> 0.1.0-dev", axon_opts()},
+      {:axon, "~> 0.2.0-dev", axon_opts()},
       {:tokenizers, github: "elixir-nx/tokenizers"},
       # TODO: Comment me when using tokenizers from release
       {:rustler, ">= 0.0.0", optional: true},

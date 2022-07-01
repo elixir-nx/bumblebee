@@ -53,6 +53,57 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  Updates cache for fast autoregressive decoding.
+  """
+  defn update_cache(query_states, key_states, value_states, attention_mask, cache, _opts \\ []) do
+    %{key: cached_key, value: cached_value, index: index} = cache
+    {batch, max_length, _num_heads, _head_dim} = Nx.shape(cached_value)
+    indices = [0, 0, Nx.as_type(index, {:s, 64}), 0]
+    key = Nx.put_slice(cached_key, indices, key_states)
+    value = Nx.put_slice(cached_value, indices, value_states)
+    num_updated_cache_vectors = Nx.axis_size(query_states, 1)
+    index = index + num_updated_cache_vectors
+
+    pad_mask =
+      Nx.iota({max_length})
+      |> Nx.less(Nx.add(index, num_updated_cache_vectors))
+      |> Nx.broadcast({batch, 1, num_updated_cache_vectors, max_length})
+
+    attention_mask = Nx.logical_and(pad_mask, attention_mask)
+    updated_cache = %{key: key, value: value, index: index}
+    {key, value, attention_mask, updated_cache}
+  end
+
+  @doc """
+  Builds a causal attention mask for bidirectional self-attention.
+  """
+  defn build_causal_mask(input) do
+    size = Nx.axis_size(input, -1)
+    idx = Nx.iota({size}) |> Nx.broadcast(input)
+    build_attention_mask(idx, idx)
+  end
+
+  @doc """
+  Builds an attention mask.
+
+  Expects a batched, flat inputs of length corresponding to query and key
+  length respectively.
+  """
+  defn build_attention_mask(query_input, key_input) do
+    query_input
+    |> Nx.new_axis(-1)
+    |> Nx.greater_equal(Nx.new_axis(key_input, -2))
+    |> Nx.new_axis(-3)
+  end
+
+  @doc """
+  Combines attention masks.
+  """
+  defn combine_mask(left_mask, right_mask, _opts \\ []) do
+    Nx.logical_and(left_mask, right_mask)
+  end
+
+  @doc """
   Implements the GeLU new activation from Huggingface.
   """
   defn gelu_new(input, _opts \\ []) do
@@ -191,7 +242,7 @@ defmodule Bumblebee.Layers do
   ## Options
 
     * `:name` - layer name
-    
+
     * `:axis` - axis to slice token from
 
     * `:index` - index to slice head. Defaults to 0
@@ -246,12 +297,32 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  A conditional layer which checks the presence of
+  a value and returns another graph value otherwise.
+
+  Similar to Haskell's `maybe` function.
+  """
+  def maybe_layer(%Axon{} = maybe_value, %Axon{} = default_value, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name])
+
+    Axon.layer(
+      fn
+        nil, default_value, _opts -> default_value
+        maybe_value, _, _opts -> maybe_value
+      end,
+      [maybe_value, default_value],
+      name: opts[:name],
+      op_name: :maybe
+    )
+  end
+
+  @doc """
   Returns an activation layer supported by Axon.
 
   This is necessary as some activations are not directly
   supported by Axon.
 
-  ## Options  
+  ## Options
 
     * `:name` - layer name
   """

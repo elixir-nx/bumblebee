@@ -18,7 +18,7 @@ defmodule Bumblebee.Text.AlbertTest do
         "attention_mask" => Nx.tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.last_hidden_state) == {1, 11, 768}
 
@@ -43,7 +43,7 @@ defmodule Bumblebee.Text.AlbertTest do
         "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.logits) == {1, 9, 30000}
 
@@ -69,7 +69,7 @@ defmodule Bumblebee.Text.AlbertTest do
         "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.logits) == {1, 2}
 
@@ -102,7 +102,7 @@ defmodule Bumblebee.Text.AlbertTest do
         "attention_mask" => Nx.tensor([[[1, 1, 1, 1, 1, 1, 1, 1, 1]]])
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.logits) == {1, 1}
 
@@ -124,7 +124,7 @@ defmodule Bumblebee.Text.AlbertTest do
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]])
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.logits) == {1, 9, 2}
 
@@ -147,7 +147,7 @@ defmodule Bumblebee.Text.AlbertTest do
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]])
       }
 
-      output = Axon.predict(model, params, input, compiler: EXLA)
+      output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.start_logits) == {1, 9}
       assert Nx.shape(output.end_logits) == {1, 9}
