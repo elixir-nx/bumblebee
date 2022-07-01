@@ -129,6 +129,28 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Converts resample method into an atom or drops it if unsupported.
+  """
+  @spec convert_resample_method(map(), String.t()) :: map()
+  def convert_resample_method(data, key) do
+    # See https://pillow.readthedocs.io/en/stable/reference/Image.html#PIL.Image.Resampling
+    method =
+      case data[key] do
+        0 -> :nearest
+        1 -> :lanczos3
+        2 -> :linear
+        3 -> :cubic
+        _ -> nil
+      end
+
+    if method do
+      Map.put(data, key, method)
+    else
+      Map.delete(data, key)
+    end
+  end
+
+  @doc """
   Loads the given parsed JSON data into a configuration struct.
   """
   @spec data_into_config(map(), struct()) :: struct()

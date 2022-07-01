@@ -102,9 +102,9 @@ defmodule Bumblebee do
     architecture = opts[:architecture]
 
     with {:ok, path} <- download(repository, @config_filename, opts),
-         {:ok, data} <- decode_config(path) do
+         {:ok, model_data} <- decode_config(path) do
       {inferred_module, inferred_architecture, inferrence_error} =
-        case infer_model_type(data) do
+        case infer_model_type(model_data) do
           {:ok, module, architecture} -> {module, architecture, nil}
           {:error, error} -> {nil, nil, error}
         end
@@ -125,7 +125,7 @@ defmodule Bumblebee do
 
       config = struct!(module)
       config = if architecture, do: %{config | architecture: architecture}, else: config
-      config = HuggingFace.Transformers.Config.load(config, data)
+      config = HuggingFace.Transformers.Config.load(config, model_data)
       {:ok, config}
     end
   end
@@ -186,7 +186,7 @@ defmodule Bumblebee do
     end
   end
 
-  defp infer_model_type(_data) do
+  defp infer_model_type(_model_data) do
     {:error, "could not infer model type from the configuration"}
   end
 
@@ -336,25 +336,32 @@ defmodule Bumblebee do
     module = opts[:module]
 
     with {:ok, path} <- download(repository, @featurizer_filename, opts),
-         {:ok, data} <- decode_config(path) do
+         {:ok, featurizer_data} <- decode_config(path) do
       module =
         module ||
-          case infer_featurizer_type(data) do
+          case infer_featurizer_type(featurizer_data, repository, opts) do
             {:ok, module} -> module
             {:error, error} -> raise "#{error}, please specify the :module option"
           end
 
       config = struct!(module)
-      config = HuggingFace.Transformers.Config.load(config, data)
+      config = HuggingFace.Transformers.Config.load(config, featurizer_data)
       {:ok, config}
     end
   end
 
   @transformers_class_to_featurizer %{
-    "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer
+    "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer,
+    "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer
   }
 
-  defp infer_featurizer_type(%{"feature_extractor_type" => class_name}) do
+  @model_type_to_featurizer %{
+    "resnet" => Bumblebee.Vision.ConvNextFeaturizer,
+    "convnext" => Bumblebee.Vision.ConvNextFeaturizer,
+    "vit" => Bumblebee.Vision.VitFeaturizer
+  }
+
+  defp infer_featurizer_type(%{"feature_extractor_type" => class_name}, _repository, _opts) do
     case @transformers_class_to_featurizer[class_name] do
       nil ->
         {:error,
@@ -365,8 +372,24 @@ defmodule Bumblebee do
     end
   end
 
-  defp infer_featurizer_type(_data) do
-    {:error, "could not infer featurizer type from the configuration"}
+  defp infer_featurizer_type(_featurizer_data, repository, opts) do
+    with {:ok, path} <- download(repository, @config_filename, opts),
+         {:ok, model_data} <- decode_config(path) do
+      case model_data do
+        %{"model_type" => model_type} ->
+          case @model_type_to_featurizer[model_type] do
+            nil ->
+              {:error,
+               "could not match model type #{inspect(model_type)} to any of the supported featurizers"}
+
+            module ->
+              {:ok, module}
+          end
+
+        _ ->
+          {:error, "could not infer featurizer type from the configuration"}
+      end
+    end
   end
 
   @doc """
@@ -422,12 +445,10 @@ defmodule Bumblebee do
     opts = Keyword.validate!(opts, [:module, :revision, :cache_dir])
     module = opts[:module]
 
-    with {:ok, path} <- download(repository, @config_filename, opts),
-         {:ok, config} <- decode_config(path),
-         {:ok, path} <- download(repository, @tokenizer_filename, opts) do
+    with {:ok, path} <- download(repository, @tokenizer_filename, opts) do
       module =
         module ||
-          case infer_tokenizer_type(config) do
+          case infer_tokenizer_type(repository, opts) do
             {:ok, module} -> module
             {:error, error} -> raise "#{error}, please specify the :module option"
           end
@@ -442,19 +463,24 @@ defmodule Bumblebee do
     "bert" => Bumblebee.Text.BertTokenizer
   }
 
-  defp infer_tokenizer_type(%{"model_type" => model_type}) do
-    case @model_type_to_tokenizer[model_type] do
-      nil ->
-        {:error,
-         "could not match model type #{inspect(model_type)} to any of the supported tokenizers"}
+  defp infer_tokenizer_type(repository, opts) do
+    with {:ok, path} <- download(repository, @config_filename, opts),
+         {:ok, model_data} <- decode_config(path) do
+      case model_data do
+        %{"model_type" => model_type} ->
+          case @model_type_to_tokenizer[model_type] do
+            nil ->
+              {:error,
+               "could not match model type #{inspect(model_type)} to any of the supported tokenizers"}
 
-      module ->
-        {:ok, module}
+            module ->
+              {:ok, module}
+          end
+
+        _ ->
+          {:error, "could not infer tokenizer type from the model configuration"}
+      end
     end
-  end
-
-  defp infer_tokenizer_type(_data) do
-    {:error, "could not infer tokenizer type from the model configuration"}
   end
 
   defp download({:local, dir}, filename, _opts) do

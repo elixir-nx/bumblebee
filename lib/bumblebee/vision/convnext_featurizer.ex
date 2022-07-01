@@ -37,8 +37,6 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
 
   @behaviour Bumblebee.Featurizer
 
-  @compile {:no_warn_undefined, StbImage}
-
   defstruct do_resize: true,
             size: 224,
             resample: :cubic,
@@ -80,39 +78,17 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
     images = Nx.divide(images, 255.0)
 
     if config.do_normalize do
-      normalize(images, config.image_mean, config.image_std)
+      Image.normalize(images, Nx.tensor(config.image_mean), Nx.tensor(config.image_std))
     else
       images
     end
   end
 
-  defp normalize(images, mean, std) do
-    type = Nx.type(images)
-    mean = mean |> Nx.tensor(type: type) |> Nx.reshape({1, :auto, 1, 1})
-    std = std |> Nx.tensor(type: type) |> Nx.reshape({1, :auto, 1, 1})
-    images |> Nx.subtract(mean) |> Nx.divide(std)
-  end
-
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
-      {resample, data} = Map.pop(data, "resample")
-
-      config = Shared.data_into_config(data, config)
-
-      load_resample(config, resample)
-    end
-
-    defp load_resample(config, resample) do
-      resample =
-        case resample do
-          0 -> :nearest
-          1 -> :lanczos3
-          2 -> :linear
-          3 -> :cubic
-          _ -> nil
-        end
-
-      if resample, do: %{config | resample: resample}, else: config
+      data
+      |> Shared.convert_resample_method("resample")
+      |> Shared.data_into_config(config)
     end
   end
 end
