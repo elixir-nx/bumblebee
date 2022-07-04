@@ -45,6 +45,8 @@ defmodule Bumblebee.Vision.ResNet do
   #{Bumblebee.Shared.common_config_docs(@common_keys)}
   """
 
+  import Bumblebee.Utils.Model, only: [join: 2]
+
   alias Bumblebee.Shared
 
   defstruct [
@@ -76,7 +78,7 @@ defmodule Bumblebee.Vision.ResNet do
   def model(%__MODULE__{architecture: :base} = config) do
     config
     |> resnet()
-    |> Axon.container()
+    |> Bumblebee.Utils.Model.output(config)
   end
 
   def model(%__MODULE__{architecture: :for_image_classification} = config) do
@@ -87,7 +89,7 @@ defmodule Bumblebee.Vision.ResNet do
       |> Axon.flatten(name: "classifier.0")
       |> Axon.dense(config.num_labels, name: "classifier.1")
 
-    Axon.container(%{logits: logits, hidden_states: outputs.hidden_states})
+    Bumblebee.Utils.Model.output(%{logits: logits, hidden_states: outputs.hidden_states}, config)
   end
 
   defp resnet(config, opts \\ []) do
@@ -104,12 +106,9 @@ defmodule Bumblebee.Vision.ResNet do
     %{
       last_hidden_state: encoder_output,
       pooler_output: pooled_output,
-      hidden_states: if(config.output_hidden_states, do: hidden_states, else: {})
+      hidden_states: hidden_states
     }
   end
-
-  defp join(nil, suffix), do: suffix
-  defp join(base, suffix), do: base <> "." <> suffix
 
   defp embedding_layer(%Axon{} = x, config, opts) do
     name = opts[:name]

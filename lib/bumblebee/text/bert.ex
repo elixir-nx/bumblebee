@@ -109,8 +109,9 @@ defmodule Bumblebee.Text.Bert do
   #{Bumblebee.Shared.common_config_docs(@common_keys)}
   """
 
-  alias Bumblebee.Shared
+  import Bumblebee.Utils.Model, only: [join: 2]
 
+  alias Bumblebee.Shared
   alias Bumblebee.Layers
 
   defstruct [
@@ -159,7 +160,7 @@ defmodule Bumblebee.Text.Bert do
   def model(%__MODULE__{architecture: :base} = config) do
     inputs({nil, 11}, config)
     |> bert(config)
-    |> Axon.container()
+    |> Bumblebee.Utils.Model.output(config)
   end
 
   def model(%__MODULE__{architecture: :for_masked_language_modeling} = config) do
@@ -167,11 +168,14 @@ defmodule Bumblebee.Text.Bert do
 
     logits = lm_prediction_head(outputs.last_hidden_state, config, name: "cls.predictions")
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
@@ -179,11 +183,14 @@ defmodule Bumblebee.Text.Bert do
 
     logits = lm_prediction_head(outputs.last_hidden_state, config, name: "cls.predictions")
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
@@ -197,11 +204,14 @@ defmodule Bumblebee.Text.Bert do
         name: "classifier"
       )
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_token_classification} = config) do
@@ -215,11 +225,14 @@ defmodule Bumblebee.Text.Bert do
         name: "classifier"
       )
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_question_answering} = config) do
@@ -237,12 +250,15 @@ defmodule Bumblebee.Text.Bert do
     start_logits = flatten_trailing(start_logits)
     end_logits = flatten_trailing(end_logits)
 
-    Axon.container(%{
-      start_logits: start_logits,
-      end_logits: end_logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        start_logits: start_logits,
+        end_logits: end_logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
@@ -272,11 +288,14 @@ defmodule Bumblebee.Text.Bert do
         [logits, inputs["input_ids"]]
       )
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_next_sentence_prediction} = config) do
@@ -289,11 +308,14 @@ defmodule Bumblebee.Text.Bert do
         name: "cls.seq_relationship"
       )
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_pre_training} = config) do
@@ -308,12 +330,15 @@ defmodule Bumblebee.Text.Bert do
         name: "cls.seq_relationship"
       )
 
-    Axon.container(%{
-      prediction_logits: prediction_logits,
-      seq_relationship_logits: seq_relationship_logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        prediction_logits: prediction_logits,
+        seq_relationship_logits: seq_relationship_logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   defp inputs(input_shape, config) do
@@ -363,9 +388,6 @@ defmodule Bumblebee.Text.Bert do
     }
   end
 
-  defp join(nil, suffix), do: suffix
-  defp join(base, suffix), do: base <> "." <> suffix
-
   defp embeddings(input_ids, token_type_ids, position_ids, config, opts) do
     name = opts[:name]
 
@@ -399,14 +421,18 @@ defmodule Bumblebee.Text.Bert do
   defp encoder(hidden_states, attention_mask, head_mask, config, opts) do
     name = opts[:name]
 
+    encoder_layers(hidden_states, attention_mask, head_mask, config, name: join(name, "layer"))
+  end
+
+  defp encoder_layers(hidden_states, attention_mask, head_mask, config, opts) do
+    name = opts[:name]
+
     for idx <- 0..(config.num_hidden_layers - 1), reduce: {hidden_states, {hidden_states}, {}} do
       {hidden_states, all_hidden_states, all_attention_outputs} ->
         layer_head_mask = Axon.nx(head_mask, & &1[idx])
 
         {hidden_states, attention_weights} =
-          bert_layer(hidden_states, attention_mask, layer_head_mask, config,
-            name: name <> ".layer.#{idx}"
-          )
+          bert_layer(hidden_states, attention_mask, layer_head_mask, config, name: join(name, idx))
 
         {
           hidden_states,

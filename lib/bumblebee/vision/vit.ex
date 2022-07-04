@@ -1,5 +1,5 @@
 defmodule Bumblebee.Vision.Vit do
-  @common_keys [:id2label, :label2id, :num_labels, :output_hidden_states]
+  @common_keys [:output_hidden_states, :output_attentions, :id2label, :label2id, :num_labels]
 
   @moduledoc """
   Models based on the ViT architecture.
@@ -71,6 +71,8 @@ defmodule Bumblebee.Vision.Vit do
     * [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929)
   """
 
+  import Bumblebee.Utils.Model, only: [join: 2]
+
   alias Bumblebee.Layers
   alias Bumblebee.Shared
 
@@ -122,11 +124,14 @@ defmodule Bumblebee.Vision.Vit do
         name: "classifier"
       )
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   # TODO: This requires a PixelShuffle implementation in Axon
@@ -137,7 +142,7 @@ defmodule Bumblebee.Vision.Vit do
     config
     |> inputs()
     |> vit(config)
-    |> Axon.container()
+    |> Bumblebee.Utils.Model.output(config)
   end
 
   defp inputs(config) do
@@ -232,10 +237,10 @@ defmodule Bumblebee.Vision.Vit do
   defp encoder(hidden_states, config, opts) do
     name = opts[:name]
 
-    encoder_layer_collection(hidden_states, config, name: name)
+    encoder_layers(hidden_states, config, name: join(name, "layer"))
   end
 
-  defp encoder_layer_collection(hidden_states, config, opts) do
+  defp encoder_layers(hidden_states, config, opts) do
     name = opts[:name]
 
     last_hidden_state = hidden_states
@@ -245,8 +250,7 @@ defmodule Bumblebee.Vision.Vit do
     for idx <- 0..(config.num_hidden_layers - 1),
         reduce: {last_hidden_state, all_hidden_states, all_attentions} do
       {lhs, states, attns} ->
-        layer_name = join(name, "layer.#{idx}")
-        {next_state, next_attention} = encoder_layer(lhs, config, name: layer_name)
+        {next_state, next_attention} = encoder_layer(lhs, config, name: join(name, idx))
         {next_state, Tuple.append(states, next_state), Tuple.append(attns, next_attention)}
     end
   end
@@ -390,10 +394,6 @@ defmodule Bumblebee.Vision.Vit do
   defp kernel_initializer(config) do
     Axon.Initializers.normal(scale: config.initializer_range)
   end
-
-  defp join(nil, rhs), do: rhs
-
-  defp join(lhs, rhs), do: lhs <> "." <> rhs
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do

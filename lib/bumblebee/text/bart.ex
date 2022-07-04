@@ -143,10 +143,11 @@ defmodule Bumblebee.Text.Bart do
   #{Bumblebee.Shared.common_config_docs(@common_keys)}
   """
 
+  import Nx.Defn
+  import Bumblebee.Utils.Model, only: [join: 2]
+
   alias Bumblebee.Layers
   alias Bumblebee.Shared
-
-  import Nx.Defn
 
   defstruct [
               architecture: :base,
@@ -215,15 +216,18 @@ defmodule Bumblebee.Text.Bart do
         name: "shared"
       )
 
-    Axon.container(%{
-      logits: lm_logits,
-      decoder_hidden_states: outputs.decoder_hidden_states,
-      decoder_attentions: outputs.decoder_attentions,
-      cross_attentions: outputs.cross_attentions,
-      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
-      encoder_hidden_states: outputs.encoder_hidden_states,
-      encoder_attentions: outputs.encoder_attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: lm_logits,
+        decoder_hidden_states: outputs.decoder_hidden_states,
+        decoder_attentions: outputs.decoder_attentions,
+        cross_attentions: outputs.cross_attentions,
+        encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+        encoder_hidden_states: outputs.encoder_hidden_states,
+        encoder_attentions: outputs.encoder_attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
@@ -261,15 +265,18 @@ defmodule Bumblebee.Text.Bart do
 
     logits = classification_head(sentence_representation, config, name: "classification_head")
 
-    Axon.container(%{
-      logits: logits,
-      decoder_hidden_states: outputs.decoder_hidden_states,
-      decoder_attentions: outputs.decoder_attentions,
-      cross_attentions: outputs.cross_attentions,
-      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
-      encoder_hidden_states: outputs.encoder_hidden_states,
-      encoder_attentions: outputs.encoder_attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        decoder_hidden_states: outputs.decoder_hidden_states,
+        decoder_attentions: outputs.decoder_attentions,
+        cross_attentions: outputs.cross_attentions,
+        encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+        encoder_hidden_states: outputs.encoder_hidden_states,
+        encoder_attentions: outputs.encoder_attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_question_answering} = config) do
@@ -290,16 +297,19 @@ defmodule Bumblebee.Text.Bart do
     start_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 0]])
     end_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 1]])
 
-    Axon.container(%{
-      start_logits: start_logits,
-      end_logits: end_logits,
-      decoder_hidden_states: outputs.decoder_hidden_states,
-      decoder_attentions: outputs.decoder_attentions,
-      cross_attentions: outputs.cross_attentions,
-      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
-      encoder_hidden_states: outputs.encoder_hidden_states,
-      encoder_attentions: outputs.encoder_attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        start_logits: start_logits,
+        end_logits: end_logits,
+        decoder_hidden_states: outputs.decoder_hidden_states,
+        decoder_attentions: outputs.decoder_attentions,
+        cross_attentions: outputs.cross_attentions,
+        encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+        encoder_hidden_states: outputs.encoder_hidden_states,
+        encoder_attentions: outputs.encoder_attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
@@ -324,12 +334,15 @@ defmodule Bumblebee.Text.Bart do
         name: "shared"
       )
 
-    Axon.container(%{
-      logits: lm_logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions,
-      cross_attentions: outputs.cross_attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: lm_logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions,
+        cross_attentions: outputs.cross_attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :base} = config) do
@@ -339,7 +352,7 @@ defmodule Bumblebee.Text.Bart do
     input_shape
     |> inputs(config)
     |> bart(config)
-    |> Axon.container()
+    |> Bumblebee.Utils.Model.output(config)
   end
 
   # TODO: In all of the decoder_x inputs, there is a possible
@@ -523,7 +536,7 @@ defmodule Bumblebee.Text.Bart do
     |> Axon.add(pos_embeds)
     |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
     |> Axon.dropout(rate: config.dropout)
-    |> encoder_layer_collection(attention_mask, head_mask, config, name: name)
+    |> encoder_layers(attention_mask, head_mask, config, name: join(name, "layers"))
   end
 
   defp embed_tokens(input_ids, config, name) do
@@ -556,7 +569,7 @@ defmodule Bumblebee.Text.Bart do
     )
   end
 
-  defp encoder_layer_collection(hidden_states, attention_mask, head_mask, config, opts) do
+  defp encoder_layers(hidden_states, attention_mask, head_mask, config, opts) do
     name = opts[:name]
 
     initial_encoder_state = %{
@@ -571,15 +584,10 @@ defmodule Bumblebee.Text.Bart do
 
         # TODO: Wrap encoder layer in a layer_drop combinator
         # that skips this connection dynamically
-        layer_name = join(name, "layers.#{idx}")
 
         {next_state, next_attention} =
-          encoder_layer(
-            encoder_state.last_hidden_state,
-            attention_mask,
-            layer_head_mask,
-            config,
-            name: layer_name
+          encoder_layer(encoder_state.last_hidden_state, attention_mask, layer_head_mask, config,
+            name: join(name, idx)
           )
 
         %{
@@ -652,7 +660,7 @@ defmodule Bumblebee.Text.Bart do
     |> Axon.add(pos_embeds)
     |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
     |> Axon.dropout(rate: config.dropout)
-    |> decoder_layer_collection(
+    |> decoder_layers(
       attention_mask,
       encoder_last_hidden_state,
       encoder_attention_mask,
@@ -660,11 +668,11 @@ defmodule Bumblebee.Text.Bart do
       cross_attention_head_mask,
       cache,
       config,
-      name: name
+      name: join(name, "layers")
     )
   end
 
-  defp decoder_layer_collection(
+  defp decoder_layers(
          hidden_states,
          attention_mask,
          encoder_hidden_states,
@@ -701,8 +709,6 @@ defmodule Bumblebee.Text.Bart do
             {nil, nil}
           end
 
-        layer_name = join(name, "layers.#{idx}")
-
         {next_state, next_attention, next_cross_attention, layer_cache} =
           decoder_layer(
             decoder_state.last_hidden_state,
@@ -714,7 +720,7 @@ defmodule Bumblebee.Text.Bart do
             self_attention_layer_cache,
             cross_attention_layer_cache,
             config,
-            name: layer_name
+            name: join(name, idx)
           )
 
         updated_cache =
@@ -998,9 +1004,6 @@ defmodule Bumblebee.Text.Bart do
   defp kernel_initializer(config) do
     Axon.Initializers.normal(scale: config.init_std)
   end
-
-  defp join(nil, rhs), do: rhs
-  defp join(lhs, rhs), do: lhs <> "." <> rhs
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do

@@ -55,6 +55,8 @@ defmodule Bumblebee.Vision.ConvNext do
     * [A ConvNet for the 2020s](https://arxiv.org/abs/2201.03545)
   """
 
+  import Bumblebee.Utils.Model, only: [join: 2]
+
   alias Bumblebee.Shared
   alias Bumblebee.Layers
 
@@ -87,6 +89,12 @@ defmodule Bumblebee.Vision.ConvNext do
   end
 
   @impl true
+  def model(%__MODULE__{architecture: :base} = config) do
+    config
+    |> convnext()
+    |> Bumblebee.Utils.Model.output(config)
+  end
+
   def model(%__MODULE__{architecture: :for_image_classification} = config) do
     outputs = convnext(config, name: "convnext")
 
@@ -97,14 +105,7 @@ defmodule Bumblebee.Vision.ConvNext do
         kernel_initializer: kernel_initializer(config)
       )
 
-    Axon.container(%{logits: logits, hidden_states: outputs.hidden_states})
-  end
-
-  @impl true
-  def model(%__MODULE__{architecture: :base} = config) do
-    config
-    |> convnext()
-    |> Axon.container()
+    Bumblebee.Utils.Model.output(%{logits: logits, hidden_states: outputs.hidden_states}, config)
   end
 
   defp convnext(config, opts \\ []) do
@@ -301,9 +302,6 @@ defmodule Bumblebee.Vision.ConvNext do
   defp kernel_initializer(config) do
     Axon.Initializers.normal(scale: config.initializer_range)
   end
-
-  defp join(nil, rhs), do: rhs
-  defp join(lhs, rhs), do: lhs <> "." <> rhs
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
