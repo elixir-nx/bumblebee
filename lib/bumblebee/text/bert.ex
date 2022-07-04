@@ -368,13 +368,13 @@ defmodule Bumblebee.Text.Bert do
   defp bert(inputs, config, opts \\ []) do
     name = opts[:name]
 
-    hidden_states =
+    hidden_state =
       embeddings(inputs["input_ids"], inputs["token_type_ids"], inputs["position_ids"], config,
         name: join(name, "embeddings")
       )
 
     {last_hidden_state, hidden_states, attentions} =
-      encoder(hidden_states, inputs["attention_mask"], inputs["head_mask"], config,
+      encoder(hidden_state, inputs["attention_mask"], inputs["head_mask"], config,
         name: join(name, "encoder")
       )
 
@@ -383,8 +383,8 @@ defmodule Bumblebee.Text.Bert do
     %{
       last_hidden_state: last_hidden_state,
       pooler_output: pooler_output,
-      hidden_states: if(config.output_hidden_states, do: hidden_states, else: {}),
-      attentions: if(config.output_attentions, do: attentions, else: {})
+      hidden_states: hidden_states,
+      attentions: attentions
     }
   end
 
@@ -418,60 +418,60 @@ defmodule Bumblebee.Text.Bert do
     |> Axon.dropout(rate: config.hidden_dropout_prob, name: name <> ".dropout")
   end
 
-  defp encoder(hidden_states, attention_mask, head_mask, config, opts) do
+  defp encoder(hidden_state, attention_mask, head_mask, config, opts) do
     name = opts[:name]
 
-    encoder_layers(hidden_states, attention_mask, head_mask, config, name: join(name, "layer"))
+    encoder_layers(hidden_state, attention_mask, head_mask, config, name: join(name, "layer"))
   end
 
-  defp encoder_layers(hidden_states, attention_mask, head_mask, config, opts) do
+  defp encoder_layers(hidden_state, attention_mask, head_mask, config, opts) do
     name = opts[:name]
 
-    for idx <- 0..(config.num_hidden_layers - 1), reduce: {hidden_states, {hidden_states}, {}} do
-      {hidden_states, all_hidden_states, all_attention_outputs} ->
+    for idx <- 0..(config.num_hidden_layers - 1), reduce: {hidden_state, {hidden_state}, {}} do
+      {hidden_state, hidden_states, attentions} ->
         layer_head_mask = Axon.nx(head_mask, & &1[idx])
 
-        {hidden_states, attention_weights} =
-          bert_layer(hidden_states, attention_mask, layer_head_mask, config, name: join(name, idx))
+        {hidden_state, attention} =
+          bert_layer(hidden_state, attention_mask, layer_head_mask, config, name: join(name, idx))
 
         {
-          hidden_states,
-          Tuple.append(all_hidden_states, hidden_states),
-          Tuple.append(all_attention_outputs, attention_weights)
+          hidden_state,
+          Tuple.append(hidden_states, hidden_state),
+          Tuple.append(attentions, attention)
         }
     end
   end
 
-  defp bert_layer(hidden_states, attention_mask, layer_head_mask, config, opts) do
+  defp bert_layer(hidden_state, attention_mask, layer_head_mask, config, opts) do
     name = opts[:name]
 
-    {attention_outputs, attention_weights} =
-      attention(hidden_states, attention_mask, layer_head_mask, config, name: name <> ".attention")
+    {attention_output, attention} =
+      attention(hidden_state, attention_mask, layer_head_mask, config, name: name <> ".attention")
 
-    hidden_states = intermediate(attention_outputs, config, name: name <> ".intermediate")
-    hidden_states = output(hidden_states, attention_outputs, config, name: name <> ".output")
+    hidden_state = intermediate(attention_output, config, name: name <> ".intermediate")
+    hidden_state = output(hidden_state, attention_output, config, name: name <> ".output")
 
-    {hidden_states, attention_weights}
+    {hidden_state, attention}
   end
 
-  defp attention(hidden_states, attention_mask, layer_head_mask, config, opts) do
+  defp attention(hidden_state, attention_mask, layer_head_mask, config, opts) do
     name = opts[:name]
 
-    {attention_output, attention_weights} =
-      self_attention(hidden_states, attention_mask, layer_head_mask, config, name: name <> ".self")
+    {attention_output, attention} =
+      self_attention(hidden_state, attention_mask, layer_head_mask, config, name: name <> ".self")
 
-    hidden_states = self_output(attention_output, hidden_states, config, name: name <> ".output")
+    hidden_state = self_output(attention_output, hidden_state, config, name: name <> ".output")
 
-    {hidden_states, attention_weights}
+    {hidden_state, attention}
   end
 
-  defp self_attention(hidden_states, attention_mask, layer_head_mask, config, opts) do
+  defp self_attention(hidden_state, attention_mask, layer_head_mask, config, opts) do
     name = opts[:name]
 
     head_dim = div(config.hidden_size, config.num_attention_heads)
 
     query_states =
-      hidden_states
+      hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: name <> ".query"
@@ -479,7 +479,7 @@ defmodule Bumblebee.Text.Bert do
       |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
 
     value_states =
-      hidden_states
+      hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: name <> ".value"
@@ -487,7 +487,7 @@ defmodule Bumblebee.Text.Bert do
       |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
 
     key_states =
-      hidden_states
+      hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: name <> ".key"
@@ -516,10 +516,10 @@ defmodule Bumblebee.Text.Bert do
     {attention_output, attention_weights}
   end
 
-  defp self_output(hidden_states, input, config, opts) do
+  defp self_output(hidden_state, input, config, opts) do
     name = opts[:name]
 
-    hidden_states
+    hidden_state
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: name <> ".dense"
@@ -533,10 +533,10 @@ defmodule Bumblebee.Text.Bert do
     )
   end
 
-  defp intermediate(hidden_states, config, opts) do
+  defp intermediate(hidden_state, config, opts) do
     name = opts[:name]
 
-    hidden_states
+    hidden_state
     |> Axon.dense(config.intermediate_size,
       kernel_initializer: kernel_initializer(config),
       name: name <> ".dense"
@@ -544,10 +544,10 @@ defmodule Bumblebee.Text.Bert do
     |> Layers.activation_layer(config.hidden_act, name: name <> ".activation")
   end
 
-  defp output(hidden_states, attention_output, config, opts) do
+  defp output(hidden_state, attention_output, config, opts) do
     name = opts[:name]
 
-    hidden_states
+    hidden_state
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: name <> ".dense"
@@ -561,10 +561,10 @@ defmodule Bumblebee.Text.Bert do
     )
   end
 
-  defp pooler(hidden_states, config, opts) do
+  defp pooler(hidden_state, config, opts) do
     name = opts[:name]
 
-    hidden_states
+    hidden_state
     |> Layers.take_token_layer(index: 0, axis: 1, name: join(name, "head"))
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
