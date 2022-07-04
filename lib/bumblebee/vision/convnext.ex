@@ -55,6 +55,8 @@ defmodule Bumblebee.Vision.ConvNext do
     * [A ConvNet for the 2020s](https://arxiv.org/abs/2201.03545)
   """
 
+  import Bumblebee.Utils.Model, only: [join: 2]
+
   alias Bumblebee.Shared
   alias Bumblebee.Layers
 
@@ -300,9 +302,6 @@ defmodule Bumblebee.Vision.ConvNext do
   defp kernel_initializer(config) do
     Axon.Initializers.normal(scale: config.initializer_range)
   end
-
-  defp join(nil, rhs), do: rhs
-  defp join(lhs, rhs), do: lhs <> "." <> rhs
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do

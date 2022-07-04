@@ -111,8 +111,9 @@ defmodule Bumblebee.Text.Albert do
   #{Bumblebee.Shared.common_config_docs(@common_keys)}
   """
 
-  alias Bumblebee.Shared
+  import Bumblebee.Utils.Model, only: [join: 2]
 
+  alias Bumblebee.Shared
   alias Bumblebee.Layers
 
   defstruct [
@@ -554,9 +555,6 @@ defmodule Bumblebee.Text.Albert do
   defp kernel_initializer(config) do
     Axon.Initializers.normal(scale: config.initializer_range)
   end
-
-  defp join(nil, rhs), do: to_string(rhs)
-  defp join(lhs, rhs), do: to_string(lhs) <> "." <> to_string(rhs)
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do

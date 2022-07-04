@@ -31,4 +31,13 @@ defmodule Bumblebee.Utils.Model do
       outputs -> Map.delete(outputs, key)
     end
   end
+
+  @doc """
+  Adds another word to a hierarchical name.
+  """
+  @spec join(String.t() | nil, String.Chars.t()) :: String.t()
+  def join(name, suffix)
+
+  def join(nil, suffix), do: to_string(suffix)
+  def join(name, suffix), do: name <> "." <> to_string(suffix)
 end

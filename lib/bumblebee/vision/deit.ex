@@ -76,6 +76,8 @@ defmodule Bumblebee.Vision.Deit do
     * [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929)
   """
 
+  import Bumblebee.Utils.Model, only: [join: 2]
+
   alias Bumblebee.Layers
   alias Bumblebee.Shared
 
@@ -451,9 +453,6 @@ defmodule Bumblebee.Vision.Deit do
   defp kernel_initializer(config) do
     Axon.Initializers.normal(scale: config.initializer_range)
   end
-
-  defp join(nil, rhs), do: to_string(rhs)
-  defp join(lhs, rhs), do: to_string(lhs) <> "." <> to_string(rhs)
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do

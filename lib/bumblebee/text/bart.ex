@@ -143,10 +143,11 @@ defmodule Bumblebee.Text.Bart do
   #{Bumblebee.Shared.common_config_docs(@common_keys)}
   """
 
+  import Nx.Defn
+  import Bumblebee.Utils.Model, only: [join: 2]
+
   alias Bumblebee.Layers
   alias Bumblebee.Shared
-
-  import Nx.Defn
 
   defstruct [
               architecture: :base,
@@ -1003,9 +1004,6 @@ defmodule Bumblebee.Text.Bart do
   defp kernel_initializer(config) do
     Axon.Initializers.normal(scale: config.init_std)
   end
-
-  defp join(nil, rhs), do: to_string(rhs)
-  defp join(lhs, rhs), do: to_string(lhs) <> "." <> to_string(rhs)
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do

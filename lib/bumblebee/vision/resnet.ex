@@ -45,6 +45,8 @@ defmodule Bumblebee.Vision.ResNet do
   #{Bumblebee.Shared.common_config_docs(@common_keys)}
   """
 
+  import Bumblebee.Utils.Model, only: [join: 2]
+
   alias Bumblebee.Shared
 
   defstruct [
@@ -107,9 +109,6 @@ defmodule Bumblebee.Vision.ResNet do
       hidden_states: hidden_states
     }
   end
-
-  defp join(nil, suffix), do: suffix
-  defp join(base, suffix), do: base <> "." <> suffix
 
   defp embedding_layer(%Axon{} = x, config, opts) do
     name = opts[:name]

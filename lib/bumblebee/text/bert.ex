@@ -109,8 +109,9 @@ defmodule Bumblebee.Text.Bert do
   #{Bumblebee.Shared.common_config_docs(@common_keys)}
   """
 
-  alias Bumblebee.Shared
+  import Bumblebee.Utils.Model, only: [join: 2]
 
+  alias Bumblebee.Shared
   alias Bumblebee.Layers
 
   defstruct [
@@ -386,9 +387,6 @@ defmodule Bumblebee.Text.Bert do
       attentions: if(config.output_attentions, do: attentions, else: {})
     }
   end
-
-  defp join(nil, suffix), do: suffix
-  defp join(base, suffix), do: base <> "." <> suffix
 
   defp embeddings(input_ids, token_type_ids, position_ids, config, opts) do
     name = opts[:name]
