@@ -87,6 +87,12 @@ defmodule Bumblebee.Vision.ConvNext do
   end
 
   @impl true
+  def model(%__MODULE__{architecture: :base} = config) do
+    config
+    |> convnext()
+    |> Bumblebee.Utils.Model.output(config)
+  end
+
   def model(%__MODULE__{architecture: :for_image_classification} = config) do
     outputs = convnext(config, name: "convnext")
 
@@ -97,14 +103,7 @@ defmodule Bumblebee.Vision.ConvNext do
         kernel_initializer: kernel_initializer(config)
       )
 
-    Axon.container(%{logits: logits, hidden_states: outputs.hidden_states})
-  end
-
-  @impl true
-  def model(%__MODULE__{architecture: :base} = config) do
-    config
-    |> convnext()
-    |> Axon.container()
+    Bumblebee.Utils.Model.output(%{logits: logits, hidden_states: outputs.hidden_states}, config)
   end
 
   defp convnext(config, opts \\ []) do

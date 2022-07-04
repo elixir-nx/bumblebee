@@ -1,5 +1,5 @@
 defmodule Bumblebee.Vision.Vit do
-  @common_keys [:id2label, :label2id, :num_labels, :output_hidden_states]
+  @common_keys [:output_hidden_states, :output_attentions, :id2label, :label2id, :num_labels]
 
   @moduledoc """
   Models based on the ViT architecture.
@@ -122,11 +122,14 @@ defmodule Bumblebee.Vision.Vit do
         name: "classifier"
       )
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   # TODO: This requires a PixelShuffle implementation in Axon
@@ -137,7 +140,7 @@ defmodule Bumblebee.Vision.Vit do
     config
     |> inputs()
     |> vit(config)
-    |> Axon.container()
+    |> Bumblebee.Utils.Model.output(config)
   end
 
   defp inputs(config) do

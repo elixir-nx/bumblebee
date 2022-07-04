@@ -215,15 +215,18 @@ defmodule Bumblebee.Text.Bart do
         name: "shared"
       )
 
-    Axon.container(%{
-      logits: lm_logits,
-      decoder_hidden_states: outputs.decoder_hidden_states,
-      decoder_attentions: outputs.decoder_attentions,
-      cross_attentions: outputs.cross_attentions,
-      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
-      encoder_hidden_states: outputs.encoder_hidden_states,
-      encoder_attentions: outputs.encoder_attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: lm_logits,
+        decoder_hidden_states: outputs.decoder_hidden_states,
+        decoder_attentions: outputs.decoder_attentions,
+        cross_attentions: outputs.cross_attentions,
+        encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+        encoder_hidden_states: outputs.encoder_hidden_states,
+        encoder_attentions: outputs.encoder_attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
@@ -261,15 +264,18 @@ defmodule Bumblebee.Text.Bart do
 
     logits = classification_head(sentence_representation, config, name: "classification_head")
 
-    Axon.container(%{
-      logits: logits,
-      decoder_hidden_states: outputs.decoder_hidden_states,
-      decoder_attentions: outputs.decoder_attentions,
-      cross_attentions: outputs.cross_attentions,
-      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
-      encoder_hidden_states: outputs.encoder_hidden_states,
-      encoder_attentions: outputs.encoder_attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        decoder_hidden_states: outputs.decoder_hidden_states,
+        decoder_attentions: outputs.decoder_attentions,
+        cross_attentions: outputs.cross_attentions,
+        encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+        encoder_hidden_states: outputs.encoder_hidden_states,
+        encoder_attentions: outputs.encoder_attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_question_answering} = config) do
@@ -290,16 +296,19 @@ defmodule Bumblebee.Text.Bart do
     start_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 0]])
     end_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 1]])
 
-    Axon.container(%{
-      start_logits: start_logits,
-      end_logits: end_logits,
-      decoder_hidden_states: outputs.decoder_hidden_states,
-      decoder_attentions: outputs.decoder_attentions,
-      cross_attentions: outputs.cross_attentions,
-      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
-      encoder_hidden_states: outputs.encoder_hidden_states,
-      encoder_attentions: outputs.encoder_attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        start_logits: start_logits,
+        end_logits: end_logits,
+        decoder_hidden_states: outputs.decoder_hidden_states,
+        decoder_attentions: outputs.decoder_attentions,
+        cross_attentions: outputs.cross_attentions,
+        encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+        encoder_hidden_states: outputs.encoder_hidden_states,
+        encoder_attentions: outputs.encoder_attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
@@ -324,12 +333,15 @@ defmodule Bumblebee.Text.Bart do
         name: "shared"
       )
 
-    Axon.container(%{
-      logits: lm_logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions,
-      cross_attentions: outputs.cross_attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: lm_logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions,
+        cross_attentions: outputs.cross_attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :base} = config) do
@@ -339,7 +351,7 @@ defmodule Bumblebee.Text.Bart do
     input_shape
     |> inputs(config)
     |> bart(config)
-    |> Axon.container()
+    |> Bumblebee.Utils.Model.output(config)
   end
 
   # TODO: In all of the decoder_x inputs, there is a possible

@@ -167,7 +167,7 @@ defmodule Bumblebee.Text.Albert do
   def model(%__MODULE__{architecture: :base} = config) do
     inputs({nil, 11})
     |> albert(config, name: "albert")
-    |> Axon.container()
+    |> Bumblebee.Utils.Model.output(config)
   end
 
   def model(%__MODULE__{architecture: :for_masked_language_modeling} = config) do
@@ -175,11 +175,14 @@ defmodule Bumblebee.Text.Albert do
 
     logits = lm_prediction_head(outputs.last_hidden_state, config, name: "predictions")
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
@@ -193,11 +196,14 @@ defmodule Bumblebee.Text.Albert do
         name: "classifier"
       )
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
@@ -227,11 +233,14 @@ defmodule Bumblebee.Text.Albert do
         [logits, inputs["input_ids"]]
       )
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_token_classification} = config) do
@@ -251,11 +260,14 @@ defmodule Bumblebee.Text.Albert do
         name: "classifier"
       )
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_question_answering} = config) do
@@ -276,12 +288,15 @@ defmodule Bumblebee.Text.Albert do
     start_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 0]])
     end_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 1]])
 
-    Axon.container(%{
-      start_logits: start_logits,
-      end_logits: end_logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        start_logits: start_logits,
+        end_logits: end_logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   defp inputs(input_shape) do

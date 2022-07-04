@@ -1,5 +1,5 @@
 defmodule Bumblebee.Vision.Deit do
-  @common_keys [:id2label, :label2id, :num_labels, :output_hidden_states]
+  @common_keys [:output_hidden_states, :output_attentions, :id2label, :label2id, :num_labels]
 
   @moduledoc """
   Models based on the DeiT architecture.
@@ -133,11 +133,14 @@ defmodule Bumblebee.Vision.Deit do
         name: "cls_classifier"
       )
 
-    Axon.container(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   def model(%__MODULE__{architecture: :for_image_classification_with_teacher} = config) do
@@ -169,13 +172,16 @@ defmodule Bumblebee.Vision.Deit do
       |> Axon.add(dist_logits)
       |> Axon.nx(&Nx.divide(&1, 2))
 
-    Axon.container(%{
-      logits: logits,
-      cls_logits: cls_logits,
-      distillation_logits: dist_logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        cls_logits: cls_logits,
+        distillation_logits: dist_logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
   end
 
   # TODO: This requires a PixelShuffle implementation in Axon
@@ -186,7 +192,7 @@ defmodule Bumblebee.Vision.Deit do
     config
     |> inputs()
     |> deit(config)
-    |> Axon.container()
+    |> Bumblebee.Utils.Model.output(config)
   end
 
   defp inputs(config) do
