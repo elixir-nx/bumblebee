@@ -378,7 +378,7 @@ defmodule Bumblebee.Text.Albert do
         name: join(name, "embedding_hidden_mapping_in")
       )
 
-    albert_layer_groups(inputs, hidden_states, config, name: name)
+    albert_layer_groups(inputs, hidden_states, config, name: join(name, "albert_layer_groups"))
   end
 
   defp albert_layer_groups(inputs, hidden_states, config, opts) do
@@ -393,33 +393,22 @@ defmodule Bumblebee.Text.Albert do
     for idx <- 0..(config.num_hidden_layers - 1), reduce: initial_state do
       {last, states, attentions} ->
         group_idx = div(idx, div(config.num_hidden_layers, config.num_hidden_groups))
-        group_name = join(name, "albert_layer_groups.#{group_idx}")
-        albert_layer_collection(inputs, last, states, attentions, config, name: group_name)
+
+        albert_layers(inputs, last, states, attentions, config,
+          name: name |> join(group_idx) |> join("albert_layers")
+        )
     end
   end
 
-  defp albert_layer_collection(
-         inputs,
-         hidden_states,
-         all_hidden_states,
-         all_attentions,
-         config,
-         opts
-       ) do
+  defp albert_layers(inputs, hidden_states, all_hidden_states, all_attentions, config, opts) do
     name = opts[:name]
 
     initial_state = {hidden_states, all_hidden_states, all_attentions}
 
     for idx <- 0..(config.inner_group_num - 1), reduce: initial_state do
       {last, states, attentions} ->
-        layer_name = join(name, "albert_layers.#{idx}")
-        {next_state, next_attention} = albert_layer(inputs, last, config, name: layer_name)
-
-        {
-          next_state,
-          Tuple.append(states, next_state),
-          Tuple.append(attentions, next_attention)
-        }
+        {next_state, next_attention} = albert_layer(inputs, last, config, name: join(name, idx))
+        {next_state, Tuple.append(states, next_state), Tuple.append(attentions, next_attention)}
     end
   end
 
@@ -566,8 +555,8 @@ defmodule Bumblebee.Text.Albert do
     Axon.Initializers.normal(scale: config.initializer_range)
   end
 
-  defp join(nil, rhs), do: rhs
-  defp join(lhs, rhs), do: lhs <> "." <> rhs
+  defp join(nil, rhs), do: to_string(rhs)
+  defp join(lhs, rhs), do: to_string(lhs) <> "." <> to_string(rhs)
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do

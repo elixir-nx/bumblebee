@@ -535,7 +535,7 @@ defmodule Bumblebee.Text.Bart do
     |> Axon.add(pos_embeds)
     |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
     |> Axon.dropout(rate: config.dropout)
-    |> encoder_layer_collection(attention_mask, head_mask, config, name: name)
+    |> encoder_layers(attention_mask, head_mask, config, name: join(name, "layers"))
   end
 
   defp embed_tokens(input_ids, config, name) do
@@ -568,7 +568,7 @@ defmodule Bumblebee.Text.Bart do
     )
   end
 
-  defp encoder_layer_collection(hidden_states, attention_mask, head_mask, config, opts) do
+  defp encoder_layers(hidden_states, attention_mask, head_mask, config, opts) do
     name = opts[:name]
 
     initial_encoder_state = %{
@@ -583,15 +583,10 @@ defmodule Bumblebee.Text.Bart do
 
         # TODO: Wrap encoder layer in a layer_drop combinator
         # that skips this connection dynamically
-        layer_name = join(name, "layers.#{idx}")
 
         {next_state, next_attention} =
-          encoder_layer(
-            encoder_state.last_hidden_state,
-            attention_mask,
-            layer_head_mask,
-            config,
-            name: layer_name
+          encoder_layer(encoder_state.last_hidden_state, attention_mask, layer_head_mask, config,
+            name: join(name, idx)
           )
 
         %{
@@ -664,7 +659,7 @@ defmodule Bumblebee.Text.Bart do
     |> Axon.add(pos_embeds)
     |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
     |> Axon.dropout(rate: config.dropout)
-    |> decoder_layer_collection(
+    |> decoder_layers(
       attention_mask,
       encoder_last_hidden_state,
       encoder_attention_mask,
@@ -672,11 +667,11 @@ defmodule Bumblebee.Text.Bart do
       cross_attention_head_mask,
       cache,
       config,
-      name: name
+      name: join(name, "layers")
     )
   end
 
-  defp decoder_layer_collection(
+  defp decoder_layers(
          hidden_states,
          attention_mask,
          encoder_hidden_states,
@@ -713,8 +708,6 @@ defmodule Bumblebee.Text.Bart do
             {nil, nil}
           end
 
-        layer_name = join(name, "layers.#{idx}")
-
         {next_state, next_attention, next_cross_attention, layer_cache} =
           decoder_layer(
             decoder_state.last_hidden_state,
@@ -726,7 +719,7 @@ defmodule Bumblebee.Text.Bart do
             self_attention_layer_cache,
             cross_attention_layer_cache,
             config,
-            name: layer_name
+            name: join(name, idx)
           )
 
         updated_cache =
@@ -1011,8 +1004,8 @@ defmodule Bumblebee.Text.Bart do
     Axon.Initializers.normal(scale: config.init_std)
   end
 
-  defp join(nil, rhs), do: rhs
-  defp join(lhs, rhs), do: lhs <> "." <> rhs
+  defp join(nil, rhs), do: to_string(rhs)
+  defp join(lhs, rhs), do: to_string(lhs) <> "." <> to_string(rhs)
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do

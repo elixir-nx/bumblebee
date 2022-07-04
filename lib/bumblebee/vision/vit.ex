@@ -235,10 +235,10 @@ defmodule Bumblebee.Vision.Vit do
   defp encoder(hidden_states, config, opts) do
     name = opts[:name]
 
-    encoder_layer_collection(hidden_states, config, name: name)
+    encoder_layers(hidden_states, config, name: join(name, "layer"))
   end
 
-  defp encoder_layer_collection(hidden_states, config, opts) do
+  defp encoder_layers(hidden_states, config, opts) do
     name = opts[:name]
 
     last_hidden_state = hidden_states
@@ -248,8 +248,7 @@ defmodule Bumblebee.Vision.Vit do
     for idx <- 0..(config.num_hidden_layers - 1),
         reduce: {last_hidden_state, all_hidden_states, all_attentions} do
       {lhs, states, attns} ->
-        layer_name = join(name, "layer.#{idx}")
-        {next_state, next_attention} = encoder_layer(lhs, config, name: layer_name)
+        {next_state, next_attention} = encoder_layer(lhs, config, name: join(name, idx))
         {next_state, Tuple.append(states, next_state), Tuple.append(attns, next_attention)}
     end
   end
@@ -394,9 +393,8 @@ defmodule Bumblebee.Vision.Vit do
     Axon.Initializers.normal(scale: config.initializer_range)
   end
 
-  defp join(nil, rhs), do: rhs
-
-  defp join(lhs, rhs), do: lhs <> "." <> rhs
+  defp join(nil, rhs), do: to_string(rhs)
+  defp join(lhs, rhs), do: to_string(lhs) <> "." <> to_string(rhs)
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
