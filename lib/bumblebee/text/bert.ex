@@ -421,14 +421,18 @@ defmodule Bumblebee.Text.Bert do
   defp encoder(hidden_states, attention_mask, head_mask, config, opts) do
     name = opts[:name]
 
+    encoder_layers(hidden_states, attention_mask, head_mask, config, name: join(name, "layer"))
+  end
+
+  defp encoder_layers(hidden_states, attention_mask, head_mask, config, opts) do
+    name = opts[:name]
+
     for idx <- 0..(config.num_hidden_layers - 1), reduce: {hidden_states, {hidden_states}, {}} do
       {hidden_states, all_hidden_states, all_attention_outputs} ->
         layer_head_mask = Axon.nx(head_mask, & &1[idx])
 
         {hidden_states, attention_weights} =
-          bert_layer(hidden_states, attention_mask, layer_head_mask, config,
-            name: name <> ".layer.#{idx}"
-          )
+          bert_layer(hidden_states, attention_mask, layer_head_mask, config, name: join(name, idx))
 
         {
           hidden_states,
