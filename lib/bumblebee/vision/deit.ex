@@ -209,13 +209,13 @@ defmodule Bumblebee.Vision.Deit do
   defp deit(inputs, config, opts \\ []) do
     name = opts[:name]
 
-    hidden_states = embeddings(inputs, config, name: join(name, "embeddings"))
+    hidden_state = embeddings(inputs, config, name: join(name, "embeddings"))
 
-    {hidden_states, all_hidden_states, all_attentions} =
-      encoder(hidden_states, config, name: join(name, "encoder"))
+    {hidden_state, hidden_states, attentions} =
+      encoder(hidden_state, config, name: join(name, "encoder"))
 
     last_hidden_state =
-      hidden_states
+      hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
         epsilon: config.layer_norm_eps,
@@ -227,8 +227,8 @@ defmodule Bumblebee.Vision.Deit do
     %{
       last_hidden_state: last_hidden_state,
       pooler_output: pooled,
-      hidden_states: all_hidden_states,
-      attentions: all_attentions
+      hidden_states: hidden_states,
+      attentions: attentions
     }
   end
 
@@ -293,32 +293,37 @@ defmodule Bumblebee.Vision.Deit do
     )
   end
 
-  defp encoder(hidden_states, config, opts) do
+  defp encoder(hidden_state, config, opts) do
     name = opts[:name]
 
-    encoder_layers(hidden_states, config, name: join(name, "layer"))
+    encoder_layers(hidden_state, config, name: join(name, "layer"))
   end
 
-  defp encoder_layers(hidden_states, config, opts) do
+  defp encoder_layers(hidden_state, config, opts) do
     name = opts[:name]
 
-    last_hidden_state = hidden_states
-    all_hidden_states = {last_hidden_state}
-    all_attentions = {}
+    last_hidden_state = hidden_state
+    hidden_states = {hidden_state}
+    attentions = {}
 
     for idx <- 0..(config.num_hidden_layers - 1),
-        reduce: {last_hidden_state, all_hidden_states, all_attentions} do
-      {lhs, states, attns} ->
-        {next_state, next_attention} = encoder_layer(lhs, config, name: join(name, idx))
-        {next_state, Tuple.append(states, next_state), Tuple.append(attns, next_attention)}
+        reduce: {last_hidden_state, hidden_states, attentions} do
+      {hidden_state, hidden_states, attentions} ->
+        {hidden_state, attention} = encoder_layer(hidden_state, config, name: join(name, idx))
+
+        {
+          hidden_state,
+          Tuple.append(hidden_states, hidden_state),
+          Tuple.append(attentions, attention)
+        }
     end
   end
 
-  defp encoder_layer(hidden_states, config, opts) do
+  defp encoder_layer(hidden_state, config, opts) do
     name = opts[:name]
 
-    {attention_output, attention_weights} =
-      hidden_states
+    {attention_output, attention} =
+      hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
         epsilon: config.layer_norm_eps,
@@ -326,7 +331,7 @@ defmodule Bumblebee.Vision.Deit do
       )
       |> attention(config, name: join(name, "attention"))
 
-    attention_output = Axon.add(attention_output, hidden_states)
+    attention_output = Axon.add(attention_output, hidden_state)
 
     layer_output =
       attention_output
@@ -338,28 +343,28 @@ defmodule Bumblebee.Vision.Deit do
       |> intermediate(config, name: join(name, "intermediate"))
       |> output(attention_output, config, name: join(name, "output"))
 
-    {layer_output, attention_weights}
+    {layer_output, attention}
   end
 
-  defp attention(hidden_states, config, opts) do
+  defp attention(hidden_state, config, opts) do
     name = opts[:name]
 
-    {attention_output, attention_weights} =
-      self_attention(hidden_states, config, name: join(name, "attention"))
+    {attention_output, attention} =
+      self_attention(hidden_state, config, name: join(name, "attention"))
 
     attention_output =
-      self_output(attention_output, hidden_states, config, name: join(name, "output"))
+      self_output(attention_output, hidden_state, config, name: join(name, "output"))
 
-    {attention_output, attention_weights}
+    {attention_output, attention}
   end
 
-  defp self_attention(hidden_states, config, opts) do
+  defp self_attention(hidden_state, config, opts) do
     name = opts[:name]
 
     head_dim = div(config.hidden_size, config.num_attention_heads)
 
     query_states =
-      hidden_states
+      hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         use_bias: config.qkv_bias,
@@ -368,7 +373,7 @@ defmodule Bumblebee.Vision.Deit do
       |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
 
     key_states =
-      hidden_states
+      hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         use_bias: config.qkv_bias,
@@ -377,7 +382,7 @@ defmodule Bumblebee.Vision.Deit do
       |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
 
     value_states =
-      hidden_states
+      hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         use_bias: config.qkv_bias,
@@ -404,10 +409,10 @@ defmodule Bumblebee.Vision.Deit do
     {attention_output, attention_weights}
   end
 
-  defp self_output(hidden_states, _input_tensor, config, opts) do
+  defp self_output(hidden_state, _input_tensor, config, opts) do
     name = opts[:name]
 
-    hidden_states
+    hidden_state
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
@@ -415,10 +420,10 @@ defmodule Bumblebee.Vision.Deit do
     |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
   end
 
-  defp intermediate(hidden_states, config, opts) do
+  defp intermediate(hidden_state, config, opts) do
     name = opts[:name]
 
-    hidden_states
+    hidden_state
     |> Axon.dense(config.intermediate_size,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
@@ -426,10 +431,10 @@ defmodule Bumblebee.Vision.Deit do
     |> Axon.activation(config.hidden_act)
   end
 
-  defp output(hidden_states, attention_output, config, opts) do
+  defp output(hidden_state, attention_output, config, opts) do
     name = opts[:name]
 
-    hidden_states
+    hidden_state
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
@@ -438,10 +443,10 @@ defmodule Bumblebee.Vision.Deit do
     |> Axon.add(attention_output, name: join(name, "residual"))
   end
 
-  defp pooler(hidden_states, config, opts) do
+  defp pooler(hidden_state, config, opts) do
     name = opts[:name]
 
-    hidden_states
+    hidden_state
     |> Layers.take_token_layer(index: 0, axis: 1, name: join(name, "head"))
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),

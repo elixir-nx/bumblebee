@@ -154,26 +154,26 @@ defmodule Bumblebee.Vision.ConvNext do
     )
   end
 
-  defp encoder(hidden_states, config, opts) do
+  defp encoder(hidden_state, config, opts) do
     name = opts[:name]
 
     drop_path_rates = get_drop_path_rates(config.depths, config.drop_path_rate)
-    last_hidden_state = hidden_states
-    all_hidden_states = {last_hidden_state}
+    last_hidden_state = hidden_state
+    hidden_states = {hidden_state}
 
     stages =
       Enum.zip([0..(config.num_stages - 1), config.depths, drop_path_rates, config.hidden_sizes])
 
     for {idx, depth, drop_path_rates, out_channels} <- stages,
-        reduce: {last_hidden_state, all_hidden_states} do
-      {lhs, states} ->
+        reduce: {last_hidden_state, hidden_states} do
+      {hidden_state, hidden_states} ->
         strides = if idx > 0, do: 2, else: 1
 
         stage_name = join("stages", "#{idx}")
 
-        state =
+        hidden_state =
           conv_next_stage(
-            lhs,
+            hidden_state,
             out_channels,
             config,
             strides: strides,
@@ -182,22 +182,22 @@ defmodule Bumblebee.Vision.ConvNext do
             name: join(name, stage_name)
           )
 
-        {state, Tuple.append(states, state)}
+        {hidden_state, Tuple.append(hidden_states, hidden_state)}
     end
   end
 
-  defp conv_next_stage(hidden_states, out_channels, config, opts) do
+  defp conv_next_stage(hidden_state, out_channels, config, opts) do
     name = opts[:name]
 
     strides = opts[:strides]
     depth = opts[:depth]
     drop_path_rates = opts[:drop_path_rates]
 
-    in_channels = get_channels(hidden_states)
+    in_channels = get_channels(hidden_state)
 
     downsampled =
       if in_channels != out_channels or strides > 1 do
-        hidden_states
+        hidden_state
         |> Axon.layer_norm(
           epsilon: 1.0e-6,
           name: join(name, "downsampling_layer.0"),
@@ -211,7 +211,7 @@ defmodule Bumblebee.Vision.ConvNext do
           kernel_initializer: kernel_initializer(config)
         )
       else
-        hidden_states
+        hidden_state
       end
 
     # Ensure the rates have been computed properly
@@ -228,16 +228,16 @@ defmodule Bumblebee.Vision.ConvNext do
     end
   end
 
-  defp conv_next_layer(%Axon{} = hidden_states, out_channels, config, opts) do
+  defp conv_next_layer(%Axon{} = hidden_state, out_channels, config, opts) do
     name = opts[:name]
 
     drop_path_rate = opts[:drop_path_rate]
 
-    input = hidden_states
+    input = hidden_state
     channel_multiplier = div(out_channels, get_channels(input))
 
     x =
-      hidden_states
+      hidden_state
       |> Axon.depthwise_conv(channel_multiplier,
         kernel_size: 7,
         padding: [{3, 3}, {3, 3}],

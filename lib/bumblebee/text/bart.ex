@@ -244,7 +244,7 @@ defmodule Bumblebee.Text.Bart do
 
     sentence_representation =
       Axon.layer(
-        fn eos_mask, hidden_states, _opts ->
+        fn eos_mask, hidden_state, _opts ->
           seq_len = Nx.axis_size(eos_mask, 1)
 
           eos_mask =
@@ -256,7 +256,7 @@ defmodule Bumblebee.Text.Bart do
               Nx.select(Nx.equal(x, max_val), 1, 0)
             end)
 
-          hidden_states
+          hidden_state
           |> Nx.multiply(Nx.new_axis(eos_mask, -1))
           |> Nx.sum(axes: [1])
         end,
@@ -569,12 +569,12 @@ defmodule Bumblebee.Text.Bart do
     )
   end
 
-  defp encoder_layers(hidden_states, attention_mask, head_mask, config, opts) do
+  defp encoder_layers(hidden_state, attention_mask, head_mask, config, opts) do
     name = opts[:name]
 
     initial_encoder_state = %{
-      last_hidden_state: hidden_states,
-      hidden_states: {hidden_states},
+      last_hidden_state: hidden_state,
+      hidden_states: {hidden_state},
       attentions: {}
     }
 
@@ -585,27 +585,27 @@ defmodule Bumblebee.Text.Bart do
         # TODO: Wrap encoder layer in a layer_drop combinator
         # that skips this connection dynamically
 
-        {next_state, next_attention} =
+        {hidden_state, attention} =
           encoder_layer(encoder_state.last_hidden_state, attention_mask, layer_head_mask, config,
             name: join(name, idx)
           )
 
         %{
-          last_hidden_state: next_state,
-          hidden_states: Tuple.append(encoder_state.hidden_states, next_state),
-          attentions: Tuple.append(encoder_state.attentions, next_attention)
+          last_hidden_state: hidden_state,
+          hidden_states: Tuple.append(encoder_state.hidden_states, hidden_state),
+          attentions: Tuple.append(encoder_state.attentions, attention)
         }
     end
   end
 
-  defp encoder_layer(hidden_states, attention_mask, layer_head_mask, config, opts) do
+  defp encoder_layer(hidden_state, attention_mask, layer_head_mask, config, opts) do
     name = opts[:name]
 
-    residual = hidden_states
+    residual = hidden_state
 
-    {hidden_states, attention_weights, _} =
+    {hidden_state, attention, _} =
       attention(
-        hidden_states,
+        hidden_state,
         attention_mask,
         nil,
         layer_head_mask,
@@ -615,8 +615,8 @@ defmodule Bumblebee.Text.Bart do
         name: join(name, "self_attn")
       )
 
-    hidden_states =
-      hidden_states
+    hidden_state =
+      hidden_state
       |> Axon.dropout(rate: config.dropout, name: join(name, "dropout.0"))
       |> Axon.add(residual, name: join(name, "residual.0"))
       |> Axon.layer_norm(
@@ -625,10 +625,10 @@ defmodule Bumblebee.Text.Bart do
         name: join(name, "self_attn_layer_norm")
       )
 
-    residual = hidden_states
+    residual = hidden_state
 
-    hidden_states =
-      hidden_states
+    hidden_state =
+      hidden_state
       |> Axon.dense(config.encoder_ffn_dim,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "fc1")
@@ -642,7 +642,7 @@ defmodule Bumblebee.Text.Bart do
       |> Axon.add(residual, name: join(name, "residual.1"))
       |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "final_layer_norm"))
 
-    {hidden_states, attention_weights}
+    {hidden_state, attention}
   end
 
   defp decoder(inputs, input_embeds, encoder_last_hidden_state, config, opts) do
@@ -750,9 +750,9 @@ defmodule Bumblebee.Text.Bart do
   end
 
   defp decoder_layer(
-         hidden_states,
+         hidden_state,
          attention_mask,
-         encoder_hidden_states,
+         encoder_hidden_state,
          encoder_attention_mask,
          layer_head_mask,
          cross_attention_layer_head_mask,
@@ -763,11 +763,11 @@ defmodule Bumblebee.Text.Bart do
        ) do
     name = opts[:name]
 
-    residual = hidden_states
+    residual = hidden_state
 
-    {hidden_states, self_attention_weights, self_attention_layer_cache} =
+    {hidden_state, self_attention, self_attention_layer_cache} =
       attention(
-        hidden_states,
+        hidden_state,
         attention_mask,
         nil,
         layer_head_mask,
@@ -779,8 +779,8 @@ defmodule Bumblebee.Text.Bart do
         name: join(name, "self_attn")
       )
 
-    hidden_states =
-      hidden_states
+    hidden_state =
+      hidden_state
       |> Axon.dropout(rate: config.dropout)
       |> Axon.add(residual)
       |> Axon.layer_norm(
@@ -789,15 +789,15 @@ defmodule Bumblebee.Text.Bart do
         name: join(name, "self_attn_layer_norm")
       )
 
-    {hidden_states, cross_attention_weights, cross_attention_layer_cache} =
-      if encoder_hidden_states do
-        residual = hidden_states
+    {hidden_state, cross_attention, cross_attention_layer_cache} =
+      if encoder_hidden_state do
+        residual = hidden_state
 
-        {hidden_states, cross_attention_weights, cross_attention_layer_cache} =
+        {hidden_state, cross_attention, cross_attention_layer_cache} =
           attention(
-            hidden_states,
+            hidden_state,
             encoder_attention_mask,
-            encoder_hidden_states,
+            encoder_hidden_state,
             cross_attention_layer_head_mask,
             cross_attention_layer_cache,
             config,
@@ -806,8 +806,8 @@ defmodule Bumblebee.Text.Bart do
             name: join(name, "encoder_attn")
           )
 
-        hidden_states =
-          hidden_states
+        hidden_state =
+          hidden_state
           |> Axon.dropout(rate: config.dropout)
           |> Axon.add(residual)
           |> Axon.layer_norm(
@@ -816,18 +816,18 @@ defmodule Bumblebee.Text.Bart do
             name: join(name, "encoder_attn_layer_norm")
           )
 
-        {hidden_states, cross_attention_weights, cross_attention_layer_cache}
+        {hidden_state, cross_attention, cross_attention_layer_cache}
       else
         # TODO: Semantically these should actually be `nil`, but
         # we update the cross_attention_cache with them internally
         # so we can't just leave them blank
-        {hidden_states, Axon.container({}), Axon.container({})}
+        {hidden_state, Axon.container({}), Axon.container({})}
       end
 
-    residual = hidden_states
+    residual = hidden_state
 
-    hidden_states =
-      hidden_states
+    hidden_state =
+      hidden_state
       |> Axon.dense(config.decoder_ffn_dim, name: join(name, "fc1"))
       |> Axon.activation(config.activation_function, name: join(name, "activation"))
       |> Axon.dropout(rate: config.activation_dropout, name: join(name, "dropout.1"))
@@ -838,18 +838,13 @@ defmodule Bumblebee.Text.Bart do
 
     layer_cache = {self_attention_layer_cache, cross_attention_layer_cache}
 
-    {
-      hidden_states,
-      self_attention_weights,
-      cross_attention_weights,
-      layer_cache
-    }
+    {hidden_state, self_attention, cross_attention, layer_cache}
   end
 
   defp attention(
-         hidden_states,
+         hidden_state,
          attention_mask,
-         key_value_states,
+         key_value_state,
          layer_head_mask,
          layer_cache,
          config,
@@ -863,7 +858,7 @@ defmodule Bumblebee.Text.Bart do
     head_dim = div(config.d_model, num_heads)
 
     query_states =
-      hidden_states
+      hidden_state
       |> Axon.dense(config.d_model,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "q_proj")
@@ -871,7 +866,7 @@ defmodule Bumblebee.Text.Bart do
       |> split_heads(num_heads, head_dim)
 
     # For cross-attention we are given encoder hidden state
-    projection_states = key_value_states || hidden_states
+    projection_states = key_value_state || hidden_state
 
     key_states =
       projection_states
@@ -936,10 +931,10 @@ defmodule Bumblebee.Text.Bart do
     {attention_output, attention_weights, layer_cache}
   end
 
-  defp classification_head(hidden_states, config, opts) do
+  defp classification_head(hidden_state, config, opts) do
     name = opts[:name]
 
-    hidden_states
+    hidden_state
     |> Axon.dropout(rate: config.classifier_dropout)
     |> Axon.dense(config.d_model,
       kernel_initializer: kernel_initializer(config),
