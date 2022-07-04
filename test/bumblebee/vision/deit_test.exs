@@ -29,6 +29,7 @@ defmodule Bumblebee.Vision.DeitTest do
       )
     end
 
+    @tag :capture_log
     @tag :slow
     test "image classification model with teacher" do
       assert {:ok, model, params, config} =
@@ -44,6 +45,38 @@ defmodule Bumblebee.Vision.DeitTest do
       assert_all_close(
         output.logits[[0, 0..2]],
         Nx.tensor([-0.7490, 0.7397, 0.6383]),
+        atol: 1.0e-4
+      )
+    end
+
+    @tag :capture_log
+    @tag :slow
+    test "masked image modeling model" do
+      assert {:ok, model, params, config} =
+               Bumblebee.load_model({:hf, "facebook/deit-base-distilled-patch16-224"},
+                 architecture: :for_masked_image_modeling
+               )
+
+      assert %Bumblebee.Vision.Deit{architecture: :for_masked_image_modeling} = config
+
+      # There is no pre-trained version on Hugging Face, so we use a fixed parameter
+      params =
+        update_in(params["decoder.0"]["kernel"], fn x ->
+          x |> Nx.iota(type: :f32) |> Nx.divide(Nx.size(x))
+        end)
+
+      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 3, 224, 224})}
+      output = Axon.predict(model, params, input)
+
+      assert Nx.shape(output.logits) == {1, 3, 224, 224}
+
+      assert_all_close(
+        output.logits[[0, 0, 0..2, 0..2]],
+        Nx.tensor([
+          [-0.0159, 0.0084, 0.0326],
+          [0.3719, 0.3961, 0.4204],
+          [0.7597, 0.7839, 0.8082]
+        ]),
         atol: 1.0e-4
       )
     end

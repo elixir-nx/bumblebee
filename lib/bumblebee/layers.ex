@@ -363,4 +363,62 @@ defmodule Bumblebee.Layers do
       name: name
     )
   end
+
+  @doc """
+  Adds a pixel rearrangement layer to the network.
+
+  Rearranges elements in a tensor of shape `{*, C × r^2, H, W}` to a
+  tensor of shape `{*, C, H × r, W × r}`, where r is an upscale factor.
+
+  This is useful for implementing efficient sub-pixel convolution
+  with a stride of `1 / r`.
+
+  ## Options
+
+    * `:name` - layer name
+
+  """
+  def pixel_shuffle_layer(input, upscale_factor, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name])
+
+    Axon.layer(&pixel_shuffle/2, [input],
+      name: opts[:name],
+      op_name: :pixel_shuffle,
+      upscale_factor: upscale_factor
+    )
+  end
+
+  defnp pixel_shuffle(input, opts \\ []) do
+    opts = keyword!(opts, [:upscale_factor, mode: :inference])
+
+    transform({input, opts[:upscale_factor]}, fn {input, upscale_factor} ->
+      {batch, [channels, height, width]} =
+        input
+        |> Nx.shape()
+        |> Tuple.to_list()
+        |> Enum.split(-3)
+
+      out_channels = div(channels, upscale_factor * upscale_factor)
+      out_height = height * upscale_factor
+      out_width = width * upscale_factor
+
+      x =
+        Nx.reshape(
+          input,
+          List.to_tuple(batch ++ [out_channels, upscale_factor, upscale_factor, height, width])
+        )
+
+      {batch_axes, [out_channels_axis, upscale_axis1, upscale_axis2, height_axis, width_axis]} =
+        x
+        |> Nx.axes()
+        |> Enum.split(-5)
+
+      x
+      |> Nx.transpose(
+        axes:
+          batch_axes ++ [out_channels_axis, height_axis, upscale_axis1, width_axis, upscale_axis2]
+      )
+      |> Nx.reshape(List.to_tuple(batch ++ [out_channels, out_height, out_width]))
+    end)
+  end
 end
