@@ -383,8 +383,8 @@ defmodule Bumblebee.Text.Bert do
     %{
       last_hidden_state: last_hidden_state,
       pooler_output: pooler_output,
-      hidden_states: if(config.output_hidden_states, do: hidden_states, else: {}),
-      attentions: if(config.output_attentions, do: attentions, else: {})
+      hidden_states: hidden_states,
+      attentions: attentions
     }
   end
 
