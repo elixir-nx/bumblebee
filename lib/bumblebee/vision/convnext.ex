@@ -169,8 +169,6 @@ defmodule Bumblebee.Vision.ConvNext do
       {hidden_state, hidden_states} ->
         strides = if idx > 0, do: 2, else: 1
 
-        stage_name = join("stages", "#{idx}")
-
         hidden_state =
           conv_next_stage(
             hidden_state,
@@ -179,7 +177,7 @@ defmodule Bumblebee.Vision.ConvNext do
             strides: strides,
             depth: depth,
             drop_path_rates: drop_path_rates,
-            name: join(name, stage_name)
+            name: name |> join("stages") |> join(idx)
           )
 
         {hidden_state, Tuple.append(hidden_states, hidden_state)}
@@ -219,10 +217,8 @@ defmodule Bumblebee.Vision.ConvNext do
 
     for {drop_path_rate, idx} <- Enum.with_index(drop_path_rates), reduce: downsampled do
       x ->
-        layer_name = join("layers", "#{idx}")
-
         conv_next_layer(x, out_channels, config,
-          name: join(name, layer_name),
+          name: name |> join("layers") |> join(idx),
           drop_path_rate: drop_path_rate
         )
     end

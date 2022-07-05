@@ -346,28 +346,28 @@ defmodule Bumblebee.Text.Albert do
     inputs_embeds =
       Axon.embedding(input_ids, config.vocab_size, config.embedding_size,
         kernel_initializer: kernel_initializer(config),
-        name: name <> ".word_embeddings"
+        name: join(name, "word_embeddings")
       )
 
     position_embeds =
       Axon.embedding(position_ids, config.max_position_embeddings, config.embedding_size,
         kernel_initializer: kernel_initializer(config),
-        name: name <> ".position_embeddings"
+        name: join(name, "position_embeddings")
       )
 
     token_type_embeds =
       Axon.embedding(token_type_ids, config.type_vocab_size, config.embedding_size,
         kernel_initializer: kernel_initializer(config),
-        name: name <> ".token_type_embeddings"
+        name: join(name, "token_type_embeddings")
       )
 
     Axon.add([inputs_embeds, position_embeds, token_type_embeds])
     |> Axon.layer_norm(
       epsilon: config.layer_norm_eps,
-      name: name <> ".LayerNorm",
+      name: join(name, "LayerNorm"),
       channel_index: 2
     )
-    |> Axon.dropout(rate: config.hidden_dropout_prob, name: name <> ".dropout")
+    |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
   end
 
   defp encoder(inputs, hidden_state, config, opts) do
@@ -536,12 +536,12 @@ defmodule Bumblebee.Text.Albert do
     hidden_state
     |> Axon.dense(config.embedding_size,
       kernel_initializer: kernel_initializer(config),
-      name: name <> ".dense"
+      name: join(name, "dense")
     )
-    |> Layers.activation_layer(config.hidden_act, name: name <> ".activation")
+    |> Layers.activation_layer(config.hidden_act, name: join(name, "activation"))
     |> Axon.layer_norm(
       epsilon: config.layer_norm_eps,
-      name: name <> ".LayerNorm",
+      name: join(name, "LayerNorm"),
       channel_index: 2
     )
   end
