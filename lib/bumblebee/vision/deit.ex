@@ -62,10 +62,10 @@ defmodule Bumblebee.Vision.Deit do
     * `:num_channels` - number of input channels. Defaults to `3`
 
     * `:qkv_bias` - whether to use bias in query, key, and value
-      projections
+      projections. Defaults to `true`
 
     * `:encoder_stride` - factor to increase the spatial resolution by
-    in the decoder head for masked image modeling
+      in the decoder head for masked image modeling. Defaults to `16`
 
   ### Common Options
 
@@ -186,9 +186,40 @@ defmodule Bumblebee.Vision.Deit do
     )
   end
 
-  # TODO: This requires a PixelShuffle implementation in Axon
-  # def model(%__MODULE__{architecture: :for_masked_image_modeling} = config) do
-  # end
+  def model(%__MODULE__{architecture: :for_masked_image_modeling} = config) do
+    outputs =
+      config
+      |> inputs()
+      |> deit(config, name: "deit")
+
+    logits =
+      outputs.last_hidden_state
+      |> Axon.nx(fn x ->
+        x = x[[0..-1//1, 1..-2//1]]
+
+        {batch_size, sequence_length, channels} = Nx.shape(x)
+        height = width = sequence_length |> :math.sqrt() |> floor()
+
+        x
+        |> Nx.transpose(axes: [0, 2, 1])
+        |> Nx.reshape({batch_size, channels, height, width})
+      end)
+      |> Axon.conv(config.encoder_stride ** 2 * 3,
+        kernel_size: 1,
+        kernel_initializer: kernel_initializer(config),
+        name: join("decoder", 0)
+      )
+      |> Layers.pixel_shuffle_layer(config.encoder_stride, name: join("decoder", 1))
+
+    Bumblebee.Utils.Model.output(
+      %{
+        logits: logits,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      },
+      config
+    )
+  end
 
   def model(%__MODULE__{architecture: :base} = config) do
     config

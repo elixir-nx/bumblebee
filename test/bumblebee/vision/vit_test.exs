@@ -27,6 +27,7 @@ defmodule Bumblebee.Vision.VitTest do
       )
     end
 
+    @tag :capture_log
     @tag :slow
     test "image classification model" do
       assert {:ok, model, params, config} =
@@ -42,6 +43,38 @@ defmodule Bumblebee.Vision.VitTest do
       assert_all_close(
         output.logits[[0, 0..2]],
         Nx.tensor([0.0112, -0.5065, -0.7792]),
+        atol: 1.0e-4
+      )
+    end
+
+    @tag :capture_log
+    @tag :slow
+    test "masked image modeling model" do
+      assert {:ok, model, params, config} =
+               Bumblebee.load_model({:hf, "google/vit-base-patch16-224-in21k"},
+                 architecture: :for_masked_image_modeling
+               )
+
+      assert %Bumblebee.Vision.Vit{architecture: :for_masked_image_modeling} = config
+
+      # There is no pre-trained version on Hugging Face, so we use a fixed parameter
+      params =
+        update_in(params["decoder.0"]["kernel"], fn x ->
+          x |> Nx.iota(type: :f32) |> Nx.divide(Nx.size(x))
+        end)
+
+      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 3, 224, 224})}
+      output = Axon.predict(model, params, input)
+
+      assert Nx.shape(output.logits) == {1, 3, 224, 224}
+
+      assert_all_close(
+        output.logits[[0, 0, 0..2, 0..2]],
+        Nx.tensor([
+          [-0.0103, -0.0275, -0.0447],
+          [-0.2853, -0.3025, -0.3197],
+          [-0.5603, -0.5774, -0.5946]
+        ]),
         atol: 1.0e-4
       )
     end
