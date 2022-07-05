@@ -469,7 +469,9 @@ defmodule Bumblebee do
   end
 
   @model_type_to_tokenizer %{
-    "bert" => Bumblebee.Text.BertTokenizer
+    "bert" => Bumblebee.Text.BertTokenizer,
+    "albert" => Bumblebee.Text.AlbertTokenizer,
+    "bart" => Bumblebee.Text.BartTokenizer
   }
 
   defp infer_tokenizer_type(repository, opts) do
