@@ -177,12 +177,12 @@ defmodule Bumblebee do
     # ViT
     "ViTModel" => {Bumblebee.Vision.Vit, :base},
     "ViTForImageClassification" => {Bumblebee.Vision.Vit, :for_image_classification},
-    # "ViTForMaskedImageModeling" => {Bumblebee.Vision.Vit, :for_masked_image_modeling}
+    "ViTForMaskedImageModeling" => {Bumblebee.Vision.Vit, :for_masked_image_modeling},
     "DeiTModel" => {Bumblebee.Vision.Deit, :base},
     "DeiTForImageClassification" => {Bumblebee.Vision.Deit, :for_image_classification},
     "DeiTForImageClassificationWithTeacher" =>
       {Bumblebee.Vision.Deit, :for_image_classification_with_teacher},
-    # "DeiTForMaskedImageModeling" => {Bumblebee.Vision.Deit, :for_masked_image_modeling}
+    "DeiTForMaskedImageModeling" => {Bumblebee.Vision.Deit, :for_masked_image_modeling},
     # Bart
     "BartModel" => {Bumblebee.Text.Bart, :base},
     "BartForCausalLM" => {Bumblebee.Text.Bart, :for_causal_language_modeling},
@@ -479,7 +479,9 @@ defmodule Bumblebee do
 
   @model_type_to_tokenizer %{
     "bert" => Bumblebee.Text.BertTokenizer,
-    "roberta" => Bumblebee.Text.RoBERTaTokenizer
+    "roberta" => Bumblebee.Text.RoBERTaTokenizer,
+    "albert" => Bumblebee.Text.AlbertTokenizer,
+    "bart" => Bumblebee.Text.BartTokenizer
   }
 
   defp infer_tokenizer_type(repository, opts) do
