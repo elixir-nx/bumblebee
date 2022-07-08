@@ -138,8 +138,7 @@ defmodule Bumblebee.Text.Roberta do
       :for_sequence_classification,
       :for_token_classification,
       :for_question_answering,
-      :for_multiple_choice,
-      :for_pre_training
+      :for_multiple_choice
     ]
 
   @impl true
@@ -292,28 +291,6 @@ defmodule Bumblebee.Text.Roberta do
     Bumblebee.Utils.Model.output(
       %{
         logits: logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
-  end
-
-  def model(%__MODULE__{architecture: :for_pre_training} = config) do
-    outputs = inputs({nil, 8}, config) |> roberta(config, name: "roberta")
-
-    prediction_logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
-
-    seq_relationship_logits =
-      Axon.dense(outputs.pooler_output, 2,
-        kernel_initializer: kernel_initializer(config),
-        name: "cls.seq_relationship"
-      )
-
-    Bumblebee.Utils.Model.output(
-      %{
-        prediction_logits: prediction_logits,
-        seq_relationship_logits: seq_relationship_logits,
         hidden_states: outputs.hidden_states,
         attentions: outputs.attentions
       },
