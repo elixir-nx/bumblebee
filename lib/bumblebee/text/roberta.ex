@@ -1,39 +1,36 @@
-defmodule Bumblebee.Text.RoBERTa do
+defmodule Bumblebee.Text.Roberta do
   @common_keys [:output_hidden_states, :output_attentions, :id2label, :label2id, :num_labels]
 
   @moduledoc """
-  Models based on the roBERTa architecture.
+  Models based on the Roberta architecture.
 
   ## Architectures
 
-    * `:base` - plain roBERTa without any head on top
+    * `:base` - plain Roberta without any head on top
 
-    * `:for_masked_language_modeling` - roBERTa with a language modeling
+    * `:for_masked_language_modeling` - Roberta with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_causal_language_modeling` - roBERTa with a language modeling
+    * `:for_causal_language_modeling` - Roberta with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - roBERTa with a sequence
+    * `:for_sequence_classification` - Roberta with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
-    * `:for_token_classification` - roBERTa with a token classification
+    * `:for_token_classification` - Roberta with a token classification
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_question_answering` - roBERTa with a span classification head.
+    * `:for_question_answering` - Roberta with a span classification head.
       The head returns logits for the span start and end positions
 
-    * `:for_multiple_choice` - roBERTa with a multiple choice prediction
+    * `:for_multiple_choice` - Roberta with a multiple choice prediction
       head. Each input in the batch consists of several sequences to
       choose from and the model returns logits corresponding to those
       choices
-
-    * `:for_pre_training` - roBERTa with MLM heads as done
-      during the pre-training
 
   ## Inputs
 
@@ -123,7 +120,8 @@ defmodule Bumblebee.Text.RoBERTa do
               type_vocab_size: 2,
               initializer_range: 0.02,
               layer_norm_eps: 1.0e-12,
-              classifier_dropout: nil
+              classifier_dropout: nil,
+              pad_token_id: 1
             ] ++ Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
@@ -194,10 +192,9 @@ defmodule Bumblebee.Text.RoBERTa do
       |> Axon.tanh()
       |> Axon.dropout(rate: classifier_dropout_rate(config), name: "dropout")
       |> Axon.dense(config.num_labels,
-      kernel_initializer: kernel_initializer(config),
-      name: "classifier.out_proj"
-    )
-
+        kernel_initializer: kernel_initializer(config),
+        name: "classifier.out_proj"
+      )
 
     Axon.container(%{
       logits: Axon.nx(logits, fn x -> x[[0..-1//1, 0, 0..-1//1]] end),
@@ -248,7 +245,7 @@ defmodule Bumblebee.Text.RoBERTa do
   end
 
   def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
-    inputs = inputs({nil, nil, 35}, config)
+    inputs = inputs({nil, nil, 9}, config)
 
     flat_inputs =
       Map.new(inputs, fn {key, input} -> {key, Layers.flatten_leading_layer(input)} end)
@@ -284,8 +281,7 @@ defmodule Bumblebee.Text.RoBERTa do
   def model(%__MODULE__{architecture: :for_pre_training} = config) do
     outputs = inputs({nil, 8}, config) |> roberta(config, name: "roberta")
 
-    prediction_logits =
-      lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
+    prediction_logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
 
     seq_relationship_logits =
       Axon.dense(outputs.pooler_output, 2,
@@ -314,7 +310,10 @@ defmodule Bumblebee.Text.RoBERTa do
         ),
       "position_ids" =>
         Axon.input(input_shape, "position_ids",
-          default: fn inputs -> Nx.add(Nx.iota(inputs["input_ids"], axis: -1), 2) end # 2 because
+          default: fn inputs ->
+            # Position numbers begin at padding token id + 1
+            Nx.iota(inputs["input_ids"], axis: -1) |> Nx.add(config.pad_token_id + 1)
+          end
         ),
       "head_mask" =>
         Axon.input({config.num_hidden_layers, config.num_attention_heads}, "head_mask",
@@ -328,12 +327,10 @@ defmodule Bumblebee.Text.RoBERTa do
   defp roberta(inputs, config, opts \\ []) do
     name = opts[:name]
 
-
     hidden_states =
       embeddings(inputs["input_ids"], inputs["token_type_ids"], inputs["position_ids"], config,
         name: join(name, "embeddings")
       )
-
 
     {last_hidden_state, hidden_states, attentions} =
       encoder(hidden_states, inputs["attention_mask"], inputs["head_mask"], config,
@@ -541,7 +538,6 @@ defmodule Bumblebee.Text.RoBERTa do
     # if config.tie_word_embeddings is true (relevant for training)
 
     hidden_state
-    # |> lm_prediction_head_transform(config, name: name <> ".transform")
     |> lm_prediction_head_transform(config, name: name)
     # We reuse the kernel of input embeddings and add bias for each token
     |> Layers.dense_transposed_layer(config.vocab_size,

@@ -35,13 +35,15 @@ defmodule Bumblebee.Text.BertTest do
     @tag :capture_log
     test "sequence classification" do
       assert {:ok, model, params, config} =
-               Bumblebee.load_model({:hf, "textattack/bert-base-uncased-yelp-polarity"}, architecture: :for_sequence_classification)
+               Bumblebee.load_model({:hf, "textattack/bert-base-uncased-yelp-polarity"},
+                 architecture: :for_sequence_classification
+               )
 
       assert %Bumblebee.Text.Bert{architecture: :for_sequence_classification} = config
 
       input = %{
-        "input_ids" => Nx.tensor([[  101,  7592,  1010,  2026,  3899,  2003, 10140,  2002,  7317,  4747,
-        102]]),
+        "input_ids" =>
+          Nx.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10140, 2002, 7317, 4747, 102]]),
         "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
@@ -51,7 +53,7 @@ defmodule Bumblebee.Text.BertTest do
 
       assert_all_close(
         output.logits,
-        Nx.tensor([[-1.3199,  1.5447]]),
+        Nx.tensor([[-1.3199, 1.5447]]),
         atol: 1.0e-4
       )
     end

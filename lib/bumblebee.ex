@@ -162,15 +162,15 @@ defmodule Bumblebee do
     "BertForMultipleChoice" => {Bumblebee.Text.Bert, :for_multiple_choice},
     "BertForNextSentencePrediction" => {Bumblebee.Text.Bert, :for_next_sentence_prediction},
     "BertForPreTraining" => {Bumblebee.Text.Bert, :for_pre_training},
-    # RoBERTa
-    "RobertaModel" => {Bumblebee.Text.RoBERTa, :base},
-    "RobertaForMaskedLM" => {Bumblebee.Text.RoBERTa, :for_masked_language_modeling},
-    "RobertaLMHeadModel" => {Bumblebee.Text.RoBERTa, :for_causal_language_modeling},
-    "RobertaForSequenceClassification" => {Bumblebee.Text.RoBERTa, :for_sequence_classification},
-    "RobertaForTokenClassification" => {Bumblebee.Text.RoBERTa, :for_token_classification},
-    "RobertaForQuestionAnswering" => {Bumblebee.Text.RoBERTa, :for_question_answering},
-    "RobertaForMultipleChoice" => {Bumblebee.Text.RoBERTa, :for_multiple_choice},
-    "RobertaForPreTraining" => {Bumblebee.Text.RoBERTa, :for_pre_training},
+    # Roberta
+    "RobertaModel" => {Bumblebee.Text.Roberta, :base},
+    "RobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
+    "RobertaLMHeadModel" => {Bumblebee.Text.Roberta, :for_causal_language_modeling},
+    "RobertaForSequenceClassification" => {Bumblebee.Text.Roberta, :for_sequence_classification},
+    "RobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
+    "RobertaForQuestionAnswering" => {Bumblebee.Text.Roberta, :for_question_answering},
+    "RobertaForMultipleChoice" => {Bumblebee.Text.Roberta, :for_multiple_choice},
+    "RobertaForPreTraining" => {Bumblebee.Text.Roberta, :for_pre_training},
     # ConvNext
     "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
     "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification},
@@ -479,7 +479,7 @@ defmodule Bumblebee do
 
   @model_type_to_tokenizer %{
     "bert" => Bumblebee.Text.BertTokenizer,
-    "roberta" => Bumblebee.Text.RoBERTaTokenizer,
+    "roberta" => Bumblebee.Text.RobertaTokenizer,
     "albert" => Bumblebee.Text.AlbertTokenizer,
     "bart" => Bumblebee.Text.BartTokenizer
   }

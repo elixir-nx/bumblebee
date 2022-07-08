@@ -8,7 +8,7 @@ defmodule Bumblebee.Text.RoBERTaTokenizerTest do
     test "encoding model input" do
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
 
-      assert %Bumblebee.Text.RoBERTaTokenizer{} = tokenizer
+      assert %Bumblebee.Text.RobertaTokenizer{} = tokenizer
 
       inputs =
         Bumblebee.apply_tokenizer(tokenizer, [
