@@ -167,7 +167,6 @@ defmodule Bumblebee.Text.RoBERTaTest do
     @tag :capture_log
     test "question answering model" do
       assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"}, architecture: :for_question_answering)
-              #  Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"}, architecture: :for_question_answering)
 
       assert %Bumblebee.Text.RoBERTa{architecture: :for_question_answering} = config
 
