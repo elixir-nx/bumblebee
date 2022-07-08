@@ -6,6 +6,7 @@ defmodule Bumblebee.Text.BertTest do
 
   describe "integration" do
     @tag :slow
+    @tag timeout: 200_000
     @tag :capture_log
     test "base model" do
       assert {:ok, model, params, config} =
@@ -30,6 +31,35 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     @tag :slow
+    @tag timeout: 200_000
+    @tag :capture_log
+    test "sequence classification" do
+      assert {:ok, model, params, config} =
+               Bumblebee.load_model({:hf, "textattack/bert-base-uncased-yelp-polarity"},
+                 architecture: :for_sequence_classification
+               )
+
+      assert %Bumblebee.Text.Bert{architecture: :for_sequence_classification} = config
+
+      input = %{
+        "input_ids" =>
+          Nx.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10140, 2002, 7317, 4747, 102]]),
+        "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
+      }
+
+      output = Axon.predict(model, params, input)
+
+      assert Nx.shape(output.logits) == {1, 2}
+
+      assert_all_close(
+        output.logits,
+        Nx.tensor([[-1.3199, 1.5447]]),
+        atol: 1.0e-4
+      )
+    end
+
+    @tag :slow
+    @tag timeout: 200_000
     @tag :capture_log
     test "masked language modeling model" do
       assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "bert-base-uncased"})
