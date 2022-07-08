@@ -97,6 +97,8 @@ defmodule Bumblebee.Text.Roberta do
       head. If not specified, the value of `:hidden_dropout_prob` is
       used instead
 
+    * `:pad_token_id` - the padding identifier for <pad> token, equals to 1
+
   ### Common options
 
   #{Bumblebee.Shared.common_config_docs(@common_keys)}
