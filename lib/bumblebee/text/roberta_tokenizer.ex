@@ -1,6 +1,6 @@
 defmodule Bumblebee.Text.RobertaTokenizer do
   @doc """
-  Roberta tokenizer.
+  RoBERTa tokenizer.
   """
 
   defstruct [:tokenizer]
