@@ -110,6 +110,14 @@ defmodule Bumblebee.Vision.Vit do
   end
 
   @impl true
+  def input_template(config) do
+    %{
+      "pixel_values" =>
+        Nx.template({1, config.num_channels, config.image_size, config.image_size}, :f32)
+    }
+  end
+
+  @impl true
   def model(%__MODULE__{architecture: :for_image_classification} = config) do
     outputs =
       config
@@ -180,8 +188,8 @@ defmodule Bumblebee.Vision.Vit do
     input_shape = {nil, config.num_channels, config.image_size, config.image_size}
 
     %{
-      "pixel_values" => Axon.input(input_shape, "pixel_values"),
-      "patch_mask" => Axon.input({nil, nil}, "patch_mask", default: nil)
+      "pixel_values" => Axon.input("pixel_values", shape: input_shape),
+      "patch_mask" => Axon.input("patch_mask", shape: {nil, nil}, default: nil)
     }
   end
 
@@ -216,10 +224,7 @@ defmodule Bumblebee.Vision.Vit do
 
     inputs["pixel_values"]
     |> patch_embeddings(config, name: join(name, "patch_embeddings"))
-    |> Layers.vision_position_mask_layer(inputs["patch_mask"],
-      mask_size: config.hidden_size,
-      name: join(name, "mask_tokens")
-    )
+    |> Layers.vision_position_mask_layer(inputs["patch_mask"], name: join(name, "mask_tokens"))
     |> position_embeddings(config, name: name)
     |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
   end
@@ -245,10 +250,11 @@ defmodule Bumblebee.Vision.Vit do
     num_patches =
       div(config.image_size, config.patch_size) * div(config.image_size, config.patch_size)
 
-    cls_token = Axon.param("cls_token", {1, 1, config.hidden_size}, initializer: :zeros)
+    cls_token =
+      Axon.param("cls_token", fn _ -> {1, 1, config.hidden_size} end, initializer: :zeros)
 
     position_embeddings =
-      Axon.param("position_embeddings", {1, num_patches + 1, config.hidden_size},
+      Axon.param("position_embeddings", fn _ -> {1, num_patches + 1, config.hidden_size} end,
         initializer: :zeros
       )
 

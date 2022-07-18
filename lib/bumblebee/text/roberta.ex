@@ -151,14 +151,25 @@ defmodule Bumblebee.Text.Roberta do
   end
 
   @impl true
+  def input_template(%{architecture: :for_multiple_choice}) do
+    %{"input_ids" => Nx.template({1, 1, 1}, :s64)}
+  end
+
+  def input_template(_config) do
+    %{
+      "input_ids" => Nx.template({1, 1}, :s64)
+    }
+  end
+
+  @impl true
   def model(%__MODULE__{architecture: :base} = config) do
-    inputs({nil, 11}, config)
+    inputs({nil, nil}, config)
     |> roberta(config)
     |> Bumblebee.Utils.Model.output(config)
   end
 
   def model(%__MODULE__{architecture: :for_masked_language_modeling} = config) do
-    outputs = inputs({nil, 11}, config) |> roberta(config, name: "roberta")
+    outputs = inputs({nil, nil}, config) |> roberta(config, name: "roberta")
 
     logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
 
@@ -173,7 +184,7 @@ defmodule Bumblebee.Text.Roberta do
   end
 
   def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
-    outputs = inputs({nil, 8}, config) |> roberta(config, name: "roberta")
+    outputs = inputs({nil, nil}, config) |> roberta(config, name: "roberta")
 
     logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
 
@@ -188,7 +199,7 @@ defmodule Bumblebee.Text.Roberta do
   end
 
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
-    outputs = inputs({nil, 11}, config) |> roberta(config, name: "roberta")
+    outputs = inputs({nil, nil}, config) |> roberta(config, name: "roberta")
 
     logits =
       outputs.last_hidden_state
@@ -215,7 +226,7 @@ defmodule Bumblebee.Text.Roberta do
   end
 
   def model(%__MODULE__{architecture: :for_token_classification} = config) do
-    outputs = inputs({nil, 12}, config) |> roberta(config, name: "roberta")
+    outputs = inputs({nil, nil}, config) |> roberta(config, name: "roberta")
 
     logits =
       outputs.last_hidden_state
@@ -236,7 +247,7 @@ defmodule Bumblebee.Text.Roberta do
   end
 
   def model(%__MODULE__{architecture: :for_question_answering} = config) do
-    outputs = inputs({nil, 17}, config) |> roberta(config, name: "roberta")
+    outputs = inputs({nil, nil}, config) |> roberta(config, name: "roberta")
 
     logits =
       outputs.last_hidden_state
@@ -262,7 +273,7 @@ defmodule Bumblebee.Text.Roberta do
   end
 
   def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
-    inputs = inputs({nil, nil, 9}, config)
+    inputs = inputs({nil, nil, nil}, config)
 
     flat_inputs =
       Map.new(inputs, fn {key, input} -> {key, Layers.flatten_leading_layer(input)} end)
@@ -300,24 +311,28 @@ defmodule Bumblebee.Text.Roberta do
 
   defp inputs(input_shape, config) do
     %{
-      "input_ids" => Axon.input(input_shape, "input_ids"),
+      "input_ids" => Axon.input("input_ids", shape: input_shape),
       "attention_mask" =>
-        Axon.input(input_shape, "attention_mask",
+        Axon.input("attention_mask",
+          shape: input_shape,
           default: fn inputs -> Nx.broadcast(1, inputs["input_ids"]) end
         ),
       "token_type_ids" =>
-        Axon.input(input_shape, "token_type_ids",
+        Axon.input("token_type_ids",
+          shape: input_shape,
           default: fn inputs -> Nx.broadcast(0, inputs["input_ids"]) end
         ),
       "position_ids" =>
-        Axon.input(input_shape, "position_ids",
+        Axon.input("position_ids",
+          shape: input_shape,
           default: fn inputs ->
             # Position numbers begin at padding token id + 1
             Nx.iota(inputs["input_ids"], axis: -1) |> Nx.add(config.pad_token_id + 1)
           end
         ),
       "head_mask" =>
-        Axon.input({config.num_hidden_layers, config.num_attention_heads}, "head_mask",
+        Axon.input("head_mask",
+          shape: {config.num_hidden_layers, config.num_attention_heads},
           default: fn _inputs ->
             Nx.broadcast(1, {config.num_hidden_layers, config.num_attention_heads})
           end

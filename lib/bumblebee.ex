@@ -263,11 +263,11 @@ defmodule Bumblebee do
         )
       end
 
-    with {:ok, config} <- config_response,
-         module <- config.__struct__,
-         model <- module.model(config),
+    with {:ok, %module{} = config} <- config_response,
+         model <- build_model(config),
          {:ok, params} <-
            load_params(
+             config,
              model,
              repository,
              opts
@@ -278,16 +278,18 @@ defmodule Bumblebee do
     end
   end
 
-  defp load_params(model, repository, opts) do
+  defp load_params(%module{} = config, model, repository, opts) do
     base_model_prefix = opts[:base_model_prefix]
 
     # TODO: support format: :auto | :axon | :pytorch
     format = :pytorch
     filename = @params_filename[format]
 
+    input_template = module.input_template(config)
+
     with {:ok, path} <- download(repository, filename, opts) do
       params =
-        Bumblebee.Conversion.PyTorch.load_params!(model, path,
+        Bumblebee.Conversion.PyTorch.load_params!(model, input_template, path,
           base_model_prefix: base_model_prefix
         )
 

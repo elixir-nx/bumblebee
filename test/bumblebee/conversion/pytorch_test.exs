@@ -9,16 +9,20 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
   describe "load_params!/3" do
     defp base_model() do
-      Axon.input({nil, 3, 4, 4}, "input")
+      Axon.input("input", shape: {nil, 3, 4, 4})
       |> Axon.conv(2, kernel_size: 2, name: "conv")
     end
 
     defp full_model() do
-      Axon.input({nil, 3, 4, 4}, "input")
+      Axon.input("input", shape: {nil, 3, 4, 4})
       |> Axon.conv(2, kernel_size: 2, name: "base.conv")
       |> Axon.flatten()
       |> Axon.dense(2, name: "classifier.layers.0")
       |> Axon.dense(1, name: "classifier.layers.1")
+    end
+
+    defp input_template() do
+      Nx.broadcast(1, {1, 3, 4, 4})
     end
 
     test "silently loads parameters if all match" do
@@ -27,7 +31,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params = PyTorch.load_params!(model, path, base_model_prefix: "base")
+          params = PyTorch.load_params!(model, input_template(), path, base_model_prefix: "base")
 
           assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 3, 2, 2}))
           assert_equal(params["conv"]["bias"], Nx.broadcast(0.0, {2}))
@@ -42,7 +46,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          PyTorch.load_params!(model, path)
+          PyTorch.load_params!(model, input_template(), path)
         end)
 
       assert log =~ """
@@ -72,7 +76,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params = PyTorch.load_params!(model, path, base_model_prefix: "base")
+          params = PyTorch.load_params!(model, input_template(), path, base_model_prefix: "base")
 
           assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 3, 2, 2}))
           assert_equal(params["conv"]["bias"], Nx.broadcast(0.0, {2}))
@@ -87,7 +91,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params = PyTorch.load_params!(model, path, base_model_prefix: "base")
+          params = PyTorch.load_params!(model, input_template(), path, base_model_prefix: "base")
 
           assert_equal(params["base.conv"]["kernel"], Nx.broadcast(1.0, {2, 3, 2, 2}))
           assert_equal(params["base.conv"]["bias"], Nx.broadcast(0.0, {2}))

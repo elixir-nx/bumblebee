@@ -200,8 +200,15 @@ defmodule Bumblebee.Text.Bart do
   end
 
   @impl true
+  def input_template(_config) do
+    %{
+      "input_ids" => Nx.template({1, 1}, :s64)
+    }
+  end
+
+  @impl true
   def model(%__MODULE__{architecture: :for_conditional_generation} = config) do
-    input_shape = {nil, 11}
+    input_shape = {nil, nil}
 
     outputs =
       input_shape
@@ -231,8 +238,7 @@ defmodule Bumblebee.Text.Bart do
   end
 
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
-    # TODO: Non-static seq len
-    input_shape = {nil, 11}
+    input_shape = {nil, nil}
 
     inputs = inputs(input_shape, config)
     outputs = bart(inputs, config, name: "model")
@@ -280,8 +286,7 @@ defmodule Bumblebee.Text.Bart do
   end
 
   def model(%__MODULE__{architecture: :for_question_answering} = config) do
-    # TODO: Non-static seq len
-    input_shape = {nil, 11}
+    input_shape = {nil, nil}
 
     outputs =
       input_shape
@@ -313,8 +318,7 @@ defmodule Bumblebee.Text.Bart do
   end
 
   def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
-    # TODO: Non-static seq len
-    input_shape = {nil, 11}
+    input_shape = {nil, nil}
 
     inputs = inputs(input_shape, config)
 
@@ -346,8 +350,7 @@ defmodule Bumblebee.Text.Bart do
   end
 
   def model(%__MODULE__{architecture: :base} = config) do
-    # TODO: Non-static seq len
-    input_shape = {nil, 11}
+    input_shape = {nil, nil}
 
     input_shape
     |> inputs(config)
@@ -362,28 +365,32 @@ defmodule Bumblebee.Text.Bart do
   defp inputs({batch_size, seq_len} = input_shape, config) do
     hidden_state_shape = {batch_size, seq_len, config.d_model}
 
-    input_ids = Axon.input(input_shape, "input_ids", default: nil)
+    input_ids = Axon.input("input_ids", shape: input_shape, default: nil)
 
     decoder_input_ids =
-      Axon.input(input_shape, "decoder_input_ids",
+      Axon.input("decoder_input_ids",
+        shape: input_shape,
         default:
           &default_decoder_input_ids(&1, config.pad_token_id, config.decoder_start_token_id)
       )
 
-    attention_mask = Axon.input(input_shape, "attention_mask", default: &default_attention_mask/1)
+    attention_mask =
+      Axon.input("attention_mask", shape: input_shape, default: &default_attention_mask/1)
 
     decoder_attention_mask =
-      Axon.input(input_shape, "decoder_attention_mask", default: &default_attention_mask/1)
+      Axon.input("decoder_attention_mask", shape: input_shape, default: &default_attention_mask/1)
 
     head_mask =
-      Axon.input({config.encoder_layers, config.encoder_attention_heads}, "head_mask",
+      Axon.input("head_mask",
+        shape: {config.encoder_layers, config.encoder_attention_heads},
         default: fn _inputs ->
           Nx.broadcast(1, {config.encoder_layers, config.encoder_attention_heads})
         end
       )
 
     decoder_head_mask =
-      Axon.input({config.decoder_layers, config.decoder_attention_heads}, "decoder_head_mask",
+      Axon.input("decoder_head_mask",
+        shape: {config.decoder_layers, config.decoder_attention_heads},
         default: fn _inputs ->
           Nx.broadcast(1, {config.decoder_layers, config.decoder_attention_heads})
         end
@@ -391,18 +398,19 @@ defmodule Bumblebee.Text.Bart do
 
     cross_attention_head_mask =
       Axon.input(
-        {config.decoder_layers, config.decoder_attention_heads},
         "cross_attention_head_mask",
+        shape: {config.decoder_layers, config.decoder_attention_heads},
         default: fn _inputs ->
           Nx.broadcast(1, {config.decoder_layers, config.decoder_attention_heads})
         end
       )
 
     encoder_last_hidden_state =
-      Axon.input(hidden_state_shape, "encoder_last_hidden_state", default: nil)
+      Axon.input("encoder_last_hidden_state", shape: hidden_state_shape, default: nil)
 
     cache =
-      Axon.input(cache_shape(input_shape, config), "cache",
+      Axon.input("cache",
+        shape: cache_shape(input_shape, config),
         default: fn inputs ->
           head_dim = div(config.d_model, config.decoder_attention_heads)
 
@@ -425,8 +433,10 @@ defmodule Bumblebee.Text.Bart do
         end
       )
 
-    input_embeds = Axon.input(hidden_state_shape, "input_embeds", default: nil)
-    decoder_input_embeds = Axon.input(hidden_state_shape, "decoder_input_embeds", default: nil)
+    input_embeds = Axon.input("input_embeds", shape: hidden_state_shape, default: nil)
+
+    decoder_input_embeds =
+      Axon.input("decoder_input_embeds", shape: hidden_state_shape, default: nil)
 
     %{
       "input_ids" => input_ids,
@@ -468,10 +478,18 @@ defmodule Bumblebee.Text.Bart do
         # If it's not then we just shift the input ids right
         # to compute the decoder input ids (e.g. the pre-training
         # task)
-        inputs = inputs["input_ids"]
-        batch_size = Nx.axis_size(inputs, 0)
+        input_ids = inputs["input_ids"]
+        batch_size = Nx.axis_size(input_ids, 0)
+        seq_length = Nx.axis_size(input_ids, 1)
         start_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
-        shifted_input_ids = Nx.concatenate([start_ids, inputs[[0..-1//1, 0..-2//1]]], axis: 1)
+
+        shifted_input_ids =
+          if Elixir.Kernel.==(seq_length, 1) do
+            start_ids
+          else
+            Nx.concatenate([start_ids, input_ids[[0..-1//1, 0..-2//1]]], axis: 1)
+          end
+
         Nx.select(Nx.equal(shifted_input_ids, -100), pad_token_id, shifted_input_ids)
       end
     end)

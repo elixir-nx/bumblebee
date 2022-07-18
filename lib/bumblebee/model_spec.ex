@@ -37,6 +37,13 @@ defmodule Bumblebee.ModelSpec do
   @callback config(t(), keyword()) :: t()
 
   @doc """
+  Builds a template input for the model.
+
+  The template is used to compile the model when initializing parameters.
+  """
+  @callback input_template(t()) :: map()
+
+  @doc """
   Builds an `Axon` model according to the given configuration.
   """
   @callback model(t()) :: Axon.t()

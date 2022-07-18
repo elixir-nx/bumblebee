@@ -53,31 +53,4 @@ defmodule Bumblebee.Utils.Axon do
   def unwrap_container(%Axon{op: :container, parent: [container]}) do
     container
   end
-
-  @doc """
-  Runs initializer for the given parameter.
-  """
-  @spec init_param(Axon.t(), %Axon.Parameter{}) :: Nx.tensor()
-  def init_param(layer, param) do
-    dtype = layer.policy.params
-
-    case param.shape do
-      {:tuple, shapes} ->
-        shapes
-        |> Enum.map(fn shape -> apply_initializer(param.initializer, shape, dtype) end)
-        |> List.to_tuple()
-
-      shape ->
-        apply_initializer(param.initializer, shape, dtype)
-    end
-  end
-
-  defp apply_initializer(initializer, shape, type) when is_atom(initializer) do
-    fun = apply(Axon.Initializers, initializer, [])
-    fun.(shape, type)
-  end
-
-  defp apply_initializer(initializer, shape, type) when is_function(initializer, 2) do
-    initializer.(shape, type)
-  end
 end

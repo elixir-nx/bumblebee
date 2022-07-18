@@ -165,14 +165,23 @@ defmodule Bumblebee.Text.Albert do
   end
 
   @impl true
+  def input_template(%{architecture: :for_multiple_choice}) do
+    %{"input_ids" => Nx.template({1, 1, 1}, :s64)}
+  end
+
+  def input_template(_config) do
+    %{"input_ids" => Nx.template({1, 1}, :s64)}
+  end
+
+  @impl true
   def model(%__MODULE__{architecture: :base} = config) do
-    inputs({nil, 11})
+    inputs({nil, nil})
     |> albert(config, name: "albert")
     |> Bumblebee.Utils.Model.output(config)
   end
 
   def model(%__MODULE__{architecture: :for_masked_language_modeling} = config) do
-    outputs = inputs({nil, 9}) |> albert(config, name: "albert")
+    outputs = inputs({nil, nil}) |> albert(config, name: "albert")
 
     logits = lm_prediction_head(outputs.last_hidden_state, config, name: "predictions")
 
@@ -187,7 +196,7 @@ defmodule Bumblebee.Text.Albert do
   end
 
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
-    outputs = inputs({nil, 9}) |> albert(config, name: "albert")
+    outputs = inputs({nil, nil}) |> albert(config, name: "albert")
 
     logits =
       outputs.pooler_output
@@ -208,7 +217,7 @@ defmodule Bumblebee.Text.Albert do
   end
 
   def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
-    inputs = inputs({nil, nil, 9})
+    inputs = inputs({nil, nil, nil})
 
     flat_inputs =
       Map.new(inputs, fn {key, input} -> {key, Layers.flatten_leading_layer(input)} end)
@@ -245,8 +254,7 @@ defmodule Bumblebee.Text.Albert do
   end
 
   def model(%__MODULE__{architecture: :for_token_classification} = config) do
-    # TODO: Non-static seq len
-    input_shape = {nil, 9}
+    input_shape = {nil, nil}
 
     outputs =
       input_shape
@@ -272,8 +280,7 @@ defmodule Bumblebee.Text.Albert do
   end
 
   def model(%__MODULE__{architecture: :for_question_answering} = config) do
-    # TODO: Non-static seq len
-    input_shape = {nil, 9}
+    input_shape = {nil, nil}
 
     outputs =
       input_shape
@@ -302,17 +309,20 @@ defmodule Bumblebee.Text.Albert do
 
   defp inputs(input_shape) do
     %{
-      "input_ids" => Axon.input(input_shape, "input_ids"),
+      "input_ids" => Axon.input("input_ids", shape: input_shape),
       "attention_mask" =>
-        Axon.input(input_shape, "attention_mask",
+        Axon.input("attention_mask",
+          shape: input_shape,
           default: fn inputs -> Nx.broadcast(1, inputs["input_ids"]) end
         ),
       "token_type_ids" =>
-        Axon.input(input_shape, "token_type_ids",
+        Axon.input("token_type_ids",
+          shape: input_shape,
           default: fn inputs -> Nx.broadcast(0, inputs["input_ids"]) end
         ),
       "position_ids" =>
-        Axon.input(input_shape, "position_ids",
+        Axon.input("position_ids",
+          shape: input_shape,
           default: fn inputs -> Nx.iota(inputs["input_ids"], axis: -1) end
         )
     }

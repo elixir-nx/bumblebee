@@ -124,18 +124,18 @@ defmodule Bumblebee.Layers do
       Defaults to `:glorot_uniform`
 
   """
-  def dense_transposed_layer(%Axon{output_shape: parent_shape} = x, units, opts \\ []) do
+  def dense_transposed_layer(%Axon{} = x, units, opts \\ []) do
     opts = Keyword.validate!(opts, [:name, kernel_initializer: :glorot_uniform])
 
-    kernel_shape = Axon.Shape.dense_kernel(parent_shape, units)
-    output_shape = Axon.Shape.dense(parent_shape, units)
+    kernel_shape = fn input_shape ->
+      kernel_shape = Axon.Shape.dense_kernel(input_shape, units)
 
-    # We expect a transposed kernel
-    kernel_shape =
+      # We expect a transposed kernel
       kernel_shape
       |> Tuple.to_list()
       |> Enum.reverse()
       |> List.to_tuple()
+    end
 
     kernel = Axon.param("kernel", kernel_shape, initializer: opts[:kernel_initializer])
 
@@ -143,11 +143,7 @@ defmodule Bumblebee.Layers do
       Nx.dot(x, [-1], kernel, [1])
     end
 
-    Axon.layer(op, [x, kernel],
-      name: opts[:name],
-      shape: output_shape,
-      op_name: :dense_transposed
-    )
+    Axon.layer(op, [x, kernel], name: opts[:name], op_name: :dense_transposed)
   end
 
   @doc """
@@ -164,7 +160,7 @@ defmodule Bumblebee.Layers do
     * `:scale_init_value` - initial value of scale parameter
 
   """
-  def scale_layer(%Axon{output_shape: parent_shape} = x, opts \\ []) do
+  def scale_layer(%Axon{} = x, opts \\ []) do
     opts =
       Keyword.validate!(opts, [
         :name,
@@ -178,10 +174,13 @@ defmodule Bumblebee.Layers do
     scale_init_value = opts[:scale_init_value]
     channel_index = opts[:channel_index]
 
-    out_channels = elem(parent_shape, channel_index)
+    scale_shape = fn input_shape ->
+      out_channels = elem(input_shape, channel_index)
+      {out_channels}
+    end
 
     scale_param =
-      Axon.param(scale_name, {out_channels},
+      Axon.param(scale_name, scale_shape,
         initializer: fn shape, _ ->
           Nx.broadcast(scale_init_value, shape)
         end
@@ -270,22 +269,27 @@ defmodule Bumblebee.Layers do
 
     * `:name` - layer name
 
-    * `:mask_size` - size of mask
   """
-  def vision_position_mask_layer(%Axon{output_shape: shape} = embeds, bool_masked_pos, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, :mask_size])
+  def vision_position_mask_layer(%Axon{} = embeds, bool_masked_pos, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name])
     name = opts[:name]
 
-    mask_size = elem(shape, 2)
-    mask_token = Axon.param("mask_token", {1, 1, mask_size}, initializer: :zeros)
+    mask_token_shape = fn embeds_shape, _ ->
+      hidden_size = elem(embeds_shape, 2)
+      {1, 1, hidden_size}
+    end
+
+    mask_token = Axon.param("mask_token", mask_token_shape, initializer: :zeros)
 
     Axon.layer(
       fn embeds, bool_mask, toks, _opts ->
+        hidden_size = Nx.axis_size(embeds, 2)
+
         if bool_mask do
           batch_size = Nx.axis_size(embeds, 0)
           seq_len = Nx.axis_size(embeds, 1)
-          mask_tokens = Nx.broadcast(toks, {batch_size, seq_len, mask_size})
-          mask = bool_mask |> Nx.new_axis(-1) |> Nx.broadcast({batch_size, seq_len, mask_size})
+          mask_tokens = Nx.broadcast(toks, {batch_size, seq_len, hidden_size})
+          mask = bool_mask |> Nx.new_axis(-1) |> Nx.broadcast({batch_size, seq_len, hidden_size})
           Nx.select(mask, mask_tokens, embeds)
         else
           embeds

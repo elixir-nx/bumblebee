@@ -18,8 +18,8 @@ defmodule Bumblebee.Conversion.PyTorch do
       and vice versa
 
   """
-  @spec load_params!(Axon.t(), Path.t(), keyword()) :: map()
-  def load_params!(model, path, opts \\ []) do
+  @spec load_params!(Axon.t(), map(), Path.t(), keyword()) :: map()
+  def load_params!(model, input_template, path, opts \\ []) do
     prefix = opts[:base_model_prefix]
 
     pytorch_state = Bumblebee.Conversion.PyTorch.Loader.load!(path)
@@ -28,7 +28,9 @@ defmodule Bumblebee.Conversion.PyTorch do
       raise "expected a serialized model state dictionary at #{path}, but got: #{inspect(pytorch_state)}"
     end
 
-    {params, diff} = init_params(model, pytorch_state, prefix)
+    params_expr = Axon.trace_init(model, input_template)
+
+    {params, diff} = init_params(model, params_expr, pytorch_state, prefix)
 
     log_model_diff(diff)
 
@@ -41,7 +43,7 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp state_dict?(_other), do: false
 
-  defp init_params(model, pytorch_state, prefix) do
+  defp init_params(model, params_expr, pytorch_state, prefix) do
     layers =
       model
       |> Utils.Axon.nodes_with_names()
@@ -57,12 +59,14 @@ defmodule Bumblebee.Conversion.PyTorch do
 
         {params, diff} =
           Enum.reduce(layer.parameters, {[], diff}, fn param, {params, diff} ->
+            param_expr = params_expr[layer_name][param.name]
+
             {value, diff} =
               case param_from_pytorch(layer.op_name, param.name, pytorch_state, source_layer_name) do
                 {:ok, value, keys} ->
                   diff = prepend(diff, :used_keys, keys)
 
-                  case verify_param_shape(param, value) do
+                  case verify_param_shape(param_expr, value) do
                     :ok ->
                       {value, diff}
 
@@ -74,7 +78,7 @@ defmodule Bumblebee.Conversion.PyTorch do
                   {nil, prepend(diff, :missing, [{layer_name, param}])}
               end
 
-            value = value || Utils.Axon.init_param(layer, param)
+            value = value || Utils.Nx.eval_expr(param_expr)
             {[{param.name, value} | params], diff}
           end)
 
@@ -251,22 +255,15 @@ defmodule Bumblebee.Conversion.PyTorch do
     end)
   end
 
-  defp verify_param_shape(param, value) do
-    case param.shape do
-      {:tuple, shapes} ->
-        {List.to_tuple(shapes),
-         value
-         |> Tuple.to_list()
-         |> Enum.map(&Nx.shape/1)
-         |> List.to_tuple()}
-
-      shape ->
-        {shape, Nx.shape(value)}
-    end
-    |> case do
+  defp verify_param_shape(param_expr, value) do
+    case {expr_shape(param_expr), expr_shape(value)} do
       {shape, shape} -> :ok
       {expected, actual} -> {:error, expected, actual}
     end
+  end
+
+  defp expr_shape(expr) do
+    Utils.Nx.map(expr, &Nx.shape/1)
   end
 
   defp ignored_params(pytorch_state, layer_name) do
