@@ -32,6 +32,13 @@ defmodule Bumblebee.Conversion.PyTorch do
 
     {params, diff} = init_params(model, params_expr, pytorch_state, prefix)
 
+    params =
+      if diff.missing == [] do
+        params
+      else
+        Axon.init(model, input_template, params)
+      end
+
     log_model_diff(diff)
 
     params
@@ -78,8 +85,11 @@ defmodule Bumblebee.Conversion.PyTorch do
                   {nil, prepend(diff, :missing, [{layer_name, param}])}
               end
 
-            value = value || Utils.Nx.eval_expr(param_expr)
-            {[{param.name, value} | params], diff}
+            if value do
+              {[{param.name, value} | params], diff}
+            else
+              {params, diff}
+            end
           end)
 
         ignored_keys = ignored_params(pytorch_state, source_layer_name)

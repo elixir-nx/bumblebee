@@ -17,14 +17,4 @@ defmodule Bumblebee.Utils.Nx do
     |> Nx.Container.traverse(nil, &map(&1, fun))
     |> elem(0)
   end
-
-  @doc """
-  Evaluates the given tensor expression.
-
-  The expression can't have any parameters, if it does the evaluation
-  will fail.
-  """
-  def eval_expr(expr) do
-    Nx.Defn.jit(fn -> expr end).()
-  end
 end
