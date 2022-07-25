@@ -32,10 +32,10 @@ defmodule Bumblebee.Text.BartTokenizer do
     %{
       bos: "<s>",
       eos: "</s>",
-      unknown: "<unk>",
-      separator: "</s>",
-      padding: "<pad>",
-      class: "<s>",
+      unk: "<unk>",
+      sep: "</s>",
+      pad: "<pad>",
+      cls: "<s>",
       mask: "<mask>"
     }
   end

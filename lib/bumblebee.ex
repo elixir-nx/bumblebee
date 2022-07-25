@@ -94,7 +94,8 @@ defmodule Bumblebee do
       {:ok, config} = Bumblebee.load_config({:hf, "microsoft/resnet-50"}, architecture: :base)
 
   """
-  @spec load_config(repository(), keyword()) :: {:ok, map()} | {:error, String.t()}
+  @spec load_config(repository(), keyword()) ::
+          {:ok, Bumblebee.ModelSpec.t()} | {:error, String.t()}
   def load_config(repository, opts \\ []) do
     validate_repository!(repository)
     opts = Keyword.validate!(opts, [:module, :architecture, :revision, :cache_dir])
@@ -249,7 +250,8 @@ defmodule Bumblebee do
 
   """
   @spec load_model(repository(), keyword()) ::
-          {:ok, Axon.t(), params :: map(), config :: map()} | {:error, String.t()}
+          {:ok, Axon.t(), params :: map(), config :: Bumblebee.ModelSpec.t()}
+          | {:error, String.t()}
   def load_model(repository, opts \\ []) do
     validate_repository!(repository)
 

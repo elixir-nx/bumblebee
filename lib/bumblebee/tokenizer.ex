@@ -29,15 +29,15 @@ defmodule Bumblebee.Tokenizer do
 
     * `:eos` - a token representing the end of a sentence
 
-    * `:unknown` - a token representing an out-of-vocabulary token
+    * `:unk` - a token representing an out-of-vocabulary token
 
-    * `:separator` - a token separating two different sentences in the
-      same input
+    * `:sep` - a token separating two different sentences in the same
+      input
 
-    * `:padding` - a token added when processing a batch of sequences
-      with different length
+    * `:pad` - a token added when processing a batch of sequences with
+      different length
 
-    * `:class` - a token representing the class of the input
+    * `:cls` - a token representing the class of the input
 
     * `:mask` - a token representing a masked token, used for masked
       language modeling tasks
@@ -53,7 +53,7 @@ defmodule Bumblebee.Tokenizer do
   @doc """
   Decodes a list of token ids into a sentence.
   """
-  @callback decode(t(), list(token_id())) :: String.t()
+  @callback decode(t(), list(token_id()) | list(list(token_id()))) :: String.t()
 
   @doc """
   Converts the given token into the corresponding numeric id.
@@ -73,8 +73,12 @@ defmodule Bumblebee.Tokenizer do
   @doc """
   Decodes a list of token ids into a sentence.
   """
-  @spec decode(t(), token() | list(token())) :: String.t()
+  @spec decode(
+          t(),
+          token() | list(token_id()) | list(list(token_id())) | Nx.Tensor.t()
+        ) :: String.t()
   def decode(%module{} = tokenizer, ids) do
+    ids = with %Nx.Tensor{} <- ids, do: Bumblebee.Utils.Nx.to_list(ids)
     ids = List.wrap(ids)
     module.decode(tokenizer, ids)
   end

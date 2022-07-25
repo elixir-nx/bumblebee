@@ -29,7 +29,7 @@ defmodule Bumblebee.Text.BertTokenizer do
 
   @impl true
   def special_tokens(_tokenizer) do
-    %{unknown: "[UNK]", separator: "[SEP]", padding: "[PAD]", class: "[CLS]", mask: "[MASK]"}
+    %{unk: "[UNK]", sep: "[SEP]", pad: "[PAD]", cls: "[CLS]", mask: "[MASK]"}
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do

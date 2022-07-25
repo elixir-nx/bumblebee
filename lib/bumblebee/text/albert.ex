@@ -175,28 +175,25 @@ defmodule Bumblebee.Text.Albert do
 
   @impl true
   def model(%__MODULE__{architecture: :base} = config) do
-    inputs({nil, nil})
+    inputs()
     |> albert(config, name: "albert")
-    |> Bumblebee.Utils.Model.output(config)
+    |> Layers.output()
   end
 
   def model(%__MODULE__{architecture: :for_masked_language_modeling} = config) do
-    outputs = inputs({nil, nil}) |> albert(config, name: "albert")
+    outputs = albert(inputs(), config, name: "albert")
 
     logits = lm_prediction_head(outputs.last_hidden_state, config, name: "predictions")
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
-    outputs = inputs({nil, nil}) |> albert(config, name: "albert")
+    outputs = albert(inputs(), config, name: "albert")
 
     logits =
       outputs.pooler_output
@@ -206,21 +203,22 @@ defmodule Bumblebee.Text.Albert do
         name: "classifier"
       )
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
     inputs = inputs({nil, nil, nil})
 
+    group_inputs = ["input_ids", "attention_mask", "token_type_ids", "position_ids"]
+
     flat_inputs =
-      Map.new(inputs, fn {key, input} -> {key, Layers.flatten_leading_layer(input)} end)
+      Enum.reduce(group_inputs, inputs, fn name, inputs ->
+        Map.update!(inputs, name, &Layers.flatten_leading/1)
+      end)
 
     outputs = albert(flat_inputs, config, name: "albert")
 
@@ -243,23 +241,15 @@ defmodule Bumblebee.Text.Albert do
         [logits, inputs["input_ids"]]
       )
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_token_classification} = config) do
-    input_shape = {nil, nil}
-
-    outputs =
-      input_shape
-      |> inputs()
-      |> albert(config, name: "albert")
+    outputs = albert(inputs(), config, name: "albert")
 
     logits =
       outputs.last_hidden_state
@@ -269,23 +259,15 @@ defmodule Bumblebee.Text.Albert do
         name: "classifier"
       )
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_question_answering} = config) do
-    input_shape = {nil, nil}
-
-    outputs =
-      input_shape
-      |> inputs()
-      |> albert(config, name: "albert")
+    outputs = albert(inputs(), config, name: "albert")
 
     logits =
       Axon.dense(outputs.last_hidden_state, 2,
@@ -296,45 +278,48 @@ defmodule Bumblebee.Text.Albert do
     start_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 0]])
     end_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 1]])
 
-    Bumblebee.Utils.Model.output(
-      %{
-        start_logits: start_logits,
-        end_logits: end_logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      start_logits: start_logits,
+      end_logits: end_logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
-  defp inputs(input_shape) do
-    %{
-      "input_ids" => Axon.input("input_ids", shape: input_shape),
-      "attention_mask" =>
-        Axon.input("attention_mask",
-          shape: input_shape,
-          default: fn inputs -> Nx.broadcast(1, inputs["input_ids"]) end
-        ),
-      "token_type_ids" =>
-        Axon.input("token_type_ids",
-          shape: input_shape,
-          default: fn inputs -> Nx.broadcast(0, inputs["input_ids"]) end
-        ),
-      "position_ids" =>
-        Axon.input("position_ids",
-          shape: input_shape,
-          default: fn inputs -> Nx.iota(inputs["input_ids"], axis: -1) end
-        )
-    }
+  defp inputs(shape \\ {nil, nil}) do
+    Bumblebee.Utils.Model.inputs_to_map([
+      Axon.input("input_ids", shape: shape),
+      Axon.input("attention_mask", shape: shape, optional: true),
+      Axon.input("token_type_ids", shape: shape, optional: true),
+      Axon.input("position_ids", shape: shape, optional: true)
+    ])
   end
 
   defp albert(inputs, config, opts) do
     name = opts[:name]
 
-    hidden_state = embeddings(inputs, config, name: join(name, "embeddings"))
+    input_ids = inputs["input_ids"]
+
+    attention_mask =
+      Layers.default inputs["attention_mask"] do
+        Layers.default_attention_mask(input_ids)
+      end
+
+    position_ids =
+      Layers.default inputs["position_ids"] do
+        Layers.default_position_ids(input_ids)
+      end
+
+    token_type_ids =
+      Layers.default inputs["token_type_ids"] do
+        Layers.default_token_type_ids(input_ids)
+      end
+
+    hidden_state =
+      embeddings(input_ids, position_ids, token_type_ids, config, name: join(name, "embeddings"))
 
     {last_hidden_state, hidden_states, attentions} =
-      encoder(inputs, hidden_state, config, name: join(name, "encoder"))
+      encoder(hidden_state, attention_mask, config, name: join(name, "encoder"))
 
     pooler_output = pooler(last_hidden_state, config, name: join(name, "pooler"))
 
@@ -346,12 +331,8 @@ defmodule Bumblebee.Text.Albert do
     }
   end
 
-  defp embeddings(inputs, config, opts) do
+  defp embeddings(input_ids, position_ids, token_type_ids, config, opts) do
     name = opts[:name]
-
-    input_ids = inputs["input_ids"]
-    position_ids = inputs["position_ids"]
-    token_type_ids = inputs["token_type_ids"]
 
     inputs_embeds =
       Axon.embedding(input_ids, config.vocab_size, config.embedding_size,
@@ -380,7 +361,7 @@ defmodule Bumblebee.Text.Albert do
     |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
   end
 
-  defp encoder(inputs, hidden_state, config, opts) do
+  defp encoder(hidden_state, attention_mask, config, opts) do
     name = opts[:name]
 
     hidden_state =
@@ -389,45 +370,50 @@ defmodule Bumblebee.Text.Albert do
         name: join(name, "embedding_hidden_mapping_in")
       )
 
-    albert_layer_groups(inputs, hidden_state, config, name: join(name, "albert_layer_groups"))
+    albert_layer_groups(hidden_state, attention_mask, config,
+      name: join(name, "albert_layer_groups")
+    )
   end
 
-  defp albert_layer_groups(inputs, hidden_state, config, opts) do
+  defp albert_layer_groups(hidden_state, attention_mask, config, opts) do
     name = opts[:name]
 
-    last_hidden_state = hidden_state
-    hidden_states = {hidden_state}
-    attentions = {}
+    hidden_states = Layers.maybe_container({hidden_state}, config.output_hidden_states)
+    attentions = Layers.maybe_container({}, config.output_attentions)
 
-    initial_state = {last_hidden_state, hidden_states, attentions}
-
-    for idx <- 0..(config.num_hidden_layers - 1), reduce: initial_state do
-      {last, states, attentions} ->
+    for idx <- 0..(config.num_hidden_layers - 1),
+        reduce: {hidden_state, hidden_states, attentions} do
+      {hidden_state, hidden_states, attentions} ->
         group_idx = div(idx, div(config.num_hidden_layers, config.num_hidden_groups))
 
-        albert_layers(inputs, last, states, attentions, config,
+        albert_layers(hidden_state, attention_mask, hidden_states, attentions, config,
           name: name |> join(group_idx) |> join("albert_layers")
         )
     end
   end
 
-  defp albert_layers(inputs, hidden_state, hidden_states, attentions, config, opts) do
+  defp albert_layers(hidden_state, attention_mask, hidden_states, attentions, config, opts) do
     name = opts[:name]
 
-    initial_state = {hidden_state, hidden_states, attentions}
+    for idx <- 0..(config.inner_group_num - 1),
+        reduce: {hidden_state, hidden_states, attentions} do
+      {hidden_state, hidden_states, attentions} ->
+        {hidden_state, attention} =
+          albert_layer(hidden_state, attention_mask, config, name: join(name, idx))
 
-    for idx <- 0..(config.inner_group_num - 1), reduce: initial_state do
-      {last, states, attentions} ->
-        {next_state, next_attention} = albert_layer(inputs, last, config, name: join(name, idx))
-        {next_state, Tuple.append(states, next_state), Tuple.append(attentions, next_attention)}
+        {
+          hidden_state,
+          Layers.append(hidden_states, hidden_state),
+          Layers.append(attentions, attention)
+        }
     end
   end
 
-  defp albert_layer(inputs, hidden_state, config, opts) do
+  defp albert_layer(hidden_state, attention_mask, config, opts) do
     name = opts[:name]
 
     {attention_output, attention_weights} =
-      self_attention(hidden_state, inputs["attention_mask"], config, name: join(name, "attention"))
+      self_attention(hidden_state, attention_mask, config, name: join(name, "attention"))
 
     hidden_state =
       attention_output
@@ -435,7 +421,7 @@ defmodule Bumblebee.Text.Albert do
         kernel_initializer: kernel_initializer(config),
         name: join(name, "ffn")
       )
-      |> Layers.activation_layer(config.hidden_act, name: join(name, "ffn.activation"))
+      |> Layers.activation(config.hidden_act, name: join(name, "ffn.activation"))
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "ffn_output")
@@ -454,47 +440,43 @@ defmodule Bumblebee.Text.Albert do
   defp self_attention(hidden_state, attention_mask, config, opts) do
     name = opts[:name]
 
-    head_dim = div(config.hidden_size, config.num_attention_heads)
+    num_heads = config.num_attention_heads
 
-    query_states =
+    query =
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "query")
       )
-      |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
+      |> Layers.split_heads(num_heads)
 
-    value_states =
+    value =
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "value")
       )
-      |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
+      |> Layers.split_heads(num_heads)
 
-    key_states =
+    key =
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "key")
       )
-      |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
+      |> Layers.split_heads(num_heads)
 
-    attention_bias = Axon.layer(&Layers.attention_bias/2, [attention_mask])
-
-    attention_weights =
-      Axon.layer(&Layers.attention_weights/4, [query_states, key_states, attention_bias])
+    attention_mask = Layers.expand_attention_mask(attention_mask)
+    attention_bias = Layers.attention_bias(attention_mask)
 
     attention_weights =
-      Axon.dropout(attention_weights,
-        rate: config.attention_probs_dropout_prob,
-        name: join(name, "dropout")
-      )
-
-    attention_output = Axon.layer(&Layers.attention_output/3, [attention_weights, value_states])
+      Layers.attention_weights(query, key, attention_bias)
+      |> Axon.dropout(rate: config.attention_probs_dropout_prob, name: join(name, "dropout"))
 
     attention_output =
-      Axon.reshape(attention_output, {:auto, config.num_attention_heads * head_dim})
+      attention_weights
+      |> Layers.attention_output(value)
+      |> Layers.flatten_trailing()
 
     projected =
       attention_output
@@ -517,7 +499,7 @@ defmodule Bumblebee.Text.Albert do
     name = opts[:name]
 
     hidden_state
-    |> Layers.take_token_layer(axis: 1)
+    |> Layers.take_token(axis: 1)
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: name
@@ -534,7 +516,7 @@ defmodule Bumblebee.Text.Albert do
     hidden_state
     |> lm_prediction_head_transform(config, name: name)
     # We reuse the kernel of input embeddings and add bias for each token
-    |> Layers.dense_transposed_layer(config.vocab_size,
+    |> Layers.dense_transposed(config.vocab_size,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "decoder")
     )
@@ -548,7 +530,7 @@ defmodule Bumblebee.Text.Albert do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
     )
-    |> Layers.activation_layer(config.hidden_act, name: join(name, "activation"))
+    |> Layers.activation(config.hidden_act, name: join(name, "activation"))
     |> Axon.layer_norm(
       epsilon: config.layer_norm_eps,
       name: join(name, "LayerNorm"),
