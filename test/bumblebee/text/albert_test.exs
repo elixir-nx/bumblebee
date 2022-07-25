@@ -2,11 +2,10 @@ defmodule Bumblebee.Text.AlbertTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
-  require Axon
+
+  @moduletag model_test_tags()
 
   describe "integration" do
-    @tag :slow
-    @tag :capture_log
     test "base model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "albert-base-v2"}, architecture: :base)
@@ -31,8 +30,6 @@ defmodule Bumblebee.Text.AlbertTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
     test "masked language modeling model" do
       assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "albert-base-v2"})
 
@@ -56,8 +53,6 @@ defmodule Bumblebee.Text.AlbertTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
     test "sequence classification model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "textattack/albert-base-v2-imdb"})
@@ -80,8 +75,6 @@ defmodule Bumblebee.Text.AlbertTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
     test "multiple choice model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "albert-base-v2"}, architecture: :for_multiple_choice)
@@ -113,8 +106,6 @@ defmodule Bumblebee.Text.AlbertTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
     test "token classification model" do
       assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "vumichien/tiny-albert"})
 
@@ -135,8 +126,6 @@ defmodule Bumblebee.Text.AlbertTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
     test "question answering model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "twmkn9/albert-base-v2-squad2"})
