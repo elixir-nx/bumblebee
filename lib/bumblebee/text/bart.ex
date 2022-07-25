@@ -441,7 +441,7 @@ defmodule Bumblebee.Text.Bart do
       end
 
     encoder_outputs =
-      Layers.optional_if inputs["encoder_last_hidden_state"] do
+      Layers.if_present inputs["encoder_last_hidden_state"] do
         %{
           last_hidden_state: inputs["encoder_last_hidden_state"],
           hidden_states: Layers.none(),
@@ -739,7 +739,7 @@ defmodule Bumblebee.Text.Bart do
       )
 
     {hidden_state, cross_attention, cross_attention_cache} =
-      Layers.optional_if encoder_hidden_state do
+      Layers.if_present encoder_hidden_state do
         residual = hidden_state
 
         {hidden_state, cross_attention, cross_attention_cache} =

@@ -97,7 +97,7 @@ defmodule Bumblebee.Layers do
   If the mask is not specified, it will skip masking altogether.
   """
   def apply_layer_head_mask(attention_weights, layer_head_mask) do
-    optional_if layer_head_mask do
+    if_present layer_head_mask do
       Axon.layer(
         fn attention_weights, layer_head_mask, _ ->
           layer_head_mask = Nx.reshape(layer_head_mask, {1, :auto, 1, 1})
@@ -286,7 +286,7 @@ defmodule Bumblebee.Layers do
 
     mask_token = Axon.param("mask_token", mask_token_shape, initializer: :zeros)
 
-    optional_if patch_mask do
+    if_present patch_mask do
       Axon.layer(
         fn embeds, patch_mask, mask_tokens, _opts ->
           hidden_size = Nx.axis_size(embeds, 2)
@@ -483,27 +483,27 @@ defmodule Bumblebee.Layers do
         end
 
   """
-  def optional_if(%Axon{} = condition, blocks) do
+  def if_present(%Axon{} = condition, blocks) do
     on_true = Keyword.fetch!(blocks, :do)
     on_false = blocks[:else]
 
     case {on_true, on_false} do
       {%Axon{}, %Axon{}} ->
-        optional_if_layer(condition, on_true, on_false)
+        if_present_layer(condition, on_true, on_false)
 
       {%Axon{}, nil} ->
-        optional_if_layer(condition, on_true, none())
+        if_present_layer(condition, on_true, none())
 
       _ ->
         on_false = on_false || Bumblebee.Utils.Axon.container_map(on_true, fn _ -> none() end)
 
         Bumblebee.Utils.Axon.container_zip_with(on_true, on_false, fn left, right ->
-          optional_if_layer(condition, left, right)
+          if_present_layer(condition, left, right)
         end)
     end
   end
 
-  defp optional_if_layer(condition, on_true, on_false) do
+  defp if_present_layer(condition, on_true, on_false) do
     Axon.layer(
       fn condition, on_true, on_false, _ ->
         case condition do
@@ -512,7 +512,7 @@ defmodule Bumblebee.Layers do
         end
       end,
       [Axon.optional(condition), Axon.optional(on_true), Axon.optional(on_false)],
-      op_name: :optional_if
+      op_name: :if_present
     )
   end
 

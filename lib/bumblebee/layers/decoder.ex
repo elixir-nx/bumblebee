@@ -87,7 +87,7 @@ defmodule Bumblebee.Layers.Decoder do
   The function returns the full attention mask and the updated cache.
   """
   def cached_attention_mask(attention_mask, cache) do
-    Layers.optional_if cache do
+    Layers.if_present cache do
       Axon.layer(
         fn attention_mask, cache, _ ->
           indices = [0, Nx.as_type(cache.offset, {:s, 64})]
@@ -116,7 +116,7 @@ defmodule Bumblebee.Layers.Decoder do
         do: &update_cross_attention_cache/5,
         else: &update_self_attention_cache/5
 
-    Layers.optional_if attention_cache do
+    Layers.if_present attention_cache do
       Axon.layer(update_fun, [key, value, attention_cache, offset])
       |> Layers.unwrap_tuple(3)
     else
