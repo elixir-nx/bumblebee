@@ -23,10 +23,6 @@ jobs:
           elixir-version: ${{ matrix.pair.elixir }}
       - uses: actions/cache@v2
         with:
-          path: ~/.cache/bumblebee
-          key: downloads
-      - uses: actions/cache@v2
-        with:
           path: |
             deps
             _build
