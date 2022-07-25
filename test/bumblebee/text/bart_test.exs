@@ -152,4 +152,32 @@ defmodule Bumblebee.Text.BartTest do
       )
     end
   end
+
+  @tag :slow
+  @tag :capture_log
+  test "conditional generation" do
+    {:ok, model, params, config} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})
+
+    assert %Bumblebee.Text.Bart{architecture: :for_conditional_generation} = config
+
+    article = """
+    PG&E stated it scheduled the blackouts in response to forecasts for high \
+    winds amid dry conditions. The aim is to reduce the risk of wildfires. \
+    Nearly 800 thousand customers were scheduled to be affected by the shutoffs \
+    which were expected to last through at least midday tomorrow.
+    """
+
+    inputs = Bumblebee.apply_tokenizer(tokenizer, article)
+
+    token_ids =
+      Bumblebee.Text.Generation.generate(config, model, params, inputs,
+        min_length: 0,
+        max_length: 8
+      )
+
+    assert_equal(token_ids, Nx.tensor([[2, 0, 8332, 947, 717, 1768, 5, 2]]))
+
+    assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == {:ok, ["PG&E scheduled the"]}
+  end
 end

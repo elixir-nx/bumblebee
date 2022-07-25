@@ -48,6 +48,7 @@ defmodule Bumblebee.Vision.ResNet do
   import Bumblebee.Utils.Model, only: [join: 2]
 
   alias Bumblebee.Shared
+  alias Bumblebee.Layers
 
   defstruct [
               architecture: :base,
@@ -85,7 +86,7 @@ defmodule Bumblebee.Vision.ResNet do
   def model(%__MODULE__{architecture: :base} = config) do
     config
     |> resnet()
-    |> Bumblebee.Utils.Model.output(config)
+    |> Layers.output()
   end
 
   def model(%__MODULE__{architecture: :for_image_classification} = config) do
@@ -96,7 +97,7 @@ defmodule Bumblebee.Vision.ResNet do
       |> Axon.flatten(name: "classifier.0")
       |> Axon.dense(config.num_labels, name: "classifier.1")
 
-    Bumblebee.Utils.Model.output(%{logits: logits, hidden_states: outputs.hidden_states}, config)
+    Layers.output(%{logits: logits, hidden_states: outputs.hidden_states})
   end
 
   defp resnet(config, opts \\ []) do
@@ -145,7 +146,7 @@ defmodule Bumblebee.Vision.ResNet do
 
     state = %{
       last_hidden_state: hidden_state,
-      hidden_states: {hidden_state},
+      hidden_states: Layers.maybe_container({hidden_state}, config.output_hidden_states),
       in_channels: config.embedding_size
     }
 
@@ -162,7 +163,7 @@ defmodule Bumblebee.Vision.ResNet do
 
         %{
           last_hidden_state: hidden_state,
-          hidden_states: Tuple.append(state.hidden_states, hidden_state),
+          hidden_states: Layers.append(state.hidden_states, hidden_state),
           in_channels: size
         }
     end

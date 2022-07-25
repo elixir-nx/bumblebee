@@ -32,10 +32,10 @@ defmodule Bumblebee.Text.AlbertTokenizer do
     %{
       bos: "[CLS]",
       eos: "[SEP]",
-      unknown: "<unk>",
-      separator: "[SEP]",
-      padding: "<pad>",
-      class: "[CLS]",
+      unk: "<unk>",
+      sep: "[SEP]",
+      pad: "<pad>",
+      cls: "[CLS]",
       mask: "[MASK]"
     }
   end

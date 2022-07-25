@@ -1,5 +1,5 @@
 %{
-  "axon": {:git, "https://github.com/elixir-nx/axon.git", "b946f236485447449f9785e7a72ce1632fed7d7e", [branch: "main"]},
+  "axon": {:git, "https://github.com/elixir-nx/axon.git", "d59221193a80efde0c6268aab8338840bae2f04a", [branch: "main"]},
   "bypass": {:hex, :bypass, "2.1.0", "909782781bf8e20ee86a9cabde36b259d44af8b9f38756173e8f5e2e1fabb9b1", [:mix], [{:plug, "~> 1.7", [hex: :plug, repo: "hexpm", optional: false]}, {:plug_cowboy, "~> 2.0", [hex: :plug_cowboy, repo: "hexpm", optional: false]}, {:ranch, "~> 1.3", [hex: :ranch, repo: "hexpm", optional: false]}], "hexpm", "d9b5df8fa5b7a6efa08384e9bbecfe4ce61c77d28a4282f79e02f1ef78d96b80"},
   "castore": {:hex, :castore, "0.1.17", "ba672681de4e51ed8ec1f74ed624d104c0db72742ea1a5e74edbc770c815182f", [:mix], [], "hexpm", "d9844227ed52d26e7519224525cb6868650c272d4a3d327ce3ca5570c12163f9"},
   "complex": {:hex, :complex, "0.4.1", "5d5a7bdbec13428c05824bac550b7d2b14ec395cd64663eca3cb0d3359aa22c5", [:mix], [], "hexpm", "6a813529dddba9bdfc17dffdd1aeda7b3d6891b76c8d4c1ae902ec74eb496a32"},

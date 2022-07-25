@@ -92,7 +92,6 @@ defmodule Bumblebee.Vision.Deit do
               attention_probs_dropout_prob: 0.0,
               initializer_range: 0.02,
               layer_norm_eps: 1.0e-12,
-              is_encoder_decoder: false,
               image_size: 224,
               patch_size: 16,
               num_channels: 3,
@@ -137,20 +136,17 @@ defmodule Bumblebee.Vision.Deit do
 
     logits =
       outputs.last_hidden_state
-      |> Layers.take_token_layer(index: 0, axis: 1, name: "cls_head")
+      |> Layers.take_token(index: 0, axis: 1, name: "cls_head")
       |> Axon.dense(config.num_labels,
         kernel_initializer: kernel_initializer(config),
         name: "cls_classifier"
       )
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_image_classification_with_teacher} = config) do
@@ -161,11 +157,11 @@ defmodule Bumblebee.Vision.Deit do
 
     cls_head =
       outputs.last_hidden_state
-      |> Layers.take_token_layer(index: 0, axis: 1, name: "cls_head")
+      |> Layers.take_token(index: 0, axis: 1, name: "cls_head")
 
     dist_head =
       outputs.last_hidden_state
-      |> Layers.take_token_layer(index: 1, axis: 1, name: "dist_head")
+      |> Layers.take_token(index: 1, axis: 1, name: "dist_head")
 
     cls_logits =
       cls_head
@@ -182,16 +178,13 @@ defmodule Bumblebee.Vision.Deit do
       |> Axon.add(dist_logits)
       |> Axon.nx(&Nx.divide(&1, 2))
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: logits,
-        cls_logits: cls_logits,
-        distillation_logits: dist_logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: logits,
+      cls_logits: cls_logits,
+      distillation_logits: dist_logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_masked_image_modeling} = config) do
@@ -205,8 +198,8 @@ defmodule Bumblebee.Vision.Deit do
       |> Axon.nx(fn x ->
         x = x[[0..-1//1, 1..-2//1]]
 
-        {batch_size, sequence_length, channels} = Nx.shape(x)
-        height = width = sequence_length |> :math.sqrt() |> floor()
+        {batch_size, seq_length, channels} = Nx.shape(x)
+        height = width = seq_length |> :math.sqrt() |> floor()
 
         x
         |> Nx.transpose(axes: [0, 2, 1])
@@ -217,32 +210,29 @@ defmodule Bumblebee.Vision.Deit do
         kernel_initializer: kernel_initializer(config),
         name: join("decoder", 0)
       )
-      |> Layers.pixel_shuffle_layer(config.encoder_stride, name: join("decoder", 1))
+      |> Layers.pixel_shuffle(config.encoder_stride, name: join("decoder", 1))
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :base} = config) do
     config
     |> inputs()
     |> deit(config)
-    |> Bumblebee.Utils.Model.output(config)
+    |> Layers.output()
   end
 
   defp inputs(config) do
-    input_shape = {nil, config.num_channels, config.image_size, config.image_size}
+    shape = {nil, config.num_channels, config.image_size, config.image_size}
 
-    %{
-      "pixel_values" => Axon.input("pixel_values", shape: input_shape),
-      "patch_mask" => Axon.input("patch_mask", shape: {nil, nil}, default: nil)
-    }
+    Bumblebee.Utils.Model.inputs_to_map([
+      Axon.input("pixel_values", shape: shape),
+      Axon.input("patch_mask", shape: {nil, nil}, optional: true)
+    ])
   end
 
   defp deit(inputs, config, opts \\ []) do
@@ -279,7 +269,7 @@ defmodule Bumblebee.Vision.Deit do
 
     pixel_values
     |> patch_embeddings(config, name: join(name, "patch_embeddings"))
-    |> Layers.vision_position_mask_layer(patch_mask, name: join(name, "mask_tokens"))
+    |> Layers.apply_vision_patch_mask(patch_mask, name: join(name, "mask_tokens"))
     |> position_embeddings(config, name: name)
     |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
   end
@@ -339,19 +329,18 @@ defmodule Bumblebee.Vision.Deit do
   defp encoder_layers(hidden_state, config, opts) do
     name = opts[:name]
 
-    last_hidden_state = hidden_state
-    hidden_states = {hidden_state}
-    attentions = {}
+    hidden_states = Layers.maybe_container({hidden_state}, config.output_hidden_states)
+    attentions = Layers.maybe_container({}, config.output_attentions)
 
     for idx <- 0..(config.num_hidden_layers - 1),
-        reduce: {last_hidden_state, hidden_states, attentions} do
+        reduce: {hidden_state, hidden_states, attentions} do
       {hidden_state, hidden_states, attentions} ->
         {hidden_state, attention} = encoder_layer(hidden_state, config, name: join(name, idx))
 
         {
           hidden_state,
-          Tuple.append(hidden_states, hidden_state),
-          Tuple.append(attentions, attention)
+          Layers.append(hidden_states, hidden_state),
+          Layers.append(attentions, attention)
         }
     end
   end
@@ -398,50 +387,45 @@ defmodule Bumblebee.Vision.Deit do
   defp self_attention(hidden_state, config, opts) do
     name = opts[:name]
 
-    head_dim = div(config.hidden_size, config.num_attention_heads)
+    num_heads = config.num_attention_heads
 
-    query_states =
+    query =
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         use_bias: config.qkv_bias,
         name: join(name, "query")
       )
-      |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
+      |> Layers.split_heads(num_heads)
 
-    key_states =
+    key =
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         use_bias: config.qkv_bias,
         name: join(name, "key")
       )
-      |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
+      |> Layers.split_heads(num_heads)
 
-    value_states =
+    value =
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         use_bias: config.qkv_bias,
         name: join(name, "value")
       )
-      |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
+      |> Layers.split_heads(num_heads)
 
     attention_bias = Axon.constant(Nx.tensor(0))
 
     attention_weights =
-      Axon.layer(&Layers.attention_weights/4, [query_states, key_states, attention_bias])
-
-    attention_weights =
-      Axon.dropout(attention_weights,
-        rate: config.attention_probs_dropout_prob,
-        name: join(name, "dropout")
-      )
-
-    attention_output = Axon.layer(&Layers.attention_output/3, [attention_weights, value_states])
+      Layers.attention_weights(query, key, attention_bias)
+      |> Axon.dropout(rate: config.attention_probs_dropout_prob, name: join(name, "dropout"))
 
     attention_output =
-      Axon.reshape(attention_output, {:auto, config.num_attention_heads * head_dim})
+      attention_weights
+      |> Layers.attention_output(value)
+      |> Layers.flatten_trailing()
 
     {attention_output, attention_weights}
   end
@@ -484,7 +468,7 @@ defmodule Bumblebee.Vision.Deit do
     name = opts[:name]
 
     hidden_state
-    |> Layers.take_token_layer(index: 0, axis: 1, name: join(name, "head"))
+    |> Layers.take_token(index: 0, axis: 1, name: join(name, "head"))
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")

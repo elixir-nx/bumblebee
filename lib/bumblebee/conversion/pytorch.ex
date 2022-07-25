@@ -61,7 +61,9 @@ defmodule Bumblebee.Conversion.PyTorch do
     diff = %{missing: [], mismatched: [], used_keys: []}
 
     {params, diff} =
-      Enum.map_reduce(layers, diff, fn {layer, layer_name}, diff ->
+      layers
+      |> Enum.filter(fn {_layer, layer_name} -> params_expr[layer_name] end)
+      |> Enum.map_reduce(diff, fn {layer, layer_name}, diff ->
         source_layer_name = source_layer_name(layer_name, prefix, prefixed)
 
         {params, diff} =

@@ -163,43 +163,37 @@ defmodule Bumblebee.Text.Roberta do
 
   @impl true
   def model(%__MODULE__{architecture: :base} = config) do
-    inputs({nil, nil}, config)
+    inputs(config)
     |> roberta(config)
-    |> Bumblebee.Utils.Model.output(config)
+    |> Layers.output()
   end
 
   def model(%__MODULE__{architecture: :for_masked_language_modeling} = config) do
-    outputs = inputs({nil, nil}, config) |> roberta(config, name: "roberta")
+    outputs = inputs(config) |> roberta(config, name: "roberta")
 
     logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
-    outputs = inputs({nil, nil}, config) |> roberta(config, name: "roberta")
+    outputs = inputs(config) |> roberta(config, name: "roberta")
 
     logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
-    outputs = inputs({nil, nil}, config) |> roberta(config, name: "roberta")
+    outputs = inputs(config) |> roberta(config, name: "roberta")
 
     logits =
       outputs.last_hidden_state
@@ -215,18 +209,15 @@ defmodule Bumblebee.Text.Roberta do
         name: "classifier.out_proj"
       )
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: Axon.nx(logits, fn x -> x[[0..-1//1, 0, 0..-1//1]] end),
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: Axon.nx(logits, fn x -> x[[0..-1//1, 0, 0..-1//1]] end),
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_token_classification} = config) do
-    outputs = inputs({nil, nil}, config) |> roberta(config, name: "roberta")
+    outputs = inputs(config) |> roberta(config, name: "roberta")
 
     logits =
       outputs.last_hidden_state
@@ -236,18 +227,15 @@ defmodule Bumblebee.Text.Roberta do
         name: "classifier"
       )
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_question_answering} = config) do
-    outputs = inputs({nil, nil}, config) |> roberta(config, name: "roberta")
+    outputs = inputs(config) |> roberta(config, name: "roberta")
 
     logits =
       outputs.last_hidden_state
@@ -257,26 +245,25 @@ defmodule Bumblebee.Text.Roberta do
         name: "qa_outputs"
       )
 
-    {start_logits, end_logits} = Axon.split(logits, 2, axis: -1)
-    start_logits = flatten_trailing(start_logits)
-    end_logits = flatten_trailing(end_logits)
+    {start_logits, end_logits} = Layers.split_pair(logits)
 
-    Bumblebee.Utils.Model.output(
-      %{
-        start_logits: start_logits,
-        end_logits: end_logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      start_logits: start_logits,
+      end_logits: end_logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
-    inputs = inputs({nil, nil, nil}, config)
+    inputs = inputs(config, {nil, nil, nil})
+
+    group_inputs = ["input_ids", "attention_mask", "token_type_ids", "position_ids"]
 
     flat_inputs =
-      Map.new(inputs, fn {key, input} -> {key, Layers.flatten_leading_layer(input)} end)
+      Enum.reduce(group_inputs, inputs, fn name, inputs ->
+        Map.update!(inputs, name, &Layers.flatten_leading/1)
+      end)
 
     outputs = roberta(flat_inputs, config, name: "roberta")
 
@@ -299,57 +286,52 @@ defmodule Bumblebee.Text.Roberta do
         [logits, inputs["input_ids"]]
       )
 
-    Bumblebee.Utils.Model.output(
-      %{
-        logits: logits,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      },
-      config
-    )
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
-  defp inputs(input_shape, config) do
-    %{
-      "input_ids" => Axon.input("input_ids", shape: input_shape),
-      "attention_mask" =>
-        Axon.input("attention_mask",
-          shape: input_shape,
-          default: fn inputs -> Nx.broadcast(1, inputs["input_ids"]) end
-        ),
-      "token_type_ids" =>
-        Axon.input("token_type_ids",
-          shape: input_shape,
-          default: fn inputs -> Nx.broadcast(0, inputs["input_ids"]) end
-        ),
-      "position_ids" =>
-        Axon.input("position_ids",
-          shape: input_shape,
-          default: fn inputs ->
-            # Position numbers begin at padding token id + 1
-            Nx.iota(inputs["input_ids"], axis: -1) |> Nx.add(config.pad_token_id + 1)
-          end
-        ),
-      "head_mask" =>
-        Axon.input("head_mask",
-          shape: {config.num_hidden_layers, config.num_attention_heads},
-          default: fn _inputs ->
-            Nx.broadcast(1, {config.num_hidden_layers, config.num_attention_heads})
-          end
-        )
-    }
+  defp inputs(config, shape \\ {nil, nil}) do
+    Bumblebee.Utils.Model.inputs_to_map([
+      Axon.input("input_ids", shape: shape),
+      Axon.input("attention_mask", shape: shape, optional: true),
+      Axon.input("token_type_ids", shape: shape, optional: true),
+      Axon.input("position_ids", shape: shape, optional: true),
+      Axon.input("head_mask",
+        shape: {config.num_hidden_layers, config.num_attention_heads},
+        optional: true
+      )
+    ])
   end
 
   defp roberta(inputs, config, opts \\ []) do
     name = opts[:name]
 
+    input_ids = inputs["input_ids"]
+
+    attention_mask =
+      Layers.default inputs["attention_mask"] do
+        Layers.default_attention_mask(input_ids)
+      end
+
+    position_ids =
+      Layers.default inputs["position_ids"] do
+        # Position numbers begin at padding token id + 1
+        Layers.default_position_ids(input_ids, offset: config.pad_token_id + 1)
+      end
+
+    token_type_ids =
+      Layers.default inputs["token_type_ids"] do
+        Layers.default_token_type_ids(input_ids)
+      end
+
     hidden_state =
-      embeddings(inputs["input_ids"], inputs["token_type_ids"], inputs["position_ids"], config,
-        name: join(name, "embeddings")
-      )
+      embeddings(input_ids, position_ids, token_type_ids, config, name: join(name, "embeddings"))
 
     {last_hidden_state, hidden_states, attentions} =
-      encoder(hidden_state, inputs["attention_mask"], inputs["head_mask"], config,
+      encoder(hidden_state, attention_mask, inputs["head_mask"], config,
         name: join(name, "encoder")
       )
 
@@ -363,7 +345,7 @@ defmodule Bumblebee.Text.Roberta do
     }
   end
 
-  defp embeddings(input_ids, token_type_ids, position_ids, config, opts) do
+  defp embeddings(input_ids, position_ids, token_type_ids, config, opts) do
     name = opts[:name]
 
     inputs_embeds =
@@ -402,7 +384,11 @@ defmodule Bumblebee.Text.Roberta do
   defp encoder_layers(hidden_state, attention_mask, head_mask, config, opts) do
     name = opts[:name]
 
-    for idx <- 0..(config.num_hidden_layers - 1), reduce: {hidden_state, {hidden_state}, {}} do
+    hidden_states = Layers.maybe_container({hidden_state}, config.output_hidden_states)
+    attentions = Layers.maybe_container({}, config.output_attentions)
+
+    for idx <- 0..(config.num_hidden_layers - 1),
+        reduce: {hidden_state, hidden_states, attentions} do
       {hidden_state, hidden_states, attentions} ->
         layer_head_mask = Axon.nx(head_mask, & &1[idx])
 
@@ -413,8 +399,8 @@ defmodule Bumblebee.Text.Roberta do
 
         {
           hidden_state,
-          Tuple.append(hidden_states, hidden_state),
-          Tuple.append(attentions, attention)
+          Layers.append(hidden_states, hidden_state),
+          Layers.append(attentions, attention)
         }
     end
   end
@@ -449,50 +435,44 @@ defmodule Bumblebee.Text.Roberta do
   defp self_attention(hidden_state, attention_mask, layer_head_mask, config, opts) do
     name = opts[:name]
 
-    head_dim = div(config.hidden_size, config.num_attention_heads)
+    num_heads = config.num_attention_heads
 
-    query_states =
+    query =
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "query")
       )
-      |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
+      |> Layers.split_heads(num_heads)
 
-    value_states =
+    value =
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "value")
       )
-      |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
+      |> Layers.split_heads(num_heads)
 
-    key_states =
+    key =
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "key")
       )
-      |> Axon.reshape({:auto, config.num_attention_heads, head_dim})
+      |> Layers.split_heads(num_heads)
 
-    attention_bias = Axon.layer(&Layers.attention_bias/2, [attention_mask])
-
-    attention_weights =
-      Axon.layer(&Layers.attention_weights/4, [query_states, key_states, attention_bias])
+    attention_mask = Layers.expand_attention_mask(attention_mask)
+    attention_bias = Layers.attention_bias(attention_mask)
 
     attention_weights =
-      Axon.dropout(attention_weights,
-        rate: config.attention_probs_dropout_prob,
-        name: join(name, "dropout")
-      )
-
-    attention_weights =
-      Axon.layer(&Layers.apply_layer_head_mask/3, [attention_weights, layer_head_mask])
-
-    attention_output = Axon.layer(&Layers.attention_output/3, [attention_weights, value_states])
+      Layers.attention_weights(query, key, attention_bias)
+      |> Axon.dropout(rate: config.attention_probs_dropout_prob, name: join(name, "dropout"))
+      |> Layers.apply_layer_head_mask(layer_head_mask)
 
     attention_output =
-      Axon.reshape(attention_output, {:auto, config.num_attention_heads * head_dim})
+      attention_weights
+      |> Layers.attention_output(value)
+      |> Layers.flatten_trailing()
 
     {attention_output, attention_weights}
   end
@@ -522,7 +502,7 @@ defmodule Bumblebee.Text.Roberta do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
     )
-    |> Layers.activation_layer(config.hidden_act, name: join(name, "activation"))
+    |> Layers.activation(config.hidden_act, name: join(name, "activation"))
   end
 
   defp output(hidden_state, attention_output, config, opts) do
@@ -546,7 +526,7 @@ defmodule Bumblebee.Text.Roberta do
     name = opts[:name]
 
     hidden_state
-    |> Layers.take_token_layer(index: 0, axis: 1, name: join(name, "head"))
+    |> Layers.take_token(index: 0, axis: 1, name: join(name, "head"))
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
@@ -563,7 +543,7 @@ defmodule Bumblebee.Text.Roberta do
     hidden_state
     |> lm_prediction_head_transform(config, name: name)
     # We reuse the kernel of input embeddings and add bias for each token
-    |> Layers.dense_transposed_layer(config.vocab_size,
+    |> Layers.dense_transposed(config.vocab_size,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "decoder")
     )
@@ -578,26 +558,12 @@ defmodule Bumblebee.Text.Roberta do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
     )
-    |> Layers.activation_layer(config.hidden_act, name: join(name, "activation"))
+    |> Layers.activation(config.hidden_act, name: join(name, "activation"))
     |> Axon.layer_norm(
       epsilon: config.layer_norm_eps,
       name: join(name, "layer_norm"),
       channel_index: 2
     )
-  end
-
-  defp flatten_trailing(%Axon{} = x) do
-    Axon.nx(x, fn x ->
-      shape = Nx.shape(x)
-      rank = tuple_size(shape)
-
-      shape =
-        shape
-        |> Tuple.delete_at(rank - 1)
-        |> put_elem(rank - 2, :auto)
-
-      Nx.reshape(x, shape)
-    end)
   end
 
   defp classifier_dropout_rate(config) do

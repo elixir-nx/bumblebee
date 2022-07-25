@@ -158,7 +158,7 @@ defmodule Bumblebee.Text.RoBERTaTest do
       )
     end
 
-    # @tag :slow
+    @tag :slow
     @tag timeout: 200_000
     @tag :capture_log
     test "question answering model" do

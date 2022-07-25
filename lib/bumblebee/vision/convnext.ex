@@ -99,7 +99,7 @@ defmodule Bumblebee.Vision.ConvNext do
   def model(%__MODULE__{architecture: :base} = config) do
     config
     |> convnext()
-    |> Bumblebee.Utils.Model.output(config)
+    |> Layers.output()
   end
 
   def model(%__MODULE__{architecture: :for_image_classification} = config) do
@@ -112,7 +112,7 @@ defmodule Bumblebee.Vision.ConvNext do
         kernel_initializer: kernel_initializer(config)
       )
 
-    Bumblebee.Utils.Model.output(%{logits: logits, hidden_states: outputs.hidden_states}, config)
+    Layers.output(%{logits: logits, hidden_states: outputs.hidden_states})
   end
 
   defp convnext(config, opts \\ []) do
@@ -170,7 +170,7 @@ defmodule Bumblebee.Vision.ConvNext do
 
     state = %{
       last_hidden_state: hidden_state,
-      hidden_states: {hidden_state},
+      hidden_states: Layers.maybe_container({hidden_state}, config.output_hidden_states),
       in_channels: hd(config.hidden_sizes)
     }
 
@@ -192,7 +192,7 @@ defmodule Bumblebee.Vision.ConvNext do
 
         %{
           last_hidden_state: hidden_state,
-          hidden_states: Tuple.append(state.hidden_states, hidden_state),
+          hidden_states: Layers.append(state.hidden_states, hidden_state),
           in_channels: out_channels
         }
     end
@@ -271,9 +271,10 @@ defmodule Bumblebee.Vision.ConvNext do
 
     scaled =
       if config.layer_scale_init_value > 0 do
-        Layers.scale_layer(x,
+        Layers.scale(x,
           name: name,
           scale_init_value: config.layer_scale_init_value,
+          scale_name: "layer_scale_parameter",
           channel_index: 3
         )
       else
@@ -282,7 +283,7 @@ defmodule Bumblebee.Vision.ConvNext do
 
     scaled
     |> Axon.transpose([0, 3, 1, 2], ignore_batch?: false, name: join(name, "transpose2"))
-    |> Layers.drop_path_layer(rate: drop_path_rate, name: join(name, "drop_path"))
+    |> Layers.drop_path(rate: drop_path_rate, name: join(name, "drop_path"))
     |> Axon.add(input, name: join(name, "residual"))
   end
 

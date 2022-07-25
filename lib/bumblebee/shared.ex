@@ -50,6 +50,23 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Returns config attributes for generation.
+  """
+  @spec generation_defaults(keyword()) :: keyword()
+  def generation_defaults(overrides) do
+    opts = [
+      min_length: 0,
+      max_length: 20,
+      forced_bos_token_id: nil,
+      forced_eos_token_id: nil
+    ]
+
+    Enum.reduce(overrides, opts, fn {key, val}, opts ->
+      Keyword.replace!(opts, key, val)
+    end)
+  end
+
+  @doc """
   Merges the given list of attributes into a configuration struct.
 
   Attributes that are not present in the configuration struct are
