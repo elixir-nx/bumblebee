@@ -88,6 +88,11 @@ defmodule Bumblebee.Text.Bart do
       on every decoding pass. The cache should be treated as opaque
       and initialized with `Bumblebee.Text.Generation.init_cache/4`
 
+  A `:for_causal_language_modeling` model is just the decoder part and
+  accepts the following inputs instead: `"input_ids"`, `"attention_mask"`,
+  `"position_ids"`, `"head_mask"`, `"input_embeds"`, `"encoder_last_hidden_state"`,
+  `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache"`.
+
   ## Configuration
 
     * `:vocab_size` - vocabulary size of the model. Defines the number
