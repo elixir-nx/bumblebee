@@ -2,11 +2,10 @@ defmodule Bumblebee.Text.RoBERTaTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
-  require Axon
+
+  @moduletag model_test_tags()
 
   describe "integration" do
-    @tag :slow
-    @tag :capture_log
     test "base model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "roberta-base"}, architecture: :base)
@@ -30,8 +29,6 @@ defmodule Bumblebee.Text.RoBERTaTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
     test "masked language modeling model ids" do
       assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "roberta-base"})
 
@@ -54,8 +51,6 @@ defmodule Bumblebee.Text.RoBERTaTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
     test "casual language modeling model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "roberta-base"},
@@ -81,9 +76,6 @@ defmodule Bumblebee.Text.RoBERTaTest do
       )
     end
 
-    @tag :slow
-    @tag timeout: 200_000
-    @tag :capture_log
     test "sequence classification" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "cardiffnlp/twitter-roberta-base-emotion"})
@@ -105,9 +97,6 @@ defmodule Bumblebee.Text.RoBERTaTest do
       )
     end
 
-    @tag :slow
-    @tag timeout: 400_000
-    @tag :capture_log
     test "multiple choice model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "LIAMF-USP/aristo-roberta"})
@@ -134,9 +123,6 @@ defmodule Bumblebee.Text.RoBERTaTest do
       )
     end
 
-    @tag :slow
-    @tag timeout: 400_000
-    @tag :capture_log
     test "token classification model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "Jean-Baptiste/roberta-large-ner-english"})
@@ -158,9 +144,6 @@ defmodule Bumblebee.Text.RoBERTaTest do
       )
     end
 
-    @tag :slow
-    @tag timeout: 200_000
-    @tag :capture_log
     test "question answering model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
@@ -192,8 +175,6 @@ defmodule Bumblebee.Text.RoBERTaTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
     test "masked language modeling model" do
       assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "roberta-base"})
       assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = config

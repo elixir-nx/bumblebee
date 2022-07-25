@@ -2,7 +2,6 @@ defmodule Bumblebee.Vision.ConvNextFeaturizerTest do
   use ExUnit.Case, async: true
 
   describe "integration" do
-    @tag :slow
     test "encoding model input" do
       assert {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "facebook/convnext-tiny-224"})
 

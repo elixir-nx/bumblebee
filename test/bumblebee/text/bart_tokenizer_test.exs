@@ -4,7 +4,6 @@ defmodule Bumblebee.Text.BartTokenizerTest do
   import Bumblebee.TestHelpers
 
   describe "integration" do
-    @tag :slow
     test "encoding model input" do
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-base"})
 

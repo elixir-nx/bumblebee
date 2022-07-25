@@ -2,11 +2,10 @@ defmodule Bumblebee.Text.BartTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
-  require Axon
+
+  @moduletag model_test_tags()
 
   describe "integration" do
-    @tag :slow
-    @tag :capture_log
     test "base model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "facebook/bart-base"}, architecture: :base)
@@ -32,8 +31,6 @@ defmodule Bumblebee.Text.BartTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
     test "conditional generation model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "facebook/bart-base"},
@@ -63,9 +60,6 @@ defmodule Bumblebee.Text.BartTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
-    @tag timeout: 120_000
     test "sequence classification model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "valhalla/bart-large-sst2"})
@@ -88,9 +82,6 @@ defmodule Bumblebee.Text.BartTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
-    @tag timeout: 120_000
     test "question answering model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "valhalla/bart-large-finetuned-squadv1"})
@@ -121,8 +112,6 @@ defmodule Bumblebee.Text.BartTest do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
     test "causal language model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "facebook/bart-base"},
@@ -153,8 +142,6 @@ defmodule Bumblebee.Text.BartTest do
     end
   end
 
-  @tag :slow
-  @tag :capture_log
   test "conditional generation" do
     {:ok, model, params, config} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})

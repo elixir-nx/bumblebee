@@ -2,12 +2,10 @@ defmodule Bumblebee.Text.BertTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
-  require Axon
+
+  @moduletag model_test_tags()
 
   describe "integration" do
-    @tag :slow
-    @tag timeout: 200_000
-    @tag :capture_log
     test "base model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "bert-base-uncased"}, architecture: :base)
@@ -30,9 +28,6 @@ defmodule Bumblebee.Text.BertTest do
       )
     end
 
-    @tag :slow
-    @tag timeout: 200_000
-    @tag :capture_log
     test "sequence classification" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "textattack/bert-base-uncased-yelp-polarity"},
@@ -58,9 +53,6 @@ defmodule Bumblebee.Text.BertTest do
       )
     end
 
-    @tag :slow
-    @tag timeout: 200_000
-    @tag :capture_log
     test "masked language modeling model" do
       assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "bert-base-uncased"})
 

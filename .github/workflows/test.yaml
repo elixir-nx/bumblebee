@@ -17,37 +17,30 @@ jobs:
             lint: true
     steps:
       - uses: actions/checkout@v2
-
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{matrix.pair.otp}}
-          elixir-version: ${{matrix.pair.elixir}}
-
-      - uses: actions/cache@v2
-        with:
-          path: ~/.cache/bumblebee
-          key: downloads
-
+          otp-version: ${{ matrix.pair.otp }}
+          elixir-version: ${{ matrix.pair.elixir }}
       - uses: actions/cache@v2
         with:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{matrix.pair.elixir}}-${{matrix.pair.otp}}-${{ hashFiles('**/mix.lock') }}
+          key: ${{ runner.os }}-mix-${{ matrix.pair.elixir }}-${{ matrix.pair.otp }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-
-
       - run: mix deps.get
-
       - run: mix format --check-formatted
         if: ${{ matrix.lint }}
-
       - run: mix deps.unlock --check-unused
         if: ${{ matrix.lint }}
-
       - run: mix deps.compile
-
       - run: mix compile --warnings-as-errors
         if: ${{ matrix.lint }}
-
-      - run: mix test --include slow
+      - run: mix test
+      - uses: technote-space/get-diff-action@v6
+        with:
+          PATTERNS: test/**/*_test.exs
+      - name: Changed slow tests
+        run: mix test --only slow ${{ env.GIT_DIFF_FILTERED }}
+        if: ${{ env.GIT_DIFF_FILTERED != '' }}
