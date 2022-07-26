@@ -134,45 +134,45 @@ defmodule Bumblebee.Text.Generation do
     end)
   end
 
-  defp input_callbacks(
-         %{is_encoder_decoder: true} = config,
-         model,
-         max_length,
-         decoder_start_token_id
-       ) do
-    encoder = encoder_from_encoder_decoder(model)
-    {_encoder_init_fun, encoder_predict_fun} = Axon.build(encoder)
+  defp input_callbacks(config, model, max_length, decoder_start_token_id) do
+    if encoder_decoder?(model) do
+      encoder = encoder_from_encoder_decoder(model)
+      {_encoder_init_fun, encoder_predict_fun} = Axon.build(encoder)
 
-    prepare_inputs_fun = fn inputs, params ->
-      encoder_output = encoder_predict_fun.(params, inputs)
+      prepare_inputs_fun = fn inputs, params ->
+        encoder_output = encoder_predict_fun.(params, inputs)
 
-      batch_size = Nx.axis_size(inputs["input_ids"], 0)
-      decoder_input_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
+        batch_size = Nx.axis_size(inputs["input_ids"], 0)
+        decoder_input_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
 
-      inputs =
-        Map.merge(inputs, %{
-          "encoder_last_hidden_state" => encoder_output.last_hidden_state,
-          "decoder_input_ids" => decoder_input_ids
-        })
+        inputs =
+          Map.merge(inputs, %{
+            "encoder_last_hidden_state" => encoder_output.last_hidden_state,
+            "decoder_input_ids" => decoder_input_ids
+          })
 
-      inputs = prepare_decoder_inputs(inputs, "decoder_", config, max_length)
-      {inputs, inputs["decoder_input_ids"]}
+        inputs = prepare_decoder_inputs(inputs, "decoder_", config, max_length)
+        {inputs, inputs["decoder_input_ids"]}
+      end
+
+      update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "decoder_")
+
+      {prepare_inputs_fun, update_inputs_fun}
+    else
+      prepare_inputs_fun = fn inputs, _params ->
+        inputs = prepare_decoder_inputs(inputs, "", config, max_length)
+        {inputs, inputs["input_ids"]}
+      end
+
+      update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "")
+
+      {prepare_inputs_fun, update_inputs_fun}
     end
-
-    update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "decoder_")
-
-    {prepare_inputs_fun, update_inputs_fun}
   end
 
-  defp input_callbacks(config, _model, max_length, _decoder_start_token_id) do
-    prepare_inputs_fun = fn inputs, _params ->
-      inputs = prepare_decoder_inputs(inputs, "", config, max_length)
-      {inputs, inputs["input_ids"]}
-    end
-
-    update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "")
-
-    {prepare_inputs_fun, update_inputs_fun}
+  defp encoder_decoder?(model) do
+    inputs = Axon.get_inputs(model)
+    Map.has_key?(inputs, "input_ids") and Map.has_key?(inputs, "decoder_input_ids")
   end
 
   defp prepare_decoder_inputs(inputs, prefix, config, max_length) do

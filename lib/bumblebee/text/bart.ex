@@ -189,7 +189,6 @@ defmodule Bumblebee.Text.Bart do
               init_std: 0.02,
               classifier_dropout: 0.0,
               scale_embedding: false,
-              is_encoder_decoder: true,
               # Tokens
               pad_token_id: 1,
               bos_token_id: 0,
