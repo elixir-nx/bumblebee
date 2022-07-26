@@ -12,10 +12,6 @@ defmodule Bumblebee.Text.Roberta do
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_causal_language_modeling` - RoBERTa with a language modeling
-      head. The head returns logits for each token in the original
-      sequence
-
     * `:for_sequence_classification` - RoBERTa with a sequence
       classification head. The head returns logits corresponding to
       possible classes
@@ -31,6 +27,10 @@ defmodule Bumblebee.Text.Roberta do
       head. Each input in the batch consists of several sequences to
       choose from and the model returns logits corresponding to those
       choices
+
+    * `:for_causal_language_modeling` - RoBERTa with a language modeling
+      head. The head returns logits for each token in the original
+      sequence
 
   ## Inputs
 

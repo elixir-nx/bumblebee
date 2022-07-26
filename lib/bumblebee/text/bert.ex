@@ -12,10 +12,6 @@ defmodule Bumblebee.Text.Bert do
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_causal_language_modeling` - BERT with a language modeling
-      head. The head returns logits for each token in the original
-      sequence
-
     * `:for_sequence_classification` - BERT with a sequence
       classification head. The head returns logits corresponding to
       possible classes
@@ -38,6 +34,10 @@ defmodule Bumblebee.Text.Bert do
 
     * `:for_pre_training` - BERT with both MLM and NSP heads as done
       during the pre-training
+
+    * `:for_causal_language_modeling` - BERT with a language modeling
+      head. The head returns logits for each token in the original
+      sequence
 
   ## Inputs
 
