@@ -148,11 +148,11 @@ defmodule Bumblebee.Text.Roberta do
     do: [
       :base,
       :for_masked_language_modeling,
-      :for_causal_language_modeling,
       :for_sequence_classification,
       :for_token_classification,
       :for_question_answering,
-      :for_multiple_choice
+      :for_multiple_choice,
+      :for_causal_language_modeling
     ]
 
   @impl true
@@ -183,18 +183,6 @@ defmodule Bumblebee.Text.Roberta do
   end
 
   def model(%__MODULE__{architecture: :for_masked_language_modeling} = config) do
-    outputs = inputs(config) |> roberta(config, name: "roberta")
-
-    logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
-
-    Layers.output(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
-  end
-
-  def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
     outputs = inputs(config) |> roberta(config, name: "roberta")
 
     logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
@@ -307,16 +295,27 @@ defmodule Bumblebee.Text.Roberta do
     })
   end
 
+  def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
+    outputs = inputs(config) |> roberta(config, name: "roberta")
+
+    logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
+
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
+  end
+
   defp inputs(config, shape \\ {nil, nil}) do
+    head_mask_shape = {config.num_hidden_layers, config.num_attention_heads}
+
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("input_ids", shape: shape),
       Axon.input("attention_mask", shape: shape, optional: true),
       Axon.input("token_type_ids", shape: shape, optional: true),
       Axon.input("position_ids", shape: shape, optional: true),
-      Axon.input("head_mask",
-        shape: {config.num_hidden_layers, config.num_attention_heads},
-        optional: true
-      )
+      Axon.input("head_mask", shape: head_mask_shape, optional: true)
     ])
   end
 

@@ -12,7 +12,8 @@ defmodule Bumblebee.Shared do
       output_attentions: false,
       id2label: %{},
       label2id: %{},
-      num_labels: 2
+      num_labels: 2,
+      add_cross_attention: false
     ]
     |> Keyword.take(keys)
   end
@@ -36,6 +37,10 @@ defmodule Bumblebee.Shared do
       num_labels: """
       the number of labels to use in the last layer for the classification \
       task. Inferred from `:id2label` if given, otherwise defaults to `2`
+      """,
+      add_cross_attention: """
+      whether cross-attention layers should be added to the model. This is
+      only relevant for decoder models
       """
     ]
 
@@ -53,7 +58,7 @@ defmodule Bumblebee.Shared do
   Returns config attributes for generation.
   """
   @spec generation_defaults(keyword()) :: keyword()
-  def generation_defaults(overrides) do
+  def generation_defaults(overrides \\ []) do
     opts = [
       min_length: 0,
       max_length: 20,

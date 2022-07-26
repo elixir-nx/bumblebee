@@ -349,7 +349,13 @@ defmodule Bumblebee.Text.Generation do
     token_id = Nx.argmax(logits, axis: -1)
 
     token_id = Nx.select(finished?, pad_token_id, token_id)
-    finished? = finished? or token_id == eos_token_id
+
+    finished? =
+      transform({finished?, eos_token_id}, fn
+        {finished?, nil} -> finished?
+        {finished?, eos_token_id} -> finished? or token_id == eos_token_id
+      end)
+
     token_id = Nx.new_axis(token_id, -1)
 
     sequences = Nx.put_slice(sequences, [0, length], token_id)
