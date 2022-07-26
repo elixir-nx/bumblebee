@@ -14,7 +14,9 @@ defmodule Bumblebee.Vision.ResNet do
 
   ## Inputs
 
-    * `"pixel_values"` - featurized image pixel values in NCHW format (224x224)
+    * `"pixel_values"` - {batch_size, num_channels, height, width}
+
+      Featurized image pixel values (224x224).
 
   ## Configuration
 
