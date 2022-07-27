@@ -159,7 +159,7 @@ defmodule Bumblebee.Text.RobertaTest do
       assert %Bumblebee.Text.Roberta{architecture: :for_causal_language_modeling} = config
 
       input = %{
-        "input_ids" => Nx.tensor([[0, 234, 546, 3218, 54, 1544, 15856, 2]])
+        "input_ids" => Nx.tensor([[0, 31414, 6, 127, 2335, 16, 11962, 2]])
       }
 
       output = Axon.predict(model, params, input)
@@ -167,9 +167,9 @@ defmodule Bumblebee.Text.RobertaTest do
       assert Nx.shape(output.logits) == {1, 8, 50265}
 
       assert_all_close(
-        output.logits[[0..-1//1, 0..2, 0..2]],
+        output.logits[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
-          [[32.8680, -4.4621, 20.4998], [2.8034, -4.3022, 10.9247], [-1.3060, -4.5799, 6.5772]]
+          [[-3.3435, 32.1472, -3.5083], [-3.5373, 21.8191, -3.5197], [-4.2189, 22.5419, -3.9859]]
         ]),
         atol: 1.0e-4
       )
