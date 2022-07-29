@@ -53,7 +53,7 @@ defmodule Bumblebee.Text.Gpt2 do
   def architectures(),
     do: [
       :base,
-      :lm_head_model,
+      :for_causal_language_modeling,
       :for_sequence_classification,
       :for_token_classification
     ]
@@ -75,7 +75,7 @@ defmodule Bumblebee.Text.Gpt2 do
   end
 
   @impl true
-  def model(%__MODULE__{architecture: :lm_head_model} = config) do
+  def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
     inputs = encoder_decoder_inputs(config)
 
     transformer_outputs = gpt2(inputs, config)
