@@ -12,10 +12,6 @@ defmodule Bumblebee.Text.Albert do
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_causal_language_modeling` - ALBERT with a language modeling
-      head. The head returns logits for each token in the original
-      sequence
-
     * `:for_sequence_classification` - ALBERT with a sequence
       classification head. The head returns logits corresponding to
       possible classes
@@ -162,7 +158,6 @@ defmodule Bumblebee.Text.Albert do
     do: [
       :base,
       :for_masked_language_modeling,
-      :for_causal_language_modeling,
       :for_sequence_classification,
       :for_token_classification,
       :for_question_answering,

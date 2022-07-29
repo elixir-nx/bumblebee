@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.RoBERTaTest do
+defmodule Bumblebee.Text.RobertaTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
@@ -29,7 +29,7 @@ defmodule Bumblebee.Text.RoBERTaTest do
       )
     end
 
-    test "masked language modeling model ids" do
+    test "masked language modeling model" do
       assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "roberta-base"})
 
       assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = config
@@ -46,31 +46,6 @@ defmodule Bumblebee.Text.RoBERTaTest do
         output.logits[[0..-1//1, 0..2, 0..2]],
         Nx.tensor([
           [[33.8802, -4.3103, 22.7761], [4.6539, -2.8098, 13.6253], [1.8228, -3.6898, 8.8600]]
-        ]),
-        atol: 1.0e-4
-      )
-    end
-
-    test "casual language modeling model" do
-      assert {:ok, model, params, config} =
-               Bumblebee.load_model({:hf, "roberta-base"},
-                 architecture: :for_causal_language_modeling
-               )
-
-      assert %Bumblebee.Text.Roberta{architecture: :for_causal_language_modeling} = config
-
-      input = %{
-        "input_ids" => Nx.tensor([[0, 234, 546, 3218, 54, 1544, 15856, 2]])
-      }
-
-      output = Axon.predict(model, params, input)
-
-      assert Nx.shape(output.logits) == {1, 8, 50265}
-
-      assert_all_close(
-        output.logits[[0..-1//1, 0..2, 0..2]],
-        Nx.tensor([
-          [[32.8680, -4.4621, 20.4998], [2.8034, -4.3022, 10.9247], [-1.3060, -4.5799, 6.5772]]
         ]),
         atol: 1.0e-4
       )
@@ -94,32 +69,6 @@ defmodule Bumblebee.Text.RoBERTaTest do
         output.logits,
         Nx.tensor([[-1.3661, 3.0174, -0.9609, -0.4145]]),
         atol: 1.0e-4
-      )
-    end
-
-    test "multiple choice model" do
-      assert {:ok, model, params, config} =
-               Bumblebee.load_model({:hf, "LIAMF-USP/aristo-roberta"})
-
-      assert %Bumblebee.Text.Roberta{architecture: :for_multiple_choice} = config
-
-      input = %{
-        "input_ids" =>
-          Nx.tensor([
-            [[0, 38576, 103, 4437, 2, 2, 725, 895, 2], [0, 38576, 103, 4437, 2, 2, 487, 895, 2]]
-          ]),
-        "attention_mask" =>
-          Nx.tensor([[[1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1]]])
-      }
-
-      output = Axon.predict(model, params, input)
-
-      assert Nx.shape(output.logits) == {1, 2}
-
-      assert_all_close(
-        output.logits,
-        Nx.tensor([[-13.9123, -13.4582]]),
-        atol: 1.0e-3
       )
     end
 
@@ -175,24 +124,55 @@ defmodule Bumblebee.Text.RoBERTaTest do
       )
     end
 
-    test "masked language modeling model" do
-      assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "roberta-base"})
-      assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = config
+    test "multiple choice model" do
+      assert {:ok, model, params, config} =
+               Bumblebee.load_model({:hf, "LIAMF-USP/aristo-roberta"})
 
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
+      assert %Bumblebee.Text.Roberta{architecture: :for_multiple_choice} = config
 
-      inputs =
-        Bumblebee.apply_tokenizer(tokenizer, "The current capital city of France is <mask>.")
+      input = %{
+        "input_ids" =>
+          Nx.tensor([
+            [[0, 38576, 103, 4437, 2, 2, 725, 895, 2], [0, 38576, 103, 4437, 2, 2, 487, 895, 2]]
+          ]),
+        "attention_mask" =>
+          Nx.tensor([[[1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1]]])
+      }
 
-      output = Axon.predict(model, params, inputs)
+      output = Axon.predict(model, params, input)
 
-      assert Nx.shape(output.logits) == {1, 11, 50265}
-      mask_token_id = Bumblebee.Tokenizer.special_token_id(tokenizer, :mask)
+      assert Nx.shape(output.logits) == {1, 2}
 
-      mask_idx = inputs["input_ids"] |> Nx.equal(mask_token_id) |> Nx.argmax()
-      id = output.logits[[0, mask_idx]] |> Nx.argmax() |> Nx.to_number()
+      assert_all_close(
+        output.logits,
+        Nx.tensor([[-13.9123, -13.4582]]),
+        atol: 1.0e-3
+      )
+    end
 
-      assert Bumblebee.Tokenizer.decode(tokenizer, id) == {:ok, " Paris"}
+    test "casual language modeling model" do
+      assert {:ok, model, params, config} =
+               Bumblebee.load_model({:hf, "roberta-base"},
+                 architecture: :for_causal_language_modeling
+               )
+
+      assert %Bumblebee.Text.Roberta{architecture: :for_causal_language_modeling} = config
+
+      input = %{
+        "input_ids" => Nx.tensor([[0, 31414, 6, 127, 2335, 16, 11962, 2]])
+      }
+
+      output = Axon.predict(model, params, input)
+
+      assert Nx.shape(output.logits) == {1, 8, 50265}
+
+      assert_all_close(
+        output.logits[[0..-1//1, 1..3, 1..3]],
+        Nx.tensor([
+          [[-3.3435, 32.1472, -3.5083], [-3.5373, 21.8191, -3.5197], [-4.2189, 22.5419, -3.9859]]
+        ]),
+        atol: 1.0e-4
+      )
     end
   end
 end

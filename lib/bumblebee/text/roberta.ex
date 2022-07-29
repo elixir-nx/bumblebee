@@ -1,5 +1,12 @@
 defmodule Bumblebee.Text.Roberta do
-  @common_keys [:output_hidden_states, :output_attentions, :id2label, :label2id, :num_labels]
+  @common_keys [
+    :output_hidden_states,
+    :output_attentions,
+    :id2label,
+    :label2id,
+    :num_labels,
+    :add_cross_attention
+  ]
 
   @moduledoc """
   Models based on the RoBERTa architecture.
@@ -9,10 +16,6 @@ defmodule Bumblebee.Text.Roberta do
     * `:base` - plain RoBERTa without any head on top
 
     * `:for_masked_language_modeling` - RoBERTa with a language modeling
-      head. The head returns logits for each token in the original
-      sequence
-
-    * `:for_causal_language_modeling` - RoBERTa with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
@@ -31,6 +34,10 @@ defmodule Bumblebee.Text.Roberta do
       head. Each input in the batch consists of several sequences to
       choose from and the model returns logits corresponding to those
       choices
+
+    * `:for_causal_language_modeling` - RoBERTa working as a decoder with
+      a language modeling head. The head returns logits for each token in
+      the original sequence
 
   ## Inputs
 
@@ -63,6 +70,10 @@ defmodule Bumblebee.Text.Roberta do
 
   The `:for_multiple_choice` model accepts groups of sequences, so the
   expected sequence shape is `{batch_size, num_choices, seq_length}`.
+
+  The `:for_causal_language_modeling` model is a decoder and accepts
+  the following additional inputs: `"encoder_last_hidden_state"`,
+  `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache".
 
   ## Configuration
 
@@ -138,21 +149,25 @@ defmodule Bumblebee.Text.Roberta do
               initializer_range: 0.02,
               layer_norm_eps: 1.0e-12,
               classifier_dropout: nil,
-              pad_token_id: 1
-            ] ++ Shared.common_config_defaults(@common_keys)
+              # Tokens
+              pad_token_id: 1,
+              bos_token_id: 0,
+              eos_token_id: 2
+            ] ++ Shared.generation_defaults() ++ Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
+  @behaviour Bumblebee.Text.Generation
 
   @impl true
   def architectures(),
     do: [
       :base,
       :for_masked_language_modeling,
-      :for_causal_language_modeling,
       :for_sequence_classification,
       :for_token_classification,
       :for_question_answering,
-      :for_multiple_choice
+      :for_multiple_choice,
+      :for_causal_language_modeling
     ]
 
   @impl true
@@ -183,18 +198,6 @@ defmodule Bumblebee.Text.Roberta do
   end
 
   def model(%__MODULE__{architecture: :for_masked_language_modeling} = config) do
-    outputs = inputs(config) |> roberta(config, name: "roberta")
-
-    logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
-
-    Layers.output(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
-  end
-
-  def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
     outputs = inputs(config) |> roberta(config, name: "roberta")
 
     logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
@@ -270,7 +273,7 @@ defmodule Bumblebee.Text.Roberta do
   end
 
   def model(%__MODULE__{architecture: :for_multiple_choice} = config) do
-    inputs = inputs(config, {nil, nil, nil})
+    inputs = inputs(config, shape: {nil, nil, nil})
 
     group_inputs = ["input_ids", "attention_mask", "token_type_ids", "position_ids"]
 
@@ -307,21 +310,73 @@ defmodule Bumblebee.Text.Roberta do
     })
   end
 
-  defp inputs(config, shape \\ {nil, nil}) do
-    Bumblebee.Utils.Model.inputs_to_map([
-      Axon.input("input_ids", shape: shape),
-      Axon.input("attention_mask", shape: shape, optional: true),
-      Axon.input("token_type_ids", shape: shape, optional: true),
-      Axon.input("position_ids", shape: shape, optional: true),
-      Axon.input("head_mask",
-        shape: {config.num_hidden_layers, config.num_attention_heads},
-        optional: true
-      )
-    ])
+  def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
+    outputs = inputs(config, decoder?: true) |> roberta(config, decoder?: true, name: "roberta")
+
+    logits = lm_prediction_head(outputs.last_hidden_state, config, name: "lm_head")
+
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions,
+      cross_attentions: outputs.cross_attentions,
+      cache: outputs.cache
+    })
+  end
+
+  @impl true
+  def init_cache(config, batch_size, max_length, inputs) do
+    encoder_sequence_length =
+      if encoder_last_hidden_state = inputs["encoder_last_hidden_state"] do
+        Nx.axis_size(encoder_last_hidden_state, 1)
+      end
+
+    Layers.Decoder.init_cache(batch_size, max_length,
+      hidden_size: config.hidden_size,
+      decoder_attention_heads: config.num_attention_heads,
+      encoder_attention_heads: config.num_attention_heads,
+      decoder_layers: config.num_hidden_layers,
+      encoder_sequence_length: encoder_sequence_length
+    )
+  end
+
+  defp inputs(config, opts \\ []) do
+    shape = Keyword.get(opts, :shape, {nil, nil})
+    decoder? = Keyword.get(opts, :decoder?, false)
+
+    hidden_shape = Tuple.append(shape, config.hidden_size)
+    head_mask_shape = {config.num_hidden_layers, config.num_attention_heads}
+
+    inputs =
+      Bumblebee.Utils.Model.inputs_to_map([
+        Axon.input("input_ids", shape: shape),
+        Axon.input("attention_mask", optional: true, shape: shape),
+        Axon.input("token_type_ids", optional: true, shape: shape),
+        Axon.input("position_ids", optional: true, shape: shape),
+        Axon.input("head_mask", optional: true, shape: head_mask_shape)
+      ])
+
+    extra_decoder_inputs =
+      Bumblebee.Utils.Model.inputs_to_map([
+        Axon.input("encoder_last_hidden_state", optional: true, shape: hidden_shape),
+        Axon.input("encoder_attention_mask", optional: true, shape: shape),
+        Axon.input("cross_attention_head_mask", optional: true, shape: head_mask_shape),
+        Axon.input("cache", optional: true)
+      ])
+
+    extra_decoder_inputs =
+      if decoder? do
+        extra_decoder_inputs
+      else
+        Map.new(extra_decoder_inputs, fn {name, _input} -> {name, Layers.none()} end)
+      end
+
+    Map.merge(inputs, extra_decoder_inputs)
   end
 
   defp roberta(inputs, config, opts \\ []) do
     name = opts[:name]
+    decoder? = Keyword.get(opts, :decoder?, false)
 
     input_ids = inputs["input_ids"]
 
@@ -341,21 +396,37 @@ defmodule Bumblebee.Text.Roberta do
         Layers.default_token_type_ids(input_ids)
       end
 
+    encoder_attention_mask =
+      Layers.default inputs["encoder_attention_mask"] do
+        Layers.default_attention_mask(inputs["encoder_last_hidden_state"])
+      end
+
     hidden_state =
       embeddings(input_ids, position_ids, token_type_ids, config, name: join(name, "embeddings"))
 
-    {last_hidden_state, hidden_states, attentions} =
-      encoder(hidden_state, attention_mask, inputs["head_mask"], config,
+    encoder_outputs =
+      encoder(
+        hidden_state,
+        attention_mask,
+        inputs["head_mask"],
+        inputs["encoder_last_hidden_state"],
+        encoder_attention_mask,
+        inputs["cross_attention_head_mask"],
+        inputs["cache"],
+        config,
+        decoder?: decoder?,
         name: join(name, "encoder")
       )
 
-    pooler_output = pooler(last_hidden_state, config, name: join(name, "pooler"))
+    pooler_output = pooler(encoder_outputs.last_hidden_state, config, name: join(name, "pooler"))
 
     %{
-      last_hidden_state: last_hidden_state,
+      last_hidden_state: encoder_outputs.last_hidden_state,
       pooler_output: pooler_output,
-      hidden_states: hidden_states,
-      attentions: attentions
+      hidden_states: encoder_outputs.hidden_states,
+      attentions: encoder_outputs.attentions,
+      cross_attentions: encoder_outputs.cross_attentions,
+      cache: encoder_outputs.cache
     }
   end
 
@@ -389,65 +460,205 @@ defmodule Bumblebee.Text.Roberta do
     |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
   end
 
-  defp encoder(hidden_state, attention_mask, head_mask, config, opts) do
+  defp encoder(
+         hidden_state,
+         attention_mask,
+         head_mask,
+         encoder_hidden_state,
+         encoder_attention_mask,
+         cross_attention_head_mask,
+         cache,
+         config,
+         opts
+       ) do
     name = opts[:name]
+    decoder? = opts[:decoder?]
 
-    encoder_layers(hidden_state, attention_mask, head_mask, config, name: join(name, "layer"))
+    {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
+
+    outputs =
+      encoder_layers(
+        hidden_state,
+        attention_mask,
+        head_mask,
+        encoder_hidden_state,
+        encoder_attention_mask,
+        cross_attention_head_mask,
+        cache,
+        config,
+        decoder?: decoder?,
+        name: join(name, "layer")
+      )
+
+    update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, hidden_state))
   end
 
-  defp encoder_layers(hidden_state, attention_mask, head_mask, config, opts) do
+  defp encoder_layers(
+         hidden_state,
+         attention_mask,
+         head_mask,
+         encoder_hidden_state,
+         encoder_attention_mask,
+         cross_attention_head_mask,
+         cache,
+         config,
+         opts
+       ) do
     name = opts[:name]
+    decoder? = opts[:decoder?]
 
-    hidden_states = Layers.maybe_container({hidden_state}, config.output_hidden_states)
-    attentions = Layers.maybe_container({}, config.output_attentions)
+    state = %{
+      last_hidden_state: hidden_state,
+      hidden_states: Layers.maybe_container({hidden_state}, config.output_hidden_states),
+      attentions: Layers.maybe_container({}, config.output_attentions),
+      cross_attentions: Layers.maybe_container({}, config.output_attentions),
+      cache: cache
+    }
 
-    for idx <- 0..(config.num_hidden_layers - 1),
-        reduce: {hidden_state, hidden_states, attentions} do
-      {hidden_state, hidden_states, attentions} ->
+    offset = Layers.Decoder.get_cache_offset(state.cache)
+
+    for idx <- 0..(config.num_hidden_layers - 1), reduce: state do
+      state ->
         layer_head_mask = Axon.nx(head_mask, & &1[idx])
+        cross_attention_layer_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
 
-        {hidden_state, attention} =
-          roberta_layer(hidden_state, attention_mask, layer_head_mask, config,
+        layer_cache = Layers.Decoder.get_layer_cache(state.cache, idx)
+
+        {hidden_state, attention, cross_attention, layer_cache} =
+          roberta_layer(
+            state.last_hidden_state,
+            attention_mask,
+            layer_head_mask,
+            encoder_hidden_state,
+            encoder_attention_mask,
+            cross_attention_layer_head_mask,
+            layer_cache,
+            offset,
+            config,
+            decoder?: decoder?,
             name: join(name, idx)
           )
 
-        {
-          hidden_state,
-          Layers.append(hidden_states, hidden_state),
-          Layers.append(attentions, attention)
+        cache = Layers.Decoder.put_layer_cache(state.cache, idx, layer_cache)
+
+        %{
+          last_hidden_state: hidden_state,
+          hidden_states: Layers.append(state.hidden_states, hidden_state),
+          attentions: Layers.append(state.attentions, attention),
+          cross_attentions: Layers.append(state.cross_attentions, cross_attention),
+          cache: cache
         }
     end
   end
 
-  defp roberta_layer(hidden_state, attention_mask, layer_head_mask, config, opts) do
+  defp roberta_layer(
+         hidden_state,
+         attention_mask,
+         layer_head_mask,
+         encoder_hidden_state,
+         encoder_attention_mask,
+         cross_attention_layer_head_mask,
+         layer_cache,
+         offset,
+         config,
+         opts
+       ) do
     name = opts[:name]
+    decoder? = opts[:decoder?]
 
-    {attention_outputs, attention} =
-      attention(hidden_state, attention_mask, layer_head_mask, config,
+    {self_attention_cache, cross_attention_cache} =
+      Layers.Decoder.get_attention_caches(layer_cache)
+
+    {attention_output, attention, self_attention_cache} =
+      attention(
+        hidden_state,
+        attention_mask,
+        nil,
+        layer_head_mask,
+        self_attention_cache,
+        offset,
+        config,
+        causal?: decoder?,
         name: join(name, "attention")
       )
 
-    hidden_state = intermediate(attention_outputs, config, name: join(name, "intermediate"))
-    hidden_state = output(hidden_state, attention_outputs, config, name: join(name, "output"))
+    {attention_output, cross_attention, cross_attention_cache} =
+      if decoder? and config.add_cross_attention do
+        Layers.if_present encoder_hidden_state do
+          attention(
+            attention_output,
+            encoder_attention_mask,
+            encoder_hidden_state,
+            cross_attention_layer_head_mask,
+            cross_attention_cache,
+            offset,
+            config,
+            name: join(name, "crossattention")
+          )
+        else
+          {attention_output, Layers.none(), cross_attention_cache}
+        end
+      else
+        {attention_output, Layers.none(), cross_attention_cache}
+      end
 
-    {hidden_state, attention}
+    hidden_state = intermediate(attention_output, config, name: join(name, "intermediate"))
+    hidden_state = output(hidden_state, attention_output, config, name: join(name, "output"))
+
+    layer_cache =
+      Layers.Decoder.put_attention_caches(
+        layer_cache,
+        self_attention_cache,
+        cross_attention_cache
+      )
+
+    {hidden_state, attention, cross_attention, layer_cache}
   end
 
-  defp attention(hidden_state, attention_mask, layer_head_mask, config, opts) do
+  defp attention(
+         hidden_state,
+         attention_mask,
+         cross_hidden_state,
+         layer_head_mask,
+         attention_cache,
+         offset,
+         config,
+         opts
+       ) do
     name = opts[:name]
+    causal? = Keyword.get(opts, :causal?, false)
 
-    {attention_output, attention} =
-      self_attention(hidden_state, attention_mask, layer_head_mask, config,
+    {attention_output, attention, layer_cache} =
+      self_attention(
+        hidden_state,
+        attention_mask,
+        cross_hidden_state,
+        layer_head_mask,
+        attention_cache,
+        offset,
+        config,
+        causal?: causal?,
         name: join(name, "self")
       )
 
     hidden_state = self_output(attention_output, hidden_state, config, name: join(name, "output"))
 
-    {hidden_state, attention}
+    {hidden_state, attention, layer_cache}
   end
 
-  defp self_attention(hidden_state, attention_mask, layer_head_mask, config, opts) do
+  defp self_attention(
+         hidden_state,
+         attention_mask,
+         cross_hidden_state,
+         layer_head_mask,
+         attention_cache,
+         offset,
+         config,
+         opts
+       ) do
     name = opts[:name]
+    causal? = Keyword.get(opts, :causal?, false)
+    cross_attention? = cross_hidden_state != nil
 
     num_heads = config.num_attention_heads
 
@@ -459,8 +670,11 @@ defmodule Bumblebee.Text.Roberta do
       )
       |> Layers.split_heads(num_heads)
 
+    # For cross-attention we are given encoder hidden state
+    projection_states = cross_hidden_state || hidden_state
+
     value =
-      hidden_state
+      projection_states
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "value")
@@ -468,7 +682,7 @@ defmodule Bumblebee.Text.Roberta do
       |> Layers.split_heads(num_heads)
 
     key =
-      hidden_state
+      projection_states
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "key")
@@ -476,6 +690,19 @@ defmodule Bumblebee.Text.Roberta do
       |> Layers.split_heads(num_heads)
 
     attention_mask = Layers.expand_attention_mask(attention_mask)
+
+    attention_mask =
+      if causal? do
+        Layers.Decoder.apply_causal_mask(attention_mask, query, offset)
+      else
+        attention_mask
+      end
+
+    {key, value, attention_cache} =
+      Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset,
+        cross_attention?: cross_attention?
+      )
+
     attention_bias = Layers.attention_bias(attention_mask)
 
     attention_weights =
@@ -488,7 +715,7 @@ defmodule Bumblebee.Text.Roberta do
       |> Layers.attention_output(value)
       |> Layers.flatten_trailing()
 
-    {attention_output, attention_weights}
+    {attention_output, attention_weights, attention_cache}
   end
 
   defp self_output(hidden_state, input, config, opts) do
