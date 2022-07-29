@@ -37,9 +37,6 @@ defmodule Bumblebee.Text.Gpt2 do
               attn_pdrop: 0.1,
               layer_norm_epsilon: 1.0e-5,
               initializer_range: 0.02,
-              scale_attention_weights: true,
-              scale_attn_by_inverse_layer_idx: false,
-              reorder_and_upcast_attn: false,
               # Tokens
               bos_token_id: 50256,
               eos_token_id: 50256
@@ -390,26 +387,6 @@ defmodule Bumblebee.Text.Gpt2 do
     attention_bias = Layers.attention_bias(attention_mask)
 
     attention_weights = Layers.attention_weights(query, key, attention_bias)
-
-    # TODO: make this configurable in attention_weights before sigmoid is applied
-    # attention_weights =
-    #   if config.scale_attention_weights do
-    #     Axon.nx(attention_weights, fn x ->
-    #       Nx.divide(x, Nx.sqrt(head_dim))
-    #     end)
-    #   else
-    #     attention_weights
-    #   end
-
-    # TODO: same as above
-    # attention_weights =
-    #   if config.scale_attn_by_inverse_layer_idx do
-    #     Axon.nx(attention_weights, fn x ->
-    #       Nx.divide(x, Nx.tensor(index + 1))
-    #     end)
-    #   else
-    #     attention_weights
-    #   end
 
     attention_weights =
       attention_weights
