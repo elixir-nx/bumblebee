@@ -12,10 +12,6 @@ defmodule Bumblebee.Text.Albert do
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_causal_language_modeling` - ALBERT with a language modeling
-      head. The head returns logits for each token in the original
-      sequence
-
     * `:for_sequence_classification` - ALBERT with a sequence
       classification head. The head returns logits corresponding to
       possible classes
@@ -37,18 +33,30 @@ defmodule Bumblebee.Text.Albert do
 
   ## Inputs
 
-    * `"input_ids"` - indices of input sequence tokens in the vocabulary
+    * `"input_ids"` - `{batch_size, seq_length}`
 
-    * `"attention_mask"` - a mask indicating which tokens to attend to.
-      This is used to ignore padding tokens, which are added when
-      processing a batch of sequences with different length
+      Indices of input sequence tokens in the vocabulary.
 
-    * `"token_type_ids"` - a mask distinguishing groups in the input
-      sequence. This is used in when the input sequence is a semantically
-      a pair of sequences
+    * `"attention_mask"` - `{batch_size, seq_length}`
 
-    * `"position_ids"` - indices of positions of each input sequence
-      tokens in the position embeddings
+      Mask indicating which tokens to attend to. This is used to ignore
+      padding tokens, which are added when processing a batch of sequences
+      with different length.
+
+    * `"token_type_ids"` - `{batch_size, seq_length}`
+
+      Mask distinguishing groups in the input sequence. This is used
+      in when the input sequence is a semantically a pair of sequences.
+
+    * `"position_ids"` - `{batch_size, seq_length}`
+
+      Indices of positions of each input sequence tokens in the position
+      embeddings.
+
+  ### Exceptions
+
+  The `:for_multiple_choice` model accepts groups of sequences, so the
+  expected sequence shape is `{batch_size, num_choices, seq_length}`.
 
   ## Configuration
 
@@ -150,7 +158,6 @@ defmodule Bumblebee.Text.Albert do
     do: [
       :base,
       :for_masked_language_modeling,
-      :for_causal_language_modeling,
       :for_sequence_classification,
       :for_token_classification,
       :for_question_answering,

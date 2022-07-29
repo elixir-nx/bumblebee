@@ -82,33 +82,8 @@ defmodule Bumblebee.Text.Generation do
     forced_bos_token_id = opts[:forced_bos_token_id]
     forced_eos_token_id = opts[:forced_eos_token_id]
 
-    {decoder_inputs, decoder_input_ids, update_inputs_fun} =
-      if config.is_encoder_decoder do
-        encoder = encoder_from_encoder_decoder(model)
-        encoder_output = Axon.predict(encoder, params, inputs)
-
-        batch_size = Nx.axis_size(inputs["input_ids"], 0)
-        decoder_input_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
-
-        inputs =
-          Map.merge(inputs, %{
-            "encoder_last_hidden_state" => encoder_output.last_hidden_state,
-            "decoder_input_ids" => decoder_input_ids
-          })
-
-        inputs = prepare_decoder_inputs(inputs, "decoder_")
-        update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "decoder_")
-        {inputs, decoder_input_ids, update_inputs_fun}
-      else
-        decoder_input_ids = inputs["input_ids"]
-        inputs = prepare_decoder_inputs(inputs, "")
-        update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "")
-        {inputs, decoder_input_ids, update_inputs_fun}
-      end
-
-    batch_size = Nx.axis_size(decoder_input_ids, 0)
-    cache = init_cache(config, batch_size, max_length, decoder_inputs)
-    decoder_inputs = Map.put(decoder_inputs, "cache", cache)
+    {prepare_inputs_fun, update_inputs_fun} =
+      input_callbacks(config, model, max_length, decoder_start_token_id)
 
     {_init_fun, predict_fun} = Axon.build(model)
 
@@ -121,12 +96,12 @@ defmodule Bumblebee.Text.Generation do
         forced_eos_token_id
       )
 
-    greedy(
-      decoder_inputs,
-      decoder_input_ids,
+    generate(
+      inputs,
       predict_fun,
       params,
       logits_processor_fun,
+      prepare_inputs_fun,
       update_inputs_fun,
       max_length: max_length,
       pad_token_id: pad_token_id,
@@ -159,7 +134,48 @@ defmodule Bumblebee.Text.Generation do
     end)
   end
 
-  defp prepare_decoder_inputs(inputs, prefix) do
+  defp input_callbacks(config, model, max_length, decoder_start_token_id) do
+    if encoder_decoder?(model) do
+      encoder = encoder_from_encoder_decoder(model)
+      {_encoder_init_fun, encoder_predict_fun} = Axon.build(encoder)
+
+      prepare_inputs_fun = fn inputs, params ->
+        encoder_output = encoder_predict_fun.(params, inputs)
+
+        batch_size = Nx.axis_size(inputs["input_ids"], 0)
+        decoder_input_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
+
+        inputs =
+          Map.merge(inputs, %{
+            "encoder_last_hidden_state" => encoder_output.last_hidden_state,
+            "decoder_input_ids" => decoder_input_ids
+          })
+
+        inputs = prepare_decoder_inputs(inputs, "decoder_", config, max_length)
+        {inputs, inputs["decoder_input_ids"]}
+      end
+
+      update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "decoder_")
+
+      {prepare_inputs_fun, update_inputs_fun}
+    else
+      prepare_inputs_fun = fn inputs, _params ->
+        inputs = prepare_decoder_inputs(inputs, "", config, max_length)
+        {inputs, inputs["input_ids"]}
+      end
+
+      update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "")
+
+      {prepare_inputs_fun, update_inputs_fun}
+    end
+  end
+
+  defp encoder_decoder?(model) do
+    inputs = Axon.get_inputs(model)
+    Map.has_key?(inputs, "input_ids") and Map.has_key?(inputs, "decoder_input_ids")
+  end
+
+  defp prepare_decoder_inputs(inputs, prefix, config, max_length) do
     input_ids = inputs[prefix <> "input_ids"]
     attention_mask = inputs[prefix <> "attention_mask"] || Nx.broadcast(1.0, input_ids)
 
@@ -168,9 +184,14 @@ defmodule Bumblebee.Text.Generation do
       |> Nx.cumulative_sum(axis: 1)
       |> Nx.subtract(1)
 
-    inputs
-    |> Map.put(prefix <> "attention_mask", attention_mask)
-    |> Map.put(prefix <> "position_ids", position_ids)
+    inputs =
+      inputs
+      |> Map.put(prefix <> "attention_mask", attention_mask)
+      |> Map.put(prefix <> "position_ids", position_ids)
+
+    batch_size = Nx.axis_size(input_ids, 0)
+    cache = init_cache(config, batch_size, max_length, inputs)
+    Map.put(inputs, "cache", cache)
   end
 
   defp update_decoder_inputs(inputs, output, token_ids, prefix) do
@@ -215,6 +236,28 @@ defmodule Bumblebee.Text.Generation do
         logits -> processor.(logits, sequences, length)
       end
     end
+  end
+
+  defnp generate(
+          inputs,
+          predict_fun,
+          params,
+          logits_processor_fun,
+          prepare_inputs_fun,
+          update_inputs_fun,
+          opts \\ []
+        ) do
+    {decoder_inputs, decoder_input_ids} = prepare_inputs_fun.(inputs, params)
+
+    greedy(
+      decoder_inputs,
+      decoder_input_ids,
+      predict_fun,
+      params,
+      logits_processor_fun,
+      update_inputs_fun,
+      opts
+    )
   end
 
   defnp greedy(
@@ -306,7 +349,13 @@ defmodule Bumblebee.Text.Generation do
     token_id = Nx.argmax(logits, axis: -1)
 
     token_id = Nx.select(finished?, pad_token_id, token_id)
-    finished? = finished? or token_id == eos_token_id
+
+    finished? =
+      case eos_token_id do
+        nil -> finished?
+        eos_token_id -> finished? or token_id == eos_token_id
+      end
+
     token_id = Nx.new_axis(token_id, -1)
 
     sequences = Nx.put_slice(sequences, [0, length], token_id)

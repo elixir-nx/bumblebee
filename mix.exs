@@ -56,14 +56,23 @@ defmodule Bumblebee.MixProject do
       source_ref: "v#{@version}",
       groups_for_modules: [
         Models: [
+          Bumblebee.Text.Albert,
+          Bumblebee.Text.Bart,
           Bumblebee.Text.Bert,
+          Bumblebee.Text.Roberta,
           Bumblebee.Vision.ConvNext,
           Bumblebee.Vision.ResNet,
+          Bumblebee.Vision.Deit,
           Bumblebee.Vision.Vit
         ],
         Preprocessors: [
+          Bumblebee.Text.AlbertTokenizer,
+          Bumblebee.Text.BartTokenizer,
           Bumblebee.Text.BertTokenizer,
-          Bumblebee.Vision.ConvNextFeaturizer
+          Bumblebee.Text.RobertaTokenizer,
+          Bumblebee.Vision.ConvNextFeaturizer,
+          Bumblebee.Vision.DeitFeaturizer,
+          Bumblebee.Vision.VitFeaturizer
         ],
         Interfaces: [
           Bumblebee.ModelSpec,

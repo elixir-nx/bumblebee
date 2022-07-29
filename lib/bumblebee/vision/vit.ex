@@ -17,9 +17,13 @@ defmodule Bumblebee.Vision.Vit do
 
   ## Inputs
 
-    * `"pixel_values"` - featurized image pixel values in NCHW format
+    * `"pixel_values"` - {batch_size, num_channels, image_size, image_size}
 
-    * `"patch_mask"` - mask for extracted patches
+      Featurized image pixel values.
+
+    * `"patch_mask"` - `{batch_size, num_patches}`
+
+      Mask to nullify selected embedded patches.
 
   ## Config
 

@@ -2,11 +2,10 @@ defmodule Bumblebee.Vision.VitTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
-  require Axon
+
+  @moduletag model_test_tags()
 
   describe "integration" do
-    @tag :capture_log
-    @tag :slow
     test "base model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "google/vit-base-patch16-224"}, architecture: :base)
@@ -27,8 +26,6 @@ defmodule Bumblebee.Vision.VitTest do
       )
     end
 
-    @tag :capture_log
-    @tag :slow
     test "image classification model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "google/vit-base-patch16-224"})
@@ -47,8 +44,6 @@ defmodule Bumblebee.Vision.VitTest do
       )
     end
 
-    @tag :capture_log
-    @tag :slow
     test "masked image modeling model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "google/vit-base-patch16-224-in21k"},
