@@ -192,7 +192,7 @@ defmodule Bumblebee do
     "BartForQuestionAnswering" => {Bumblebee.Text.Bart, :for_question_answering},
     # GPT2
     "GPT2Model" => {BumbleBee.Text.Gpt2, :base},
-    "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :lm_head_model}
+    "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do
