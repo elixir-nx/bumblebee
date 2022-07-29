@@ -189,7 +189,10 @@ defmodule Bumblebee do
     "BartForCausalLM" => {Bumblebee.Text.Bart, :for_causal_language_modeling},
     "BartForConditionalGeneration" => {Bumblebee.Text.Bart, :for_conditional_generation},
     "BartForSequenceClassification" => {Bumblebee.Text.Bart, :for_sequence_classification},
-    "BartForQuestionAnswering" => {Bumblebee.Text.Bart, :for_question_answering}
+    "BartForQuestionAnswering" => {Bumblebee.Text.Bart, :for_question_answering},
+    # GPT2
+    "GPT2Model" => {BumbleBee.Text.Gpt2, :base},
+    "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :lm_head_model}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do
