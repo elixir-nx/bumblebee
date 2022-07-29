@@ -29,6 +29,7 @@ defmodule Bumblebee.Text.Gpt2 do
               num_attention_heads: 12,
               n_inner: nil,
               activation_function: :gelu_new,
+              add_cross_attention: false,
               resid_pdrop: 0.1,
               embd_pdrop: 0.1,
               attn_pdrop: 0.1,
@@ -205,6 +206,7 @@ defmodule Bumblebee.Text.Gpt2 do
             layer_head_mask,
             cross_attention_layer_head_mask,
             offset,
+            idx,
             config,
             name: join(name, idx)
           )
@@ -230,6 +232,7 @@ defmodule Bumblebee.Text.Gpt2 do
          head_mask,
          cross_attention_head_mask,
          offset,
+         index,
          config,
          opts
        ) do
@@ -248,7 +251,7 @@ defmodule Bumblebee.Text.Gpt2 do
         epsilon: config.layer_norm_epsilon,
         name: join(name, "ln_1")
       )
-      |> gpt2_attention(attention_mask, nil, head_mask, self_attention_cache, offset, config,
+      |> gpt2_attention(attention_mask, nil, head_mask, self_attention_cache, offset, index, config,
         name: join(name, "attn"),
         num_heads: config.num_attention_heads
       )
@@ -256,29 +259,34 @@ defmodule Bumblebee.Text.Gpt2 do
     hidden_state = Axon.add(attention_output, residual)
 
     {hidden_state, cross_attention_weights, cross_attention_cache} =
-      Layers.if_present encoder_last_hidden_state do
-        residual = hidden_state
+      if config.add_cross_attention do
+        Layers.if_present encoder_last_hidden_state do
+          residual = hidden_state
 
-        {cross_attention_output, cross_attention_weights, cross_attention_cache} =
-          hidden_state
-          |> Axon.layer_norm(
-            channel_index: 2,
-            epsilon: config.layer_norm_epsilon,
-            name: join(name, "ln_cross_attn")
-          )
-          |> gpt2_attention(
-            encoder_attention_mask,
-            encoder_last_hidden_state,
-            cross_attention_head_mask,
-            cross_attention_cache,
-            offset,
-            config,
-            name: join(name, "crossattention"),
-            num_heads: config.num_attention_heads
-          )
+          {cross_attention_output, cross_attention_weights, cross_attention_cache} =
+            hidden_state
+            |> Axon.layer_norm(
+              channel_index: 2,
+              epsilon: config.layer_norm_epsilon,
+              name: join(name, "ln_cross_attn")
+            )
+            |> gpt2_attention(
+              encoder_attention_mask,
+              encoder_last_hidden_state,
+              cross_attention_head_mask,
+              cross_attention_cache,
+              offset,
+              index,
+              config,
+              name: join(name, "crossattention"),
+              num_heads: config.num_attention_heads
+            )
 
-        hidden_state = Axon.add(cross_attention_output, residual)
-        {hidden_state, cross_attention_weights, cross_attention_cache}
+          hidden_state = Axon.add(cross_attention_output, residual)
+          {hidden_state, cross_attention_weights, cross_attention_cache}
+        else
+          {hidden_state, Layers.none(), cross_attention_cache}
+        end
       else
         {hidden_state, Layers.none(), cross_attention_cache}
       end
@@ -312,6 +320,7 @@ defmodule Bumblebee.Text.Gpt2 do
          layer_head_mask,
          attention_cache,
          offset,
+         index,
          config,
          opts
        ) do
@@ -319,6 +328,8 @@ defmodule Bumblebee.Text.Gpt2 do
     num_heads = opts[:num_heads]
     causal? = Keyword.get(opts, :causal?, false)
     cross_attention? = cross_hidden_state != nil
+
+    head_dim = div(config.hidden_size, num_heads)
 
     {query, key, value} =
       if cross_attention? do
@@ -368,8 +379,28 @@ defmodule Bumblebee.Text.Gpt2 do
 
     attention_bias = Layers.attention_bias(attention_mask)
 
+    attention_weights = Layers.attention_weights(query, key, attention_bias)
+
     attention_weights =
-      Layers.attention_weights(query, key, attention_bias)
+      if config.scale_attention_weights do
+        Axon.nx(attention_weights, fn x ->
+          Nx.divide(x, Nx.sqrt(head_dim))
+        end)
+      else
+        attention_weights
+      end
+
+    attention_weights =
+      if config.scale_attn_by_inverse_layer_idx do
+        Axon.nx(attention_weights, fn x ->
+          Nx.divide(x, Nx.tensor(index + 1))
+        end)
+      else
+        attention_weights
+      end
+
+    attention_weights =
+      attention_weights
       |> Axon.dropout(rate: config.attn_pdrop)
       |> Layers.apply_layer_head_mask(layer_head_mask)
 
@@ -456,7 +487,6 @@ defmodule Bumblebee.Text.Gpt2 do
       Axon.input("decoder_attention_mask", optional: true, shape: shape),
       Axon.input("decoder_position_ids", optional: true, shape: shape),
       Axon.input("decoder_head_mask", optional: true, shape: decoder_head_mask_shape),
-      Axon.input("decoder_input_embeds", optional: true, shape: hidden_shape),
       Axon.input("encoder_last_hidden_state", optional: true, shape: hidden_shape),
       Axon.input("cross_attention_head_mask", optional: true, shape: decoder_head_mask_shape),
       Axon.input("cache", optional: true)
