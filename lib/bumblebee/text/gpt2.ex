@@ -6,6 +6,8 @@ defmodule Bumblebee.Text.Gpt2 do
 
   ## Architectures
 
+  TODO
+
   ## Inputs
 
   ## Configuration
@@ -36,10 +38,11 @@ defmodule Bumblebee.Text.Gpt2 do
               layer_norm_epsilon: 1.0e-5,
               initializer_range: 0.02,
               scale_attention_weights: true,
-              bos_token_id: 50256,
-              eos_token_id: 50256,
               scale_attn_by_inverse_layer_idx: false,
-              reorder_and_upcast_attn: false
+              reorder_and_upcast_attn: false,
+              # Tokens
+              bos_token_id: 50256,
+              eos_token_id: 50256
             ] ++
               Shared.generation_defaults(
                 forced_bos_token_id: 50256,
@@ -251,7 +254,14 @@ defmodule Bumblebee.Text.Gpt2 do
         epsilon: config.layer_norm_epsilon,
         name: join(name, "ln_1")
       )
-      |> gpt2_attention(attention_mask, nil, head_mask, self_attention_cache, offset, index, config,
+      |> gpt2_attention(
+        attention_mask,
+        nil,
+        head_mask,
+        self_attention_cache,
+        offset,
+        index,
+        config,
         name: join(name, "attn"),
         num_heads: config.num_attention_heads
       )

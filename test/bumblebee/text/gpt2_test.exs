@@ -2,11 +2,10 @@ defmodule Bumblebee.Text.Gpt2Test do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
-  require Axon
+
+  @moduletag model_test_tags()
 
   describe "integration" do
-    @tag :slow
-    @tag :capture_log
     test "base model" do
       assert {:ok, model, params, config} =
                Bumblebee.load_model({:hf, "gpt2"}, architecture: :base)
@@ -36,12 +35,10 @@ defmodule Bumblebee.Text.Gpt2Test do
       )
     end
 
-    @tag :slow
-    @tag :capture_log
-    test "lm_head_model" do
+    test "causal language modeling" do
       assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "gpt2"})
 
-      assert %Bumblebee.Text.Gpt2{architecture: :lm_head_model} = config
+      assert %Bumblebee.Text.Gpt2{architecture: :for_causal_language_modeling} = config
 
       input = %{
         input_ids: Nx.tensor([[15496, 11, 616, 3290, 318, 13779]]),
