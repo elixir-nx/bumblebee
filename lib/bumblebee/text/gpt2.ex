@@ -62,7 +62,7 @@ defmodule Bumblebee.Text.Gpt2 do
     ]
 
   @impl true
-  def base_model_prefix(), do: "model"
+  def base_model_prefix(), do: "transformer"
 
   @impl true
   def config(config, opts \\ []) do
@@ -81,12 +81,13 @@ defmodule Bumblebee.Text.Gpt2 do
   def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
     inputs = encoder_decoder_inputs(config)
 
-    transformer_outputs = gpt2(inputs, config)
+    transformer_outputs = gpt2(inputs, config, name: "transformer")
 
+    # TODO: Tie lm-head to word embedding as a config option
     logits =
-      Axon.dense(transformer_outputs.last_hidden_state, config.vocab_size,
-        use_bias: false,
-        name: "lm_head"
+      Layers.dense_transposed(transformer_outputs.last_hidden_state, config.vocab_size,
+        kernel_initializer: kernel_initializer(config),
+        name: "transformer.wte"
       )
 
     Layers.output(%{
@@ -262,8 +263,9 @@ defmodule Bumblebee.Text.Gpt2 do
         offset,
         index,
         config,
-        name: join(name, "attn"),
-        num_heads: config.num_attention_heads
+        num_heads: config.num_attention_heads,
+        causal?: true,
+        name: join(name, "attn")
       )
 
     hidden_state = Axon.add(attention_output, residual)
@@ -330,7 +332,7 @@ defmodule Bumblebee.Text.Gpt2 do
          layer_head_mask,
          attention_cache,
          offset,
-         index,
+         _index,
          config,
          opts
        ) do
@@ -338,8 +340,6 @@ defmodule Bumblebee.Text.Gpt2 do
     num_heads = opts[:num_heads]
     causal? = Keyword.get(opts, :causal?, false)
     cross_attention? = cross_hidden_state != nil
-
-    head_dim = div(config.hidden_size, num_heads)
 
     {query, key, value} =
       if cross_attention? do
@@ -391,23 +391,25 @@ defmodule Bumblebee.Text.Gpt2 do
 
     attention_weights = Layers.attention_weights(query, key, attention_bias)
 
-    attention_weights =
-      if config.scale_attention_weights do
-        Axon.nx(attention_weights, fn x ->
-          Nx.divide(x, Nx.sqrt(head_dim))
-        end)
-      else
-        attention_weights
-      end
+    # TODO: make this configurable in attention_weights before sigmoid is applied
+    # attention_weights =
+    #   if config.scale_attention_weights do
+    #     Axon.nx(attention_weights, fn x ->
+    #       Nx.divide(x, Nx.sqrt(head_dim))
+    #     end)
+    #   else
+    #     attention_weights
+    #   end
 
-    attention_weights =
-      if config.scale_attn_by_inverse_layer_idx do
-        Axon.nx(attention_weights, fn x ->
-          Nx.divide(x, Nx.tensor(index + 1))
-        end)
-      else
-        attention_weights
-      end
+    # TODO: same as above
+    # attention_weights =
+    #   if config.scale_attn_by_inverse_layer_idx do
+    #     Axon.nx(attention_weights, fn x ->
+    #       Nx.divide(x, Nx.tensor(index + 1))
+    #     end)
+    #   else
+    #     attention_weights
+    #   end
 
     attention_weights =
       attention_weights

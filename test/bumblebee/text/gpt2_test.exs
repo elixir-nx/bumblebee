@@ -41,8 +41,7 @@ defmodule Bumblebee.Text.Gpt2Test do
       assert %Bumblebee.Text.Gpt2{architecture: :for_causal_language_modeling} = config
 
       input = %{
-        input_ids: Nx.tensor([[15496, 11, 616, 3290, 318, 13779]]),
-        attention_mask: Nx.tensor([[1, 1, 1, 1, 1, 1]])
+        "input_ids" => Nx.tensor([[15496, 11, 616, 3290, 318, 13779]])
       }
 
       output = Axon.predict(model, params, input)
@@ -50,7 +49,7 @@ defmodule Bumblebee.Text.Gpt2Test do
       assert Nx.shape(output.logits) == {1, 6, 50257}
 
       assert_all_close(
-        output.last_hidden_state[[0..-1//1, 1..3, 1..3]],
+        output.logits[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [
             [-114.5832, -116.5725, -116.0830],
