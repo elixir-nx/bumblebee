@@ -192,7 +192,8 @@ defmodule Bumblebee do
     "BartForQuestionAnswering" => {Bumblebee.Text.Bart, :for_question_answering},
     # GPT2
     "GPT2Model" => {BumbleBee.Text.Gpt2, :base},
-    "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling}
+    "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling},
+    "GPT2ForTokenClassification" => {Bumblebee.Text.Gpt2, :for_token_classification}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do
@@ -488,7 +489,8 @@ defmodule Bumblebee do
     "bert" => Bumblebee.Text.BertTokenizer,
     "roberta" => Bumblebee.Text.RobertaTokenizer,
     "albert" => Bumblebee.Text.AlbertTokenizer,
-    "bart" => Bumblebee.Text.BartTokenizer
+    "bart" => Bumblebee.Text.BartTokenizer,
+    "gpt2" => Bumblebee.Text.Gpt2Tokenizer
   }
 
   defp infer_tokenizer_type(repository, opts) do

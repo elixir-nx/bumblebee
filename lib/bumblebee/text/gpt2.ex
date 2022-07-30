@@ -35,6 +35,7 @@ defmodule Bumblebee.Text.Gpt2 do
               resid_pdrop: 0.1,
               embd_pdrop: 0.1,
               attn_pdrop: 0.1,
+              classifier_dropout: 0.1,
               layer_norm_epsilon: 1.0e-5,
               initializer_range: 0.02,
               # Tokens
@@ -93,6 +94,24 @@ defmodule Bumblebee.Text.Gpt2 do
       hidden_states: transformer_outputs.hidden_states,
       attentions: transformer_outputs.attentions,
       cross_attentions: transformer_outputs.cross_attentions
+    })
+  end
+
+  @impl true
+  def model(%__MODULE__{architecture: :for_token_classification} = config) do
+    inputs = encoder_decoder_inputs(config)
+
+    transformer_outputs = gpt2(inputs, config, name: "transformer")
+
+    logits =
+      transformer_outputs.last_hidden_state
+      |> Axon.dropout(rate: classifier_dropout_rate(config))
+      |> Axon.dense(config.num_labels, name: "classifier")
+
+    Layers.output(%{
+      logits: logits,
+      hidden_states: transformer_outputs.hidden_states,
+      attentions: transformer_outputs.attentions
     })
   end
 
@@ -480,6 +499,10 @@ defmodule Bumblebee.Text.Gpt2 do
       Axon.input("cross_attention_head_mask", optional: true, shape: decoder_head_mask_shape),
       Axon.input("cache", optional: true)
     ])
+  end
+
+  defp classifier_dropout_rate(config) do
+    config.classifier_dropout || config.hidden_dropout
   end
 
   defp kernel_initializer(config) do
