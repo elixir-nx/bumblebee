@@ -25,10 +25,10 @@ defmodule Bumblebee.Text.Gpt2 do
   defstruct [
               architecture: :base,
               vocab_size: 50257,
-              max_position_embeddings: 1024,
-              hidden_size: 768,
-              num_hidden_layers: 12,
-              num_attention_heads: 12,
+              n_position: 1024,
+              n_embd: 768,
+              n_layer: 24,
+              n_head: 16,
               n_inner: nil,
               activation_function: :gelu_new,
               add_cross_attention: false,
@@ -40,7 +40,8 @@ defmodule Bumblebee.Text.Gpt2 do
               initializer_range: 0.02,
               # Tokens
               bos_token_id: 50256,
-              eos_token_id: 50256
+              eos_token_id: 50256,
+              pad_token_id: nil
             ] ++
               Shared.generation_defaults(
                 forced_bos_token_id: 50256,
@@ -116,6 +117,61 @@ defmodule Bumblebee.Text.Gpt2 do
   end
 
   @impl true
+  def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
+    inputs = encoder_decoder_inputs(config)
+
+    transformer_outputs = gpt2(inputs, config, name: "transformer")
+
+    logits =
+      transformer_outputs.last_hidden_state
+      |> Layers.dense_transposed(config.num_labels, name: "score")
+
+    pooled_logits =
+      Layers.if_present inputs["input_ids"] do
+        if config.pad_token_id do
+          Axon.layer(fn logits, input_ids, _opts ->
+            {batch_size, _} = Nx.shape(input_ids)
+
+            indices =
+              input_ids
+              |> Nx.not_equal(config.pad_token_id)
+              |> Nx.sum(axes: [-1])
+              |> Nx.subtract(1)
+              |> Nx.as_type({:s, 64})
+
+            Enum.reduce(0..(batch_size - 1), [], fn i, toks ->
+              last_token_index =
+                indices
+                |> Nx.slice_along_axis(i, 1, axis: 0)
+                |> Nx.squeeze()
+
+              last_token =
+                logits
+                |> Nx.slice_along_axis(last_token_index, 1, axis: 1)
+                |> Nx.squeeze(axes: [1])
+
+              [last_token | toks]
+            end)
+            |> Enum.reverse()
+            |> Nx.concatenate()
+          end, [logits, inputs["input_ids"]])
+        else
+          Layers.take_token(logits, axis: 1, index: -1)
+        end
+      else
+        Layers.take_token(logits, axis: 1, index: -1)
+      end
+
+    Layers.output(%{
+      logits: pooled_logits,
+      cache: transformer_outputs.cache,
+      hidden_states: transformer_outputs.hidden_states,
+      attentions: transformer_outputs.attentions,
+      cross_attentions: transformer_outputs.cross_attentions
+    })
+  end
+
+  @impl true
   def model(%__MODULE__{architecture: :base} = config) do
     inputs = encoder_decoder_inputs(config)
 
@@ -129,7 +185,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
     input_embeds =
       Layers.default inputs["input_embeds"] do
-        Axon.embedding(inputs["input_ids"], config.vocab_size, config.hidden_size,
+        Axon.embedding(inputs["input_ids"], config.vocab_size, config.n_embd,
           name: join(name, "wte")
         )
       end
@@ -140,7 +196,7 @@ defmodule Bumblebee.Text.Gpt2 do
       end
 
     position_embeds =
-      Axon.embedding(position_ids, config.max_position_embeddings, config.hidden_size,
+      Axon.embedding(position_ids, config.n_position, config.n_embd,
         name: join(name, "wpe")
       )
 
@@ -209,7 +265,7 @@ defmodule Bumblebee.Text.Gpt2 do
       cache: cache
     }
 
-    for idx <- 0..(config.num_hidden_layers - 1), reduce: state do
+    for idx <- 0..(config.n_layer - 1), reduce: state do
       state ->
         layer_head_mask = Axon.nx(head_mask, & &1[idx])
         cross_attention_layer_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
@@ -257,7 +313,7 @@ defmodule Bumblebee.Text.Gpt2 do
          opts
        ) do
     name = opts[:name]
-    inner_dim = config.n_inner || 4 * config.hidden_size
+    inner_dim = config.n_inner || 4 * config.n_embd
 
     residual = hidden_state
 
@@ -279,7 +335,7 @@ defmodule Bumblebee.Text.Gpt2 do
         offset,
         index,
         config,
-        num_heads: config.num_attention_heads,
+        num_heads: config.n_head,
         causal?: true,
         name: join(name, "attn")
       )
@@ -360,7 +416,7 @@ defmodule Bumblebee.Text.Gpt2 do
     {query, key, value} =
       if cross_attention? do
         q_out =
-          conv1d(hidden_state, config.hidden_size,
+          conv1d(hidden_state, config.n_embd,
             kernel_initializer: kernel_initializer(config),
             name: join(name, "q_attn")
           )
@@ -368,7 +424,7 @@ defmodule Bumblebee.Text.Gpt2 do
         {query} = Axon.split(q_out, 1, axis: 1)
 
         kv_out =
-          conv1d(hidden_state, config.hidden_size * 2,
+          conv1d(hidden_state, config.n_embd * 2,
             kernel_initializer: kernel_initializer(config),
             name: join(name, "c_attn")
           )
@@ -377,7 +433,7 @@ defmodule Bumblebee.Text.Gpt2 do
         {query, key, value}
       else
         qkv_out =
-          conv1d(hidden_state, config.hidden_size * 3,
+          conv1d(hidden_state, config.n_embd * 3,
             kernel_initializer: kernel_initializer(config),
             name: join(name, "c_attn")
           )
@@ -416,7 +472,7 @@ defmodule Bumblebee.Text.Gpt2 do
       attention_weights
       |> Layers.attention_output(value)
       |> Layers.flatten_trailing()
-      |> conv1d(config.hidden_size,
+      |> conv1d(config.n_embd,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "c_proj")
       )
@@ -431,7 +487,7 @@ defmodule Bumblebee.Text.Gpt2 do
     hidden_state
     |> conv1d(inner_dim, kernel_initializer: kernel_initializer(config), name: join(name, "c_fc"))
     |> Layers.activation(config.activation_function, name: join(name, "act"))
-    |> conv1d(config.hidden_size,
+    |> conv1d(config.n_embd,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "c_proj")
     )
@@ -481,9 +537,9 @@ defmodule Bumblebee.Text.Gpt2 do
 
   defp encoder_decoder_inputs(config) do
     shape = {nil, nil}
-    hidden_shape = {nil, nil, config.hidden_size}
-    encoder_head_mask_shape = {config.num_hidden_layers, config.num_attention_heads}
-    decoder_head_mask_shape = {config.num_hidden_layers, config.num_attention_heads}
+    hidden_shape = {nil, nil, config.n_embd}
+    encoder_head_mask_shape = {config.n_layer, config.n_head}
+    decoder_head_mask_shape = {config.n_layer, config.n_head}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("input_ids", optional: true, shape: shape),

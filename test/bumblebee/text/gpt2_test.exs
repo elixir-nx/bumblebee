@@ -83,5 +83,26 @@ defmodule Bumblebee.Text.Gpt2Test do
         atol: 1.0e-4
       )
     end
+
+    test "sequence classification" do
+      assert {:ok, model, params, config} =
+               Bumblebee.load_model({:hf, "microsoft/DialogRPT-updown"})
+
+      assert %Bumblebee.Text.Gpt2{architecture: :for_sequence_classification} = config
+
+      input = %{
+        "input_ids" => Nx.tensor([[15496, 11, 616, 3290, 318, 13779]])
+      }
+
+      output = Axon.predict(model, params, input)
+
+      assert Nx.shape(output.logits) == {1, 1}
+
+      assert_all_close(
+        output.logits,
+        Nx.tensor([[-1.2981]]),
+        atol: 1.0e-4
+      )
+    end
   end
 end
