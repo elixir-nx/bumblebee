@@ -129,32 +129,35 @@ defmodule Bumblebee.Text.Gpt2 do
     pooled_logits =
       Layers.if_present inputs["input_ids"] do
         if config.pad_token_id do
-          Axon.layer(fn logits, input_ids, _opts ->
-            {batch_size, _} = Nx.shape(input_ids)
+          Axon.layer(
+            fn logits, input_ids, _opts ->
+              {batch_size, _} = Nx.shape(input_ids)
 
-            indices =
-              input_ids
-              |> Nx.not_equal(config.pad_token_id)
-              |> Nx.sum(axes: [-1])
-              |> Nx.subtract(1)
-              |> Nx.as_type({:s, 64})
+              indices =
+                input_ids
+                |> Nx.not_equal(config.pad_token_id)
+                |> Nx.sum(axes: [-1])
+                |> Nx.subtract(1)
+                |> Nx.as_type({:s, 64})
 
-            Enum.reduce(0..(batch_size - 1), [], fn i, toks ->
-              last_token_index =
-                indices
-                |> Nx.slice_along_axis(i, 1, axis: 0)
-                |> Nx.squeeze()
+              Enum.reduce(0..(batch_size - 1), [], fn i, toks ->
+                last_token_index =
+                  indices
+                  |> Nx.slice_along_axis(i, 1, axis: 0)
+                  |> Nx.squeeze()
 
-              last_token =
-                logits
-                |> Nx.slice_along_axis(last_token_index, 1, axis: 1)
-                |> Nx.squeeze(axes: [1])
+                last_token =
+                  logits
+                  |> Nx.slice_along_axis(last_token_index, 1, axis: 1)
+                  |> Nx.squeeze(axes: [1])
 
-              [last_token | toks]
-            end)
-            |> Enum.reverse()
-            |> Nx.concatenate()
-          end, [logits, inputs["input_ids"]])
+                [last_token | toks]
+              end)
+              |> Enum.reverse()
+              |> Nx.concatenate()
+            end,
+            [logits, inputs["input_ids"]]
+          )
         else
           Layers.take_token(logits, axis: 1, index: -1)
         end
@@ -196,9 +199,7 @@ defmodule Bumblebee.Text.Gpt2 do
       end
 
     position_embeds =
-      Axon.embedding(position_ids, config.n_position, config.n_embd,
-        name: join(name, "wpe")
-      )
+      Axon.embedding(position_ids, config.n_position, config.n_embd, name: join(name, "wpe"))
 
     attention_mask =
       Layers.default inputs["attention_mask"] do
