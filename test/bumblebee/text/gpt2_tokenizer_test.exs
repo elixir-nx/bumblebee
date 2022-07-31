@@ -17,14 +17,14 @@ defmodule Bumblebee.Text.Gpt2TokenizerTest do
       assert_equal(
         inputs["input_ids"],
         Nx.tensor([
-          [32, 922, 6827, 351, 220, 50256]
+          [15496, 2159]
         ])
       )
 
       assert_equal(
         inputs["attention_mask"],
         Nx.tensor([
-          [1, 1, 1, 1, 1, 1]
+          [1, 1]
         ])
       )
     end

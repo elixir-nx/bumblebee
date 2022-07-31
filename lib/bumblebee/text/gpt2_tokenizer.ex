@@ -9,7 +9,7 @@ defmodule Bumblebee.Text.Gpt2Tokenizer do
 
   @impl true
   def apply(%{tokenizer: tokenizer}, input, add_special_tokens) do
-    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, add_special_tokens, nil)
+    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, add_special_tokens, "<|endoftext|>")
   end
 
   @impl true
