@@ -8,8 +8,8 @@ defmodule Bumblebee.Text.BertTokenizer do
   @behaviour Bumblebee.Tokenizer
 
   @impl true
-  def apply(%{tokenizer: tokenizer}, input, add_special_tokens) do
-    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, add_special_tokens, "[PAD]")
+  def apply(%{tokenizer: tokenizer}, input, add_special_tokens, pad_direction) do
+    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, add_special_tokens, "[PAD]", pad_direction)
   end
 
   @impl true

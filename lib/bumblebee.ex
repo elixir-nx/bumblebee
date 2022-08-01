@@ -427,6 +427,9 @@ defmodule Bumblebee do
     * `:add_special_tokens` - whether to add special tokens. Defaults
       to `true`
 
+    * `:pad_direction` - the padding direction, either `:right` or
+      `:left`. Defaults to `:right`
+
   ## Examples
 
       tokenizer = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
@@ -439,8 +442,8 @@ defmodule Bumblebee do
           keyword()
         ) :: any()
   def apply_tokenizer(%module{} = tokenizer, input, opts \\ []) do
-    opts = Keyword.validate!(opts, add_special_tokens: true)
-    module.apply(tokenizer, input, opts[:add_special_tokens])
+    opts = Keyword.validate!(opts, add_special_tokens: true, pad_direction: :right)
+    module.apply(tokenizer, input, opts[:add_special_tokens], opts[:pad_direction])
   end
 
   @doc """

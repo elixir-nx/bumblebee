@@ -6,7 +6,7 @@ defmodule Bumblebee.Utils.Tokenizers do
 
   alias Tokenizers.{Tokenizer, Encoding}
 
-  def apply(tokenizer, input, add_special_tokens, pad_token) do
+  def apply(tokenizer, input, add_special_tokens, pad_token, pad_direction) do
     input = List.wrap(input)
 
     {:ok, encodings} = Tokenizer.encode(tokenizer, input, add_special_tokens: add_special_tokens)
@@ -19,7 +19,14 @@ defmodule Bumblebee.Utils.Tokenizers do
     pad_id = Tokenizer.token_to_id(tokenizer, pad_token)
 
     encodings =
-      Enum.map(encodings, &Encoding.pad(&1, max_length, pad_id: pad_id, pad_token: pad_token))
+      Enum.map(
+        encodings,
+        &Encoding.pad(&1, max_length,
+          pad_id: pad_id,
+          pad_token: pad_token,
+          direction: pad_direction
+        )
+      )
 
     input_ids = Enum.map(encodings, &Encoding.get_ids/1)
     attention_mask = Enum.map(encodings, &Encoding.get_attention_mask/1)
