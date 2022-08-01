@@ -74,7 +74,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
   @impl true
   def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
-    inputs = encoder_decoder_inputs(config)
+    inputs = inputs(config)
 
     outputs = gpt2(inputs, config, name: "transformer")
 
@@ -96,7 +96,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
   @impl true
   def model(%__MODULE__{architecture: :for_token_classification} = config) do
-    inputs = encoder_decoder_inputs(config)
+    inputs = inputs(config)
 
     outputs = gpt2(inputs, config, name: "transformer")
 
@@ -114,7 +114,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
   @impl true
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
-    inputs = encoder_decoder_inputs(config)
+    inputs = inputs(config)
 
     outputs = gpt2(inputs, config, name: "transformer")
 
@@ -151,7 +151,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
   @impl true
   def model(%__MODULE__{architecture: :base} = config) do
-    inputs = encoder_decoder_inputs(config)
+    inputs = inputs(config)
 
     inputs
     |> gpt2(config)
@@ -197,9 +197,9 @@ defmodule Bumblebee.Text.Gpt2 do
         Layers.default_attention_mask(input_embeds)
       end
 
-    decoder_attention_mask =
-      Layers.default inputs["decoder_attention_mask"] do
-        Layers.default_attention_mask(input_embeds)
+    encoder_attention_mask =
+      Layers.default inputs["encoder_attention_mask"] do
+        Layers.default_attention_mask(inputs["encoder_last_hidden_state"])
       end
 
     hidden_state =
@@ -210,10 +210,10 @@ defmodule Bumblebee.Text.Gpt2 do
     block_outputs =
       blocks(
         hidden_state,
-        decoder_attention_mask,
-        inputs["decoder_head_mask"],
-        inputs["encoder_last_hidden_state"],
         attention_mask,
+        inputs["head_mask"],
+        inputs["encoder_last_hidden_state"],
+        encoder_attention_mask,
         inputs["cross_attention_head_mask"],
         inputs["cache"],
         config,
@@ -491,23 +491,19 @@ defmodule Bumblebee.Text.Gpt2 do
     |> Axon.dropout(rate: config.resid_pdrop, name: join(name, "dropout"))
   end
 
-  defp encoder_decoder_inputs(config) do
+  defp inputs(config) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, config.n_embd}
-    encoder_head_mask_shape = {config.n_layer, config.n_head}
     decoder_head_mask_shape = {config.n_layer, config.n_head}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("input_ids", optional: true, shape: shape),
       Axon.input("attention_mask", optional: true, shape: shape),
       Axon.input("position_ids", optional: true, shape: shape),
-      Axon.input("head_mask", optional: true, shape: encoder_head_mask_shape),
+      Axon.input("head_mask", optional: true, shape: decoder_head_mask_shape),
       Axon.input("input_embeds", optional: true, shape: hidden_shape),
-      Axon.input("decoder_input_ids", optional: true, shape: shape),
-      Axon.input("decoder_attention_mask", optional: true, shape: shape),
-      Axon.input("decoder_position_ids", optional: true, shape: shape),
-      Axon.input("decoder_head_mask", optional: true, shape: decoder_head_mask_shape),
       Axon.input("encoder_last_hidden_state", optional: true, shape: hidden_shape),
+      Axon.input("encoder_attention_mask", optional: true, shape: shape),
       Axon.input("cross_attention_head_mask", optional: true, shape: decoder_head_mask_shape),
       Axon.input("cache", optional: true)
     ])
