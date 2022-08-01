@@ -1,16 +1,130 @@
 defmodule Bumblebee.Text.Gpt2 do
-  @common_keys [:output_hidden_states, :output_attentions, :id2label, :label2id, :num_labels]
+  @common_keys [
+    :output_hidden_states,
+    :output_attentions,
+    :id2label,
+    :label2id,
+    :num_labels,
+    :add_cross_attention
+  ]
 
   @moduledoc """
   Models based on GPT2 architecture.
 
   ## Architectures
 
-  TODO
+    * `:base` - plain GPT2 without any head on top
+
+    * `:for_causal_language_modeling` - GPT2 with a language modeling
+      head. The head returns logits for each token in the original
+      sequence
+
+    * `:for_sequence_classification` - GPT2 with a sequence
+      classification head. The head returns logits corresponding to
+      possible classes
+
+    * `:for_token_classification` - GPT2 with a token classification
+      head. The head returns logits for each token in the original
+      sequence
 
   ## Inputs
 
+    * `"input_ids"` - `{batch_size, seq_length}`
+
+      Indices of input sequence tokens in the vocabulary.
+
+    * `"attention_mask"` - `{batch_size, seq_length}`
+
+      Mask indicating which tokens to attend to. This is used to ignore
+      padding tokens, which are added when processing a batch of sequences
+      with different length.
+
+    * `"token_type_ids"` - `{batch_size, seq_length}`
+
+      Mask distinguishing groups in the input sequence. This is used
+      in when the input sequence is a semantically a pair of sequences.
+
+    * `"position_ids"` - `{batch_size, seq_length}`
+
+      Indices of positions of each input sequence tokens in the position
+      embeddings.
+
+    * `"head_mask"` - `{num_layers, num_attention_heads}`
+
+      Mask to nullify selected heads of the self-attention blocks in
+      the encoder.
+
+    * `"input_embeds"` - `{batch_size, seq_length, hidden_size}`
+
+      Embedded representation of `"input_ids"`, which can be specified
+      for more control over how `"input_ids"` are embedded than the
+      model's internal embedding lookup. If `"input_embeds"` are present,
+      then `"input_ids"` will be ignored.
+
+    * `"encoder_last_hidden_state"` - `{batch_size, encoder_seq_length, hidden_size}`
+
+      Last hidden state output from the encoder. This hidden state is
+      used in cross-attention blocks in the decoder. If specified, the
+      model will skip the encoding process and use this value directly
+      for cross-attentions in the decoder.
+
+    * `"encoder_attention_mask"` - `{batch_size, encoder_seq_length}`
+
+      Mask indicating which tokens to attend to. This is used to ignore
+      padding tokens, which are added when processing a batch of sequences
+      with different length.
+
+    * `"cross_attention_head_mask"` - `{num_layers, num_attention_heads}`
+
+      Mask to nullify selected heads of the cross-attention blocks in
+      the decoder with shape.
+
+    * `"cache"`
+
+      A container with cached layer results used to speed up sequential
+      decoding (autoregression). With cache, certain hidden states are
+      taken from the cache, rather than recomputed on every decoding
+      pass. The cache should be treated as opaque and initialized with
+      `Bumblebee.Text.Generation.init_cache/4`.
+
   ## Configuration
+
+    * `:vocab_size` - vocabulary size of the model. Defines the number
+      of distinct tokens that can be represented by the in model input
+      and output. Defaults to `50265`
+
+    * `:n_position` - the maximum sequence length that this model might
+      ever be used with. Typically set this to something large just in
+      case (e.g. 512 or 1024 or 2048). Defaults to `1024`
+
+    * `:n_embd` - dimensionality of the embeddings and hidden layers.
+      Defaults to `768`
+
+    * `:n_layer` - number of the hidden layers. Defaults to `24`
+
+    * `:n_head` - the number of attention heads for each attention layer.
+      Defaults to `16`
+
+    * `:n_inner` - dimensionality of the inner feed-forward layers.
+      Defaults to 4 times `:n_embd`
+
+    * `:activation_function` - non-linear activation function used in
+      the model. Defaults to `:gelu_new`
+
+    * `:resid_pdrop` - dropout probability of all fully-connected layers
+      in the embeddings, encoder, and pooler. Defaults to `0.1`
+
+    * `:embd_pdrop` - dropout ratio for embeddings. Defaults to `0.1`
+
+    * `:attn_pdrop` - dropout ratio for attention weights. Defaults to `0.1`
+
+    * `:classifier_dropout` - dropout ratio for classifier. Defaults to `0.1`
+
+    * `:layer_norm_epsilon` - the epsilon used by the layer normalization
+      layers. Defaults to `1.0e-5`
+
+    * `:initializer_range` - the standard deviation of the normal initializer used
+      for initializing kernel parameters. Defaults to `0.02`
 
   ### Common options
 
@@ -31,7 +145,6 @@ defmodule Bumblebee.Text.Gpt2 do
               n_head: 16,
               n_inner: nil,
               activation_function: :gelu_new,
-              add_cross_attention: false,
               resid_pdrop: 0.1,
               embd_pdrop: 0.1,
               attn_pdrop: 0.1,
@@ -73,6 +186,14 @@ defmodule Bumblebee.Text.Gpt2 do
   end
 
   @impl true
+  def model(%__MODULE__{architecture: :base} = config) do
+    inputs = inputs(config)
+
+    inputs
+    |> gpt2(config)
+    |> Layers.output()
+  end
+
   def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
     inputs = inputs(config)
 
@@ -94,7 +215,6 @@ defmodule Bumblebee.Text.Gpt2 do
     })
   end
 
-  @impl true
   def model(%__MODULE__{architecture: :for_token_classification} = config) do
     inputs = inputs(config)
 
@@ -112,7 +232,6 @@ defmodule Bumblebee.Text.Gpt2 do
     })
   end
 
-  @impl true
   def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
     inputs = inputs(config)
 
@@ -147,15 +266,6 @@ defmodule Bumblebee.Text.Gpt2 do
       attentions: outputs.attentions,
       cross_attentions: outputs.cross_attentions
     })
-  end
-
-  @impl true
-  def model(%__MODULE__{architecture: :base} = config) do
-    inputs = inputs(config)
-
-    inputs
-    |> gpt2(config)
-    |> Layers.output()
   end
 
   @impl true

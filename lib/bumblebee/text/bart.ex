@@ -140,7 +140,7 @@ defmodule Bumblebee.Text.Bart do
     * `:dropout` - dropout probability of all fully-connected layers in
       the embeddings, encoder, and pooler. Defaults to `0.1`
 
-    * `:attention_dropout` - dropout ratio for attention probabilities.
+    * `:attention_dropout` - dropout ratio for attention weights.
       Defaults to `0.0`
 
     * `:activation_dropout` - dropout ratio for activations inside the fully
