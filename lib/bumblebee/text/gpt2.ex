@@ -418,12 +418,13 @@ defmodule Bumblebee.Text.Gpt2 do
         {query} = Axon.split(q_out, 1, axis: 1)
 
         kv_out =
-          Layers.conv1d(hidden_state, config.n_embd * 2,
+          Layers.conv1d(cross_hidden_state, config.n_embd * 2,
             kernel_initializer: kernel_initializer(config),
             name: join(name, "c_attn")
           )
 
         {key, value} = Axon.split(kv_out, 2, axis: 2)
+
         {query, key, value}
       else
         qkv_out =
