@@ -104,4 +104,88 @@ defmodule Bumblebee.Utils.Axon do
     end)
     |> elem(0)
   end
+
+  @doc """
+  Adds the given prefix to all layer names.
+
+  Note that input nodes are kept intact.
+  """
+  @spec prefix_names(Axon.t(), String.t()) :: Axon.t()
+  def prefix_names(%Axon{} = model, prefix) do
+    Axon.map_nodes(model, fn
+      %{op: :input} = node ->
+        node
+
+      node ->
+        update_in(node.name, fn name ->
+          fn op, op_counts ->
+            prefix <> name.(op, op_counts)
+          end
+        end)
+    end)
+  end
+
+  @doc """
+  Replaces input nodes with nodes given in the input map.
+  """
+  @spec plug_inputs(Axon.t(), %{String.t() => Axon.t()}) :: Axon.t()
+  def plug_inputs(%Axon{} = model, inputs) do
+    replace_nodes(model, fn
+      %{op: :input} = node ->
+        name = node.name.(:input, %{})
+        inputs[name] || Bumblebee.Layers.none()
+
+      _node ->
+        :keep
+    end)
+  end
+
+  @doc """
+  Optionally replaces nodes in the given graph.
+
+  `fun` is applied exactly once to each node. The node is replaced
+  completely, including the node parents.
+  """
+  @spec replace_nodes(Axon.t(), (Axon.t() -> Axon.t() | :keep)) :: Axon.t()
+  def replace_nodes(%Axon{} = axon, fun) when is_function(fun, 1) do
+    {axon, _cache} = do_replace_nodes(axon, %{}, fun)
+    axon
+  end
+
+  defp do_replace_nodes(%Axon{id: id, parent: parents} = node, cache, fun) do
+    case cache do
+      %{^id => result} ->
+        {result, cache}
+
+      %{} ->
+        {result, cache} =
+          case fun.(node) do
+            :keep ->
+              {parents, cache} = deep_map_reduce(parents, cache, &do_replace_nodes(&1, &2, fun))
+              {%{node | parent: parents}, cache}
+
+            %Axon{} = new_node ->
+              {new_node, cache}
+
+            other ->
+              raise ArgumentError,
+                    "function passed to map_nodes must return an" <>
+                      " Axon struct, got #{inspect(other)}"
+          end
+
+        {result, Map.put(cache, id, result)}
+    end
+  end
+
+  defp deep_map_reduce(%Axon{} = node, acc, fun) do
+    fun.(node, acc)
+  end
+
+  defp deep_map_reduce(nodes, acc, fun) when is_list(nodes) do
+    Enum.map_reduce(nodes, acc, &deep_map_reduce(&1, &2, fun))
+  end
+
+  defp deep_map_reduce(container, acc, fun) do
+    Nx.Container.traverse(container, acc, &deep_map_reduce(&1, &2, fun))
+  end
 end
