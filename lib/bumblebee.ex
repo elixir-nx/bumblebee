@@ -194,7 +194,7 @@ defmodule Bumblebee do
     "GPT2Model" => {BumbleBee.Text.Gpt2, :base},
     "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling},
     "GPT2ForTokenClassification" => {Bumblebee.Text.Gpt2, :for_token_classification},
-    "GPT2ForSequenceClassification" => {Bumblebee.Text.Gpt2, :for_sequence_classification}
+    "GPT2ForSequenceClassification" => {Bumblebee.Text.Gpt2, :for_sequence_classification},
     # Mbart
     "MBartModel" => {Bumblebee.Text.Mbart, :base},
     "MBartForConditionalGeneration" => {Bumblebee.Text.Mbart, :for_conditional_generation},
@@ -500,7 +500,7 @@ defmodule Bumblebee do
     "roberta" => Bumblebee.Text.RobertaTokenizer,
     "albert" => Bumblebee.Text.AlbertTokenizer,
     "bart" => Bumblebee.Text.BartTokenizer,
-    "gpt2" => Bumblebee.Text.Gpt2Tokenizer
+    "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
     "mbart" => Bumblebee.Text.MbartTokenizer
   }
 

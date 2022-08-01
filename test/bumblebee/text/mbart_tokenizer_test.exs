@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.BartTokenizerTest do
+defmodule Bumblebee.Text.MbartTokenizerTest do
   use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
