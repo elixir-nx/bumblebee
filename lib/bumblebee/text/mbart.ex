@@ -195,7 +195,6 @@ defmodule Bumblebee.Text.Mbart do
               eos_token_id: 2
             ] ++
               Shared.generation_defaults(
-                forced_bos_token_id: 0,
                 forced_eos_token_id: 2
               ) ++
               Shared.common_config_defaults(@common_keys)
