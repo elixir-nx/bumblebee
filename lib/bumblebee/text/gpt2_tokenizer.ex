@@ -1,6 +1,6 @@
-defmodule Bumblebee.Text.RobertaTokenizer do
+defmodule Bumblebee.Text.Gpt2Tokenizer do
   @doc """
-  RoBERTa tokenizer.
+  BERT tokenizer.
   """
 
   defstruct [:tokenizer]
@@ -9,7 +9,13 @@ defmodule Bumblebee.Text.RobertaTokenizer do
 
   @impl true
   def apply(%{tokenizer: tokenizer}, input, add_special_tokens, pad_direction) do
-    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, add_special_tokens, "<pad>", pad_direction)
+    Bumblebee.Utils.Tokenizers.apply(
+      tokenizer,
+      input,
+      add_special_tokens,
+      "<|endoftext|>",
+      pad_direction
+    )
   end
 
   @impl true
@@ -29,15 +35,7 @@ defmodule Bumblebee.Text.RobertaTokenizer do
 
   @impl true
   def special_tokens(_tokenizer) do
-    %{
-      bos: "<s>",
-      eos: "</s>",
-      unk: "<unk>",
-      sep: "</s>",
-      pad: "<pad>",
-      cls: "<s>",
-      mask: "<mask>"
-    }
+    %{unk: "<|endoftext|>", bos: "<|endoftext|>", eos: "<|endoftext|>"}
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do

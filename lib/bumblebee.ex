@@ -189,7 +189,12 @@ defmodule Bumblebee do
     "BartForCausalLM" => {Bumblebee.Text.Bart, :for_causal_language_modeling},
     "BartForConditionalGeneration" => {Bumblebee.Text.Bart, :for_conditional_generation},
     "BartForSequenceClassification" => {Bumblebee.Text.Bart, :for_sequence_classification},
-    "BartForQuestionAnswering" => {Bumblebee.Text.Bart, :for_question_answering}
+    "BartForQuestionAnswering" => {Bumblebee.Text.Bart, :for_question_answering},
+    # GPT2
+    "GPT2Model" => {BumbleBee.Text.Gpt2, :base},
+    "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling},
+    "GPT2ForTokenClassification" => {Bumblebee.Text.Gpt2, :for_token_classification},
+    "GPT2ForSequenceClassification" => {Bumblebee.Text.Gpt2, :for_sequence_classification}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do
@@ -422,6 +427,9 @@ defmodule Bumblebee do
     * `:add_special_tokens` - whether to add special tokens. Defaults
       to `true`
 
+    * `:pad_direction` - the padding direction, either `:right` or
+      `:left`. Defaults to `:right`
+
   ## Examples
 
       tokenizer = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
@@ -434,8 +442,8 @@ defmodule Bumblebee do
           keyword()
         ) :: any()
   def apply_tokenizer(%module{} = tokenizer, input, opts \\ []) do
-    opts = Keyword.validate!(opts, add_special_tokens: true)
-    module.apply(tokenizer, input, opts[:add_special_tokens])
+    opts = Keyword.validate!(opts, add_special_tokens: true, pad_direction: :right)
+    module.apply(tokenizer, input, opts[:add_special_tokens], opts[:pad_direction])
   end
 
   @doc """
@@ -485,7 +493,8 @@ defmodule Bumblebee do
     "bert" => Bumblebee.Text.BertTokenizer,
     "roberta" => Bumblebee.Text.RobertaTokenizer,
     "albert" => Bumblebee.Text.AlbertTokenizer,
-    "bart" => Bumblebee.Text.BartTokenizer
+    "bart" => Bumblebee.Text.BartTokenizer,
+    "gpt2" => Bumblebee.Text.Gpt2Tokenizer
   }
 
   defp infer_tokenizer_type(repository, opts) do
