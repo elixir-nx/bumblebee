@@ -41,15 +41,11 @@ defmodule Bumblebee.Text.Gpt2 do
               # Tokens
               bos_token_id: 50256,
               eos_token_id: 50256,
-              pad_token_id: nil
-            ] ++
-              Shared.generation_defaults(
-                forced_bos_token_id: 50256,
-                forced_eos_token_id: 50256
-              ) ++
-              Shared.common_config_defaults(@common_keys)
+              pad_token_id: 50256
+            ] ++ Shared.generation_defaults() ++ Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
+  @behaviour Bumblebee.Text.Generation
 
   @impl true
   def architectures(),
@@ -183,6 +179,22 @@ defmodule Bumblebee.Text.Gpt2 do
     |> Layers.output()
   end
 
+  @impl true
+  def init_cache(config, batch_size, max_length, inputs) do
+    encoder_sequence_length =
+      if encoder_last_hidden_state = inputs["encoder_last_hidden_state"] do
+        Nx.axis_size(encoder_last_hidden_state, 1)
+      end
+
+    Layers.Decoder.init_cache(batch_size, max_length,
+      hidden_size: config.n_embd,
+      decoder_attention_heads: config.n_head,
+      encoder_attention_heads: config.n_head,
+      decoder_layers: config.n_layer,
+      encoder_sequence_length: encoder_sequence_length
+    )
+  end
+
   defp gpt2(inputs, config, opts \\ []) do
     name = opts[:name]
 
@@ -258,6 +270,8 @@ defmodule Bumblebee.Text.Gpt2 do
        ) do
     name = opts[:name]
 
+    {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
+
     state = %{
       last_hidden_state: hidden_state,
       hidden_states: Layers.maybe_container({hidden_state}, config.output_hidden_states),
@@ -266,50 +280,53 @@ defmodule Bumblebee.Text.Gpt2 do
       cache: cache
     }
 
-    for idx <- 0..(config.n_layer - 1), reduce: state do
-      state ->
-        layer_head_mask = Axon.nx(head_mask, & &1[idx])
-        cross_attention_layer_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
+    offset = Layers.Decoder.get_cache_offset(state.cache)
 
-        offset = Layers.Decoder.get_cache_offset(state.cache)
+    outputs =
+      for idx <- 0..(config.n_layer - 1), reduce: state do
+        state ->
+          layer_head_mask = Axon.nx(head_mask, & &1[idx])
+          cross_attention_layer_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
 
-        {hidden_state, attention, cross_attention, layer_cache} =
-          gpt2_block(
-            state.last_hidden_state,
-            state.cache,
-            attention_mask,
-            encoder_last_hidden_state,
-            encoder_attention_mask,
-            layer_head_mask,
-            cross_attention_layer_head_mask,
-            offset,
-            idx,
-            config,
-            name: join(name, idx)
-          )
+          layer_cache = Layers.Decoder.get_layer_cache(state.cache, idx)
 
-        cache = Layers.Decoder.put_layer_cache(state.cache, idx, layer_cache)
+          {hidden_state, attention, cross_attention, layer_cache} =
+            gpt2_block(
+              state.last_hidden_state,
+              attention_mask,
+              encoder_last_hidden_state,
+              encoder_attention_mask,
+              layer_head_mask,
+              cross_attention_layer_head_mask,
+              layer_cache,
+              offset,
+              config,
+              name: join(name, idx)
+            )
 
-        %{
-          last_hidden_state: hidden_state,
-          hidden_states: Layers.append(state.hidden_states, hidden_state),
-          attentions: Layers.append(state.attentions, attention),
-          cross_attentions: Layers.append(state.cross_attentions, cross_attention),
-          cache: cache
-        }
-    end
+          cache = Layers.Decoder.put_layer_cache(state.cache, idx, layer_cache)
+
+          %{
+            last_hidden_state: hidden_state,
+            hidden_states: Layers.append(state.hidden_states, hidden_state),
+            attentions: Layers.append(state.attentions, attention),
+            cross_attentions: Layers.append(state.cross_attentions, cross_attention),
+            cache: cache
+          }
+      end
+
+    update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, hidden_state))
   end
 
   defp gpt2_block(
          hidden_state,
-         layer_cache,
          attention_mask,
          encoder_last_hidden_state,
          encoder_attention_mask,
          head_mask,
          cross_attention_head_mask,
+         layer_cache,
          offset,
-         index,
          config,
          opts
        ) do
@@ -334,7 +351,6 @@ defmodule Bumblebee.Text.Gpt2 do
         head_mask,
         self_attention_cache,
         offset,
-        index,
         config,
         num_heads: config.n_head,
         causal?: true,
@@ -361,10 +377,9 @@ defmodule Bumblebee.Text.Gpt2 do
               cross_attention_head_mask,
               cross_attention_cache,
               offset,
-              index,
               config,
               name: join(name, "crossattention"),
-              num_heads: config.num_attention_heads
+              num_heads: config.n_head
             )
 
           hidden_state = Axon.add(cross_attention_output, residual)
@@ -405,7 +420,6 @@ defmodule Bumblebee.Text.Gpt2 do
          layer_head_mask,
          attention_cache,
          offset,
-         _index,
          config,
          opts
        ) do
