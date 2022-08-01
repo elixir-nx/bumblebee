@@ -146,6 +146,57 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  Adds a 1-dimensional convolution layer to the network.
+
+  ## Options
+
+    * `:name` - layer name.
+
+    * `:kernel_initializer` - initializer for `kernel` weights.
+      Defaults to `:glorot_uniform`.
+
+    * `:bias_initializer` - initializer for `bias` weights. Defaults
+      to `:zeros`
+
+    * `:use_bias` - whether the layer should add bias to the output.
+      Defaults to `true`
+
+  """
+  def conv1d(%Axon{} = x, units, opts) do
+    opts =
+      Keyword.validate!(opts, [
+        :name,
+        kernel_initializer: :glorot_uniform,
+        bias_initializer: :zeros,
+        use_bias: true
+      ])
+
+    kernel_shape = fn input_shape ->
+      {elem(input_shape, tuple_size(input_shape) - 1), units}
+    end
+
+    bias_shape = fn _ -> {units} end
+
+    kernel = Axon.param("kernel", kernel_shape, initializer: opts[:kernel_initializer])
+
+    {inputs, op} =
+      if opts[:use_bias] do
+        bias = Axon.param("bias", bias_shape, initializer: opts[:bias_initializer])
+        {[x, kernel, bias], &conv1d_impl/4}
+      else
+        {[x, kernel], &conv1d_impl(&1, &2, 0, &3)}
+      end
+
+    Axon.layer(op, inputs, name: opts[:name], op_name: :conv1d)
+  end
+
+  defnp conv1d_impl(input, kernel, bias, _opts \\ []) do
+    input
+    |> Nx.dot([Nx.rank(input) - 1], [], kernel, [0], [])
+    |> Nx.add(bias)
+  end
+
+  @doc """
   Adds a scaling layer to the network.
 
   The scaling layer scales inputs by a learned scale parameter.
