@@ -194,9 +194,7 @@ defmodule Bumblebee.Text.Mbart do
               bos_token_id: 0,
               eos_token_id: 2
             ] ++
-              Shared.generation_defaults(
-                forced_eos_token_id: 2
-              ) ++
+              Shared.generation_defaults(forced_eos_token_id: 2) ++
               Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
@@ -444,44 +442,24 @@ defmodule Bumblebee.Text.Mbart do
         decoder_input_ids =
           Layers.default inputs["decoder_input_ids"] do
             Axon.nx(inputs["input_ids"], fn input_ids ->
-              {batch_size, seq_length} = Nx.shape(input_ids)
+              seq_length = Nx.axis_size(input_ids, 1)
 
-              prev_output_tokens =
-                Nx.select(Nx.equal(input_ids, -100), config.pad_token_id, input_ids)
-
-              index_of_eos =
-                prev_output_tokens
+              eos_indices =
+                input_ids
                 |> Nx.not_equal(config.pad_token_id)
                 |> Nx.sum(axes: [-1])
                 |> Nx.subtract(1)
                 |> Nx.reshape({:auto, 1})
                 |> Nx.as_type({:s, 64})
 
-              decoder_start_tokens =
-                Enum.reduce(0..(batch_size - 1), [], fn i, toks ->
-                  last_token_index =
-                    index_of_eos
-                    |> Nx.slice_along_axis(i, 1, axis: 0)
-                    |> Nx.squeeze()
+              # Use the last non-padding token as the decoder start token
+              start_ids = Bumblebee.Utils.Nx.batched_take(input_ids, eos_indices)
 
-                  [prev_output_tokens[[i, last_token_index]] | toks]
-                end)
-                |> Enum.reverse()
-                |> Nx.stack()
-                |> Nx.reshape({:auto, 1})
-
-              prev_output_tokens =
-                if seq_length > 1 do
-                  prev_output_tokens
-                  |> Nx.put_slice(
-                    [0, 1],
-                    Nx.slice_along_axis(prev_output_tokens, 0, seq_length - 1, axis: 1)
-                  )
-                else
-                  prev_output_tokens
-                end
-
-              Nx.put_slice(prev_output_tokens, [0, 0], decoder_start_tokens)
+              if seq_length == 1 do
+                start_ids
+              else
+                Nx.concatenate([start_ids, input_ids[[0..-1//1, 0..-2//1]]], axis: 1)
+              end
             end)
           end
 
