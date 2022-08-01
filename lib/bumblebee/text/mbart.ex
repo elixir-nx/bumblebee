@@ -224,7 +224,7 @@ defmodule Bumblebee.Text.Mbart do
   @impl true
   def input_template(_config) do
     %{
-      "input_ids" => Nx.template({1, 2}, :s64)
+      "input_ids" => Nx.template({1, 1}, :s64)
     }
   end
 
@@ -470,12 +470,18 @@ defmodule Bumblebee.Text.Mbart do
                 |> Nx.stack()
                 |> Nx.reshape({:auto, 1})
 
-              prev_output_tokens
-              |> Nx.put_slice(
-                [0, 1],
-                Nx.slice_along_axis(prev_output_tokens, 0, seq_length - 1, axis: 1)
-              )
-              |> Nx.put_slice([0, 0], decoder_start_tokens)
+              prev_output_tokens =
+                if seq_length > 1 do
+                  prev_output_tokens
+                  |> Nx.put_slice(
+                    [0, 1],
+                    Nx.slice_along_axis(prev_output_tokens, 0, seq_length - 1, axis: 1)
+                  )
+                else
+                  prev_output_tokens
+                end
+
+              Nx.put_slice(prev_output_tokens, [0, 0], decoder_start_tokens)
             end)
           end
 
