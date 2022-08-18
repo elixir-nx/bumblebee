@@ -200,7 +200,10 @@ defmodule Bumblebee do
     "MBartForConditionalGeneration" => {Bumblebee.Text.Mbart, :for_conditional_generation},
     "MBartForSequenceClassification" => {Bumblebee.Text.Mbart, :for_sequence_classification},
     "MBartForQuestionAnswering" => {Bumblebee.Text.Mbart, :for_question_answering},
-    "MBartForCausalLM" => {Bumblebee.Text.Mbart, :for_causal_language_modeling}
+    "MBartForCausalLM" => {Bumblebee.Text.Mbart, :for_causal_language_modeling},
+    # M2M100
+    "M2M100Model" => {Bumblebee.Text.M2m100, :base},
+    "M2M100ForConditionalGeneration" => {Bumblebee.Text.M2m100, :for_conditional_generation}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do
