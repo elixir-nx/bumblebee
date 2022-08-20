@@ -59,7 +59,8 @@ defmodule Bumblebee.Text.M2m100 do
   @impl true
   def input_template(_config) do
     %{
-      "input_ids" => Nx.template({1, 1}, :s64)
+      "input_ids" => Nx.template({1, 1}, :s64),
+      "decoder_input_ids" => Nx.template({1, 1}, :s64)
     }
   end
 
@@ -70,6 +71,30 @@ defmodule Bumblebee.Text.M2m100 do
     inputs
     |> m2m100(config)
     |> Layers.output()
+  end
+
+  def model(%__MODULE__{architecture: :for_conditional_generation} = config) do
+    inputs = encoder_decoder_inputs(config)
+    outputs = m2m100(inputs, config, name: "model")
+
+    # TODO: Tie lm-head to word embedding as a config option
+    lm_logits =
+      outputs.last_hidden_state
+      |> Layers.dense_transposed(config.vocab_size,
+        kernel_initializer: kernel_initializer(config),
+        name: "model.shared"
+      )
+
+    Layers.output(%{
+      logits: lm_logits,
+      decoder_hidden_states: outputs.decoder_hidden_states,
+      decoder_attentions: outputs.decoder_attentions,
+      cross_attentions: outputs.cross_attentions,
+      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+      encoder_hidden_states: outputs.encoder_hidden_states,
+      encoder_attentions: outputs.encoder_attentions,
+      cache: outputs.cache
+    })
   end
 
   defp encoder_decoder_inputs(config) do
@@ -84,8 +109,8 @@ defmodule Bumblebee.Text.M2m100 do
       Axon.input("position_ids", optional: true, shape: shape),
       Axon.input("head_mask", optional: true, shape: encoder_head_mask_shape),
       Axon.input("input_embeds", optional: true, shape: hidden_shape),
-      # TODO: One of decoder_input_ids or decoder_input_embeds is required,
-      # but not both
+      # TODO: One of decoder_input_ids or decoder_input_embeds is required
+      # by this model, otherwise we will get bad results
       Axon.input("decoder_input_ids", optional: true, shape: shape),
       Axon.input("decoder_attention_mask", optional: true, shape: shape),
       Axon.input("decoder_position_ids", optional: true, shape: shape),
@@ -128,17 +153,19 @@ defmodule Bumblebee.Text.M2m100 do
 
     position_ids =
       Layers.default inputs["position_ids"] do
-        Layers.default_position_ids(input_embeds)
+        Axon.nx(inputs["input_ids"], fn input_ids ->
+          mask = Nx.not_equal(input_ids, config.pad_token_id)
+
+          mask
+          |> Nx.cumulative_sum(axis: 1)
+          |> Nx.multiply(mask)
+          |> Nx.add(config.pad_token_id)
+        end)
       end
 
     decoder_input_embeds =
       Layers.default inputs["decoder_input_embeds"] do
-        decoder_input_ids =
-          Layers.default inputs["decoder_input_ids"] do
-            Layers.shift_tokens_right(inputs["input_ids"], config.decoder_start_token_id)
-          end
-
-        token_embedding(decoder_input_ids, config, name: join(name, "shared"))
+        token_embedding(inputs["decoder_input_ids"], config, name: join(name, "shared"))
       end
 
     decoder_attention_mask =
@@ -148,7 +175,14 @@ defmodule Bumblebee.Text.M2m100 do
 
     decoder_position_ids =
       Layers.default inputs["decoder_position_ids"] do
-        Layers.default_position_ids(decoder_input_embeds)
+        Axon.nx(inputs["decoder_input_ids"], fn input_ids ->
+          mask = Nx.not_equal(input_ids, config.pad_token_id)
+
+          mask
+          |> Nx.cumulative_sum(axis: 1)
+          |> Nx.multiply(mask)
+          |> Nx.add(config.pad_token_id)
+        end)
       end
 
     encoder_outputs =
@@ -170,7 +204,7 @@ defmodule Bumblebee.Text.M2m100 do
         decoder_attention_mask,
         decoder_position_ids,
         inputs["decoder_head_mask"],
-        encoder_outputs.last_hidden_state |> Axon.attach_hook(&IO.inspect/1, on: :forward),
+        encoder_outputs.last_hidden_state,
         attention_mask,
         inputs["cross_attention_head_mask"],
         inputs["cache"],
@@ -209,29 +243,33 @@ defmodule Bumblebee.Text.M2m100 do
   defp position_embedding(position_ids, config, opts) do
     name = opts[:name]
 
-    half_dim = div(config.max_position_embeddings, 2)
     offset = 2
+    embedding_dim = config.d_model
+    num_embeddings = config.max_position_embeddings + offset
+    padding_idx = config.pad_token_id
+    half_dim = div(embedding_dim, 2)
 
     position_ids
     |> Axon.nx(
       fn position_ids ->
-        {_, seq_len} = Nx.shape(position_ids)
+        emb = Nx.log(10_000)
+        emb = Nx.divide(emb, half_dim - 1)
+        emb = Nx.exp(Nx.multiply(Nx.iota({half_dim}), Nx.negate(emb)))
+        emb = Nx.multiply(Nx.new_axis(Nx.iota({num_embeddings}), 1), Nx.new_axis(emb, 0))
+        emb = Nx.concatenate([Nx.sin(emb), Nx.cos(emb)], axis: 1)
+        emb = Nx.reshape(emb, {num_embeddings, :auto})
 
-        position_ids = Nx.add(position_ids, offset)
+        emb =
+          if rem(embedding_dim, 2) == 1 do
+            Nx.concatenate([emb, Nx.broadcast(0, {num_embeddings, 1})], axis: 1)
+          else
+            emb
+          end
 
-        embedding =
-          Nx.log(10_000)
-          |> Nx.divide(Nx.subtract(half_dim, 1))
-          |> Nx.negate()
-          |> Nx.multiply(Nx.iota({half_dim}))
-          |> Nx.exp()
-          |> Nx.new_axis(0)
-          |> Nx.multiply(Nx.iota({seq_len, 1}))
+        zero_pad_slice = Nx.broadcast(0.0, {1, embedding_dim})
+        emb = Nx.put_slice(emb, [padding_idx, 0], zero_pad_slice)
 
-        embedding = Nx.concatenate([Nx.sin(embedding), Nx.cos(embedding)], axis: 1)
-        embedding = Nx.reshape(embedding, {seq_len, :auto})
-
-        Nx.take(embedding, Nx.as_type(position_ids, {:s, 64}))
+        Nx.take(emb, Nx.as_type(position_ids, {:s, 64}))
       end,
       name: join(name, "sinusoidal_position_embedding")
     )
