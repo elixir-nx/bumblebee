@@ -200,7 +200,9 @@ defmodule Bumblebee do
     "MBartForConditionalGeneration" => {Bumblebee.Text.Mbart, :for_conditional_generation},
     "MBartForSequenceClassification" => {Bumblebee.Text.Mbart, :for_sequence_classification},
     "MBartForQuestionAnswering" => {Bumblebee.Text.Mbart, :for_question_answering},
-    "MBartForCausalLM" => {Bumblebee.Text.Mbart, :for_causal_language_modeling}
+    "MBartForCausalLM" => {Bumblebee.Text.Mbart, :for_causal_language_modeling},
+    # ClipText
+    "CLIPTextModel" => {Bumblebee.Text.ClipText, :base}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do
@@ -501,7 +503,8 @@ defmodule Bumblebee do
     "albert" => Bumblebee.Text.AlbertTokenizer,
     "bart" => Bumblebee.Text.BartTokenizer,
     "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
-    "mbart" => Bumblebee.Text.MbartTokenizer
+    "mbart" => Bumblebee.Text.MbartTokenizer,
+    "clip" => Bumblebee.Text.ClipTokenizer
   }
 
   defp infer_tokenizer_type(repository, opts) do
