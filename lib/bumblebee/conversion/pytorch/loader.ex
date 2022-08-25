@@ -13,38 +13,46 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
   def load!(path) do
     # See https://github.com/pytorch/pytorch/blob/v1.11.0/torch/serialization.py#L607
 
-    content = File.read!(path)
-
-    if zip?(content) do
-      load_zip!(content)
+    if zip?(path) do
+      load_zip!(path)
     else
-      load_legacy!(content)
+      load_legacy!(path)
     end
   end
 
-  # Check for the "local file header signature"
-  defp zip?(<<80, 75, 3, 4, _rest::binary>>), do: true
-  defp zip?(_binary), do: false
+  defp zip?(path) do
+    # Check for the "local file header signature"
+    File.open(path, [:read], &IO.binread(&1, 4)) == {:ok, <<80, 75, 3, 4>>}
+  end
 
-  defp load_zip!(content) do
-    {:ok, contents} = :zip.unzip(content, [:memory])
+  defp load_zip!(path) do
+    with_unzipped!(path, fn dir ->
+      data = File.read!(Path.join(dir, "archive/data.pkl"))
 
-    contents =
-      Map.new(contents, fn {name, content} ->
-        {List.to_string(name), content}
-      end)
+      {term, ""} =
+        Unpickler.load!(data,
+          object_resolver: &object_resolver/1,
+          persistent_id_resolver: fn
+            {"storage", storage_type, key, _location, _size} ->
+              binary = File.read!(Path.join(dir, "archive/data/#{key}"))
+              {:storage, storage_type, binary}
+          end
+        )
 
-    {term, ""} =
-      Unpickler.load!(contents["archive/data.pkl"],
-        object_resolver: &object_resolver/1,
-        persistent_id_resolver: fn
-          {"storage", storage_type, key, _location, _size} ->
-            binary = Map.fetch!(contents, "archive/data/#{key}")
-            {:storage, storage_type, binary}
-        end
-      )
+      term
+    end)
+  end
 
-    term
+  defp with_unzipped!(path, fun) do
+    dir = path <> ".unzip.#{System.unique_integer()}"
+    File.mkdir!(dir)
+
+    try do
+      {:ok, _} = :zip.unzip(String.to_charlist(path), [{:cwd, String.to_charlist(dir)}])
+      fun.(dir)
+    after
+      File.rm_rf!(dir)
+    end
   end
 
   defp object_resolver(%{constructor: "collections.OrderedDict", set_items: items}) do
@@ -120,7 +128,9 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
 
   @legacy_magic_number 119_547_037_146_038_801_333_356
 
-  defp load_legacy!(data) do
+  defp load_legacy!(path) do
+    data = File.read!(path)
+
     {@legacy_magic_number, data} = Unpickler.load!(data)
     {_protocol_version, data} = Unpickler.load!(data)
     {_system_info, data} = Unpickler.load!(data)
