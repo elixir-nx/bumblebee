@@ -26,33 +26,24 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
   end
 
   defp load_zip!(path) do
-    with_unzipped!(path, fn dir ->
-      data = File.read!(Path.join(dir, "archive/data.pkl"))
+    {:ok, contents} = :zip.unzip(String.to_charlist(path), [:memory])
 
-      {term, ""} =
-        Unpickler.load!(data,
-          object_resolver: &object_resolver/1,
-          persistent_id_resolver: fn
-            {"storage", storage_type, key, _location, _size} ->
-              binary = File.read!(Path.join(dir, "archive/data/#{key}"))
-              {:storage, storage_type, binary}
-          end
-        )
+    contents =
+      Map.new(contents, fn {name, content} ->
+        {List.to_string(name), content}
+      end)
 
-      term
-    end)
-  end
+    {term, ""} =
+      Unpickler.load!(contents["archive/data.pkl"],
+        object_resolver: &object_resolver/1,
+        persistent_id_resolver: fn
+          {"storage", storage_type, key, _location, _size} ->
+            binary = Map.fetch!(contents, "archive/data/#{key}")
+            {:storage, storage_type, binary}
+        end
+      )
 
-  defp with_unzipped!(path, fun) do
-    dir = path <> ".unzip.#{System.unique_integer()}"
-    File.mkdir!(dir)
-
-    try do
-      {:ok, _} = :zip.unzip(String.to_charlist(path), [{:cwd, String.to_charlist(dir)}])
-      fun.(dir)
-    after
-      File.rm_rf!(dir)
-    end
+    term
   end
 
   defp object_resolver(%{constructor: "collections.OrderedDict", set_items: items}) do
