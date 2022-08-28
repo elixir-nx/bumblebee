@@ -114,17 +114,8 @@ defmodule Bumblebee.Text.ClipText do
     pooler_output =
       Axon.layer(
         fn last_hidden_state, input_ids, _opts ->
-          eos_tokens = Nx.argmax(input_ids, axis: -1)
-          # TODO: there is probably a more ergonomic way
-          {batch_size} = Nx.shape(eos_tokens)
-
-          vectors =
-            for batch_idx <- 0..(batch_size - 1) do
-              token_idx = eos_tokens[[batch_idx]]
-              last_hidden_state[[batch_idx, token_idx, 0..-1//1]]
-            end
-
-          Nx.stack(vectors)
+          eos_idx = Nx.argmax(input_ids, axis: -1)
+          Bumblebee.Utils.Nx.batched_take(last_hidden_state, eos_idx)
         end,
         [last_hidden_state, input_ids]
       )
