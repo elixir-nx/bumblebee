@@ -514,6 +514,25 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  Adds an assertion layer to ensure an optional node is present.
+
+  This layer evaluates to the result of `x` if present, otherwise
+  it raises an error with the given message.
+  """
+  def or_raise(%Axon{} = x, message) do
+    Axon.layer(
+      fn x, _ ->
+        case x do
+          %Axon.None{} -> raise message
+          _ -> x
+        end
+      end,
+      [Axon.optional(x)],
+      op_name: :or_raise
+    )
+  end
+
+  @doc """
   Adds a conditional layer.
 
   This layer evaluates to either branch, depending on whether the

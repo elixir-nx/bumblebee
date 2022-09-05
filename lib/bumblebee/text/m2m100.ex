@@ -109,8 +109,6 @@ defmodule Bumblebee.Text.M2m100 do
       Axon.input("position_ids", optional: true, shape: shape),
       Axon.input("head_mask", optional: true, shape: encoder_head_mask_shape),
       Axon.input("input_embeds", optional: true, shape: hidden_shape),
-      # TODO: One of decoder_input_ids or decoder_input_embeds is required
-      # by this model, otherwise we will get bad results
       Axon.input("decoder_input_ids", optional: true, shape: shape),
       Axon.input("decoder_attention_mask", optional: true, shape: shape),
       Axon.input("decoder_position_ids", optional: true, shape: shape),
@@ -167,6 +165,9 @@ defmodule Bumblebee.Text.M2m100 do
       Layers.default inputs["decoder_input_embeds"] do
         token_embedding(inputs["decoder_input_ids"], config, name: join(name, "shared"))
       end
+      |> Layers.or_raise(
+        ~s/either "decoder_input_ids" or "decoder_inputs_embeds" must be specified/
+      )
 
     decoder_attention_mask =
       Layers.default inputs["decoder_attention_mask"] do

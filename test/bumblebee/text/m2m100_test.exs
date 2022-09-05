@@ -14,9 +14,9 @@ defmodule Bumblebee.Text.M2m100Test do
 
       assert %Bumblebee.Text.M2m100{architecture: :base} = config
 
-      # This model always accepts decoder_input_ids which are the current
-      # sequence with padding, in this case we give english source sequence
-      # and french target token with padding
+      # This model always requires decoder_input_ids, which is the current
+      # sequence. In this case we give english source sequence and french
+      # target token with padding
       input_ids = Nx.tensor([[128_022, 21457, 117, 14906, 8, 37089, 432, 110_309, 10550, 2]])
       attention_mask = Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
       decoder_input_ids = Nx.tensor([[128_028, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -48,9 +48,9 @@ defmodule Bumblebee.Text.M2m100Test do
 
       assert %Bumblebee.Text.M2m100{architecture: :for_conditional_generation} = config
 
-      # This model always accepts decoder_input_ids which are the current
-      # sequence with padding, in this case we give english source sequence
-      # and french target token with padding
+      # This model always requires decoder_input_ids, which is the current
+      # sequence. In this case we give english source sequence and french
+      # target token with padding
       input_ids = Nx.tensor([[128_022, 21457, 117, 14906, 8, 37089, 432, 110_309, 10550, 2]])
       attention_mask = Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
       decoder_input_ids = Nx.tensor([[128_028, 1, 1, 1, 1, 1, 1, 1, 1, 1]])

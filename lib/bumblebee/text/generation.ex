@@ -140,16 +140,12 @@ defmodule Bumblebee.Text.Generation do
       {_encoder_init_fun, encoder_predict_fun} = Axon.build(encoder)
 
       prepare_inputs_fun = fn inputs, params ->
-        encoder_output = encoder_predict_fun.(params, inputs)
-
         batch_size = Nx.axis_size(inputs["input_ids"], 0)
         decoder_input_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
+        inputs = put_in(inputs["decoder_input_ids"], decoder_input_ids)
 
-        inputs =
-          Map.merge(inputs, %{
-            "encoder_last_hidden_state" => encoder_output.last_hidden_state,
-            "decoder_input_ids" => decoder_input_ids
-          })
+        encoder_output = encoder_predict_fun.(params, inputs)
+        inputs = put_in(inputs["encoder_last_hidden_state"], encoder_output.last_hidden_state)
 
         inputs = prepare_decoder_inputs(inputs, "decoder_", config, max_length)
         {inputs, inputs["decoder_input_ids"]}
