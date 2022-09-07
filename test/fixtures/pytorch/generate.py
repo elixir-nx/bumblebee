@@ -28,7 +28,7 @@ for fmt in ["zip", "legacy"]:
     save("ordered_dict", fmt, OrderedDict([("x", 1), ("y", 2)]))
 
     transposed_tensor = torch.tensor(
-        [[1, 2, 3], [4, 5, 6]], dtype=torch.int64).t()
+        [[[1, 1], [2, 2], [3, 3]], [[4, 4], [5, 5], [6, 6]]], dtype=torch.int64).permute(2, 0, 1)
     save("noncontiguous_tensor", fmt, transposed_tensor)
 
 # Model parameters

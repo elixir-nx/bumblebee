@@ -41,7 +41,8 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
       test "noncontiguous tensor" do
         path = Path.join(@dir, "noncontiguous_tensor.#{@format}.pt")
 
-        assert Loader.load!(path) == Nx.tensor([[1, 4], [2, 5], [3, 6]], type: :s64)
+        assert Loader.load!(path) ==
+                 Nx.tensor([[[1, 2, 3], [4, 5, 6]], [[1, 2, 3], [4, 5, 6]]], type: :s64)
       end
     end
   end

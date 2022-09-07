@@ -97,25 +97,34 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
     # tensor, in a way that makes it contiguous, which is equivalent
     # to strides being decreasing
 
-    axes_order =
+    memory_axes_order =
       strides
       |> Tuple.to_list()
       |> Enum.with_index()
       |> Enum.sort_by(&elem(&1, 0), :desc)
       |> Enum.map(&elem(&1, 1))
 
-    if axes_order == Nx.axes(shape) do
+    if memory_axes_order == Nx.axes(shape) do
       Nx.reshape(tensor, shape)
     else
       memory_shape =
-        axes_order
-        |> Enum.with_index()
-        |> Enum.reduce(shape, fn {memory_shape_idx, shape_idx}, memory_shape ->
-          put_elem(memory_shape, memory_shape_idx, elem(shape, shape_idx))
-        end)
+        memory_axes_order
+        |> Enum.map(fn axis -> elem(shape, axis) end)
+        |> List.to_tuple()
 
-      tensor |> Nx.reshape(memory_shape) |> Nx.transpose(axes: axes_order)
+      tensor
+      |> Nx.reshape(memory_shape)
+      |> Nx.transpose(axes: inverse_permutation(memory_axes_order))
     end
+  end
+
+  defp inverse_permutation(list) do
+    list
+    |> Enum.with_index()
+    |> Enum.reduce(List.to_tuple(list), fn {src_idx, dest_idx}, inverse ->
+      put_elem(inverse, src_idx, dest_idx)
+    end)
+    |> Tuple.to_list()
   end
 
   @legacy_magic_number 119_547_037_146_038_801_333_356
