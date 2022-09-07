@@ -75,7 +75,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
       end
       |> Nx.concatenate()
 
-    images = Nx.divide(images, 255.0)
+    images = Image.to_continuous(images, 0, 1)
 
     images =
       if config.do_normalize do

@@ -357,4 +357,22 @@ defmodule Bumblebee.Utils.Image do
 
   def normalize_size({height, width}), do: {height, width}
   def normalize_size(size) when is_integer(size), do: {size, size}
+
+  @doc """
+  Converts pixel values (0-255) into a continuous range.
+  """
+  defn to_continuous(input, min, max) do
+    input / 255.0 * (max - min) + min
+  end
+
+  @doc """
+  Converts values from continuous range into pixel values (0-255).
+  """
+  defn from_continuous(input, min, max) do
+    input = (input - min) / (max - min) * 255.0
+
+    input
+    |> Nx.round()
+    |> Nx.as_type(:u8)
+  end
 end
