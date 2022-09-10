@@ -42,20 +42,18 @@ IO.puts("Loading UNet")
 
 IO.puts("Loading scheduler")
 
-# TODO: load the scheduler and then init, perhaps a protocol (so that changing scheduler
-# doesn't change the rest of the code)
-scheduler =
-  Bumblebee.Diffusion.Schedule.Pndm.new(num_inference_steps, latents_shape,
+scheduler_config =
+  Bumblebee.Diffusion.Schedules.Pndm.new(
     beta_schedule: :scaled_linear,
     beta_start: 0.00085,
     beta_end: 0.012,
-    num_train_timesteps: 1000,
-    offset: 1
+    skip_prk_steps: true,
+    num_train_timesteps: 1000
   )
 
 # Inference
 
-prompt = "an astronaut riding a horse"
+prompt = "a photograph of an astronaut riding a horse"
 inputs = Bumblebee.apply_tokenizer(tokenizer, ["", prompt])
 
 IO.puts("Embedding text")
@@ -64,11 +62,14 @@ IO.puts("Embedding text")
 IO.puts("Generating latents")
 latents = Nx.random_normal(latents_shape)
 
-timesteps = Bumblebee.Diffusion.Schedule.Pndm.timesteps(scheduler)
+{schedule, timesteps} =
+  Bumblebee.Diffusion.Schedules.Pndm.init(scheduler_config, num_inference_steps, Nx.shape(latents),
+    offset: 1
+  )
 
 {_, latents} =
-  for {timestep, i} <- Enum.with_index(timesteps), reduce: {scheduler, latents} do
-    {scheduler, latents} ->
+  for {timestep, i} <- Enum.with_index(timesteps), reduce: {schedule, latents} do
+    {schedule, latents} ->
       IO.puts("Diffusion step #{i}, timestep #{timestep}")
 
       unet_inputs = %{
@@ -88,7 +89,7 @@ timesteps = Bumblebee.Diffusion.Schedule.Pndm.timesteps(scheduler)
           Nx.multiply(guidance_scale, Nx.subtract(noise_pred_text, noise_pred_unconditional))
         )
 
-      Bumblebee.Diffusion.Schedule.Pndm.step(scheduler, noise_pred, timestep, latents)
+      Bumblebee.Diffusion.Schedules.Pndm.step(schedule, latents, noise_pred)
   end
 
 latents = Nx.multiply(Nx.divide(1, 0.18215), latents)

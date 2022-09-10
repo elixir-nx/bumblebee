@@ -111,4 +111,31 @@ defmodule Bumblebee.Utils.Nx do
     |> Nx.take(flat_idx)
     |> Nx.reshape(final_shape)
   end
+
+  @doc """
+  Creates a tensor with evenly spaced elements within the given range.
+
+  The elements are taken from the interval `[start, stop]`, both ends
+  are included.
+
+  ## Options
+
+    * `:steps` - the number of samples in the range. Defaults to `50`
+
+  ## Examples
+
+      iex> Bumblebee.Utils.Nx.linspace(2.0, 3.0, steps: 5)
+      #Nx.Tensor<
+        f32[5]
+        [2.0, 2.25, 2.5, 2.75, 3.0]
+      >
+
+  """
+  defn linspace(start, stop, opts \\ []) do
+    opts = keyword!(opts, steps: 50)
+    steps = opts[:steps]
+
+    step_size = (stop - start) / (steps - 1)
+    Nx.iota({steps}) * step_size + start
+  end
 end
