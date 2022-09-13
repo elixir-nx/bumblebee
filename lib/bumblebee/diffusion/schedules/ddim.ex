@@ -19,20 +19,25 @@ defmodule Bumblebee.Diffusion.Schedules.Ddim do
     * `:num_train_timesteps` - the number of diffusion steps used to
       train the model. Defaults to `1000`
 
-    * `:beta_start` - the start value for the beta schedule. Defaults
-      to `0.0001`
-
-    * `:beta_end` - the end value for the beta schedule. Defaults to `0.02`
-
     * `:beta_schedule` - the beta schedule type, a mapping from a beta
       range to a sequence of betas for stepping the model. Either of
       `:linear`, `:scaled_linear`, or `:squaredcos_cap_v2`. Defaults to
       `:linear`
 
-    * `:set_alpha_to_one` - each step $t$ uses the values of $\alpha_t$
-      and $\alpha_{t-1}$, however for $t = 0$ there is no previous alpha.
-      Setting this option to `true` implies $\alpha_{t-1} = 1$, otherwise
-      $\alpha_{t-1} = \alpha_0$. Defaults to `true`
+    * `:beta_start` - the start value for the beta schedule. Defaults
+      to `0.0001`
+
+    * `:beta_end` - the end value for the beta schedule. Defaults to `0.02`
+
+    * `:set_alpha_to_one` - each step $t$ uses the values of $\bar{\alpha}_t$
+      and $\bar{\alpha}_{t-1}$, however for $t = 0$ there is no previous
+      alpha. Setting this option to `true` implies $\bar{\alpha_}{t-1} = 1$,
+      otherwise $\bar{\alpha}_{t-1} = \bar{\alpha}_0$. Defaults to `true`
+
+    * `:steps_offset` - an offset added to the inference steps. You can
+      use a combination of `offset: 1` and `set_alpha_to_one: false`,
+      so that the last step $t = 1$ uses $\bar{\alpha}_1$ and $\bar{\alpha}_0$,
+      as done in stable diffusion. Defaults to `0`
 
     * `:clip_sample` - whether to clip each predicted sample into $[-1, 1]$
       for numerical stability.. Defaults to `true`
@@ -54,10 +59,11 @@ defmodule Bumblebee.Diffusion.Schedules.Ddim do
   """
 
   defstruct num_train_timesteps: 1000,
+            beta_schedule: :linear,
             beta_start: 0.0001,
             beta_end: 0.02,
-            beta_schedule: :linear,
             set_alpha_to_one: true,
+            steps_offset: 0,
             clip_sample: true,
             use_clipped_model_output: false,
             eta: 0.0
@@ -65,8 +71,8 @@ defmodule Bumblebee.Diffusion.Schedules.Ddim do
   defmodule Schedule do
     @derive {Nx.Container,
              containers: [:timesteps, :alpha_bars, :iteration],
-             keep: [:num_inference_steps, :offset, :config]}
-    defstruct [:timesteps, :alpha_bars, :iteration, :config, :num_inference_steps, :offset]
+             keep: [:num_inference_steps, :config]}
+    defstruct [:timesteps, :alpha_bars, :iteration, :config, :num_inference_steps]
   end
 
   import Nx.Defn
@@ -79,11 +85,13 @@ defmodule Bumblebee.Diffusion.Schedules.Ddim do
     Bumblebee.Shared.put_config_attrs(%__MODULE__{}, opts)
   end
 
-  def init(config, num_inference_steps, _sample_shape, opts \\ []) do
-    offset = opts[:offset] || 0
-
+  def init(config, num_inference_steps, _sample_shape) do
     timesteps =
-      Schedules.Utils.ddim_timesteps(config.num_train_timesteps, num_inference_steps, offset)
+      Schedules.Utils.ddim_timesteps(
+        config.num_train_timesteps,
+        num_inference_steps,
+        config.steps_offset
+      )
 
     alpha_bars = init_parameters(config: config)
 
@@ -92,8 +100,7 @@ defmodule Bumblebee.Diffusion.Schedules.Ddim do
       alpha_bars: alpha_bars,
       iteration: 0,
       config: config,
-      num_inference_steps: num_inference_steps,
-      offset: offset
+      num_inference_steps: num_inference_steps
     }
 
     {schedule, Nx.to_flat_list(timesteps)}

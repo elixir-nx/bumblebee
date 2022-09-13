@@ -15,15 +15,25 @@ defmodule Bumblebee.Diffusion.Schedules.Pndm do
     * `:num_train_timesteps` - the number of diffusion steps used to
       train the model. Defaults to `1000`
 
+    * `:beta_schedule` - the beta schedule type, a mapping from a beta
+      range to a sequence of betas for stepping the model. Either of
+      `:linear`, `:scaled_linear`, or `:squaredcos_cap_v2`. Defaults to
+      `:linear`
+
     * `:beta_start` - the start value for the beta schedule. Defaults
       to `0.0001`
 
     * `:beta_end` - the end value for the beta schedule. Defaults to `0.02`
 
-    * `:beta_schedule` - the beta schedule type, a mapping from a beta
-      range to a sequence of betas for stepping the model. Either of
-      `:linear`, `:scaled_linear`, or `:squaredcos_cap_v2`. Defaults to
-      `:linear`
+    * `:set_alpha_to_one` - each step $t$ uses the values of $\bar{\alpha}_t$
+      and $\bar{\alpha}_{t-1}$, however for $t = 0$ there is no previous
+      alpha. Setting this option to `true` implies $\bar{\alpha_}{t-1} = 1$,
+      otherwise $\bar{\alpha}_{t-1} = \bar{\alpha}_0$. Defaults to `false`
+
+    * `:steps_offset` - an offset added to the inference steps. You can
+      use a combination of `offset: 1` and `set_alpha_to_one: false`,
+      so that the last step $t = 1$ uses $\bar{\alpha}_1$ and $\bar{\alpha}_0$,
+      as done in stable diffusion. Defaults to `0`
 
     * `:skip_prk_steps` - when `true`, the first few samples are computed
       using lower-order linear multi-step, rather than the Runge-Kutta
@@ -37,9 +47,11 @@ defmodule Bumblebee.Diffusion.Schedules.Pndm do
   """
 
   defstruct num_train_timesteps: 1000,
+            beta_schedule: :linear,
             beta_start: 0.0001,
             beta_end: 0.02,
-            beta_schedule: :linear,
+            set_alpha_to_one: false,
+            steps_offset: 0,
             skip_prk_steps: false
 
   defmodule Schedule do
@@ -52,7 +64,7 @@ defmodule Bumblebee.Diffusion.Schedules.Pndm do
                :noise_prime,
                :current_sample
              ],
-             keep: [:num_inference_steps, :offset, :config]}
+             keep: [:num_inference_steps, :config]}
     defstruct [
       # State
       :timesteps,
@@ -63,8 +75,7 @@ defmodule Bumblebee.Diffusion.Schedules.Pndm do
       :current_sample,
       # Info
       :config,
-      :num_inference_steps,
-      :offset
+      :num_inference_steps
     ]
   end
 
@@ -78,14 +89,12 @@ defmodule Bumblebee.Diffusion.Schedules.Pndm do
     Bumblebee.Shared.put_config_attrs(%__MODULE__{}, opts)
   end
 
-  def init(config, num_inference_steps, sample_shape, opts \\ []) do
-    offset = opts[:offset] || 0
-
+  def init(config, num_inference_steps, sample_shape) do
     timesteps =
       timesteps(
         config.num_train_timesteps,
         num_inference_steps,
-        offset,
+        config.steps_offset,
         config.skip_prk_steps
       )
 
@@ -101,8 +110,7 @@ defmodule Bumblebee.Diffusion.Schedules.Pndm do
       current_sample: empty,
       noise_prime: empty,
       config: config,
-      num_inference_steps: num_inference_steps,
-      offset: offset
+      num_inference_steps: num_inference_steps
     }
 
     {schedule, Nx.to_flat_list(timesteps)}
@@ -263,7 +271,7 @@ defmodule Bumblebee.Diffusion.Schedules.Pndm do
     step = step_size(schedule)
     timestep = schedule.timesteps[schedule.iteration - rk_step_number]
     diff = if(rk_step_number < 2, do: div(step, 2), else: step)
-    prev_timestep = max(timestep - diff, 0)
+    prev_timestep = timestep - diff
 
     prev_sample = prev_sample(schedule, current_sample, noise, timestep, prev_timestep)
 
@@ -316,7 +324,7 @@ defmodule Bumblebee.Diffusion.Schedules.Pndm do
         schedule.timesteps[schedule.iteration]
       end
 
-    prev_timestep = max(timestep - step, 0)
+    prev_timestep = timestep - step
 
     prev_sample = prev_sample(schedule, current_sample, noise, timestep, prev_timestep)
 
@@ -334,18 +342,24 @@ defmodule Bumblebee.Diffusion.Schedules.Pndm do
 
     step = step_size(schedule)
     timestep = schedule.timesteps[schedule.iteration]
-    prev_timestep = max(timestep - step, 0)
+    prev_timestep = timestep - step
 
     prev_sample = prev_sample(schedule, sample, noise, timestep, prev_timestep)
 
     {schedule, prev_sample}
   end
 
-  defnp prev_sample(schedule, sample, noise, timestep, timestep_prev) do
+  defnp prev_sample(schedule, sample, noise, timestep, prev_timestep) do
     # See Equation (11)
 
-    alpha_bar_t = schedule.alpha_bars[timestep + 1 - schedule.offset]
-    alpha_bar_t_prev = schedule.alpha_bars[timestep_prev + 1 - schedule.offset]
+    alpha_bar_t = schedule.alpha_bars[timestep]
+
+    alpha_bar_t_prev =
+      if prev_timestep >= 0 do
+        schedule.alpha_bars[prev_timestep]
+      else
+        if schedule.config.set_alpha_to_one, do: 1.0, else: schedule.alpha_bars[0]
+      end
 
     sample_coeff = (alpha_bar_t_prev / alpha_bar_t) ** 0.5
 

@@ -44,11 +44,12 @@ IO.puts("Loading scheduler")
 
 scheduler_config =
   Bumblebee.Diffusion.Schedules.Pndm.new(
+    num_train_timesteps: 1000,
     beta_schedule: :scaled_linear,
     beta_start: 0.00085,
     beta_end: 0.012,
     skip_prk_steps: true,
-    num_train_timesteps: 1000
+    steps_offset: 1
   )
 
 # Inference
@@ -63,9 +64,7 @@ IO.puts("Generating latents")
 latents = Nx.random_normal(latents_shape)
 
 {schedule, timesteps} =
-  Bumblebee.Diffusion.Schedules.Pndm.init(scheduler_config, num_inference_steps, Nx.shape(latents),
-    offset: 1
-  )
+  Bumblebee.Diffusion.Schedules.Pndm.init(scheduler_config, num_inference_steps, Nx.shape(latents))
 
 {_, latents} =
   for {timestep, i} <- Enum.with_index(timesteps), reduce: {schedule, latents} do
