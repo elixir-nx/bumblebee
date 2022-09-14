@@ -85,6 +85,12 @@ defmodule Bumblebee do
       Defaults to the standard cache location for the given operating
       system
 
+    * `:auth_token` - the token to use as HTTP bearer authorization
+      for remote files
+
+    * `:subdir` - the directory within the repository where the files
+      are located
+
   ## Examples
 
       {:ok, config} = Bumblebee.load_config({:hf, "microsoft/resnet-50"})
@@ -98,13 +104,23 @@ defmodule Bumblebee do
           {:ok, Bumblebee.ModelSpec.t()} | {:error, String.t()}
   def load_config(repository, opts \\ []) do
     validate_repository!(repository)
-    opts = Keyword.validate!(opts, [:module, :architecture, :revision, :cache_dir])
+
+    opts =
+      Keyword.validate!(opts, [
+        :module,
+        :architecture,
+        :revision,
+        :cache_dir,
+        :auth_token,
+        :subdir
+      ])
+
     module = opts[:module]
     architecture = opts[:architecture]
 
     with {:ok, path} <- download(repository, @config_filename, opts),
          {:ok, model_data} <- decode_config(path) do
-      {inferred_module, inferred_architecture, inferrence_error} =
+      {inferred_module, inferred_architecture, inference_error} =
         case infer_model_type(model_data) do
           {:ok, module, architecture} -> {module, architecture, nil}
           {:error, error} -> {nil, nil, error}
@@ -114,7 +130,7 @@ defmodule Bumblebee do
       architecture = architecture || inferred_architecture
 
       unless module do
-        raise "#{inferrence_error}, please specify the :module and :architecture options"
+        raise "#{inference_error}, please specify the :module and :architecture options"
       end
 
       architectures = module.architectures()
@@ -243,6 +259,14 @@ defmodule Bumblebee do
       Defaults to the standard cache location for the given operating
       system
 
+    * `:auth_token` - the token to use as HTTP bearer authorization
+      for remote files
+
+    * `:subdir` - the directory within the repository where the files
+      are located
+
+    * `:params_filename` - the file with the parameters to be loaded
+
   ## Examples
 
   By default the model type is inferred from configuration, so loading
@@ -274,7 +298,7 @@ defmodule Bumblebee do
       else
         load_config(
           repository,
-          Keyword.take(opts, [:module, :architecture, :revision, :cache_dir])
+          Keyword.take(opts, [:module, :architecture, :revision, :cache_dir, :auth_token, :subdir])
         )
       end
 
@@ -286,7 +310,7 @@ defmodule Bumblebee do
              model,
              repository,
              opts
-             |> Keyword.take([:revision, :cache_dir])
+             |> Keyword.take([:revision, :cache_dir, :auth_token, :subdir, :params_filename])
              |> Keyword.put(:base_model_prefix, module.base_model_prefix())
            ) do
       {:ok, model, params, config}
@@ -298,7 +322,7 @@ defmodule Bumblebee do
 
     # TODO: support format: :auto | :axon | :pytorch
     format = :pytorch
-    filename = @params_filename[format]
+    filename = opts[:params_filename] || @params_filename[format]
 
     input_template = module.input_template(config)
 
@@ -356,6 +380,12 @@ defmodule Bumblebee do
       Defaults to the standard cache location for the given operating
       system
 
+    * `:auth_token` - the token to use as HTTP bearer authorization
+      for remote files
+
+    * `:subdir` - the directory within the repository where the files
+      are located
+
   ## Examples
 
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "microsoft/resnet-50"})
@@ -365,7 +395,7 @@ defmodule Bumblebee do
           {:ok, Bumblebee.Featurizer.t()} | {:error, String.t()}
   def load_featurizer(repository, opts \\ []) do
     validate_repository!(repository)
-    opts = Keyword.validate!(opts, [:module, :revision, :cache_dir])
+    opts = Keyword.validate!(opts, [:module, :revision, :cache_dir, :auth_token, :subdir])
     module = opts[:module]
 
     with {:ok, path} <- download(repository, @featurizer_filename, opts),
@@ -471,6 +501,12 @@ defmodule Bumblebee do
       Defaults to the standard cache location for the given operating
       system
 
+    * `:auth_token` - the token to use as HTTP bearer authorization
+      for remote files
+
+    * `:subdir` - the directory within the repository where the files
+      are located
+
   ## Examples
 
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
@@ -480,7 +516,7 @@ defmodule Bumblebee do
           {:ok, Bumblebee.Tokenizer.t()} | {:error, String.t()}
   def load_tokenizer(repository, opts \\ []) do
     validate_repository!(repository)
-    opts = Keyword.validate!(opts, [:module, :revision, :cache_dir])
+    opts = Keyword.validate!(opts, [:module, :revision, :cache_dir, :auth_token, :subdir])
     module = opts[:module]
 
     with {:ok, path} <- download(repository, @tokenizer_filename, opts) do
@@ -527,7 +563,11 @@ defmodule Bumblebee do
     end
   end
 
-  defp download({:local, dir}, filename, _opts) do
+  defp download({:local, dir}, filename, opts) do
+    subdir = opts[:subdir]
+
+    filename = if subdir, do: Path.join(subdir, filename), else: filename
+
     path = Path.join(dir, filename)
 
     if File.exists?(path) do
@@ -540,10 +580,14 @@ defmodule Bumblebee do
   defp download({:hf, repository_id}, filename, opts) do
     revision = opts[:revision]
     cache_dir = opts[:cache_dir]
+    auth_token = opts[:auth_token]
+    subdir = opts[:subdir]
+
+    filename = if subdir, do: subdir <> "/" <> filename, else: filename
 
     url = HuggingFace.Hub.file_url(repository_id, filename, revision)
 
-    HuggingFace.Hub.cached_download(url, cache_dir: cache_dir)
+    HuggingFace.Hub.cached_download(url, cache_dir: cache_dir, auth_token: auth_token)
   end
 
   defp validate_repository!({:hf, repository_id}) when is_binary(repository_id), do: :ok

@@ -27,14 +27,25 @@ defmodule Bumblebee.HuggingFace.Hub do
       Defaults to the standard cache location for the given operating
       system
 
+    * `:auth_token` - the token to use as HTTP bearer authorization
+      for remote files
+
   """
   @spec cached_download(String.t(), keyword()) :: {:ok, String.t()} | {:error, String.t()}
   def cached_download(url, opts \\ []) do
     cache_dir = opts[:cache_dir] || default_cache_dir()
+    auth_token = opts[:auth_token]
 
     File.mkdir_p!(cache_dir)
 
-    with {:ok, etag, download_url} <- head_download(url) do
+    headers =
+      if auth_token do
+        [{"Authorization", "Bearer " <> auth_token}]
+      else
+        []
+      end
+
+    with {:ok, etag, download_url} <- head_download(url, headers) do
       metadata_path = Path.join(cache_dir, metadata_filename(url))
       entry_path = Path.join(cache_dir, entry_filename(url, etag))
 
@@ -45,7 +56,7 @@ defmodule Bumblebee.HuggingFace.Hub do
         _ ->
           tmp_path = get_tmp_path()
 
-          with :ok <- HTTP.download(download_url, tmp_path) |> finish_request() do
+          with :ok <- HTTP.download(download_url, tmp_path, headers: headers) |> finish_request() do
             File.rename!(tmp_path, entry_path)
             :ok = store_json(metadata_path, %{"etag" => etag, "url" => url})
             {:ok, entry_path}
@@ -54,8 +65,9 @@ defmodule Bumblebee.HuggingFace.Hub do
     end
   end
 
-  defp head_download(url) do
-    with {:ok, response} <- HTTP.request(:head, url, follow_redirects: false) |> finish_request(),
+  defp head_download(url, headers) do
+    with {:ok, response} <-
+           HTTP.request(:head, url, follow_redirects: false, headers: headers) |> finish_request(),
          {:ok, etag} <- fetch_etag(response) do
       download_url =
         if response.status in 300..399 do
