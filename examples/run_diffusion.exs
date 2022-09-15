@@ -17,9 +17,8 @@ auth_token = System.fetch_env!("HF_TOKEN")
 IO.puts("Loading CLIP")
 
 {:ok, clip, clip_params, _clip_config} =
-  Bumblebee.load_model({:hf, "CompVis/stable-diffusion-v1-4"},
-    auth_token: auth_token,
-    subdir: "text_encoder",
+  Bumblebee.load_model(
+    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "text_encoder"},
     module: Bumblebee.Text.ClipText,
     architecture: :base
   )
@@ -31,9 +30,8 @@ IO.puts("Loading tokenizer")
 IO.puts("Loading VAE")
 
 {:ok, vae, vae_params, _vae_config} =
-  Bumblebee.load_model({:hf, "CompVis/stable-diffusion-v1-4"},
-    auth_token: auth_token,
-    subdir: "vae",
+  Bumblebee.load_model(
+    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "vae"},
     module: Bumblebee.Diffusion.AutoencoderKl,
     architecture: :decoder,
     params_filename: "diffusion_pytorch_model.bin"
@@ -42,9 +40,8 @@ IO.puts("Loading VAE")
 IO.puts("Loading UNet")
 
 {:ok, unet, unet_params, _unet_config} =
-  Bumblebee.load_model({:hf, "CompVis/stable-diffusion-v1-4"},
-    auth_token: auth_token,
-    subdir: "unet",
+  Bumblebee.load_model(
+    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "unet"},
     module: Bumblebee.Diffusion.UNet2DCondition,
     architecture: :base,
     params_filename: "diffusion_pytorch_model.bin"

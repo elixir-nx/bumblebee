@@ -20,12 +20,27 @@ defmodule Bumblebee do
 
   Can be either:
 
-    * `{:hf, repository_id}` - the repository on Hugging Face
+    * `{:hf, repository_id}` - the repository on Hugging Face. Options
+      may be passed as the third element:
+
+        * `:revision` - the specific model version to use, it can be
+          any valid git identifier, such as branch name, tag name, or
+          a commit hash
+
+        * `:cache_dir` - the directory to store the downloaded files
+          in. Defaults to the standard cache location for the given
+          operating system
+
+        * `:auth_token` - the token to use as HTTP bearer authorization
+          for remote files
+
+        * `:subdir` - the directory within the repository where the
+          files are located
 
     * `{:local, directory}` - the directory containing model files
 
   """
-  @type repository :: {:hf, String.t()} | {:local, Path.t()}
+  @type repository :: {:hf, String.t()} | {:hf, String.t(), keyword()} | {:local, Path.t()}
 
   @doc """
   Builds new model configuration.
@@ -77,20 +92,6 @@ defmodule Bumblebee do
     * `:architecture` - the model architecture, must be supported by
       `:module`. By default it is inferred from the configuration file
 
-    * `:revision` - the specific model version to use, it can be any
-      valid git identifier, such as branch name, tag name, or a commit
-      hash
-
-    * `:cache_dir` - the directory to store the downloaded files in.
-      Defaults to the standard cache location for the given operating
-      system
-
-    * `:auth_token` - the token to use as HTTP bearer authorization
-      for remote files
-
-    * `:subdir` - the directory within the repository where the files
-      are located
-
   ## Examples
 
       {:ok, config} = Bumblebee.load_config({:hf, "microsoft/resnet-50"})
@@ -103,22 +104,14 @@ defmodule Bumblebee do
   @spec load_config(repository(), keyword()) ::
           {:ok, Bumblebee.ModelSpec.t()} | {:error, String.t()}
   def load_config(repository, opts \\ []) do
-    validate_repository!(repository)
+    repository = normalize_repository!(repository)
 
-    opts =
-      Keyword.validate!(opts, [
-        :module,
-        :architecture,
-        :revision,
-        :cache_dir,
-        :auth_token,
-        :subdir
-      ])
+    opts = Keyword.validate!(opts, [:module, :architecture])
 
     module = opts[:module]
     architecture = opts[:architecture]
 
-    with {:ok, path} <- download(repository, @config_filename, opts),
+    with {:ok, path} <- download(repository, @config_filename),
          {:ok, model_data} <- decode_config(path) do
       {inferred_module, inferred_architecture, inference_error} =
         case infer_model_type(model_data) do
@@ -251,20 +244,6 @@ defmodule Bumblebee do
     * `:architecture` - the model architecture, must be supported by
       `:module`. By default it is inferred from the configuration file
 
-    * `:revision` - the specific model version to use, it can be any
-      valid git identifier, such as branch name, tag name, or a commit
-      hash
-
-    * `:cache_dir` - the directory to store the downloaded files in.
-      Defaults to the standard cache location for the given operating
-      system
-
-    * `:auth_token` - the token to use as HTTP bearer authorization
-      for remote files
-
-    * `:subdir` - the directory within the repository where the files
-      are located
-
     * `:params_filename` - the file with the parameters to be loaded
 
   ## Examples
@@ -290,16 +269,15 @@ defmodule Bumblebee do
           {:ok, Axon.t(), params :: map(), config :: Bumblebee.ModelSpec.t()}
           | {:error, String.t()}
   def load_model(repository, opts \\ []) do
-    validate_repository!(repository)
+    repository = normalize_repository!(repository)
+
+    opts = Keyword.validate!(opts, [:config, :module, :architecture, :params_filename])
 
     config_response =
       if config = opts[:config] do
         {:ok, config}
       else
-        load_config(
-          repository,
-          Keyword.take(opts, [:module, :architecture, :revision, :cache_dir, :auth_token, :subdir])
-        )
+        load_config(repository, Keyword.take(opts, [:module, :architecture]))
       end
 
     with {:ok, %module{} = config} <- config_response,
@@ -310,7 +288,7 @@ defmodule Bumblebee do
              model,
              repository,
              opts
-             |> Keyword.take([:revision, :cache_dir, :auth_token, :subdir, :params_filename])
+             |> Keyword.take([:params_filename])
              |> Keyword.put(:base_model_prefix, module.base_model_prefix())
            ) do
       {:ok, model, params, config}
@@ -326,7 +304,7 @@ defmodule Bumblebee do
 
     input_template = module.input_template(config)
 
-    with {:ok, path} <- download(repository, filename, opts) do
+    with {:ok, path} <- download(repository, filename) do
       params =
         Bumblebee.Conversion.PyTorch.load_params!(model, input_template, path,
           base_model_prefix: base_model_prefix
@@ -372,20 +350,6 @@ defmodule Bumblebee do
       from the preprocessor configuration file, if that is not possible,
       it must be specified explicitly
 
-    * `:revision` - the specific model version to use, it can be any
-      valid git identifier, such as branch name, tag name, or a commit
-      hash
-
-    * `:cache_dir` - the directory to store the downloaded files in.
-      Defaults to the standard cache location for the given operating
-      system
-
-    * `:auth_token` - the token to use as HTTP bearer authorization
-      for remote files
-
-    * `:subdir` - the directory within the repository where the files
-      are located
-
   ## Examples
 
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "microsoft/resnet-50"})
@@ -394,15 +358,15 @@ defmodule Bumblebee do
   @spec load_featurizer(repository(), keyword()) ::
           {:ok, Bumblebee.Featurizer.t()} | {:error, String.t()}
   def load_featurizer(repository, opts \\ []) do
-    validate_repository!(repository)
-    opts = Keyword.validate!(opts, [:module, :revision, :cache_dir, :auth_token, :subdir])
+    repository = normalize_repository!(repository)
+    opts = Keyword.validate!(opts, [:module])
     module = opts[:module]
 
-    with {:ok, path} <- download(repository, @featurizer_filename, opts),
+    with {:ok, path} <- download(repository, @featurizer_filename),
          {:ok, featurizer_data} <- decode_config(path) do
       module =
         module ||
-          case infer_featurizer_type(featurizer_data, repository, opts) do
+          case infer_featurizer_type(featurizer_data, repository) do
             {:ok, module} -> module
             {:error, error} -> raise "#{error}, please specify the :module option"
           end
@@ -426,7 +390,7 @@ defmodule Bumblebee do
     "deit" => Bumblebee.Vision.DeitFeaturizer
   }
 
-  defp infer_featurizer_type(%{"feature_extractor_type" => class_name}, _repository, _opts) do
+  defp infer_featurizer_type(%{"feature_extractor_type" => class_name}, _repository) do
     case @transformers_class_to_featurizer[class_name] do
       nil ->
         {:error,
@@ -437,8 +401,8 @@ defmodule Bumblebee do
     end
   end
 
-  defp infer_featurizer_type(_featurizer_data, repository, opts) do
-    with {:ok, path} <- download(repository, @config_filename, opts),
+  defp infer_featurizer_type(_featurizer_data, repository) do
+    with {:ok, path} <- download(repository, @config_filename),
          {:ok, model_data} <- decode_config(path) do
       case model_data do
         %{"model_type" => model_type} ->
@@ -493,20 +457,6 @@ defmodule Bumblebee do
       the configuration files, if that is not possible, it must be
       specified explicitly
 
-    * `:revision` - the specific model version to use, it can be any
-      valid git identifier, such as branch name, tag name, or a commit
-      hash
-
-    * `:cache_dir` - the directory to store the downloaded files in.
-      Defaults to the standard cache location for the given operating
-      system
-
-    * `:auth_token` - the token to use as HTTP bearer authorization
-      for remote files
-
-    * `:subdir` - the directory within the repository where the files
-      are located
-
   ## Examples
 
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
@@ -515,14 +465,14 @@ defmodule Bumblebee do
   @spec load_tokenizer(repository(), keyword()) ::
           {:ok, Bumblebee.Tokenizer.t()} | {:error, String.t()}
   def load_tokenizer(repository, opts \\ []) do
-    validate_repository!(repository)
-    opts = Keyword.validate!(opts, [:module, :revision, :cache_dir, :auth_token, :subdir])
+    repository = normalize_repository!(repository)
+    opts = Keyword.validate!(opts, [:module])
     module = opts[:module]
 
-    with {:ok, path} <- download(repository, @tokenizer_filename, opts) do
+    with {:ok, path} <- download(repository, @tokenizer_filename) do
       module =
         module ||
-          case infer_tokenizer_type(repository, opts) do
+          case infer_tokenizer_type(repository) do
             {:ok, module} -> module
             {:error, error} -> raise "#{error}, please specify the :module option"
           end
@@ -543,8 +493,8 @@ defmodule Bumblebee do
     "clip" => Bumblebee.Text.ClipTokenizer
   }
 
-  defp infer_tokenizer_type(repository, opts) do
-    with {:ok, path} <- download(repository, @config_filename, opts),
+  defp infer_tokenizer_type(repository) do
+    with {:ok, path} <- download(repository, @config_filename),
          {:ok, model_data} <- decode_config(path) do
       case model_data do
         %{"model_type" => model_type} ->
@@ -563,11 +513,7 @@ defmodule Bumblebee do
     end
   end
 
-  defp download({:local, dir}, filename, opts) do
-    subdir = opts[:subdir]
-
-    filename = if subdir, do: Path.join(subdir, filename), else: filename
-
+  defp download({:local, dir}, filename) do
     path = Path.join(dir, filename)
 
     if File.exists?(path) do
@@ -577,7 +523,7 @@ defmodule Bumblebee do
     end
   end
 
-  defp download({:hf, repository_id}, filename, opts) do
+  defp download({:hf, repository_id, opts}, filename) do
     revision = opts[:revision]
     cache_dir = opts[:cache_dir]
     auth_token = opts[:auth_token]
@@ -590,11 +536,22 @@ defmodule Bumblebee do
     HuggingFace.Hub.cached_download(url, cache_dir: cache_dir, auth_token: auth_token)
   end
 
-  defp validate_repository!({:hf, repository_id}) when is_binary(repository_id), do: :ok
-  defp validate_repository!({:local, dir}) when is_binary(dir), do: :ok
+  defp normalize_repository!({:hf, repository_id}) when is_binary(repository_id) do
+    {:hf, repository_id, []}
+  end
 
-  defp validate_repository!(other) do
+  defp normalize_repository!({:hf, repository_id, opts}) when is_binary(repository_id) do
+    opts = Keyword.validate!(opts, [:revision, :cache_dir, :auth_token, :subdir])
+    {:hf, repository_id, opts}
+  end
+
+  defp normalize_repository!({:local, dir}) when is_binary(dir) do
+    {:local, dir}
+  end
+
+  defp normalize_repository!(other) do
     raise ArgumentError,
-          "expected repository to be either {:hf, repository_id} or {:local, directory}, got: #{inspect(other)}"
+          "expected repository to be either {:hf, repository_id}, {:hf, repository_id, options}" <>
+            " or {:local, directory}, got: #{inspect(other)}"
   end
 end
