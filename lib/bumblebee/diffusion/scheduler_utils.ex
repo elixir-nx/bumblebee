@@ -1,4 +1,4 @@
-defmodule Bumblebee.Diffusion.Schedules.Utils do
+defmodule Bumblebee.Diffusion.SchedulerUtils do
   @moduledoc false
 
   import Nx.Defn
@@ -64,11 +64,11 @@ defmodule Bumblebee.Diffusion.Schedules.Utils do
   @doc """
   Returns evenly spaced timesteps as used in the DDIM schedule.
   """
-  deftransform ddim_timesteps(num_train_timesteps, num_inference_steps, offset) do
-    step = div(num_train_timesteps, num_inference_steps)
+  deftransform ddim_timesteps(num_train_timesteps, num_inference_timesteps, offset) do
+    timestep_gap = div(num_train_timesteps, num_inference_timesteps)
 
-    Nx.iota({num_inference_steps})
-    |> Nx.multiply(step)
+    Nx.iota({num_inference_timesteps})
+    |> Nx.multiply(timestep_gap)
     |> Nx.add(offset)
     |> Nx.reverse()
   end

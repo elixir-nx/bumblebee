@@ -49,14 +49,9 @@ IO.puts("Loading UNet")
 
 IO.puts("Loading scheduler")
 
-scheduler_config =
-  Bumblebee.Diffusion.Schedules.Pndm.new(
-    num_train_timesteps: 1000,
-    beta_schedule: :scaled_linear,
-    beta_start: 0.00085,
-    beta_end: 0.012,
-    skip_prk_steps: true,
-    steps_offset: 1
+{:ok, scheduler} =
+  Bumblebee.load_scheduler(
+    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "scheduler"}
   )
 
 # Inference
@@ -70,16 +65,14 @@ IO.puts("Embedding text")
 IO.puts("Generating latents")
 latents = Nx.random_normal(latents_shape)
 
-{schedule, timesteps} =
-  Bumblebee.Diffusion.Schedules.Pndm.init(
-    scheduler_config,
-    num_inference_steps,
-    Nx.shape(latents)
-  )
+{scheduler_state, timesteps} =
+  Bumblebee.scheduler_init(scheduler, num_inference_steps, Nx.shape(latents))
+
+timesteps = Nx.to_flat_list(timesteps)
 
 {_, latents} =
-  for {timestep, i} <- Enum.with_index(timesteps), reduce: {schedule, latents} do
-    {schedule, latents} ->
+  for {timestep, i} <- Enum.with_index(timesteps), reduce: {scheduler_state, latents} do
+    {scheduler_state, latents} ->
       IO.puts("Diffusion step #{i}, timestep #{timestep}")
 
       unet_inputs = %{
@@ -99,7 +92,7 @@ latents = Nx.random_normal(latents_shape)
           Nx.multiply(guidance_scale, Nx.subtract(noise_pred_text, noise_pred_unconditional))
         )
 
-      Bumblebee.Diffusion.Schedules.Pndm.step(schedule, latents, noise_pred)
+      Bumblebee.scheduler_step(scheduler, scheduler_state, latents, noise_pred)
   end
 
 latents = Nx.multiply(Nx.divide(1, 0.18215), latents)

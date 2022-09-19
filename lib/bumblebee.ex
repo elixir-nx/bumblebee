@@ -13,6 +13,7 @@ defmodule Bumblebee do
   @config_filename "config.json"
   @featurizer_filename "preprocessor_config.json"
   @tokenizer_filename "tokenizer.json"
+  @scheduler_filename "scheduler_config.json"
   @params_filename %{pytorch: "pytorch_model.bin"}
 
   @typedoc """
@@ -43,7 +44,7 @@ defmodule Bumblebee do
   @type repository :: {:hf, String.t()} | {:hf, String.t(), keyword()} | {:local, Path.t()}
 
   @doc """
-  Builds new model configuration.
+  Builds a new model configuration.
 
   This function is primarily useful in combination with `build_model/1`
   when building a fresh model for training.
@@ -315,7 +316,7 @@ defmodule Bumblebee do
   end
 
   @doc """
-  Builds new featurizer.
+  Builds a new featurizer.
 
   The featurizer can be then used with the `featurize/2` function to
   convert raw data into model input features.
@@ -511,6 +512,120 @@ defmodule Bumblebee do
           {:error, "could not infer tokenizer type from the model configuration"}
       end
     end
+  end
+
+  @doc """
+  Builds a new scheduler.
+
+  See `Bumblebee.Scheduler` to learn more about schedulers.
+  """
+  @spec build_scheduler(module(), keyword()) :: Bumblebee.Scheduler.t()
+  def build_scheduler(module, config_opts \\ []) do
+    config = struct!(module)
+    module.config(config, config_opts)
+  end
+
+  @doc """
+  Initializes state for a new scheduler loop.
+
+  Returns a pair of `{state, timesteps}`, where `state` is an opaque
+  container expected by `scheduler_step/4` and `timesteps` is a sequence
+  of subsequent timesteps for model forward pass.
+
+  Note that the number of `timesteps` may not match `num_inference_timesteps`
+  exactly. `num_inference_timesteps` parameterizes sampling points,
+  however depending on the method, sampling certain points may require
+  multiple forward passes of the model and each element in `timesteps`
+  corresponds to a single forward pass.
+  """
+  @spec scheduler_init(
+          Bumblebee.Scheduler.t(),
+          non_neg_integer(),
+          tuple()
+        ) :: {Bumblebee.Scheduler.state(), Nx.Tensor.t()}
+  def scheduler_init(%module{} = scheduler, num_inference_timesteps, sample_shape) do
+    module.init(scheduler, num_inference_timesteps, sample_shape)
+  end
+
+  @doc """
+  Predicts sample at the previous timestep using the given scheduler.
+
+  Takes the current `sample` and the `noise` predicted by the model at
+  the current timestep. Returns `{state, prev_sample}`, where `state`
+  is the updated scheduler loop state and `prev_sample` is the predicted
+  sample at the previous timestep.
+
+  Note that some schedulers require several forward passes of the model
+  (and a couple calls to this function) to make an actual prediction for
+  the previous sample.
+  """
+  @spec scheduler_step(
+          Bumblebee.Scheduler.t(),
+          Bumblebee.Scheduler.state(),
+          Nx.Tensor.t(),
+          Nx.Tensor.t()
+        ) :: {Bumblebee.Scheduler.state(), Nx.Tensor.t()}
+  def scheduler_step(%module{} = scheduler, state, sample, noise) do
+    module.step(scheduler, state, sample, noise)
+  end
+
+  @doc """
+  Loads scheduler from a model repository.
+
+  ## Options
+
+    * `:module` - the scheduler module. By default it is inferred
+      from the scheduler configuration file, if that is not possible,
+      it must be specified explicitly
+
+  ## Examples
+
+      {:ok, scheduler} =
+        Bumblebee.load_scheduler(
+          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "scheduler"}
+        )
+
+  """
+  @spec load_scheduler(repository(), keyword()) ::
+          {:ok, Bumblebee.Scheduler.t()} | {:error, String.t()}
+  def load_scheduler(repository, opts \\ []) do
+    repository = normalize_repository!(repository)
+    opts = Keyword.validate!(opts, [:module])
+    module = opts[:module]
+
+    with {:ok, path} <- download(repository, @scheduler_filename),
+         {:ok, scheduler_data} <- decode_config(path) do
+      module =
+        module ||
+          case infer_scheduler_type(scheduler_data) do
+            {:ok, module} -> module
+            {:error, error} -> raise "#{error}, please specify the :module option"
+          end
+
+      config = struct!(module)
+      config = HuggingFace.Transformers.Config.load(config, scheduler_data)
+      {:ok, config}
+    end
+  end
+
+  @diffusers_class_to_scheduler %{
+    "DDIMScheduler" => Bumblebee.Diffusion.DdimScheduler,
+    "PNDMScheduler" => Bumblebee.Diffusion.PndmScheduler
+  }
+
+  defp infer_scheduler_type(%{"_class_name" => class_name}) do
+    case @diffusers_class_to_scheduler[class_name] do
+      nil ->
+        {:error,
+         "could not match the class name #{inspect(class_name)} to any of the supported schedulers"}
+
+      module ->
+        {:ok, module}
+    end
+  end
+
+  defp infer_scheduler_type(_scheduler_data) do
+    {:error, "could not infer featurizer type from the configuration"}
   end
 
   defp download({:local, dir}, filename) do
