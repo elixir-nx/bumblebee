@@ -161,16 +161,16 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
   end
 
   @impl true
-  deftransform step(scheduler, state, sample, noise) do
-    do_step(scheduler, state, sample, noise)
+  deftransform step(config, state, sample, noise) do
+    do_step(config, state, sample, noise)
   end
 
-  defnp do_step(scheduler \\ [], state, sample, noise) do
+  defnp do_step(config \\ [], state, sample, noise) do
     {state, prev} =
-      if scheduler.skip_prk_steps do
-        step_just_plms(scheduler, state, sample, noise)
+      if config.skip_prk_steps do
+        step_just_plms(config, state, sample, noise)
       else
-        step_prk_plms(scheduler, state, sample, noise)
+        step_prk_plms(config, state, sample, noise)
       end
 
     state = %{state | iteration: state.iteration + 1}
@@ -178,7 +178,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     {state, prev}
   end
 
-  defnp step_prk_plms(scheduler, state, sample, noise) do
+  defnp step_prk_plms(config, state, sample, noise) do
     # This is the version from the original paper [1], specifically F-PNDM.
     # It uses the Runge-Kutta method to compute the first 3 results (each
     # requiring 4 iterations).
@@ -186,13 +186,13 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     # [1]: https://arxiv.org/abs/2202.09778
 
     if state.iteration < 12 do
-      step_prk(scheduler, state, sample, noise)
+      step_prk(config, state, sample, noise)
     else
-      step_plms(scheduler, state, sample, noise)
+      step_plms(config, state, sample, noise)
     end
   end
 
-  defnp step_just_plms(scheduler, state, sample, noise) do
+  defnp step_just_plms(config, state, sample, noise) do
     # This alternative version is based on the paper, however instead of the
     # Runge-Kutta method, it uses lower-order linear multi-step for computing
     # the first 3 results (2, 1, 1 iterations respectively). For the original
@@ -201,9 +201,9 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     # [1]: https://github.com/CompVis/latent-diffusion/pull/51
 
     if state.iteration < 4 do
-      step_warmup_plms(scheduler, state, sample, noise)
+      step_warmup_plms(config, state, sample, noise)
     else
-      step_plms(scheduler, state, sample, noise)
+      step_plms(config, state, sample, noise)
     end
   end
 
@@ -215,7 +215,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
   # pass (the eps function). We keep track of x_t as current_sample, and
   # noise_prime corresponds to e_t prime.
 
-  defnp step_prk(scheduler, state, sample, noise) do
+  defnp step_prk(config, state, sample, noise) do
     # See Equation (13)
 
     %{noise_prime: noise_prime, current_sample: current_sample} = state
@@ -254,12 +254,12 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     diff = if(rk_step_number < 2, do: div(state.timestep_gap, 2), else: state.timestep_gap)
     prev_timestep = timestep - diff
 
-    prev_sample = prev_sample(scheduler, state, current_sample, noise, timestep, prev_timestep)
+    prev_sample = prev_sample(config, state, current_sample, noise, timestep, prev_timestep)
 
     {state, prev_sample}
   end
 
-  defnp step_warmup_plms(scheduler, state, sample, noise) do
+  defnp step_warmup_plms(config, state, sample, noise) do
     # The first two iterations use Equation (22), third iteration uses
     # Equation (23), and fourth iteration uses third-order LMS in the
     # same spirit.
@@ -305,12 +305,12 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
     prev_timestep = timestep - state.timestep_gap
 
-    prev_sample = prev_sample(scheduler, state, current_sample, noise, timestep, prev_timestep)
+    prev_sample = prev_sample(config, state, current_sample, noise, timestep, prev_timestep)
 
     {state, prev_sample}
   end
 
-  defnp step_plms(scheduler, state, sample, noise) do
+  defnp step_plms(config, state, sample, noise) do
     # See Equation (12)
 
     state = store_noise(state, noise)
@@ -322,12 +322,12 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     timestep = state.timesteps[state.iteration]
     prev_timestep = timestep - state.timestep_gap
 
-    prev_sample = prev_sample(scheduler, state, sample, noise, timestep, prev_timestep)
+    prev_sample = prev_sample(config, state, sample, noise, timestep, prev_timestep)
 
     {state, prev_sample}
   end
 
-  defnp prev_sample(scheduler, state, sample, noise, timestep, prev_timestep) do
+  defnp prev_sample(config, state, sample, noise, timestep, prev_timestep) do
     # See Equation (11)
 
     alpha_bar_t = state.alpha_bars[timestep]
@@ -336,7 +336,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
       if prev_timestep >= 0 do
         state.alpha_bars[prev_timestep]
       else
-        if scheduler.set_alpha_to_one, do: 1.0, else: state.alpha_bars[0]
+        if config.set_alpha_to_one, do: 1.0, else: state.alpha_bars[0]
       end
 
     sample_coeff = (alpha_bar_t_prev / alpha_bar_t) ** 0.5

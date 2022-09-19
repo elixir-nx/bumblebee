@@ -120,11 +120,11 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
   end
 
   @impl true
-  deftransform step(scheduler, state, sample, noise) do
-    do_step(scheduler, state, sample, noise)
+  deftransform step(config, state, sample, noise) do
+    do_step(config, state, sample, noise)
   end
 
-  defnp do_step(schedule \\ [], state, sample, noise) do
+  defnp do_step(config \\ [], state, sample, noise) do
     # See Equation (12)
 
     # Note that in the paper alpha_t represents a cumulative product,
@@ -140,13 +140,13 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
       if prev_timestep >= 0 do
         state.alpha_bars[prev_timestep]
       else
-        if schedule.set_alpha_to_one, do: 1.0, else: state.alpha_bars[0]
+        if config.set_alpha_to_one, do: 1.0, else: state.alpha_bars[0]
       end
 
     pred_original_sample = (sample - Nx.sqrt(1 - alpha_bar_t) * noise) / Nx.sqrt(alpha_bar_t)
 
     pred_original_sample =
-      if schedule.clip_sample do
+      if config.clip_sample do
         Nx.clip(pred_original_sample, -1, 1)
       else
         pred_original_sample
@@ -154,11 +154,11 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
 
     # See Equation (16)
     sigma_t =
-      schedule.eta *
+      config.eta *
         Nx.sqrt((1 - alpha_bar_t_prev) / (1 - alpha_bar_t) * (1 - alpha_bar_t / alpha_bar_t_prev))
 
     noise =
-      if schedule.use_clipped_model_output do
+      if config.use_clipped_model_output do
         # Re-derive the noise as in GLIDE
         (sample - Nx.sqrt(alpha_bar_t) * pred_original_sample) / Nx.sqrt(1 - alpha_bar_t)
       else
@@ -170,7 +170,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
     prev_sample = Nx.sqrt(alpha_bar_t_prev) * pred_original_sample + pred_sample_direction
 
     prev_sample =
-      if schedule.eta > 0 do
+      if config.eta > 0 do
         prev_sample + sigma_t * Nx.random_normal(prev_sample)
       else
         prev_sample
