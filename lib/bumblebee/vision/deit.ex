@@ -22,7 +22,7 @@ defmodule Bumblebee.Vision.Deit do
 
   ## Inputs
 
-    * `"pixel_values"` - {batch_size, num_channels, image_size, image_size}
+    * `"pixel_values"` - `{batch_size, num_channels, image_size, image_size}`
 
       Featurized image pixel values.
 

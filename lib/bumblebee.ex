@@ -212,7 +212,11 @@ defmodule Bumblebee do
     "MBartForQuestionAnswering" => {Bumblebee.Text.Mbart, :for_question_answering},
     "MBartForCausalLM" => {Bumblebee.Text.Mbart, :for_causal_language_modeling},
     # ClipText
-    "CLIPTextModel" => {Bumblebee.Text.ClipText, :base}
+    "CLIPTextModel" => {Bumblebee.Text.ClipText, :base},
+    # VaeKl
+    "AutoencoderKL" => {Bumblebee.Diffusion.VaeKl, :base},
+    # UNet2DConditional
+    "UNet2DConditionModel" => {Bumblebee.Diffusion.UNet2DConditional, :base}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do
@@ -224,6 +228,10 @@ defmodule Bumblebee do
       {module, architecture} ->
         {:ok, module, architecture}
     end
+  end
+
+  defp infer_model_type(%{"_class_name" => class_name}) do
+    infer_model_type(%{"architectures" => [class_name]})
   end
 
   defp infer_model_type(_model_data) do

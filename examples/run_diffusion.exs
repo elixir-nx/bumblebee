@@ -32,7 +32,6 @@ IO.puts("Loading VAE")
 {:ok, vae, vae_params, _vae_config} =
   Bumblebee.load_model(
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "vae"},
-    module: Bumblebee.Diffusion.AutoencoderKl,
     architecture: :decoder,
     params_filename: "diffusion_pytorch_model.bin"
   )
@@ -42,8 +41,6 @@ IO.puts("Loading UNet")
 {:ok, unet, unet_params, _unet_config} =
   Bumblebee.load_model(
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "unet"},
-    module: Bumblebee.Diffusion.UNet2DCondition,
-    architecture: :base,
     params_filename: "diffusion_pytorch_model.bin"
   )
 
@@ -78,7 +75,7 @@ timesteps = Nx.to_flat_list(timesteps)
       unet_inputs = %{
         "sample" => Nx.concatenate([latents, latents]),
         "timestep" => Nx.tensor(timestep),
-        "encoder_hidden_states" => text_embeddings
+        "encoder_last_hidden_state" => text_embeddings
       }
 
       noise_pred = Axon.predict(unet, unet_params, unet_inputs, compiler: EXLA)
@@ -96,7 +93,7 @@ timesteps = Nx.to_flat_list(timesteps)
   end
 
 latents = Nx.multiply(Nx.divide(1, 0.18215), latents)
-images = Axon.predict(vae, vae_params, latents, compiler: EXLA)
+%{sample: images} = Axon.predict(vae, vae_params, latents, compiler: EXLA)
 
 images =
   images
