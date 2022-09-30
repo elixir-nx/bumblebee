@@ -134,6 +134,25 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Converts values for the given keys to atoms.
+  """
+  @spec map_items(map(), String.t(), map()) :: map()
+  def map_items(data, key, mapping) do
+    update(data, key, fn list ->
+      Enum.map(list, fn item ->
+        case Map.fetch(mapping, item) do
+          {:ok, replacement} ->
+            replacement
+
+          :error ->
+            raise ArgumentError,
+                  "unrecognized item #{inspect(item)} in #{inspect(key)}, supported values are: #{inspect(Map.keys(mapping))}"
+        end
+      end)
+    end)
+  end
+
+  @doc """
   Converts values for common model options wherever necessary.
   """
   @spec convert_common(map()) :: map()

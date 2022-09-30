@@ -36,7 +36,8 @@ defmodule Bumblebee.Conversion.PyTorch do
       if diff.missing == [] do
         params
       else
-        Axon.init(model, input_template, params)
+        {init_fun, _} = Axon.build(model)
+        init_fun.(input_template, params)
       end
 
     log_model_diff(diff)

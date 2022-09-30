@@ -3,7 +3,7 @@ defmodule Bumblebee.Layers do
 
   import Nx.Defn
 
-  @unsupported_activations [:gelu_new]
+  @unsupported_activations [:gelu_new, :quick_gelu]
 
   @pi :math.pi()
 
@@ -35,6 +35,13 @@ defmodule Bumblebee.Layers do
   defn gelu_new(input, _opts \\ []) do
     0.5 * input *
       (1.0 + Nx.tanh(Nx.sqrt(2.0 / @pi) * (input + 0.044715 * Nx.power(input, 3.0))))
+  end
+
+  @doc """
+  Implements the GeLU quick activation from huggingface/transformers.
+  """
+  defn quick_gelu(input, _opts \\ []) do
+    input * Nx.sigmoid(1.702 * input)
   end
 
   @doc """

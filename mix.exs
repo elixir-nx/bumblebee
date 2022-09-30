@@ -27,7 +27,8 @@ defmodule Bumblebee.MixProject do
   defp deps do
     [
       {:axon, "~> 0.2.0-dev", axon_opts()},
-      {:tokenizers, github: "elixir-nx/tokenizers"},
+      {:tokenizers,
+       github: "elixir-nx/tokenizers", ref: "cb98353a19f45ba127870eb36334f635ca297823"},
       # TODO: Comment me when using tokenizers from release
       {:rustler, ">= 0.0.0", optional: true},
       {:exla, github: "elixir-nx/nx", sparse: "exla", override: true},
@@ -56,31 +57,66 @@ defmodule Bumblebee.MixProject do
       source_ref: "v#{@version}",
       groups_for_modules: [
         Models: [
+          Bumblebee.Diffusion.UNet2DConditional,
+          Bumblebee.Diffusion.VaeKl,
           Bumblebee.Text.Albert,
           Bumblebee.Text.Bart,
           Bumblebee.Text.Bert,
+          Bumblebee.Text.ClipText,
+          Bumblebee.Text.Gpt2,
+          Bumblebee.Text.Mbart,
           Bumblebee.Text.Roberta,
           Bumblebee.Vision.ConvNext,
-          Bumblebee.Vision.ResNet,
           Bumblebee.Vision.Deit,
+          Bumblebee.Vision.ResNet,
           Bumblebee.Vision.Vit
         ],
         Preprocessors: [
           Bumblebee.Text.AlbertTokenizer,
           Bumblebee.Text.BartTokenizer,
           Bumblebee.Text.BertTokenizer,
+          Bumblebee.Text.ClipTokenizer,
+          Bumblebee.Text.Gpt2Tokenizer,
+          Bumblebee.Text.MbartTokenizer,
           Bumblebee.Text.RobertaTokenizer,
           Bumblebee.Vision.ConvNextFeaturizer,
           Bumblebee.Vision.DeitFeaturizer,
           Bumblebee.Vision.VitFeaturizer
         ],
+        Schedulers: [
+          Bumblebee.Diffusion.DdimScheduler,
+          Bumblebee.Diffusion.PndmScheduler
+        ],
         Interfaces: [
           Bumblebee.ModelSpec,
           Bumblebee.Featurizer,
           Bumblebee.Tokenizer,
+          Bumblebee.Scheduler,
           Bumblebee.HuggingFace.Transformers.Config
         ]
-      ]
+      ],
+      before_closing_body_tag: &before_closing_body_tag/1
     ]
   end
+
+  # Add KaTeX integration for rendering math
+  defp before_closing_body_tag(:html) do
+    """
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.13.0/dist/katex.min.css" integrity="sha384-t5CR+zwDAROtph0PXGte6ia8heboACF9R5l/DiY+WZ3P2lxNgvJkQk5n7GPvLMYw" crossorigin="anonymous">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.13.0/dist/katex.min.js" integrity="sha384-FaFLTlohFghEIZkw6VGwmf9ISTubWAVYW8tG8+w2LAIftJEULZABrF9PPFv+tVkH" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.13.0/dist/contrib/auto-render.min.js" integrity="sha384-bHBqxz8fokvgoJ/sc17HODNxa42TlaEhB+w8ZJXTc2nZf1VgEaFZeZvT4Mznfz0v" crossorigin="anonymous"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", function() {
+        renderMathInElement(document.body, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$", right: "$", display: false },
+          ]
+        });
+      });
+    </script>
+    """
+  end
+
+  defp before_closing_body_tag(_), do: ""
 end

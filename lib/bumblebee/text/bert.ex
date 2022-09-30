@@ -80,7 +80,7 @@ defmodule Bumblebee.Text.Bert do
 
   The `:for_causal_language_modeling` model is a decoder and accepts
   the following additional inputs: `"encoder_last_hidden_state"`,
-  `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache".
+  `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache"`.
 
   ## Configuration
 
