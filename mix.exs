@@ -57,28 +57,41 @@ defmodule Bumblebee.MixProject do
       source_ref: "v#{@version}",
       groups_for_modules: [
         Models: [
+          Bumblebee.Diffusion.UNet2DConditional,
+          Bumblebee.Diffusion.VaeKl,
           Bumblebee.Text.Albert,
           Bumblebee.Text.Bart,
           Bumblebee.Text.Bert,
+          Bumblebee.Text.ClipText,
+          Bumblebee.Text.Gpt2,
+          Bumblebee.Text.Mbart,
           Bumblebee.Text.Roberta,
           Bumblebee.Vision.ConvNext,
-          Bumblebee.Vision.ResNet,
           Bumblebee.Vision.Deit,
+          Bumblebee.Vision.ResNet,
           Bumblebee.Vision.Vit
         ],
         Preprocessors: [
           Bumblebee.Text.AlbertTokenizer,
           Bumblebee.Text.BartTokenizer,
           Bumblebee.Text.BertTokenizer,
+          Bumblebee.Text.ClipTokenizer,
+          Bumblebee.Text.Gpt2Tokenizer,
+          Bumblebee.Text.MbartTokenizer,
           Bumblebee.Text.RobertaTokenizer,
           Bumblebee.Vision.ConvNextFeaturizer,
           Bumblebee.Vision.DeitFeaturizer,
           Bumblebee.Vision.VitFeaturizer
         ],
+        Schedulers: [
+          Bumblebee.Diffusion.DdimScheduler,
+          Bumblebee.Diffusion.PndmScheduler
+        ],
         Interfaces: [
           Bumblebee.ModelSpec,
           Bumblebee.Featurizer,
           Bumblebee.Tokenizer,
+          Bumblebee.Scheduler,
           Bumblebee.HuggingFace.Transformers.Config
         ]
       ],

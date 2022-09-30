@@ -350,7 +350,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     sample_coeff * sample - noise_coeff * noise / noise_denom_coeff
   end
 
-  deftransform store_noise(state, noise) do
+  deftransformp store_noise(state, noise) do
     recent_noise =
       state.recent_noise
       |> Tuple.delete_at(tuple_size(state.recent_noise) - 1)
