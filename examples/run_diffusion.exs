@@ -19,7 +19,6 @@ IO.puts("Loading CLIP")
 {:ok, clip, clip_params, _clip_config} =
   Bumblebee.load_model(
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "text_encoder"},
-    module: Bumblebee.Text.ClipText,
     architecture: :base
   )
 
@@ -78,7 +77,7 @@ timesteps = Nx.to_flat_list(timesteps)
         "encoder_last_hidden_state" => text_embeddings
       }
 
-      noise_pred = Axon.predict(unet, unet_params, unet_inputs, compiler: EXLA)
+      %{sample: noise_pred} = Axon.predict(unet, unet_params, unet_inputs, compiler: EXLA)
 
       noise_pred_unconditional = noise_pred[0..(batch_size - 1)//1]
       noise_pred_text = noise_pred[batch_size..-1//1]

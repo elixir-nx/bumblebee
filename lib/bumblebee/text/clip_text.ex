@@ -1,16 +1,69 @@
 defmodule Bumblebee.Text.ClipText do
-  @common_keys [
-    :output_hidden_states,
-    :output_attentions,
-    :id2label,
-    :label2id,
-    :num_labels
-  ]
+  @common_keys [:output_hidden_states, :output_attentions, :id2label, :label2id, :num_labels]
+
   @moduledoc """
-  Models based on CLIP architecture.
+  The CLIP architectures for text encoding.
+
+  ## Architectures
+
+    * `:base` - the base text model
+
+  ## Inputs
+
+    * `"input_ids"` - `{batch_size, seq_length}`
+
+      Indices of input sequence tokens in the vocabulary.
+
+    * `"attention_mask"` - `{batch_size, seq_length}`
+
+      Mask indicating which tokens to attend to. This is used to ignore
+      padding tokens, which are added when processing a batch of sequences
+      with different length.
+
+
+    * `"position_ids"` - `{batch_size, seq_length}`
+
+      Indices of positions of each input sequence tokens in the position
+      embeddings.
+
+  ## Config
+
+    * `:vocab_size` - vocabulary size of the model. Defines the number
+      of distinct tokens that can be represented by the in model input
+      and output. Defaults to `49408`
+
+    * `:hidden_size` - dimensionality of the encoder layers and the
+      pooler layer. Defaults to `512`
+
+    * `:intermediate_size` - dimensionality of the "intermediate"
+      (often named feed-forward) layer in the Transformer encoder.
+      Defaults to `2048`
+
+    * `:num_hidden_layers` - the number of hidden layers in the
+      Transformer encoder. Defaults to `12`
+
+    * `:num_attention_heads` - the number of attention heads for each
+      attention layer in the Transformer encoder. Defaults to `8`
+
+    * `:max_position_embeddings` - the maximum sequence length that this
+      model might ever be used with. Typically set this to something
+      large just in case (e.g. 512 or 1024 or 2048). Defaults to `77`
+
+    * `:hidden_act` - the activation function in the encoder and
+      pooler. Defaults to `:quick_gelu`
+
+    * `:layer_norm_eps` - the epsilon used by the layer normalization
+      layers. Defaults to `1.0e-5`
+
+    * `:dropout` - the dropout probability for all fully connected layers
+      in the embeddings, encoder, and pooler. Defaults to `0.0`
+
+    * `:attention_dropout` - the dropout probability for attention
+      probabilities. Defaults to `0.0`
+
   """
 
-  # TODO: Should this include the joint model as well?
+  # TODO: add ClipVision and joint Clip
 
   import Bumblebee.Utils.Model, only: [join: 2]
 
@@ -29,8 +82,6 @@ defmodule Bumblebee.Text.ClipText do
               layer_norm_eps: 1.0e-5,
               dropout: 0.0,
               attention_dropout: 0.0,
-              initializer_range: 0.02,
-              initializer_factor: 1.0,
               # Tokens
               pad_token_id: 1,
               bos_token_id: 0,
@@ -288,6 +339,11 @@ defmodule Bumblebee.Text.ClipText do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
+    # Support loading from the entire Clip config
+    def load(%{"model_type" => "clip", "text_config" => config}, data) do
+      load(config, data)
+    end
+
     def load(config, data) do
       data
       |> Shared.convert_to_atom(["hidden_act"])
