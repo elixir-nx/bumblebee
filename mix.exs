@@ -31,12 +31,12 @@ defmodule Bumblebee.MixProject do
        github: "elixir-nx/tokenizers", ref: "cb98353a19f45ba127870eb36334f635ca297823"},
       # TODO: Comment me when using tokenizers from release
       {:rustler, ">= 0.0.0", optional: true},
-      {:exla, github: "elixir-nx/nx", sparse: "exla", override: true},
-      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
+      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true, branch: "jv-cache-analysis"},
+      {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test], branch: "jv-cache-analysis"},
       {:stb_image, "~> 0.5.0", optional: true},
       {:unpickler, github: "dashbitco/unpickler"},
       {:castore, "~> 0.1.0"},
-      {:jason, "~> 1.3.0"},
+      {:jason, "~> 1.4.0"},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false}
     ]
@@ -46,7 +46,7 @@ defmodule Bumblebee.MixProject do
     if path = System.get_env("AXON_PATH") do
       [path: path]
     else
-      [github: "elixir-nx/axon", branch: "main"]
+      [github: "elixir-nx/axon", ref: "750e6a68df88a7f33ab48a65e16cc4ce53e99dea"]
     end
   end
 

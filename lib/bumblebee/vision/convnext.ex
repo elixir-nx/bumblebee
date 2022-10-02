@@ -253,7 +253,7 @@ defmodule Bumblebee.Vision.ConvNext do
         name: join(name, "dwconv"),
         kernel_initializer: kernel_initializer(config)
       )
-      |> Axon.transpose([0, 2, 3, 1], ignore_batch?: false, name: join(name, "transpose1"))
+      |> Axon.transpose([0, 2, 3, 1], name: join(name, "transpose1"))
       |> Axon.layer_norm(
         epsilon: 1.0e-6,
         channel_index: 3,
@@ -284,7 +284,7 @@ defmodule Bumblebee.Vision.ConvNext do
       end
 
     scaled
-    |> Axon.transpose([0, 3, 1, 2], ignore_batch?: false, name: join(name, "transpose2"))
+    |> Axon.transpose([0, 3, 1, 2], name: join(name, "transpose2"))
     |> Layers.drop_path(rate: drop_path_rate, name: join(name, "drop_path"))
     |> Axon.add(input, name: join(name, "residual"))
   end
