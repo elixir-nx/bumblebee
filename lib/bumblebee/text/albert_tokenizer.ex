@@ -9,7 +9,14 @@ defmodule Bumblebee.Text.AlbertTokenizer do
 
   @impl true
   def apply(%{tokenizer: tokenizer}, input, add_special_tokens, pad_direction, max_length) do
-    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, add_special_tokens, "<pad>", pad_direction, max_length)
+    Bumblebee.Utils.Tokenizers.apply(
+      tokenizer,
+      input,
+      add_special_tokens,
+      "<pad>",
+      pad_direction,
+      max_length
+    )
   end
 
   @impl true
