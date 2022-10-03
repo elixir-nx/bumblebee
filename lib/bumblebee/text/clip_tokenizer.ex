@@ -8,13 +8,14 @@ defmodule Bumblebee.Text.ClipTokenizer do
   @behaviour Bumblebee.Tokenizer
 
   @impl true
-  def apply(%{tokenizer: tokenizer}, input, add_special_tokens, pad_direction) do
+  def apply(%{tokenizer: tokenizer}, input, add_special_tokens, pad_direction, max_length) do
     Bumblebee.Utils.Tokenizers.apply(
       tokenizer,
       input,
       add_special_tokens,
       "<|endoftext|>",
-      pad_direction
+      pad_direction,
+      max_length
     )
   end
 

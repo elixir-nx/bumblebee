@@ -447,14 +447,15 @@ defmodule Bumblebee do
       inputs = Bumblebee.apply_tokenizer(tokenizer, ["The capital of France is [MASK]."])
 
   """
+  # TODO: Add max_length option
   @spec apply_tokenizer(
           Bumblebee.Tokenizer.t(),
           Bumblebee.Tokenizer.input() | list(Bumblebee.Tokenizer.input()),
           keyword()
         ) :: any()
   def apply_tokenizer(%module{} = tokenizer, input, opts \\ []) do
-    opts = Keyword.validate!(opts, add_special_tokens: true, pad_direction: :right)
-    module.apply(tokenizer, input, opts[:add_special_tokens], opts[:pad_direction])
+    opts = Keyword.validate!(opts, add_special_tokens: true, pad_direction: :right, max_length: nil)
+    module.apply(tokenizer, input, opts[:add_special_tokens], opts[:pad_direction], opts[:max_length])
   end
 
   @doc """
