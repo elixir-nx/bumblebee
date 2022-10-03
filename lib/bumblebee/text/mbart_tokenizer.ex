@@ -14,7 +14,7 @@ defmodule Bumblebee.Text.MbartTokenizer do
         add_special_tokens,
         pad_direction,
         truncate_direction,
-        max_length
+        length
       ) do
     Bumblebee.Utils.Tokenizers.apply(
       tokenizer,
@@ -23,7 +23,7 @@ defmodule Bumblebee.Text.MbartTokenizer do
       "<pad>",
       pad_direction,
       truncate_direction,
-      max_length
+      length
     )
   end
 

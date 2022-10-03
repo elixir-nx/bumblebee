@@ -15,9 +15,6 @@ defmodule Bumblebee.Utils.Model do
   """
   @spec inputs_to_map(list(Axon.t())) :: %{String.t() => Axon.t()}
   def inputs_to_map(inputs) when is_list(inputs) do
-    for %Axon{output: id, nodes: nodes} = axon <- inputs, into: %{} do
-      input = nodes[id]
-      {input.name.(:input, %{}), axon}
-    end
+    for input <- inputs, into: %{}, do: {input.name.(:input, %{}), input}
   end
 end
