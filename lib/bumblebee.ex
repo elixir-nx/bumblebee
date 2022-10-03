@@ -447,7 +447,6 @@ defmodule Bumblebee do
       inputs = Bumblebee.apply_tokenizer(tokenizer, ["The capital of France is [MASK]."])
 
   """
-  # TODO: Add max_length option
   @spec apply_tokenizer(
           Bumblebee.Tokenizer.t(),
           Bumblebee.Tokenizer.input() | list(Bumblebee.Tokenizer.input()),

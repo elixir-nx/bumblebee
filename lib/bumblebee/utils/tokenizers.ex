@@ -13,7 +13,7 @@ defmodule Bumblebee.Utils.Tokenizers do
         pad_token,
         pad_direction,
         truncate_direction,
-        seq_length
+        length
       ) do
     input = List.wrap(input)
 
@@ -24,9 +24,9 @@ defmodule Bumblebee.Utils.Tokenizers do
       |> Enum.map(&Encoding.n_tokens/1)
       |> Enum.max()
 
-    pad_length =
-      if seq_length do
-        max(seq_length, max_seq_length)
+    length =
+      if length do
+        length
       else
         max_seq_length
       end
@@ -34,32 +34,15 @@ defmodule Bumblebee.Utils.Tokenizers do
     pad_id = Tokenizer.token_to_id(tokenizer, pad_token)
 
     encodings =
-      Enum.map(
-        encodings,
-        &Encoding.pad(&1, pad_length,
+      Enum.map(encodings, fn seq ->
+        seq
+        |> Encoding.pad(length,
           pad_id: pad_id,
           pad_token: pad_token,
           direction: pad_direction
         )
-      )
-
-    padded_length =
-      encodings
-      |> Enum.map(&Encoding.n_tokens/1)
-      |> Enum.max()
-
-    truncate_length =
-      if seq_length do
-        min(seq_length, padded_length)
-      else
-        padded_length
-      end
-
-    encodings =
-      Enum.map(
-        encodings,
-        &Encoding.truncate(&1, truncate_length, direction: truncate_direction)
-      )
+        |> Encoding.truncate(length, direction: truncate_direction)
+      end)
 
     input_ids = Enum.map(encodings, &Encoding.get_ids/1)
     attention_mask = Enum.map(encodings, &Encoding.get_attention_mask/1)

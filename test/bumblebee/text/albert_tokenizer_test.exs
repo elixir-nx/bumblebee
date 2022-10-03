@@ -45,21 +45,21 @@ defmodule Bumblebee.Text.AlbertTokenizerTest do
 
       inputs =
         Bumblebee.apply_tokenizer(tokenizer, ["foo", "foo bar", "foo bar baz bang buzz"],
-          length: 8
+          length: 6
         )
 
       assert_equal(
         inputs["input_ids"],
         Nx.tensor([
-          [2, 4310, 111, 3, 0, 0, 0, 0],
-          [2, 4310, 111, 748, 3, 0, 0, 0],
-          [2, 4310, 111, 748, 19674, 6582, 9122, 3]
+          [2, 4310, 111, 3, 0, 0],
+          [2, 4310, 111, 748, 3, 0],
+          [2, 4310, 111, 748, 19674, 6582]
         ])
       )
 
       assert_equal(
         inputs["attention_mask"],
-        Nx.tensor([[1, 1, 1, 1, 0, 0, 0, 0], [1, 1, 1, 1, 1, 0, 0, 0], [1, 1, 1, 1, 1, 1, 1, 1]])
+        Nx.tensor([[1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 1, 1]])
       )
     end
   end
