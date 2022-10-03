@@ -40,7 +40,7 @@ defmodule Bumblebee.Text.AlbertTokenizerTest do
       )
     end
 
-    test "encoding model input pads and truncates to length" do
+    test "encoding model input pads and truncates to :length" do
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "albert-base-v2"})
 
       inputs =
