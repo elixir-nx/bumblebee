@@ -8,8 +8,23 @@ defmodule Bumblebee.Text.RobertaTokenizer do
   @behaviour Bumblebee.Tokenizer
 
   @impl true
-  def apply(%{tokenizer: tokenizer}, input, add_special_tokens, pad_direction) do
-    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, add_special_tokens, "<pad>", pad_direction)
+  def apply(
+        %{tokenizer: tokenizer},
+        input,
+        add_special_tokens,
+        pad_direction,
+        truncate_direction,
+        length
+      ) do
+    Bumblebee.Utils.Tokenizers.apply(
+      tokenizer,
+      input,
+      add_special_tokens,
+      "<pad>",
+      pad_direction,
+      truncate_direction,
+      length
+    )
   end
 
   @impl true

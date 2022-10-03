@@ -453,8 +453,22 @@ defmodule Bumblebee do
           keyword()
         ) :: any()
   def apply_tokenizer(%module{} = tokenizer, input, opts \\ []) do
-    opts = Keyword.validate!(opts, add_special_tokens: true, pad_direction: :right)
-    module.apply(tokenizer, input, opts[:add_special_tokens], opts[:pad_direction])
+    opts =
+      Keyword.validate!(opts,
+        add_special_tokens: true,
+        pad_direction: :right,
+        truncate_direction: :right,
+        length: nil
+      )
+
+    module.apply(
+      tokenizer,
+      input,
+      opts[:add_special_tokens],
+      opts[:pad_direction],
+      opts[:truncate_direction],
+      opts[:length]
+    )
   end
 
   @doc """

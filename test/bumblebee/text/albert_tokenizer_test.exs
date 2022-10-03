@@ -39,5 +39,28 @@ defmodule Bumblebee.Text.AlbertTokenizerTest do
         ])
       )
     end
+
+    test "encoding model input pads and truncates to :length" do
+      assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "albert-base-v2"})
+
+      inputs =
+        Bumblebee.apply_tokenizer(tokenizer, ["foo", "foo bar", "foo bar baz bang buzz"],
+          length: 6
+        )
+
+      assert_equal(
+        inputs["input_ids"],
+        Nx.tensor([
+          [2, 4310, 111, 3, 0, 0],
+          [2, 4310, 111, 748, 3, 0],
+          [2, 4310, 111, 748, 19674, 6582]
+        ])
+      )
+
+      assert_equal(
+        inputs["attention_mask"],
+        Nx.tensor([[1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 1, 1]])
+      )
+    end
   end
 end
