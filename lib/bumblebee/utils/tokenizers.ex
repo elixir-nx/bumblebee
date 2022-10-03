@@ -19,16 +19,13 @@ defmodule Bumblebee.Utils.Tokenizers do
 
     {:ok, encodings} = Tokenizer.encode(tokenizer, input, add_special_tokens: add_special_tokens)
 
-    max_seq_length =
-      encodings
-      |> Enum.map(&Encoding.n_tokens/1)
-      |> Enum.max()
-
     length =
       if length do
         length
       else
-        max_seq_length
+        encodings
+        |> Enum.map(&Encoding.n_tokens/1)
+        |> Enum.max()
       end
 
     pad_id = Tokenizer.token_to_id(tokenizer, pad_token)
