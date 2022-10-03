@@ -6,7 +6,15 @@ defmodule Bumblebee.Utils.Tokenizers do
 
   alias Tokenizers.{Tokenizer, Encoding}
 
-  def apply(tokenizer, input, add_special_tokens, pad_token, pad_direction, max_length) do
+  def apply(
+        tokenizer,
+        input,
+        add_special_tokens,
+        pad_token,
+        pad_direction,
+        truncate_direction,
+        seq_length
+      ) do
     input = List.wrap(input)
 
     {:ok, encodings} = Tokenizer.encode(tokenizer, input, add_special_tokens: add_special_tokens)
@@ -16,18 +24,41 @@ defmodule Bumblebee.Utils.Tokenizers do
       |> Enum.map(&Encoding.n_tokens/1)
       |> Enum.max()
 
-    max_length = max(max_length || -1, max_seq_length)
+    pad_length =
+      if seq_length do
+        max(seq_length, max_seq_length)
+      else
+        max_seq_length
+      end
 
     pad_id = Tokenizer.token_to_id(tokenizer, pad_token)
 
     encodings =
       Enum.map(
         encodings,
-        &Encoding.pad(&1, max_length,
+        &Encoding.pad(&1, pad_length,
           pad_id: pad_id,
           pad_token: pad_token,
           direction: pad_direction
         )
+      )
+
+    padded_length =
+      encodings
+      |> Enum.map(&Encoding.n_tokens/1)
+      |> Enum.max()
+
+    truncate_length =
+      if seq_length do
+        min(seq_length, padded_length)
+      else
+        padded_length
+      end
+
+    encodings =
+      Enum.map(
+        encodings,
+        &Encoding.truncate(&1, truncate_length, direction: truncate_direction)
       )
 
     input_ids = Enum.map(encodings, &Encoding.get_ids/1)

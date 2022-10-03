@@ -53,6 +53,7 @@ defmodule Bumblebee.Tokenizer do
               input() | list(input()),
               add_special_tokens :: boolean(),
               pad_direction :: :right | :left,
+              truncate_direction :: :right | :left,
               max_length :: integer()
             ) :: any()
 
