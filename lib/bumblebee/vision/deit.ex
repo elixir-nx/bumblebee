@@ -1,5 +1,5 @@
 defmodule Bumblebee.Vision.Deit do
-  @common_keys [:output_hidden_states, :output_attentions, :id2label, :label2id, :num_labels]
+  @common_keys [:output_hidden_states, :output_attentions, :id2label, :num_labels]
 
   @moduledoc """
   Models based on the DeiT architecture.

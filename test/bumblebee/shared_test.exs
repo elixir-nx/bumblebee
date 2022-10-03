@@ -4,23 +4,21 @@ defmodule Bumblebee.SharedTest do
   alias Bumblebee.Shared
 
   describe "add_common_computed_options/1" do
-    test "computes :num_labels and :label2id when :id2label is present" do
+    test "computes :num_labels when :id2label is present" do
       id2label = %{0 => "cat", 1 => "dog", 2 => "squirrel"}
       opts = [id2label: id2label]
 
       opts = Shared.add_common_computed_options(opts)
       assert opts[:num_labels] == 3
       assert opts[:id2label] == id2label
-      assert opts[:label2id] == %{"cat" => 0, "dog" => 1, "squirrel" => 2}
     end
 
-    test "computes :id2label and :label2id when :num_labels is present" do
+    test "computes :id2label when :num_labels is present" do
       opts = [num_labels: 3]
 
       opts = Shared.add_common_computed_options(opts)
       assert opts[:num_labels] == 3
       assert opts[:id2label] == %{}
-      assert opts[:label2id] == %{}
     end
 
     test "raises an error if mismatched :num_labels and :id2label are given" do

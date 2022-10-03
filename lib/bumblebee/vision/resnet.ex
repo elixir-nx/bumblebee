@@ -1,5 +1,5 @@
 defmodule Bumblebee.Vision.ResNet do
-  @common_keys [:output_hidden_states, :id2label, :label2id, :num_labels]
+  @common_keys [:output_hidden_states, :id2label, :num_labels]
 
   @moduledoc """
   Models based on the ResNet architecture.

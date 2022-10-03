@@ -1,5 +1,5 @@
 defmodule Bumblebee.Vision.ConvNext do
-  @common_keys [:id2label, :label2id, :num_labels, :output_hidden_states]
+  @common_keys [:id2label, :num_labels, :output_hidden_states]
 
   @moduledoc """
   Models based on the ConvNeXT architecture.

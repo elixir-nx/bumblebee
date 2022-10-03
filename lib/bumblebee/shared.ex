@@ -11,7 +11,6 @@ defmodule Bumblebee.Shared do
       output_hidden_states: false,
       output_attentions: false,
       id2label: %{},
-      label2id: %{},
       num_labels: 2,
       add_cross_attention: false
     ]
@@ -87,36 +86,28 @@ defmodule Bumblebee.Shared do
     end)
   end
 
-  # @doc """
-  # Sets common model configuration attributes that are computed
-  # based on other attributes.
-  # """
+  @doc """
+  Sets common model configuration attributes that are computed
+  based on other attributes.
+  """
   @spec add_common_computed_options(keyword()) :: keyword()
   def add_common_computed_options(opts) do
-    opts =
-      case {opts[:num_labels], opts[:id2label]} do
-        {nil, %{} = id2label} when id2label != %{} ->
-          put_in(opts[:num_labels], map_size(id2label))
+    case {opts[:num_labels], opts[:id2label]} do
+      {nil, %{} = id2label} when id2label != %{} ->
+        put_in(opts[:num_labels], map_size(id2label))
 
-        {nil, _id2label} ->
-          opts
+      {nil, _id2label} ->
+        opts
 
-        {_num_labels, nil} ->
-          put_in(opts[:id2label], %{})
+      {_num_labels, nil} ->
+        put_in(opts[:id2label], %{})
 
-        {num_labels, id2label} when map_size(id2label) not in [0, num_labels] ->
-          raise ArgumentError,
-                "size mismatch between :num_labels (#{inspect(num_labels)}) and :id2label (#{inspect(id2label)})"
+      {num_labels, id2label} when map_size(id2label) not in [0, num_labels] ->
+        raise ArgumentError,
+              "size mismatch between :num_labels (#{inspect(num_labels)}) and :id2label (#{inspect(id2label)})"
 
-        _ ->
-          opts
-      end
-
-    if id2label = opts[:id2label] do
-      label2id = Map.new(id2label, fn {id, label} -> {label, id} end)
-      put_in(opts[:label2id], label2id)
-    else
-      opts
+      _ ->
+        opts
     end
   end
 

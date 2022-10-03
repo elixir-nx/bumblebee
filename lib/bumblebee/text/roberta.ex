@@ -3,7 +3,6 @@ defmodule Bumblebee.Text.Roberta do
     :output_hidden_states,
     :output_attentions,
     :id2label,
-    :label2id,
     :num_labels,
     :add_cross_attention
   ]
