@@ -11,7 +11,7 @@ defmodule Bumblebee.Text.Generation do
               batch_size :: pos_integer(),
               max_length :: pos_integer(),
               inputs :: map()
-            ) :: Nx.t()
+            ) :: Nx.Tensor.t() | Nx.Container.t()
 
   import Nx.Defn
 

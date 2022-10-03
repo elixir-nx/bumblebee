@@ -40,7 +40,10 @@ defmodule Bumblebee.Utils.Tokenizers do
   end
 
   def decode(tokenizer, ids) do
-    Tokenizer.decode(tokenizer, ids)
+    case Tokenizer.decode(tokenizer, ids) do
+      {:ok, decoded} -> decoded
+      {:error, term} -> raise "decoding failed with error: #{inspect(term)}"
+    end
   end
 
   def id_to_token(tokenizer, id) do
