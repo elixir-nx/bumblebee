@@ -373,6 +373,7 @@ defmodule Bumblebee.Utils.Image do
 
     input
     |> Nx.round()
+    |> Nx.clip(0, 255)
     |> Nx.as_type(:u8)
   end
 end

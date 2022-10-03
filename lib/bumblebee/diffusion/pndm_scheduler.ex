@@ -1,5 +1,5 @@
 defmodule Bumblebee.Diffusion.PndmScheduler do
-  @moduledoc """
+  @moduledoc ~S"""
   Pseudo numerical methods for diffusion models (PNDMs).
 
   The sampling is based on two numerical methods for solving ODE: the
@@ -25,14 +25,14 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
     * `:beta_end` - the end value for the beta schedule. Defaults to `0.02`
 
-    * `:set_alpha_to_one` - each step $t$ uses the values of $\bar{\alpha}_t$
-      and $\bar{\alpha}_{t-1}$, however for $t = 0$ there is no previous
-      alpha. Setting this option to `true` implies $\bar{\alpha_}{t-1} = 1$,
-      otherwise $\bar{\alpha}_{t-1} = \bar{\alpha}_0$. Defaults to `false`
+    * `:set_alpha_to_one` - each step $t$ uses the values of $\bar{\alpha}\_t$
+      and $\bar{\alpha}\_{t-1}$, however for $t = 0$ there is no previous
+      alpha. Setting this option to `true` implies $\bar{\alpha}\_{t-1} = 1$,
+      otherwise $\bar{\alpha}\_{t-1} = \bar{\alpha}\_0$. Defaults to `false`
 
     * `:steps_offset` - an offset added to the inference steps. You can
       use a combination of `offset: 1` and `set_alpha_to_one: false`,
-      so that the last step $t = 1$ uses $\bar{\alpha}_1$ and $\bar{\alpha}_0$,
+      so that the last step $t = 1$ uses $\bar{\alpha}\_1$ and $\bar{\alpha}\_0$,
       as done in stable diffusion. Defaults to `0`
 
     * `:skip_prk_steps` - when `true`, the first few samples are computed

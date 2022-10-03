@@ -238,7 +238,7 @@ defmodule Bumblebee.Vision.Vit do
       name: join(name, "projection")
     )
     |> Axon.nx(&Nx.transpose(&1, axes: [0, 2, 3, 1]))
-    |> Axon.reshape({:auto, config.hidden_size}, name: join(name, "reshape"))
+    |> Axon.reshape({:batch, :auto, config.hidden_size}, name: join(name, "reshape"))
   end
 
   defp position_embeddings(embeddings, config, opts) do

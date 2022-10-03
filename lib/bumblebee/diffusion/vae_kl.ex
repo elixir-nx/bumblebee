@@ -358,8 +358,8 @@ defmodule Bumblebee.Diffusion.VaeKl do
     hidden_state =
       hidden_state
       |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "group_norm"))
-      |> Axon.reshape({channels, :auto})
-      |> Axon.transpose([1, 0])
+      |> Axon.reshape({:batch, channels, :auto})
+      |> Axon.transpose([0, 2, 1])
 
     query =
       hidden_state
@@ -385,7 +385,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
 
     attention_output
     |> Axon.dense(channels, name: join(name, "proj_attn"))
-    |> Axon.transpose([1, 0])
+    |> Axon.transpose([0, 2, 1])
     |> then(
       &Axon.layer(
         fn state, residual, _opts ->

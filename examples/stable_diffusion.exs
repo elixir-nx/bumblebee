@@ -56,7 +56,7 @@ prompt = "a photograph of an astronaut riding a horse"
 inputs = Bumblebee.apply_tokenizer(tokenizer, ["", prompt])
 
 IO.puts("Embedding text")
-%{last_hidden_state: text_embeddings} = Axon.predict(clip, clip_params, inputs, compiler: EXLA)
+%{last_hidden_state: text_embeddings} = Axon.predict(clip, clip_params, inputs)
 
 IO.puts("Generating latents")
 latents = Nx.random_normal(latents_shape)
@@ -92,7 +92,7 @@ timesteps = Nx.to_flat_list(timesteps)
   end
 
 latents = Nx.multiply(Nx.divide(1, 0.18215), latents)
-%{sample: images} = Axon.predict(vae, vae_params, latents, compiler: EXLA)
+%{sample: images} = Axon.predict(vae, vae_params, latents)
 
 images =
   images
