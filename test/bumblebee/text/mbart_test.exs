@@ -172,6 +172,6 @@ defmodule Bumblebee.Text.MbartTest do
         max_length: 6
       )
 
-    assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == {:ok, ["42 este răspunsul"]}
+    assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["42 este răspunsul"]
   end
 end

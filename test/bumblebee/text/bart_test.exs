@@ -165,6 +165,6 @@ defmodule Bumblebee.Text.BartTest do
 
     assert_equal(token_ids, Nx.tensor([[2, 0, 8332, 947, 717, 1768, 5, 2]]))
 
-    assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == {:ok, ["PG&E scheduled the"]}
+    assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["PG&E scheduled the"]
   end
 end
