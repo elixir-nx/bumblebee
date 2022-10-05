@@ -14,7 +14,9 @@ defmodule Bumblebee.Text.BertTokenizer do
         add_special_tokens,
         pad_direction,
         truncate_direction,
-        length
+        length,
+        return_special_tokens_mask,
+        return_offsets
       ) do
     Bumblebee.Utils.Tokenizers.apply(
       tokenizer,
@@ -23,7 +25,9 @@ defmodule Bumblebee.Text.BertTokenizer do
       "[PAD]",
       pad_direction,
       truncate_direction,
-      length
+      length,
+      return_special_tokens_mask,
+      return_offsets
     )
   end
 

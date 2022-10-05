@@ -458,7 +458,9 @@ defmodule Bumblebee do
         add_special_tokens: true,
         pad_direction: :right,
         truncate_direction: :right,
-        length: nil
+        length: nil,
+        return_special_tokens_mask: false,
+        return_offsets: false
       )
 
     module.apply(
@@ -467,7 +469,9 @@ defmodule Bumblebee do
       opts[:add_special_tokens],
       opts[:pad_direction],
       opts[:truncate_direction],
-      opts[:length]
+      opts[:length],
+      opts[:return_special_tokens_mask],
+      opts[:return_offsets]
     )
   end
 

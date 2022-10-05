@@ -39,5 +39,36 @@ defmodule Bumblebee.Text.BertTokenizerTest do
         ])
       )
     end
+
+    test "encoding with special tokens mask" do
+      assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+
+      inputs =
+        Bumblebee.apply_tokenizer(
+          tokenizer,
+          [
+            "Test sentence with [MASK]."
+          ],
+          return_special_tokens_mask: true
+        )
+
+      assert_equal(inputs["special_tokens_mask"], Nx.tensor([[1, 0, 0, 0, 0, 0, 1]]))
+    end
+
+    test "encoding with offsets" do
+      assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+
+      inputs =
+        Bumblebee.apply_tokenizer(
+          tokenizer,
+          [
+            "Test sentence with [MASK]."
+          ],
+          return_offsets: true
+        )
+
+      assert_equal(inputs["start_offsets"], Nx.tensor([[0, 0, 5, 14, 19, 25, 0]]))
+      assert_equal(inputs["end_offsets"], Nx.tensor([[0, 4, 13, 18, 25, 26, 0]]))
+    end
   end
 end

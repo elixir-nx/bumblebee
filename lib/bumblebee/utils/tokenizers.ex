@@ -13,7 +13,9 @@ defmodule Bumblebee.Utils.Tokenizers do
         pad_token,
         pad_direction,
         truncate_direction,
-        length
+        length,
+        return_special_tokens_mask,
+        return_offsets
       ) do
     input = List.wrap(input)
 
@@ -45,11 +47,42 @@ defmodule Bumblebee.Utils.Tokenizers do
     attention_mask = Enum.map(encodings, &Encoding.get_attention_mask/1)
     token_type_ids = Enum.map(encodings, &Encoding.get_type_ids/1)
 
-    %{
+    encoded = %{
       "input_ids" => Nx.tensor(input_ids),
       "attention_mask" => Nx.tensor(attention_mask),
       "token_type_ids" => Nx.tensor(token_type_ids)
     }
+
+    encoded
+    |> maybe_put_return_special_tokens_mask(encodings, return_special_tokens_mask)
+    |> maybe_put_offsets(encodings, return_offsets)
+  end
+
+  defp maybe_put_return_special_tokens_mask(encoded, encodings, return_special_tokens_mask) do
+    if return_special_tokens_mask do
+      special_tokens_mask = Enum.map(encodings, &Encoding.get_special_tokens_mask/1)
+      Map.put(encoded, "special_tokens_mask", Nx.tensor(special_tokens_mask))
+    else
+      encoded
+    end
+  end
+
+  defp maybe_put_offsets(encoded, encodings, return_offsets) do
+    if return_offsets do
+      {batch_start_offets, batch_end_offsets} =
+        encodings
+        |> Enum.reduce({[], []}, fn encoding, {batch_start_offets, batch_end_offsets} ->
+          offsets = Encoding.get_offsets(encoding)
+          {start_offsets, end_offsets} = Enum.unzip(offsets)
+          {[start_offsets | batch_start_offets], [end_offsets | batch_end_offsets]}
+        end)
+
+      encoded
+      |> Map.put("start_offsets", Nx.tensor(Enum.reverse(batch_start_offets)))
+      |> Map.put("end_offsets", Nx.tensor(Enum.reverse(batch_end_offsets)))
+    else
+      encoded
+    end
   end
 
   def decode(tokenizer, ids) do

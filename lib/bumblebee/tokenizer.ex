@@ -54,7 +54,9 @@ defmodule Bumblebee.Tokenizer do
               add_special_tokens :: boolean(),
               pad_direction :: :right | :left,
               truncate_direction :: :right | :left,
-              length :: integer()
+              length :: integer(),
+              return_special_tokens_mask :: boolean(),
+              return_offsets :: boolean()
             ) :: any()
 
   @doc """
