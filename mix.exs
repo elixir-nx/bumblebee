@@ -48,7 +48,7 @@ defmodule Bumblebee.MixProject do
       [path: path]
     else
       # TODO: bump once we optimize randomization
-      [github: "elixir-nx/axon", ref: "750e6a68df88a7f33ab48a65e16cc4ce53e99dea"]
+      [github: "elixir-nx/axon"]
     end
   end
 
