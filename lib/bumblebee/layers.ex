@@ -237,11 +237,7 @@ defmodule Bumblebee.Layers do
     end
 
     scale_param =
-      Axon.param(scale_name, scale_shape,
-        initializer: fn shape, _type, _key ->
-          Nx.broadcast(scale_init_value, shape)
-        end
-      )
+      Axon.param(scale_name, scale_shape, initializer: Axon.Initializers.full(scale_init_value))
 
     Axon.layer(fn input, scale, _opts -> Nx.multiply(input, scale) end, [x, scale_param],
       name: name,
