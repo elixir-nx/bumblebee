@@ -43,18 +43,37 @@ defmodule Bumblebee.Text.NER do
 
     scores = Axon.Activations.softmax(logits)
 
-    tokenizer
-    |> gather_pre_entities(input, tensor_inputs, scores)
-    |> then(&aggregate(config, tokenizer, &1, aggregation_strategy))
-    |> filter_entities(ignore_label)
+    extract_from_scores(config, tokenizer, input, tensor_inputs, scores,
+      aggregation_strategy: aggregation_strategy,
+      ignore_label: ignore_label
+    )
   end
 
   @doc """
-  Gathers metadata from inputs and scores for use in downstream
-  entity aggregation task.
+  Extracts named entities from pre-computed scores.
+
+  ## Options
+
+    * `:aggregation_strategy` - How to aggregate adjacent tokens.
   """
-  @spec gather_pre_entities(Bumblebee.Tokenizer.t(), String.t(), map(), Nx.t()) :: list()
-  def gather_pre_entities(tokenizer, raw_input, tensor_inputs, scores) do
+  @spec extract_from_scores(
+          Bumblebee.ModelSpec.t(),
+          Bumblebee.Tokenizer.t(),
+          String.t(),
+          map(),
+          Nx.t()
+        ) :: list()
+  def extract_from_scores(config, tokenizer, raw_input, tensor_inputs, scores, opts \\ []) do
+    aggregation_strategy = opts[:aggregation_strategy]
+    ignore_label = opts[:ignore_label] || @default_ignore_label
+
+    tokenizer
+    |> gather_pre_entities(raw_input, tensor_inputs, scores)
+    |> then(&aggregate(config, tokenizer, &1, aggregation_strategy: aggregation_strategy))
+    |> filter_entities(ignore_label)
+  end
+
+  defp gather_pre_entities(tokenizer, raw_input, tensor_inputs, scores) do
     {1, sequence_length, _} = Nx.shape(scores)
     flat_special_tokens_mask = Nx.to_flat_list(tensor_inputs["special_tokens_mask"])
     flat_input_ids = Nx.to_flat_list(tensor_inputs["input_ids"])
@@ -63,41 +82,35 @@ defmodule Bumblebee.Text.NER do
 
     # TODO: Optional offset mapping
     # TODO: Non-BPE tokenizers
-    [
-      0..(sequence_length - 1),
-      flat_input_ids,
-      flat_start_offsets,
-      flat_end_offsets,
-      flat_special_tokens_mask
-    ]
-    |> Enum.zip()
-    |> Enum.filter(fn
-      {_, _, _, _, 0} -> true
-      {_, _, _, _, 1} -> false
-    end)
-    |> Enum.map(fn {token_index, input_id, start_ind, end_ind, _} ->
-      word = Tokenizers.id_to_token(tokenizer.tokenizer, input_id)
-      word_ref = String.slice(raw_input, start_ind, end_ind - start_ind)
+    token_infos =
+      Enum.zip([
+        0..(sequence_length - 1),
+        flat_input_ids,
+        flat_start_offsets,
+        flat_end_offsets,
+        flat_special_tokens_mask
+      ])
 
-      token_scores = scores[[0, token_index]]
+    for {token_idx, input_id, start_idx, end_idx, _special? = 0} <- token_infos do
+      word = Tokenizers.id_to_token(tokenizer.tokenizer, input_id)
+      word_ref = String.slice(raw_input, start_idx, end_idx - start_idx)
+
+      token_scores = scores[[0, token_idx]]
 
       %{
         "word" => word,
         "scores" => token_scores,
-        "start" => start_ind,
-        "end" => end_ind,
-        "index" => token_index,
+        "start" => start_idx,
+        "end" => end_idx,
+        "index" => token_idx,
         "is_subword" => String.length(word) != String.length(word_ref)
       }
-    end)
+    end
   end
 
-  @doc """
-  Performs named-entity aggregation on the given pre-entities.
-  """
-  @spec aggregate(Bumblebee.ModelSpec.t(), Bumblebee.Tokenizer.t(), map(), nil | :simple) ::
-          list()
-  def aggregate(config, tokenizer, pre_entities, aggregation_strategy) do
+  defp aggregate(config, tokenizer, pre_entities, opts) do
+    aggregation_strategy = opts[:aggregation_strategy]
+
     case aggregation_strategy do
       nil ->
         do_simple_aggregation(config, pre_entities)
@@ -109,11 +122,7 @@ defmodule Bumblebee.Text.NER do
     end
   end
 
-  @doc """
-  Filters entities with the given label (e.g. no entity).
-  """
-  @spec filter_entities(list(), String.t()) :: list()
-  def filter_entities(entities, label) do
+  defp filter_entities(entities, label) do
     Enum.filter(entities, fn %{"entity_group" => group} -> label != group end)
   end
 
