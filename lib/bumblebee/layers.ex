@@ -238,7 +238,7 @@ defmodule Bumblebee.Layers do
 
     scale_param =
       Axon.param(scale_name, scale_shape,
-        initializer: fn shape, _ ->
+        initializer: fn shape, _type, _key ->
           Nx.broadcast(scale_init_value, shape)
         end
       )
