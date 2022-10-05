@@ -5,6 +5,8 @@ defmodule Bumblebee.Text.NER do
   """
   alias Bumblebee.Utils.Tokenizers
 
+  @default_ignore_label "O"
+
   @doc """
   Performs end-to-end named entity recognition.
 
@@ -26,7 +28,8 @@ defmodule Bumblebee.Text.NER do
           keyword()
         ) :: list()
   def extract(config, tokenizer, model, params, input, opts \\ []) do
-    {aggregation_strategy, compiler_opts} = Keyword.pop(opts, :aggregation_strategy, nil)
+    {aggregation_strategy, opts} = Keyword.pop(opts, :aggregation_strategy, nil)
+    {ignore_label, compiler_opts} = Keyword.pop(opts, :ignore_label, @default_ignore_label)
 
     tensor_inputs =
       Bumblebee.apply_tokenizer(tokenizer, input,
@@ -40,20 +43,17 @@ defmodule Bumblebee.Text.NER do
 
     scores = Axon.Activations.softmax(logits)
 
-    pre_entities = gather_pre_entities(tokenizer, input, tensor_inputs, scores)
-    entities = aggregate(config, tokenizer, pre_entities, aggregation_strategy)
-
-    Enum.filter(entities, fn
-      %{"entity_group" => "O"} -> false
-      _ -> true
-    end)
+    tokenizer
+    |> gather_pre_entities(input, tensor_inputs, scores)
+    |> then(&aggregate(config, tokenizer, &1, aggregation_strategy))
+    |> filter_entities(ignore_label)
   end
 
   @doc """
   Gathers metadata from inputs and scores for use in downstream
   entity aggregation task.
   """
-  @spec gather_pre_entities(Bumblebee.Tokenizer.t(), string(), map(), Nx.t()) :: list()
+  @spec gather_pre_entities(Bumblebee.Tokenizer.t(), String.t(), map(), Nx.t()) :: list()
   def gather_pre_entities(tokenizer, raw_input, tensor_inputs, scores) do
     {1, sequence_length, _} = Nx.shape(scores)
     flat_special_tokens_mask = Nx.to_flat_list(tensor_inputs["special_tokens_mask"])
@@ -107,6 +107,14 @@ defmodule Bumblebee.Text.NER do
         |> do_simple_aggregation(pre_entities)
         |> then(&group_entities(tokenizer, &1))
     end
+  end
+
+  @doc """
+  Filters entities with the given label (e.g. no entity).
+  """
+  @spec filter_entities(list(), String.t()) :: list()
+  def filter_entities(entities, label) do
+    Enum.filter(entities, fn %{"entity_group" => group} -> label != group end)
   end
 
   defp do_simple_aggregation(config, pre_entities) do
