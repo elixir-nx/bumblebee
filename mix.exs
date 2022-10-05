@@ -47,7 +47,6 @@ defmodule Bumblebee.MixProject do
     if path = System.get_env("AXON_PATH") do
       [path: path]
     else
-      # TODO: bump once we optimize randomization
       [github: "elixir-nx/axon"]
     end
   end
