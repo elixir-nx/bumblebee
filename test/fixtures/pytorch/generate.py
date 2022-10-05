@@ -1,5 +1,6 @@
 import os
 import torch
+import numpy as np
 from collections import OrderedDict
 
 
@@ -25,11 +26,31 @@ for fmt in ["zip", "legacy"]:
         torch.tensor([1 - 1j, 1 + 1j], dtype=torch.complex64)
     ])
 
+    save("numpy_arrays", fmt, [
+        np.array([-1.0, 1.0], dtype=np.float64),
+        np.array([-1.0, 1.0], dtype=np.float32),
+        np.array([-1.0, 1.0], dtype=np.float16),
+        np.array([-1, 1], dtype=np.int64),
+        np.array([-1, 1], dtype=np.int32),
+        np.array([-1, 1], dtype=np.int16),
+        np.array([-1, 1], dtype=np.int8),
+        np.array([0, 1], dtype=np.uint64),
+        np.array([0, 1], dtype=np.uint32),
+        np.array([0, 1], dtype=np.uint16),
+        np.array([0, 1], dtype=np.uint8),
+        np.array([0, 1], dtype=np.bool8),
+        np.array([1 - 1j, 1 + 1j], dtype=np.complex128),
+        np.array([1 - 1j, 1 + 1j], dtype=np.complex64)
+    ])
+
     save("ordered_dict", fmt, OrderedDict([("x", 1), ("y", 2)]))
 
     transposed_tensor = torch.tensor(
         [[[1, 1], [2, 2], [3, 3]], [[4, 4], [5, 5], [6, 6]]], dtype=torch.int64).permute(2, 0, 1)
     save("noncontiguous_tensor", fmt, transposed_tensor)
+
+    transposed_array = np.transpose(np.array([[1, 2, 3], [4, 5, 6]]))
+    save("noncontiguous_numpy_array", fmt, transposed_array)
 
 # Model parameters
 

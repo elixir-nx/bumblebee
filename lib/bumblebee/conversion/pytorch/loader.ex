@@ -57,7 +57,7 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
          args: [storage, offset, shape, strides, _requires_grad, _backward_hooks]
        }) do
     {:storage, storage_type, binary} = storage
-    {_, bit_unit} = type = to_nx_type(storage_type)
+    {_, bit_unit} = type = storage_type_to_nx(storage_type)
     byte_unit = div(bit_unit, 8)
     size = Tuple.product(shape)
     binary = binary_part(binary, offset * byte_unit, size * byte_unit)
@@ -65,9 +65,36 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
     {:ok, tensor}
   end
 
+  # See https://github.com/numpy/numpy/blob/v1.23.3/numpy/core/src/multiarray/descriptor.c#L2506-L2508
+  defp object_resolver(%{constructor: "numpy.dtype", args: [type, false = _align, true = _copy]}) do
+    {:ok, numpy_type_to_nx(type)}
+  end
+
+  # See https://github.com/numpy/numpy/blob/v1.23.3/numpy/core/src/multiarray/methods.c#L2009-L2014
+  defp object_resolver(%{
+         constructor: "numpy.core.multiarray._reconstruct",
+         state: {_version, shape, type, fortran_order?, data}
+       }) do
+    tensor =
+      if fortran_order? do
+        # In Fortran order the axes are reversed in memory
+        shape =
+          shape
+          |> Tuple.to_list()
+          |> Enum.reverse()
+          |> List.to_tuple()
+
+        data |> Nx.from_binary(type) |> Nx.reshape(shape) |> Nx.transpose()
+      else
+        data |> Nx.from_binary(type) |> Nx.reshape(shape)
+      end
+
+    {:ok, tensor}
+  end
+
   defp object_resolver(_object), do: :error
 
-  defp to_nx_type(%Unpickler.Global{scope: "torch", name: name}) do
+  defp storage_type_to_nx(%Unpickler.Global{scope: "torch", name: name}) do
     # See https://github.com/pytorch/pytorch/blob/v1.11.0/torch/storage.py#L189-L208
     mapping = %{
       "DoubleStorage" => {:f, 64},
@@ -87,6 +114,32 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
       type
     else
       raise "unsupported PyTorch storage type: #{inspect(name)}"
+    end
+  end
+
+  defp numpy_type_to_nx(name) do
+    # See https://numpy.org/doc/stable/reference/generated/numpy.dtype.kind.html#numpy-dtype-kind
+    mapping = %{
+      "b1" => {:u, 8},
+      "i1" => {:s, 8},
+      "i2" => {:s, 16},
+      "i4" => {:s, 32},
+      "i8" => {:s, 64},
+      "u1" => {:u, 8},
+      "u2" => {:u, 16},
+      "u4" => {:u, 32},
+      "u8" => {:u, 64},
+      "f2" => {:f, 16},
+      "f4" => {:f, 32},
+      "f8" => {:f, 64},
+      "c8" => {:c, 64},
+      "c16" => {:c, 128}
+    }
+
+    if type = mapping[name] do
+      type
+    else
+      raise "unsupported NumPy data type: #{inspect(name)}"
     end
   end
 
@@ -141,7 +194,7 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
         object_resolver: &object_resolver/1,
         persistent_id_resolver: fn
           {"storage", storage_type, root_key, _location, _size, view_metadata} ->
-            {_, bit_unit} = to_nx_type(storage_type)
+            {_, bit_unit} = storage_type_to_nx(storage_type)
             byte_unit = div(bit_unit, 8)
 
             binary =
@@ -171,7 +224,7 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
       Unpickler.load!(data,
         persistent_id_resolver: fn
           {"storage", storage_type, root_key, _location, size, _view_metadata} ->
-            {_, bit_unit} = to_nx_type(storage_type)
+            {_, bit_unit} = storage_type_to_nx(storage_type)
             byte_unit = div(bit_unit, 8)
             {:storage_info, root_key, {size, byte_unit}}
 

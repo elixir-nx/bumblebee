@@ -29,6 +29,6 @@
   "tokenizers": {:git, "https://github.com/elixir-nx/tokenizers.git", "cb98353a19f45ba127870eb36334f635ca297823", [ref: "cb98353a19f45ba127870eb36334f635ca297823"]},
   "toml": {:hex, :toml, "0.6.2", "38f445df384a17e5d382befe30e3489112a48d3ba4c459e543f748c2f25dd4d1", [:mix], [], "hexpm", "d013e45126d74c0c26a38d31f5e8e9b83ea19fc752470feb9a86071ca5a672fa"},
   "torchx": {:git, "https://github.com/elixir-nx/nx.git", "951d61b88a7aba1bc71167d08b37a9924e8613d7", [sparse: "torchx"]},
-  "unpickler": {:git, "https://github.com/dashbitco/unpickler.git", "f1b78c3a7a81f3d513e55db89a674b4fa2eee274", []},
+  "unpickler": {:git, "https://github.com/dashbitco/unpickler.git", "0d0cc15b399521a21ae7695b1116f6d00737218d", []},
   "xla": {:hex, :xla, "0.3.0", "7f40d3d799447bd745e6e61985c922821e355eca37c25754bac299d11f137f2e", [:make, :mix], [{:elixir_make, "~> 0.4", [hex: :elixir_make, repo: "hexpm", optional: false]}], "hexpm", "0de304f5624ea2f2ae1afdcbd72d33855364be36fed2cc5de8d6d2ec8950926e"},
 }
