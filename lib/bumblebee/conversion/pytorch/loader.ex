@@ -65,6 +65,15 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
     {:ok, tensor}
   end
 
+  # See https://github.com/pytorch/pytorch/blob/v1.12.1/torch/_tensor.py#L222-L226
+  defp object_resolver(%{
+         constructor: "torch._utils._rebuild_device_tensor_from_numpy",
+         args: [numpy_array, _type, _device, _requires_grad]
+       }) do
+    # Tensors on certain devices are serialized as numpy arrays
+    {:ok, numpy_array}
+  end
+
   # See https://github.com/numpy/numpy/blob/v1.23.3/numpy/core/src/multiarray/descriptor.c#L2506-L2508
   defp object_resolver(%{constructor: "numpy.dtype", args: [type, false = _align, true = _copy]}) do
     {:ok, numpy_type_to_nx(type)}
