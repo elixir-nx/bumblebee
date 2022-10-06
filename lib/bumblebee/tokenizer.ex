@@ -48,16 +48,7 @@ defmodule Bumblebee.Tokenizer do
   @doc """
   Performs tokenization and encoding on the given input.
   """
-  @callback apply(
-              t(),
-              input() | list(input()),
-              add_special_tokens :: boolean(),
-              pad_direction :: :right | :left,
-              truncate_direction :: :right | :left,
-              length :: integer(),
-              return_special_tokens_mask :: boolean(),
-              return_offsets :: boolean()
-            ) :: any()
+  @callback apply(t(), input() | list(input()), keyword()) :: any()
 
   @doc """
   Decodes a list of token ids into a sentence.

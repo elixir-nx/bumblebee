@@ -6,23 +6,25 @@ defmodule Bumblebee.Utils.Tokenizers do
 
   alias Tokenizers.{Tokenizer, Encoding}
 
-  def apply(
-        tokenizer,
-        input,
-        add_special_tokens,
-        pad_token,
-        pad_direction,
-        truncate_direction,
-        length,
-        return_special_tokens_mask,
-        return_offsets
-      ) do
+  def apply(tokenizer, input, pad_token, opts \\ []) do
+    opts =
+      Keyword.validate!(opts,
+        add_special_tokens: true,
+        pad_direction: :right,
+        truncate_direction: :right,
+        length: nil,
+        return_attention_mask: true,
+        return_token_type_ids: true,
+        return_special_tokens_mask: false,
+        return_offsets: false
+      )
+
     input = List.wrap(input)
 
-    {:ok, encodings} = Tokenizer.encode(tokenizer, input, add_special_tokens: add_special_tokens)
+    {:ok, encodings} = Tokenizer.encode(tokenizer, input, add_special_tokens: opts[:add_special_tokens])
 
     length =
-      if length do
+      if length = opts[:length] do
         length
       else
         encodings
@@ -38,24 +40,38 @@ defmodule Bumblebee.Utils.Tokenizers do
         |> Encoding.pad(length,
           pad_id: pad_id,
           pad_token: pad_token,
-          direction: pad_direction
+          direction: opts[:pad_direction]
         )
-        |> Encoding.truncate(length, direction: truncate_direction)
+        |> Encoding.truncate(length, direction: opts[:truncate_direction])
       end)
 
     input_ids = Enum.map(encodings, &Encoding.get_ids/1)
-    attention_mask = Enum.map(encodings, &Encoding.get_attention_mask/1)
-    token_type_ids = Enum.map(encodings, &Encoding.get_type_ids/1)
 
-    encoded = %{
-      "input_ids" => Nx.tensor(input_ids),
-      "attention_mask" => Nx.tensor(attention_mask),
-      "token_type_ids" => Nx.tensor(token_type_ids)
-    }
+    encoded = %{"input_ids" => Nx.tensor(input_ids)}
 
     encoded
-    |> maybe_put_return_special_tokens_mask(encodings, return_special_tokens_mask)
-    |> maybe_put_offsets(encodings, return_offsets)
+    |> maybe_put_attention_mask(encodings, opts[:return_attention_mask])
+    |> maybe_put_token_type_ids(encodings, opts[:return_token_type_ids])
+    |> maybe_put_return_special_tokens_mask(encodings, opts[:return_special_tokens_mask])
+    |> maybe_put_offsets(encodings, opts[:return_offsets])
+  end
+
+  defp maybe_put_attention_mask(encoded, encodings, return_attention_mask) do
+    if return_attention_mask do
+      attention_mask = Enum.map(encodings, &Encoding.get_attention_mask/1)
+      Map.put(encoded, "attention_mask", Nx.tensor(attention_mask))
+    else
+      encoded
+    end
+  end
+
+  defp maybe_put_token_type_ids(encoded, encodings, return_token_type_ids) do
+    if return_token_type_ids do
+      token_type_ids = Enum.map(encodings, &Encoding.get_type_ids/1)
+      Map.put(encoded, "token_type_ids", Nx.tensor(token_type_ids))
+    else
+      encoded
+    end
   end
 
   defp maybe_put_return_special_tokens_mask(encoded, encodings, return_special_tokens_mask) do

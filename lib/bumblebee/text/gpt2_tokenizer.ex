@@ -8,27 +8,8 @@ defmodule Bumblebee.Text.Gpt2Tokenizer do
   @behaviour Bumblebee.Tokenizer
 
   @impl true
-  def apply(
-        %{tokenizer: tokenizer},
-        input,
-        add_special_tokens,
-        pad_direction,
-        truncate_direction,
-        length,
-        return_special_tokens_mask,
-        return_offsets
-      ) do
-    Bumblebee.Utils.Tokenizers.apply(
-      tokenizer,
-      input,
-      add_special_tokens,
-      "<|endoftext|>",
-      pad_direction,
-      truncate_direction,
-      length,
-      return_special_tokens_mask,
-      return_offsets
-    )
+  def apply(%{tokenizer: tokenizer}, input, opts \\ []) do
+    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, "<|endoftext|>", opts)
   end
 
   @impl true

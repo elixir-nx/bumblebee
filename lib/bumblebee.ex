@@ -441,6 +441,22 @@ defmodule Bumblebee do
     * `:pad_direction` - the padding direction, either `:right` or
       `:left`. Defaults to `:right`
 
+    * `:return_attention_mask` - whether to return attention mask for
+      encoded sequence. Defaults to `true`
+
+    * `:return_token_type_ids` - whether to return token type ids for
+      encoded sequence. Defaults to `true`
+
+    * `:return_special_tokens_mask` - whether to return special tokens
+      mask for encoded sequence. Defaults to `false`
+
+    * `:return_offsets` - whether to return token offsets for encoded
+      sequence. Defaults to `false`
+
+    * `:length` - applies fixed length padding or truncation to the given
+      input if set. Defaults to `nil`
+
+
   ## Examples
 
       tokenizer = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
@@ -459,6 +475,8 @@ defmodule Bumblebee do
         pad_direction: :right,
         truncate_direction: :right,
         length: nil,
+        return_attention_mask: true,
+        return_token_type_ids: true,
         return_special_tokens_mask: false,
         return_offsets: false
       )
@@ -466,12 +484,12 @@ defmodule Bumblebee do
     module.apply(
       tokenizer,
       input,
-      opts[:add_special_tokens],
-      opts[:pad_direction],
-      opts[:truncate_direction],
-      opts[:length],
-      opts[:return_special_tokens_mask],
-      opts[:return_offsets]
+      add_special_tokens: opts[:add_special_tokens],
+      pad_direction: opts[:pad_direction],
+      truncate_direction: opts[:truncate_direction],
+      length: opts[:length],
+      return_special_tokens_mask: opts[:return_special_tokens_mask],
+      return_offsets: opts[:return_offsets]
     )
   end
 
