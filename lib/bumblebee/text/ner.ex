@@ -92,7 +92,7 @@ defmodule Bumblebee.Text.NER do
       ])
 
     for {token_idx, input_id, start_idx, end_idx, _special? = 0} <- token_infos do
-      word = Tokenizers.id_to_token(tokenizer.tokenizer, input_id)
+      word = Bumblebee.Tokenizer.id_to_token(tokenizer, input_id)
       word_ref = String.slice(raw_input, start_idx, end_idx - start_idx)
 
       token_scores = scores[[0, token_idx]]
