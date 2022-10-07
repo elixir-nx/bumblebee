@@ -88,15 +88,12 @@ defmodule Bumblebee.Utils.Tokenizers do
     if return_offsets do
       {batch_start_offets, batch_end_offsets} =
         encodings
-        |> Enum.reduce({[], []}, fn encoding, {batch_start_offets, batch_end_offsets} ->
-          offsets = Encoding.get_offsets(encoding)
-          {start_offsets, end_offsets} = Enum.unzip(offsets)
-          {[start_offsets | batch_start_offets], [end_offsets | batch_end_offsets]}
-        end)
+        |> Enum.map(&Encoding.get_offsets/1)
+        |> Enum.unzip()
 
       encoded
-      |> Map.put("start_offsets", Nx.tensor(Enum.reverse(batch_start_offets)))
-      |> Map.put("end_offsets", Nx.tensor(Enum.reverse(batch_end_offsets)))
+      |> Map.put("start_offsets", Nx.tensor(batch_start_offets))
+      |> Map.put("end_offsets", Nx.tensor(batch_end_offsets))
     else
       encoded
     end
