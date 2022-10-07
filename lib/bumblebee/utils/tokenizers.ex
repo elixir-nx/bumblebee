@@ -21,7 +21,8 @@ defmodule Bumblebee.Utils.Tokenizers do
 
     input = List.wrap(input)
 
-    {:ok, encodings} = Tokenizer.encode(tokenizer, input, add_special_tokens: opts[:add_special_tokens])
+    {:ok, encodings} =
+      Tokenizer.encode(tokenizer, input, add_special_tokens: opts[:add_special_tokens])
 
     length =
       if length = opts[:length] do
