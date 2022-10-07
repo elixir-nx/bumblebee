@@ -190,5 +190,5 @@ defmodule Bumblebee.Text.NER do
   defp get_tag(<<"B-"::binary, tag::binary>>), do: {"B", tag}
   defp get_tag(<<"I-"::binary, tag::binary>>), do: {"I", tag}
   defp get_tag(<<"O">>), do: {"I", "O"}
-  defp get_tag(_), do: raise(ArgumentError, "entity labels are invalid for NER task")
+  defp get_tag(label), do: raise(ArgumentError, "expected a label in the BIO format, got: #{inspect(label)}")
 end
