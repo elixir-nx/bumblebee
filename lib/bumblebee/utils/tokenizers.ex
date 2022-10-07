@@ -88,7 +88,9 @@ defmodule Bumblebee.Utils.Tokenizers do
     if return_offsets do
       {batch_start_offets, batch_end_offsets} =
         encodings
-        |> Enum.map(&Encoding.get_offsets/1)
+        |> Enum.map(fn seq ->
+          seq |> Encoding.get_offsets() |> Enum.unzip()
+        end)
         |> Enum.unzip()
 
       encoded
