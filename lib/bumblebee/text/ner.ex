@@ -24,7 +24,7 @@ defmodule Bumblebee.Text.NER do
           Bumblebee.Tokenizer.t(),
           Axon.t(),
           map(),
-          map(),
+          String.t() | list(String.t()),
           keyword()
         ) :: list()
   def extract(config, tokenizer, model, params, input, opts \\ []) do
