@@ -6,7 +6,7 @@ defmodule Bumblebee.Text.NER do
   alias Bumblebee.Utils.Tokenizers
   import Bumblebee.Utils.Nx
 
-  @default_ignore_label "O"
+  @ignore_label "O"
 
   @doc """
   Performs end-to-end named entity recognition.
@@ -28,9 +28,6 @@ defmodule Bumblebee.Text.NER do
       corresponds to simple aggregation, which will group adjacent tokens
       of the same entity group as belonging to the same entity. Defaults to
       `nil`
-
-    * `:ignore_label` - Words classified as belonging to this label will be
-      filtered from the final aggregated entity result. Defaults to `"O"`
   """
   @spec extract(
           Bumblebee.ModelSpec.t(),
@@ -50,8 +47,7 @@ defmodule Bumblebee.Text.NER do
         input,
         opts
       ) do
-    {aggregation_strategy, opts} = Keyword.pop(opts, :aggregation_strategy, nil)
-    {ignore_label, compiler_opts} = Keyword.pop(opts, :ignore_label, @default_ignore_label)
+    {aggregation_strategy, compiler_opts} = Keyword.pop(opts, :aggregation_strategy, nil)
 
     inputs =
       Bumblebee.apply_tokenizer(tokenizer, input,
@@ -66,8 +62,7 @@ defmodule Bumblebee.Text.NER do
     scores = Axon.Activations.softmax(logits)
 
     extract_from_scores(config, tokenizer, input, inputs, scores,
-      aggregation_strategy: aggregation_strategy,
-      ignore_label: ignore_label
+      aggregation_strategy: aggregation_strategy
     )
   end
 
@@ -91,9 +86,6 @@ defmodule Bumblebee.Text.NER do
       corresponds to simple aggregation, which will group adjacent tokens
       of the same entity group as belonging to the same entity. Defaults to
       `nil`
-
-    * `:ignore_label` - Words classified as belonging to this label will be
-      filtered from the final aggregated entity result. Defaults to `"O"`
   """
   @spec extract_from_scores(
           Bumblebee.ModelSpec.t(),
@@ -104,7 +96,6 @@ defmodule Bumblebee.Text.NER do
         ) :: list()
   def extract_from_scores(config, tokenizer, raw_input, inputs, scores, opts \\ []) do
     aggregation_strategy = opts[:aggregation_strategy]
-    ignore_label = opts[:ignore_label] || @default_ignore_label
 
     raw_input = List.wrap(raw_input)
 
@@ -113,7 +104,7 @@ defmodule Bumblebee.Text.NER do
       tokenizer
       |> gather_pre_entities(raw, tensors, score)
       |> then(&aggregate(config, tokenizer, &1, aggregation_strategy: aggregation_strategy))
-      |> filter_entities(ignore_label)
+      |> filter_entities(@ignore_label)
     end
   end
 
