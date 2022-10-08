@@ -4,6 +4,7 @@ defmodule Bumblebee.Text.NER do
   models.
   """
   alias Bumblebee.Utils.Tokenizers
+  import Bumblebee.Utils.Nx
 
   @default_ignore_label "O"
 
@@ -18,6 +19,18 @@ defmodule Bumblebee.Text.NER do
   ## Options
 
     * `:aggregation_strategy` - How to aggregate adjacent tokens.
+      Token classification models output probabilities for each possible
+      token class. The aggregation strategy takes scores for each token which
+      possibly represents subwords and aggregates them back into words which
+      are readily interpretable as entities. Supported aggregation strategies
+      are `nil` and `:simple`. `nil` corresponds to no aggregation, which will
+      simply return the max label for each token in the raw input. `:simple`
+      corresponds to simple aggregation, which will group adjacent tokens
+      of the same entity group as belonging to the same entity. Defaults to
+      `nil`
+
+    * `:ignore_label` - Words classified as belonging to this label will be
+      filtered from the final aggregated entity result. Defaults to `"O"`
   """
   @spec extract(
           Bumblebee.ModelSpec.t(),
@@ -27,11 +40,20 @@ defmodule Bumblebee.Text.NER do
           String.t() | list(String.t()),
           keyword()
         ) :: list()
-  def extract(config, tokenizer, model, params, input, opts \\ []) do
+  def extract(config, tokenizer, model, params, input, opts \\ [])
+
+  def extract(
+        %{architecture: :for_token_classification} = config,
+        tokenizer,
+        model,
+        params,
+        input,
+        opts
+      ) do
     {aggregation_strategy, opts} = Keyword.pop(opts, :aggregation_strategy, nil)
     {ignore_label, compiler_opts} = Keyword.pop(opts, :ignore_label, @default_ignore_label)
 
-    tensor_inputs =
+    inputs =
       Bumblebee.apply_tokenizer(tokenizer, input,
         return_special_tokens_mask: true,
         return_offsets: true
@@ -39,22 +61,39 @@ defmodule Bumblebee.Text.NER do
 
     {_init_fun, predict_fun} = Axon.build(model, compiler_opts)
 
-    %{logits: logits} = predict_fun.(params, tensor_inputs)
+    %{logits: logits} = predict_fun.(params, inputs)
 
     scores = Axon.Activations.softmax(logits)
 
-    extract_from_scores(config, tokenizer, input, tensor_inputs, scores,
+    extract_from_scores(config, tokenizer, input, inputs, scores,
       aggregation_strategy: aggregation_strategy,
       ignore_label: ignore_label
     )
   end
 
+  def extract(%{architecture: arch}, _tokenizer, _model, _params, _input, _opts) do
+    raise ArgumentError, "model spec must be a token classification model, got #{inspect(arch)}"
+  end
+
   @doc """
-  Extracts named entities from pre-computed scores.
+  Extracts named entities from pre-computed scores and input
+  tokens.
 
   ## Options
 
     * `:aggregation_strategy` - How to aggregate adjacent tokens.
+      Token classification models output probabilities for each possible
+      token class. The aggregation strategy takes scores for each token which
+      possibly represents subwords and aggregates them back into words which
+      are readily interpretable as entities. Supported aggregation strategies
+      are `nil` and `:simple`. `nil` corresponds to no aggregation, which will
+      simply return the max label for each token in the raw input. `:simple`
+      corresponds to simple aggregation, which will group adjacent tokens
+      of the same entity group as belonging to the same entity. Defaults to
+      `nil`
+
+    * `:ignore_label` - Words classified as belonging to this label will be
+      filtered from the final aggregated entity result. Defaults to `"O"`
   """
   @spec extract_from_scores(
           Bumblebee.ModelSpec.t(),
@@ -63,22 +102,27 @@ defmodule Bumblebee.Text.NER do
           map(),
           Nx.t()
         ) :: list()
-  def extract_from_scores(config, tokenizer, raw_input, tensor_inputs, scores, opts \\ []) do
+  def extract_from_scores(config, tokenizer, raw_input, inputs, scores, opts \\ []) do
     aggregation_strategy = opts[:aggregation_strategy]
     ignore_label = opts[:ignore_label] || @default_ignore_label
 
-    tokenizer
-    |> gather_pre_entities(raw_input, tensor_inputs, scores)
-    |> then(&aggregate(config, tokenizer, &1, aggregation_strategy: aggregation_strategy))
-    |> filter_entities(ignore_label)
+    raw_input = List.wrap(raw_input)
+
+    for {raw, tensors, score} <-
+          Enum.zip([raw_input, to_batched(inputs, 1), to_batched(scores, 1)]) do
+      tokenizer
+      |> gather_pre_entities(raw, tensors, score)
+      |> then(&aggregate(config, tokenizer, &1, aggregation_strategy: aggregation_strategy))
+      |> filter_entities(ignore_label)
+    end
   end
 
-  defp gather_pre_entities(tokenizer, raw_input, tensor_inputs, scores) do
+  defp gather_pre_entities(tokenizer, raw_input, inputs, scores) do
     {1, sequence_length, _} = Nx.shape(scores)
-    flat_special_tokens_mask = Nx.to_flat_list(tensor_inputs["special_tokens_mask"])
-    flat_input_ids = Nx.to_flat_list(tensor_inputs["input_ids"])
-    flat_start_offsets = Nx.to_flat_list(tensor_inputs["start_offsets"])
-    flat_end_offsets = Nx.to_flat_list(tensor_inputs["end_offsets"])
+    flat_special_tokens_mask = Nx.to_flat_list(inputs["special_tokens_mask"])
+    flat_input_ids = Nx.to_flat_list(inputs["input_ids"])
+    flat_start_offsets = Nx.to_flat_list(inputs["start_offsets"])
+    flat_end_offsets = Nx.to_flat_list(inputs["end_offsets"])
 
     # TODO: Optional offset mapping
     # TODO: Non-BPE tokenizers
@@ -99,6 +143,7 @@ defmodule Bumblebee.Text.NER do
 
       %{
         "word" => word,
+        "token_id" => input_id,
         "scores" => token_scores,
         "start" => start_idx,
         "end" => end_idx,
@@ -113,11 +158,11 @@ defmodule Bumblebee.Text.NER do
 
     case aggregation_strategy do
       nil ->
-        do_simple_aggregation(config, pre_entities)
+        add_token_labels(config, pre_entities)
 
       :simple ->
         config
-        |> do_simple_aggregation(pre_entities)
+        |> add_token_labels(pre_entities)
         |> then(&group_entities(tokenizer, &1))
     end
   end
@@ -126,11 +171,11 @@ defmodule Bumblebee.Text.NER do
     Enum.filter(entities, fn %{"entity_group" => group} -> label != group end)
   end
 
-  defp do_simple_aggregation(config, pre_entities) do
+  defp add_token_labels(config, pre_entities) do
     Enum.map(pre_entities, fn pre_entity ->
       {scores, pre_entity} = Map.pop!(pre_entity, "scores")
       entity_idx = Nx.argmax(scores) |> Nx.to_number()
-      score = scores[[entity_idx]]
+      score = scores[[entity_idx]] |> Nx.to_number()
 
       pre_entity
       |> Map.put("entity", config.id2label[entity_idx])
@@ -139,34 +184,28 @@ defmodule Bumblebee.Text.NER do
   end
 
   defp group_entities(tokenizer, entities) do
-    {groups, current_group, _, _} =
-      Enum.reduce(entities, {[], [], nil, nil}, fn entity,
-                                                   {groups, current_group, last_bi, last_tag} ->
-        {bi, tag} = get_tag(entity["entity"])
+    {groups, _} =
+      Enum.reduce(entities, {[], nil}, fn
+        entity, {[], nil} ->
+          {_bi, tag} = get_tag(entity["entity"])
+          current_group = [entity]
+          {[current_group], tag}
 
-        cond do
-          last_bi == nil and last_tag == nil ->
+        entity, {[current_group | groups], last_tag} ->
+          {bi, tag} = get_tag(entity["entity"])
+
+          if tag == last_tag and bi != "B" do
             current_group = [entity | current_group]
-            {groups, current_group, bi, tag}
-
-          tag == last_tag and bi != "B" ->
-            current_group = [entity | current_group]
-            {groups, current_group, bi, tag}
-
-          true ->
-            group = group_sub_entities(tokenizer, current_group)
-            current_group = [entity]
-            {[group | groups], current_group, bi, tag}
-        end
+            {[current_group | groups], tag}
+          else
+            new_current_group = [entity]
+            {[new_current_group, current_group | groups], tag}
+          end
       end)
 
-    case current_group do
-      [] ->
-        Enum.reverse(groups)
-
-      [_ | _] ->
-        Enum.reverse([group_sub_entities(tokenizer, current_group) | groups])
-    end
+    groups
+    |> Enum.map(&group_sub_entities(tokenizer, &1))
+    |> Enum.reverse()
   end
 
   defp group_sub_entities(tokenizer, [last_entity | _] = rev_group) do
@@ -174,9 +213,7 @@ defmodule Bumblebee.Text.NER do
     {_, tag} = get_tag(first_entity["entity"])
     scores = group |> Enum.map(fn %{"score" => score} -> score end) |> Nx.stack()
 
-    tokens =
-      group
-      |> Enum.map(fn %{"word" => word} -> Tokenizers.token_to_id(tokenizer.tokenizer, word) end)
+    tokens = Enum.map(group, fn %{"token_id" => id} -> id end)
 
     %{
       "entity_group" => tag,
@@ -190,5 +227,7 @@ defmodule Bumblebee.Text.NER do
   defp get_tag(<<"B-"::binary, tag::binary>>), do: {"B", tag}
   defp get_tag(<<"I-"::binary, tag::binary>>), do: {"I", tag}
   defp get_tag(<<"O">>), do: {"I", "O"}
-  defp get_tag(label), do: raise(ArgumentError, "expected a label in the BIO format, got: #{inspect(label)}")
+
+  defp get_tag(label),
+    do: raise(ArgumentError, "expected a label in the BIO format, got: #{inspect(label)}")
 end

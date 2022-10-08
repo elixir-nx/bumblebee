@@ -138,4 +138,22 @@ defmodule Bumblebee.Utils.Nx do
     step_size = (stop - start) / (steps - 1)
     Nx.iota({steps}) * step_size + start
   end
+
+  @doc """
+  A variant of `Nx.to_batched/2` which also works on maps.
+  """
+  def to_batched(tensor_or_container, batch_size) do
+    case tensor_or_container do
+      %Nx.Tensor{} = tensor ->
+        Nx.to_batched(tensor, batch_size)
+
+      container ->
+        container
+        |> Enum.map(fn {key, batch} ->
+          list_of_tensors = batch |> Nx.to_batched(1) |> Enum.to_list()
+          Enum.map(list_of_tensors, fn tensor -> {key, tensor} end)
+        end)
+        |> Enum.zip_with(&Map.new/1)
+    end
+  end
 end
