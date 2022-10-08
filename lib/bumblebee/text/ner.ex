@@ -224,9 +224,10 @@ defmodule Bumblebee.Text.NER do
     }
   end
 
-  defp get_tag(<<"B-"::binary, tag::binary>>), do: {"B", tag}
-  defp get_tag(<<"I-"::binary, tag::binary>>), do: {"I", tag}
-  defp get_tag(<<"O">>), do: {"I", "O"}
+  # Parse the BIO tagging format
+  defp get_tag("B-" <> tag), do: {:b, tag}
+  defp get_tag("I-" <> tag), do: {:i, tag}
+  defp get_tag("O"), do: {:i, "O"}
 
   defp get_tag(label),
     do: raise(ArgumentError, "expected a label in the BIO format, got: #{inspect(label)}")
