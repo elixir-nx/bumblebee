@@ -5,9 +5,6 @@ on:
     branches:
       - main
 
-env:
-  TOKENIZERS_BUILD: true
-
 jobs:
   main:
     runs-on: ubuntu-latest
