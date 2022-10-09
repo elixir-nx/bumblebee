@@ -454,7 +454,7 @@ defmodule Bumblebee do
       sequence. Defaults to `false`
 
     * `:length` - applies fixed length padding or truncation to the given
-      input if set. Defaults to `nil`
+      input if set
 
 
   ## Examples
