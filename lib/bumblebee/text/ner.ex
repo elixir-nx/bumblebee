@@ -28,6 +28,10 @@ defmodule Bumblebee.Text.NER do
       corresponds to simple aggregation, which will group adjacent tokens
       of the same entity group as belonging to the same entity. Defaults to
       `nil`
+
+    * `:length` - If provided, fixes length of provided inputs by truncating or
+      padding to the given length. Otherwise inputs are padded to the maximum length
+      input. Defaults to `nil`
   """
   @spec extract(
           Bumblebee.ModelSpec.t(),
@@ -47,10 +51,12 @@ defmodule Bumblebee.Text.NER do
         input,
         opts
       ) do
-    {aggregation_strategy, compiler_opts} = Keyword.pop(opts, :aggregation_strategy, nil)
+    {aggregation_strategy, opts} = Keyword.pop(opts, :aggregation_strategy, nil)
+    {length, compiler_opts} = Keyword.pop(opts, :length, nil)
 
     inputs =
       Bumblebee.apply_tokenizer(tokenizer, input,
+        length: length,
         return_special_tokens_mask: true,
         return_offsets: true
       )
