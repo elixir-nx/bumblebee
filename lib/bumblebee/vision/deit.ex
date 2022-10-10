@@ -1,5 +1,69 @@
 defmodule Bumblebee.Vision.Deit do
-  @common_keys [:output_hidden_states, :output_attentions, :id2label, :num_labels]
+  alias Bumblebee.Shared
+
+  options =
+    [
+      image_size: [
+        default: 224,
+        doc: "the size of the input spatial dimensions"
+      ],
+      num_channels: [
+        default: 3,
+        doc: "the number of channels in the input"
+      ],
+      patch_size: [
+        default: 16,
+        doc: "the size of the patch spatial dimensions"
+      ],
+      hidden_size: [
+        default: 768,
+        doc: "the dimensionality of hidden layers"
+      ],
+      num_blocks: [
+        default: 12,
+        doc: "the number of Transformer blocks in the encoder"
+      ],
+      num_attention_heads: [
+        default: 12,
+        doc: "the number of attention heads for each attention layer in the encoder"
+      ],
+      intermediate_size: [
+        default: 3072,
+        docs:
+          "the dimensionality of the intermediate (often named feed-forward) layer in the encoder"
+      ],
+      use_qkv_bias: [
+        default: true,
+        doc: "whether to use bias in query, key, and value projections"
+      ],
+      activation: [
+        default: :gelu,
+        doc: "the activation function"
+      ],
+      dropout_rate: [
+        default: 0.0,
+        doc: "the dropout rate for encoder and decoder"
+      ],
+      attention_dropout_rate: [
+        default: 0.0,
+        doc: "the dropout rate for attention weights"
+      ],
+      layer_norm_epsilon: [
+        default: 1.0e-12,
+        doc: "the epsilon used by the layer normalization layers"
+      ],
+      initializer_scale: [
+        default: 0.02,
+        doc:
+          "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ]
+    ] ++
+      Shared.common_options([
+        :output_hidden_states,
+        :output_attentions,
+        :num_labels,
+        :id_to_label
+      ])
 
   @moduledoc """
   Models based on the DeiT architecture.
@@ -30,78 +94,21 @@ defmodule Bumblebee.Vision.Deit do
 
       Mask to nullify selected embedded patches.
 
-  ## Config
+  ## Configuration
 
-    * `:hidden_size` - dimensionality of the encoder layers and the pooler
-      layer. Defaults to `768`
-
-    * `:num_hidden_layers` - number of hidden layers in the transformer
-      encoder. Defaults to `12`
-
-    * `:num_attention_heads` - number of attention heads for each attention
-      layer in the transformer encoder. Defaults to `12`
-
-    * `:intermediate_size` - dimensionality of the intermediate layer in
-      the transformer encoder. Defaults to `3072`
-
-    * `:hidden_act` - non-linear activation function in the encoder and
-      pooler. Defaults to `:gelu`
-
-    * `:hidden_dropout_prob` - dropout probability for all fully connected
-      layers in the embeddings, encoder, and pooler. Defaults to `0.0`
-
-    * `:attention_probs_dropout_prob` - dropout ratio for attention
-      probabilities. Defaults to `0.0`
-
-    * `:initializer_range` - standard deviation of the truncated normal
-      initializer for initializing all weight matrices. Defaults to `0.02`
-
-    * `:layer_norm_eps` - epsilon used for layer norm layers. Defaults to
-      `1.0e-12`
-
-    * `:image_size` - resolution of each image. Defaults to `224`
-
-    * `:patch_size` - resolution of each patch. Defaults to `16`
-
-    * `:num_channels` - number of input channels. Defaults to `3`
-
-    * `:qkv_bias` - whether to use bias in query, key, and value
-      projections. Defaults to `true`
-
-    * `:encoder_stride` - factor to increase the spatial resolution by
-      in the decoder head for masked image modeling. Defaults to `16`
-
-  ### Common Options
-
-  #{Bumblebee.Shared.common_config_docs(@common_keys)}
+  #{Shared.options_doc(options)}
 
   ## References
 
     * [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929)
+
   """
 
   import Bumblebee.Utils.Model, only: [join: 2]
 
   alias Bumblebee.Layers
-  alias Bumblebee.Shared
 
-  defstruct [
-              architecture: :base,
-              hidden_size: 768,
-              num_hidden_layers: 12,
-              num_attention_heads: 12,
-              intermediate_size: 3072,
-              hidden_act: :gelu,
-              hidden_dropout_prob: 0.0,
-              attention_probs_dropout_prob: 0.0,
-              initializer_range: 0.02,
-              layer_norm_eps: 1.0e-12,
-              image_size: 224,
-              patch_size: 16,
-              num_channels: 3,
-              qkv_bias: true,
-              encoder_stride: 16
-            ] ++ Shared.common_config_defaults(@common_keys)
+  defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
 
@@ -119,8 +126,9 @@ defmodule Bumblebee.Vision.Deit do
 
   @impl true
   def config(config, opts \\ []) do
-    opts = Shared.add_common_computed_options(opts)
-    Shared.put_config_attrs(config, opts)
+    config
+    |> Shared.put_config_attrs(opts)
+    |> Shared.validate_label_options()
   end
 
   @impl true
@@ -209,12 +217,13 @@ defmodule Bumblebee.Vision.Deit do
         |> Nx.transpose(axes: [0, 2, 1])
         |> Nx.reshape({batch_size, channels, height, width})
       end)
-      |> Axon.conv(config.encoder_stride ** 2 * 3,
+      # Upsample to the original spatial resolution
+      |> Axon.conv(config.patch_size ** 2 * 3,
         kernel_size: 1,
         kernel_initializer: kernel_initializer(config),
         name: join("decoder", 0)
       )
-      |> Layers.pixel_shuffle(config.encoder_stride, name: join("decoder", 1))
+      |> Layers.pixel_shuffle(config.patch_size, name: join("decoder", 1))
 
     Layers.output(%{
       logits: logits,
@@ -251,7 +260,7 @@ defmodule Bumblebee.Vision.Deit do
       hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_eps,
+        epsilon: config.layer_norm_epsilon,
         name: join(name, "layernorm")
       )
 
@@ -275,7 +284,7 @@ defmodule Bumblebee.Vision.Deit do
     |> patch_embeddings(config, name: join(name, "patch_embeddings"))
     |> Layers.apply_vision_patch_mask(patch_mask, name: join(name, "mask_tokens"))
     |> position_embeddings(config, name: name)
-    |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
+    |> Axon.dropout(rate: config.dropout_rate, name: join(name, "dropout"))
   end
 
   defp patch_embeddings(pixel_values, config, opts) do
@@ -327,19 +336,19 @@ defmodule Bumblebee.Vision.Deit do
   defp encoder(hidden_state, config, opts) do
     name = opts[:name]
 
-    encoder_layers(hidden_state, config, name: join(name, "layer"))
+    encoder_blocks(hidden_state, config, name: join(name, "layer"))
   end
 
-  defp encoder_layers(hidden_state, config, opts) do
+  defp encoder_blocks(hidden_state, config, opts) do
     name = opts[:name]
 
     hidden_states = Layers.maybe_container({hidden_state}, config.output_hidden_states)
     attentions = Layers.maybe_container({}, config.output_attentions)
 
-    for idx <- 0..(config.num_hidden_layers - 1),
+    for idx <- 0..(config.num_blocks - 1),
         reduce: {hidden_state, hidden_states, attentions} do
       {hidden_state, hidden_states, attentions} ->
-        {hidden_state, attention} = encoder_layer(hidden_state, config, name: join(name, idx))
+        {hidden_state, attention} = encoder_block(hidden_state, config, name: join(name, idx))
 
         {
           hidden_state,
@@ -349,31 +358,31 @@ defmodule Bumblebee.Vision.Deit do
     end
   end
 
-  defp encoder_layer(hidden_state, config, opts) do
+  defp encoder_block(hidden_state, config, opts) do
     name = opts[:name]
 
     {attention_output, attention} =
       hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_eps,
+        epsilon: config.layer_norm_epsilon,
         name: join(name, "layernorm_before")
       )
       |> attention(config, name: join(name, "attention"))
 
     attention_output = Axon.add(attention_output, hidden_state)
 
-    layer_output =
+    output =
       attention_output
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_eps,
+        epsilon: config.layer_norm_epsilon,
         name: join(name, "layernorm_after")
       )
       |> intermediate(config, name: join(name, "intermediate"))
       |> output(attention_output, config, name: join(name, "output"))
 
-    {layer_output, attention}
+    {output, attention}
   end
 
   defp attention(hidden_state, config, opts) do
@@ -397,7 +406,7 @@ defmodule Bumblebee.Vision.Deit do
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
-        use_bias: config.qkv_bias,
+        use_bias: config.use_qkv_bias,
         name: join(name, "query")
       )
       |> Layers.split_heads(num_heads)
@@ -406,7 +415,7 @@ defmodule Bumblebee.Vision.Deit do
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
-        use_bias: config.qkv_bias,
+        use_bias: config.use_qkv_bias,
         name: join(name, "key")
       )
       |> Layers.split_heads(num_heads)
@@ -415,7 +424,7 @@ defmodule Bumblebee.Vision.Deit do
       hidden_state
       |> Axon.dense(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
-        use_bias: config.qkv_bias,
+        use_bias: config.use_qkv_bias,
         name: join(name, "value")
       )
       |> Layers.split_heads(num_heads)
@@ -424,7 +433,7 @@ defmodule Bumblebee.Vision.Deit do
 
     attention_weights =
       Layers.attention_weights(query, key, attention_bias)
-      |> Axon.dropout(rate: config.attention_probs_dropout_prob, name: join(name, "dropout"))
+      |> Axon.dropout(rate: config.attention_dropout_rate, name: join(name, "dropout"))
 
     attention_output =
       attention_weights
@@ -442,7 +451,7 @@ defmodule Bumblebee.Vision.Deit do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
     )
-    |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
+    |> Axon.dropout(rate: config.dropout_rate, name: join(name, "dropout"))
   end
 
   defp intermediate(hidden_state, config, opts) do
@@ -453,7 +462,7 @@ defmodule Bumblebee.Vision.Deit do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
     )
-    |> Axon.activation(config.hidden_act)
+    |> Axon.activation(config.activation)
   end
 
   defp output(hidden_state, attention_output, config, opts) do
@@ -464,7 +473,7 @@ defmodule Bumblebee.Vision.Deit do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
     )
-    |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
+    |> Axon.dropout(rate: config.dropout_rate, name: join(name, "dropout"))
     |> Axon.add(attention_output, name: join(name, "residual"))
   end
 
@@ -481,15 +490,31 @@ defmodule Bumblebee.Vision.Deit do
   end
 
   defp kernel_initializer(config) do
-    Axon.Initializers.normal(scale: config.initializer_range)
+    Axon.Initializers.normal(scale: config.initializer_scale)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
-      data
-      |> Shared.convert_to_atom(["hidden_act"])
-      |> Shared.convert_common()
-      |> Shared.data_into_config(config, except: [:architecture])
+      import Shared.Converters
+
+      opts =
+        convert!(data,
+          image_size: {"image_size", number()},
+          num_channels: {"num_channels", number()},
+          patch_size: {"patch_size", number()},
+          hidden_size: {"hidden_size", number()},
+          num_blocks: {"num_hidden_layers", number()},
+          num_attention_heads: {"num_attention_heads", number()},
+          intermediate_size: {"intermediate_size", number()},
+          use_qkv_bias: {"qkv_bias", boolean()},
+          activation: {"hidden_act", atom()},
+          dropout_rate: {"hidden_dropout_prob", number()},
+          attention_dropout_rate: {"attention_probs_dropout_prob", number()},
+          layer_norm_epsilon: {"layer_norm_eps", number()},
+          initializer_scale: {"initializer_range", number()}
+        ) ++ Shared.common_options_from_transformers(data, config)
+
+      @for.config(config, opts)
     end
   end
 end

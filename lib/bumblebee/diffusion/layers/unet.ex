@@ -71,7 +71,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     in_channels = opts[:in_channels]
     out_channels = opts[:out_channels]
     dropout = opts[:dropout] || 0.0
-    num_layers = opts[:num_layers] || 1
+    depth = opts[:depth] || 1
     resnet_epsilon = opts[:resnet_epsilon] || 1.0e-6
     resnet_activation = opts[:resnet_activation] || :swish
     resnet_num_groups = opts[:resnet_num_groups] || 32
@@ -84,12 +84,12 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     state = {hidden_state, {}}
 
     {hidden_state, output_states} =
-      for idx <- 0..(num_layers - 1), reduce: state do
+      for idx <- 0..(depth - 1), reduce: state do
         {hidden_state, output_states} ->
           in_channels = if(idx == 0, do: in_channels, else: out_channels)
 
           hidden_state =
-            Diffusion.Layers.resnet_block(
+            Diffusion.Layers.residual_block(
               hidden_state,
               in_channels,
               out_channels,
@@ -145,7 +145,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     in_channels = opts[:in_channels]
     out_channels = opts[:out_channels]
     dropout = opts[:dropout] || 0.0
-    num_layers = opts[:num_layers] || 1
+    depth = opts[:depth] || 1
     resnet_epsilon = opts[:resnet_epsilon] || 1.0e-6
     resnet_activation = opts[:resnet_activation] || :swish
     resnet_num_groups = opts[:resnet_num_groups] || 32
@@ -154,7 +154,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     add_upsample = Keyword.get(opts, :add_upsample, true)
     name = opts[:name]
 
-    ^num_layers = length(residuals)
+    ^depth = length(residuals)
 
     hidden_state =
       for {{residual, residual_channels}, idx} <- Enum.with_index(residuals),
@@ -164,7 +164,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
 
           hidden_state =
             Axon.concatenate([hidden_state, residual], axis: 1)
-            |> Diffusion.Layers.resnet_block(
+            |> Diffusion.Layers.residual_block(
               in_channels + residual_channels,
               out_channels,
               timestep_embeds: timestep_embeds,
@@ -206,7 +206,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
       ) do
     channels = opts[:channels]
     dropout = opts[:dropout] || 0.0
-    num_layers = opts[:num_layers] || 1
+    depth = opts[:depth] || 1
     resnet_epsilon = opts[:resnet_epsilon] || 1.0e-6
     resnet_activation = opts[:resnet_activation] || :swish
     resnet_num_groups = opts[:resnet_num_groups] || 32
@@ -223,14 +223,14 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     ]
 
     hidden_state =
-      Diffusion.Layers.resnet_block(
+      Diffusion.Layers.residual_block(
         hidden_state,
         channels,
         channels,
         resnet_block_opts ++ [timestep_embeds: timestep_embeds, name: join(name, "resnets.0")]
       )
 
-    for idx <- 0..(num_layers - 1), reduce: hidden_state do
+    for idx <- 0..(depth - 1), reduce: hidden_state do
       hidden_state ->
         hidden_state
         |> spatial_transformer(
@@ -240,7 +240,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
           depth: 1,
           name: join(name, "attentions.#{idx}")
         )
-        |> Diffusion.Layers.resnet_block(
+        |> Diffusion.Layers.residual_block(
           channels,
           channels,
           resnet_block_opts ++

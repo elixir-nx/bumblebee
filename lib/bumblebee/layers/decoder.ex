@@ -19,10 +19,10 @@ defmodule Bumblebee.Layers.Decoder do
   To reduce the complexity, we can feed a single input token at a time,
   put those hidden states in a cache and use on subsequent iterations.
 
-  For self-attention layers, we cache the key and value state for the
+  For self-attention blocks, we cache the key and value state for the
   input token and append them to the cache.
 
-  For cross-attention layers, we compute the whole key and value state
+  For cross-attention blocks, we compute the whole key and value state
   on the first iteration and reuse on subsequent ones.
 
   We also accumulate an attention mask corresponding to each token.
@@ -35,11 +35,11 @@ defmodule Bumblebee.Layers.Decoder do
 
     * `:hidden_size` - the dimensionality of the hidden layers
 
-    * `:decoder_layers` - the number of decoder layers
+    * `:decoder_num_blocks` - the number of Transformer blocks in the decoder
 
-    * `:decoder_attention_heads` - the number of decoder attention heads
+    * `:decoder_num_attention_heads` - the number of decoder attention heads
 
-    * `:encoder_attention_heads` - the number of encoder attention heads
+    * `:encoder_num_attention_heads` - the number of encoder attention heads
       (for cross attention)
 
     * `:encoder_sequence_length` - the encoder input sequence length
@@ -48,30 +48,36 @@ defmodule Bumblebee.Layers.Decoder do
   """
   def init_cache(batch_size, max_length, opts \\ []) do
     hidden_size = Keyword.fetch!(opts, :hidden_size)
-    decoder_attention_heads = Keyword.fetch!(opts, :decoder_attention_heads)
-    decoder_layers = Keyword.fetch!(opts, :decoder_layers)
-    encoder_attention_heads = opts[:encoder_attention_heads]
+    decoder_num_attention_heads = Keyword.fetch!(opts, :decoder_num_attention_heads)
+    decoder_num_blocks = Keyword.fetch!(opts, :decoder_num_blocks)
+    encoder_num_attention_heads = opts[:encoder_num_attention_heads]
     encoder_sequence_length = opts[:encoder_sequence_length]
 
-    self_attention = attention_cache(batch_size, max_length, hidden_size, decoder_attention_heads)
+    self_attention =
+      attention_cache(batch_size, max_length, hidden_size, decoder_num_attention_heads)
 
     cross_attention =
       if encoder_sequence_length do
-        attention_cache(batch_size, encoder_sequence_length, hidden_size, encoder_attention_heads)
+        attention_cache(
+          batch_size,
+          encoder_sequence_length,
+          hidden_size,
+          encoder_num_attention_heads
+        )
       else
         %Axon.None{}
       end
 
-    layers =
+    blocks =
       %{self_attention: self_attention, cross_attention: cross_attention}
-      |> List.duplicate(decoder_layers)
+      |> List.duplicate(decoder_num_blocks)
       |> List.to_tuple()
 
     offset = Nx.tensor(0.0)
 
     attention_mask = Nx.broadcast(0.0, {batch_size, max_length})
 
-    %{layers: layers, offset: offset, attention_mask: attention_mask}
+    %{blocks: blocks, offset: offset, attention_mask: attention_mask}
   end
 
   defp attention_cache(batch_size, seq_length, hidden_size, num_heads) do
@@ -143,46 +149,46 @@ defmodule Bumblebee.Layers.Decoder do
   end
 
   @doc """
-  Retrieves cache for a specific decoder layer.
+  Retrieves cache for a specific decoder block.
   """
-  def get_layer_cache(cache, layer_idx) do
-    Axon.nx(cache, &elem(&1.layers, layer_idx))
+  def get_block_cache(cache, block_idx) do
+    Axon.nx(cache, &elem(&1.blocks, block_idx))
   end
 
   @doc """
-  Puts an updated cache entry for the given decoder layer.
+  Puts an updated cache entry for the given decoder block.
   """
-  def put_layer_cache(cache, layer_idx, layer_cache) do
+  def put_block_cache(cache, block_idx, block_cache) do
     Axon.layer(
-      fn cache, layer_cache, _opts ->
-        put_in(cache, [:layers, Access.elem(layer_idx)], layer_cache)
+      fn cache, block_cache, _opts ->
+        put_in(cache, [:blocks, Access.elem(block_idx)], block_cache)
       end,
-      [cache, layer_cache]
+      [cache, block_cache]
     )
   end
 
   @doc """
-  Retrieves self-attention and cross-attention caches from a layer
+  Retrieves self-attention and cross-attention caches from a block
   cache.
   """
-  def get_attention_caches(layer_cache) do
-    {Axon.nx(layer_cache, & &1.self_attention), Axon.nx(layer_cache, & &1.cross_attention)}
+  def get_attention_caches(block_cache) do
+    {Axon.nx(block_cache, & &1.self_attention), Axon.nx(block_cache, & &1.cross_attention)}
   end
 
   @doc """
   Puts updated self-attention and cross-attention cache entries for
-  in the decoder layer cache.
+  in the decoder block cache.
   """
-  def put_attention_caches(layer_cache, self_attention_cache, cross_attention_cache) do
+  def put_attention_caches(block_cache, self_attention_cache, cross_attention_cache) do
     Axon.layer(
-      fn layer_cache, self_attention_cache, cross_attention_cache, _opts ->
+      fn block_cache, self_attention_cache, cross_attention_cache, _opts ->
         %{
-          layer_cache
+          block_cache
           | self_attention: self_attention_cache,
             cross_attention: cross_attention_cache
         }
       end,
-      [layer_cache, Axon.optional(self_attention_cache), Axon.optional(cross_attention_cache)]
+      [block_cache, Axon.optional(self_attention_cache), Axon.optional(cross_attention_cache)]
     )
   end
 

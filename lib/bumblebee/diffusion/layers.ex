@@ -82,9 +82,9 @@ defmodule Bumblebee.Diffusion.Layers do
   end
 
   @doc """
-  Adds a ResNet block to the network.
+  Adds a residual block to the network.
   """
-  def resnet_block(x, in_channels, out_channels, opts \\ []) do
+  def residual_block(x, in_channels, out_channels, opts \\ []) do
     timestep_embeds = opts[:timestep_embeds]
     dropout = opts[:dropout] || 0.0
     num_groups = opts[:num_groups] || 32
@@ -182,7 +182,7 @@ defmodule Bumblebee.Diffusion.Layers do
   end
 
   @doc """
-  Adds an upsample layer to the network.
+  Adds an upsample block to the network.
   """
   def upsample_2d(hidden_state, channels, opts \\ []) do
     name = opts[:name]

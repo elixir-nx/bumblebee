@@ -1,5 +1,40 @@
 defmodule Bumblebee.Vision.ResNet do
-  @common_keys [:output_hidden_states, :id2label, :num_labels]
+  alias Bumblebee.Shared
+
+  options =
+    [
+      num_channels: [
+        default: 3,
+        doc: "the number of channels in the input"
+      ],
+      embedding_size: [
+        default: 64,
+        doc: "the dimensionality of the embedding layer"
+      ],
+      hidden_sizes: [
+        default: [256, 512, 1024, 2048],
+        doc: "the dimensionality of hidden layers at each stage"
+      ],
+      depths: [
+        default: [3, 4, 6, 3],
+        doc: "the depth (number of residual blocks) at each stage"
+      ],
+      residual_block_type: [
+        default: :bottleneck,
+        doc: """
+        the residual block to use, either `:basic` (used for smaller models, like ResNet-18 or ResNet-34)
+        or `:bottleneck` (used for larger models like ResNet-50 and above)
+        """
+      ],
+      activation: [
+        default: :relu,
+        doc: "the activation function"
+      ],
+      downsample_in_first_stage: [
+        default: false,
+        doc: "whether the first stage should downsample the inputs using a stride of 2"
+      ]
+    ] ++ Shared.common_options([:output_hidden_states, :num_labels, :id_to_label])
 
   @moduledoc """
   Models based on the ResNet architecture.
@@ -20,48 +55,14 @@ defmodule Bumblebee.Vision.ResNet do
 
   ## Configuration
 
-    * `:num_channels` - the number of input channels. Defaults to `3`
-
-    * `:embedding_size` - dimensionality for the embedding layer.
-      Defaults to `64`
-
-    * `:hidden_sizes` - dimensionality at each stage. Defaults to
-      `[256, 512, 1024, 2048]`
-
-    * `:depths` - depth (number of layers) for each stage. Defaults
-      to `[3, 4, 6, 3]`
-
-    * `:layer_type` - the layer to use, either `:basic` (used for
-      smaller models, like ResNet-18 or ResNet-34) or `:bottleneck`
-      (used for larger models like ResNet-50 and above). Defaults to
-      `:bottleneck`
-
-    * `:hidden_act` - the activation function in each block. Defaults
-      to `:relu`
-
-    * `:downsample_in_first_stage` - whether the first stage should
-      downsample the inputs using a stride of 2. Defaults to `false`
-
-  ### Common options
-
-  #{Bumblebee.Shared.common_config_docs(@common_keys)}
+  #{Shared.options_doc(options)}
   """
+
+  defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   import Bumblebee.Utils.Model, only: [join: 2]
 
-  alias Bumblebee.Shared
   alias Bumblebee.Layers
-
-  defstruct [
-              architecture: :base,
-              num_channels: 3,
-              embedding_size: 64,
-              hidden_sizes: [256, 512, 1024, 2048],
-              depths: [3, 4, 6, 3],
-              layer_type: :bottleneck,
-              hidden_act: :relu,
-              downsample_in_first_stage: false
-            ] ++ Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
 
@@ -73,8 +74,9 @@ defmodule Bumblebee.Vision.ResNet do
 
   @impl true
   def config(config, opts \\ []) do
-    opts = Shared.add_common_computed_options(opts)
-    Shared.put_config_attrs(config, opts)
+    config
+    |> Shared.put_config_attrs(opts)
+    |> Shared.validate_label_options()
   end
 
   @impl true
@@ -107,7 +109,7 @@ defmodule Bumblebee.Vision.ResNet do
 
     encoder_outputs =
       Axon.input("pixel_values", shape: {nil, config.num_channels, 224, 224})
-      |> embedding_layer(config, name: join(name, "embedder"))
+      |> embeddings(config, name: join(name, "embedder"))
       |> encoder(config, name: join(name, "encoder"))
 
     pooled_output =
@@ -123,14 +125,14 @@ defmodule Bumblebee.Vision.ResNet do
     }
   end
 
-  defp embedding_layer(%Axon{} = hidden_state, config, opts) do
+  defp embeddings(%Axon{} = hidden_state, config, opts) do
     name = opts[:name]
 
     hidden_state
-    |> conv_layer(config.embedding_size,
+    |> conv(config.embedding_size,
       kernel_size: 7,
       strides: 2,
-      activation: config.hidden_act,
+      activation: config.activation,
       name: join(name, "embedder")
     )
     |> Axon.max_pool(
@@ -177,77 +179,77 @@ defmodule Bumblebee.Vision.ResNet do
     strides = opts[:strides]
     depth = opts[:depth]
 
-    layer =
-      case config.layer_type do
-        :bottleneck -> &bottleneck_layer/4
-        :basic -> &basic_layer/4
+    residual_block =
+      case config.residual_block_type do
+        :basic -> &basic_residual_block/4
+        :bottleneck -> &bottleneck_residual_block/4
       end
 
-    # Downsampling is done in the first layer with stride of 2
+    # Downsampling is done in the first block with stride of 2
     hidden_state =
-      layer.(hidden_state, in_channels, out_channels,
+      residual_block.(hidden_state, in_channels, out_channels,
         strides: strides,
-        activation: config.hidden_act,
+        activation: config.activation,
         name: join(name, "layers.0")
       )
 
     for idx <- 1..(depth - 1), reduce: hidden_state do
       hidden_state ->
-        layer.(hidden_state, out_channels, out_channels,
-          activation: config.hidden_act,
+        residual_block.(hidden_state, out_channels, out_channels,
+          activation: config.activation,
           name: join(name, "layers.#{idx}")
         )
     end
   end
 
-  defp basic_layer(%Axon{} = hidden_state, in_channels, out_channels, opts) do
+  defp basic_residual_block(%Axon{} = hidden_state, in_channels, out_channels, opts) do
     opts = Keyword.validate!(opts, [:name, strides: 1, activation: :relu])
     name = opts[:name]
     strides = opts[:strides]
     activation = opts[:activation]
 
-    should_apply_shortcut? = in_channels != out_channels or strides != 1
+    use_shortcut? = in_channels != out_channels or strides != 1
 
     residual =
-      if should_apply_shortcut? do
-        shortcut_layer(hidden_state, out_channels, strides: strides, name: join(name, "shortcut"))
+      if use_shortcut? do
+        shortcut(hidden_state, out_channels, strides: strides, name: join(name, "shortcut"))
       else
         hidden_state
       end
 
     hidden_state
-    |> conv_layer(out_channels, strides: strides, name: join(name, "layer.0"))
-    |> conv_layer(out_channels, activation: :linear, name: join(name, "layer.1"))
+    |> conv(out_channels, strides: strides, name: join(name, "layer.0"))
+    |> conv(out_channels, activation: :linear, name: join(name, "layer.1"))
     |> Axon.add(residual)
     |> Axon.activation(activation, name: join(name, "activation"))
   end
 
-  defp bottleneck_layer(%Axon{} = hidden_state, in_channels, out_channels, opts) do
+  defp bottleneck_residual_block(%Axon{} = hidden_state, in_channels, out_channels, opts) do
     opts = Keyword.validate!(opts, [:name, strides: 1, activation: :relu, reduction: 4])
     name = opts[:name]
     strides = opts[:strides]
     activation = opts[:activation]
     reduction = opts[:reduction]
 
-    should_apply_shortcut? = in_channels != out_channels or strides != 1
-    reduces_channels = div(out_channels, reduction)
+    use_shortcut? = in_channels != out_channels or strides != 1
+    reduced_channels = div(out_channels, reduction)
 
     residual =
-      if should_apply_shortcut? do
-        shortcut_layer(hidden_state, out_channels, strides: strides, name: join(name, "shortcut"))
+      if use_shortcut? do
+        shortcut(hidden_state, out_channels, strides: strides, name: join(name, "shortcut"))
       else
         hidden_state
       end
 
     hidden_state
-    |> conv_layer(reduces_channels, kernel_size: 1, name: join(name, "layer.0"))
-    |> conv_layer(reduces_channels, strides: strides, name: join(name, "layer.1"))
-    |> conv_layer(out_channels, kernel_size: 1, activation: :linear, name: join(name, "layer.2"))
+    |> conv(reduced_channels, kernel_size: 1, name: join(name, "layer.0"))
+    |> conv(reduced_channels, strides: strides, name: join(name, "layer.1"))
+    |> conv(out_channels, kernel_size: 1, activation: :linear, name: join(name, "layer.2"))
     |> Axon.add(residual)
     |> Axon.activation(activation, name: join(name, "activation"))
   end
 
-  defp shortcut_layer(%Axon{} = hidden_state, out_channels, opts) do
+  defp shortcut(%Axon{} = hidden_state, out_channels, opts) do
     opts = Keyword.validate!(opts, [:name, strides: 2])
     name = opts[:name]
     strides = opts[:strides]
@@ -263,7 +265,7 @@ defmodule Bumblebee.Vision.ResNet do
     |> Axon.batch_norm(gamma_initializer: :ones, name: join(name, "normalization"))
   end
 
-  defp conv_layer(%Axon{} = hidden_state, out_channels, opts) do
+  defp conv(%Axon{} = hidden_state, out_channels, opts) do
     opts = Keyword.validate!(opts, [:name, kernel_size: 3, strides: 1, activation: :relu])
     name = opts[:name]
     kernel_size = opts[:kernel_size]
@@ -292,10 +294,20 @@ defmodule Bumblebee.Vision.ResNet do
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
-      data
-      |> Shared.convert_to_atom(["layer_type", "hidden_act"])
-      |> Shared.convert_common()
-      |> Shared.data_into_config(config, except: [:architecture])
+      import Shared.Converters
+
+      opts =
+        convert!(data,
+          num_channels: {"num_channels", number()},
+          embedding_size: {"embedding_size", number()},
+          hidden_sizes: {"hidden_sizes", list(number())},
+          depths: {"depths", list(number())},
+          residual_block_type: {"layer_type", atom()},
+          activation: {"hidden_act", atom()},
+          downsample_in_first_stage: {"downsample_in_first_stage", boolean()}
+        ) ++ Shared.common_options_from_transformers(data, config)
+
+      @for.config(config, opts)
     end
   end
 end

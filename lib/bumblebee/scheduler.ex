@@ -60,7 +60,7 @@ defmodule Bumblebee.Scheduler do
   """
   @callback init(
               t(),
-              num_inference_timesteps :: pos_integer(),
+              num_steps :: pos_integer(),
               sample_shape :: tuple()
             ) :: {state :: map(), timesteps :: Nx.Tensor.t()}
 

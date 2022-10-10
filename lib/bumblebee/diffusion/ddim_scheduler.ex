@@ -1,5 +1,64 @@
 defmodule Bumblebee.Diffusion.DdimScheduler do
-  @moduledoc ~S"""
+  options = [
+    num_train_steps: [
+      default: 1000,
+      doc: "the number of diffusion steps used to train the model"
+    ],
+    beta_schedule: [
+      default: :linear,
+      doc: """
+      the beta schedule type, a mapping from a beta range to a sequence of betas for stepping the model.
+      Either of `:linear`, `:quadratic`, or `:squared_cosine`
+      """
+    ],
+    beta_start: [
+      default: 0.0001,
+      doc: "the start value for the beta schedule"
+    ],
+    beta_end: [
+      default: 0.02,
+      doc: "the end value for the beta schedule"
+    ],
+    alpha_clip_strategy: [
+      default: :one,
+      doc: ~S"""
+      each step $t$ uses the values of $\bar{\alpha}\_t$ and $\bar{\alpha}\_{t-1}$,
+      however for $t = 0$ there is no previous alpha. The strategy can be either
+      `:one` ($\bar{\alpha}\_{t-1} = 1$) or `:alpha_zero` ($\bar{\alpha}\_{t-1} = \bar{\alpha}\_0$)
+      """
+    ],
+    timesteps_offset: [
+      default: 0,
+      doc: ~S"""
+      an offset added to the inference steps. You can use a combination of `timesteps_offset: 1` and
+      `alpha_clip_strategy: :alpha_zero`, so that the last step $t = 1$ uses $\bar{\alpha}\_1$
+      and $\bar{\alpha}\_0$, as done in stable diffusion
+      """
+    ],
+    clip_denoised_sample: [
+      default: true,
+      doc: """
+      whether to clip the predicted denoised sample ($x_0$ in Equation (12)) into $[-1, 1]$
+      for numerical stability.
+      """
+    ],
+    rederive_noise: [
+      default: false,
+      doc: """
+      whether the noise (output of the denoising model) should be re-derived at each step based on the
+      predicted denoised sample ($x_0$) and the current sample. This technique is used in OpenAI GLIDE
+      """
+    ],
+    eta: [
+      default: 0.0,
+      doc: """
+      a weight for the noise added in a denoising diffusion step. This scales the value of $\\sigma_t$
+      in Equation (12) in the original paper, as per Equation (16)
+      """
+    ]
+  ]
+
+  @moduledoc """
   Denoising diffusion implicit models (DDIMs).
 
   This sampling method was proposed as a follow up to the original
@@ -11,50 +70,16 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
   to DDPMs, while using the same denoising model.
 
   DDIMs were shown to be a simple variant of pseudo numerical methods
-  for diffusion models (PNDMs), see `Bumblebee.Diffusion.Schedules.Pndm`
+  for diffusion models (PNDMs), see `Bumblebee.Diffusion.PndmScheduler`
   and the corresponding paper for more details.
 
   ## Configuration
 
-    * `:num_train_timesteps` - the number of diffusion steps used to
-      train the model. Defaults to `1000`
-
-    * `:beta_schedule` - the beta schedule type, a mapping from a beta
-      range to a sequence of betas for stepping the model. Either of
-      `:linear`, `:scaled_linear`, or `:squaredcos_cap_v2`. Defaults to
-      `:linear`
-
-    * `:beta_start` - the start value for the beta schedule. Defaults
-      to `0.0001`
-
-    * `:beta_end` - the end value for the beta schedule. Defaults to `0.02`
-
-    * `:set_alpha_to_one` - each step $t$ uses the values of $\bar{\alpha}\_t$
-      and $\bar{\alpha}\_{t-1}$, however for $t = 0$ there is no previous
-      alpha. Setting this option to `true` implies $\bar{\alpha}\_{t-1} = 1$,
-      otherwise $\bar{\alpha}\_{t-1} = \bar{\alpha}\_0$. Defaults to `true`
-
-    * `:steps_offset` - an offset added to the inference steps. You can
-      use a combination of `offset: 1` and `set_alpha_to_one: false`,
-      so that the last step $t = 1$ uses $\bar{\alpha}\_1$ and $\bar{\alpha}\_0$,
-      as done in stable diffusion. Defaults to `0`
-
-    * `:clip_sample` - whether to clip each predicted sample into $[-1, 1]$
-      for numerical stability.. Defaults to `true`
-
-    * `:use_clipped_model_output` - whether the noise (output of the
-      denoising model) should be re-derived at each step based on the
-      predicted original sample and the current sample. This technique
-      is used in OpenAI GLIDE. Defaults to `false`
-
-    * `:eta` - a weight for the noise added in a defnoising diffusion
-      step. This scales the value of $\sigma_t$ in Equation (12) in
-      the original paper, as per Equation (16). Defaults to `0.0`
-
+  #{Bumblebee.Shared.options_doc(options)}
 
   ## References
 
-    * [Denoising diffusion implicit models](https://arxiv.org/pdf/2010.02502.pdf)
+    * [Denoising Diffusion Implicit Models](https://arxiv.org/abs/2010.02502)
 
   """
 
@@ -64,15 +89,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
 
   @behaviour Bumblebee.Scheduler
 
-  defstruct num_train_timesteps: 1000,
-            beta_schedule: :linear,
-            beta_start: 0.0001,
-            beta_end: 0.02,
-            set_alpha_to_one: true,
-            steps_offset: 0,
-            clip_sample: true,
-            use_clipped_model_output: false,
-            eta: 0.0
+  defstruct Bumblebee.Shared.option_defaults(options)
 
   @impl true
   def config(config, opts) do
@@ -80,19 +97,15 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
   end
 
   @impl true
-  def init(config, num_inference_timesteps, _sample_shape) do
+  def init(config, num_steps, _sample_shape) do
     timesteps =
-      SchedulerUtils.ddim_timesteps(
-        config.num_train_timesteps,
-        num_inference_timesteps,
-        config.steps_offset
-      )
+      SchedulerUtils.ddim_timesteps(config.num_train_steps, num_steps, config.timesteps_offset)
 
     alpha_bars = init_parameters(config: config)
 
     state = %{
       timesteps: timesteps,
-      timestep_gap: div(config.num_train_timesteps, num_inference_timesteps),
+      timestep_gap: div(config.num_train_steps, num_steps),
       alpha_bars: alpha_bars,
       iteration: 0
     }
@@ -105,13 +118,13 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
       beta_start: beta_start,
       beta_end: beta_end,
       beta_schedule: beta_schedule,
-      num_train_timesteps: num_train_timesteps
+      num_train_steps: num_train_steps
     } = opts[:config]
 
     betas =
-      SchedulerUtils.beta_schedule(beta_schedule, num_train_timesteps,
-        linear_start: beta_start,
-        linear_end: beta_end
+      SchedulerUtils.beta_schedule(beta_schedule, num_train_steps,
+        start: beta_start,
+        end: beta_end
       )
 
     alphas = 1 - betas
@@ -140,16 +153,19 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
       if prev_timestep >= 0 do
         state.alpha_bars[prev_timestep]
       else
-        if config.set_alpha_to_one, do: 1.0, else: state.alpha_bars[0]
+        case config.alpha_clip_strategy do
+          :one -> 1.0
+          :alpha_zero -> state.alpha_bars[0]
+        end
       end
 
-    pred_original_sample = (sample - Nx.sqrt(1 - alpha_bar_t) * noise) / Nx.sqrt(alpha_bar_t)
+    pred_denoised_sample = (sample - Nx.sqrt(1 - alpha_bar_t) * noise) / Nx.sqrt(alpha_bar_t)
 
-    pred_original_sample =
-      if config.clip_sample do
-        Nx.clip(pred_original_sample, -1, 1)
+    pred_denoised_sample =
+      if config.clip_denoised_sample do
+        Nx.clip(pred_denoised_sample, -1, 1)
       else
-        pred_original_sample
+        pred_denoised_sample
       end
 
     # See Equation (16)
@@ -158,16 +174,16 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
         Nx.sqrt((1 - alpha_bar_t_prev) / (1 - alpha_bar_t) * (1 - alpha_bar_t / alpha_bar_t_prev))
 
     noise =
-      if config.use_clipped_model_output do
+      if config.rederive_noise do
         # Re-derive the noise as in GLIDE
-        (sample - Nx.sqrt(alpha_bar_t) * pred_original_sample) / Nx.sqrt(1 - alpha_bar_t)
+        (sample - Nx.sqrt(alpha_bar_t) * pred_denoised_sample) / Nx.sqrt(1 - alpha_bar_t)
       else
         noise
       end
 
     pred_sample_direction = Nx.sqrt(1 - alpha_bar_t_prev - Nx.power(sigma_t, 2)) * noise
 
-    prev_sample = Nx.sqrt(alpha_bar_t_prev) * pred_original_sample + pred_sample_direction
+    prev_sample = Nx.sqrt(alpha_bar_t_prev) * pred_denoised_sample + pred_sample_direction
 
     prev_sample =
       if config.eta > 0 do
@@ -182,12 +198,32 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    alias Bumblebee.Shared
-
     def load(config, data) do
-      data
-      |> Shared.convert_to_atom(["beta_schedule"])
-      |> Shared.data_into_config(config)
+      import Bumblebee.Shared.Converters
+
+      opts =
+        convert!(data,
+          num_train_steps: {"num_train_timesteps", number()},
+          beta_schedule: {
+            "beta_schedule",
+            mapping(%{
+              "linear" => :linear,
+              "scaled_linear" => :quadratic,
+              "squaredcos_cap_v2" => :squared_cosine
+            })
+          },
+          beta_start: {"beta_start", number()},
+          beta_end: {"beta_end", number()},
+          alpha_clip_strategy: {
+            "set_alpha_to_one",
+            mapping(%{true => :one, false => :alpha_zero})
+          },
+          timesteps_offset: {"steps_offset", number()},
+          clip_denoised_sample: {"clip_sample", boolean()},
+          rederive_noise: {"use_clipped_model_output", boolean()}
+        )
+
+      @for.config(config, opts)
     end
   end
 end

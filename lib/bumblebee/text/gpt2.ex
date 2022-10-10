@@ -1,11 +1,84 @@
 defmodule Bumblebee.Text.Gpt2 do
-  @common_keys [
-    :output_hidden_states,
-    :output_attentions,
-    :id2label,
-    :num_labels,
-    :add_cross_attention
-  ]
+  alias Bumblebee.Shared
+
+  options =
+    [
+      vocab_size: [
+        default: 50257,
+        doc: """
+        the vocabulary size of the token embedding. This corresponds to the number of distinct
+        tokens that can be represented in model input and output
+        """
+      ],
+      max_positions: [
+        default: 1024,
+        doc: """
+        the vocabulary size of the position embedding. This corresponds to the maximum sequence
+        length that this model can process. Typically this is set to a large value just in case,
+        such as 512, 1024 or 2048
+        """
+      ],
+      hidden_size: [
+        default: 768,
+        doc: "the dimensionality of hidden layers"
+      ],
+      num_blocks: [
+        default: 24,
+        doc: "the number of Transformer blocks in the decoder"
+      ],
+      num_attention_heads: [
+        default: 16,
+        doc: "the number of attention heads for each attention layer in the decoder"
+      ],
+      intermediate_size: [
+        default: nil,
+        doc: """
+        the dimensionality of the intermediate (often named feed-forward) layer in the decoder.
+        If not specified, defaults to 4 times `:hidden_size`
+        """
+      ],
+      activation: [
+        default: :gelu_new,
+        doc: "the activation function"
+      ],
+      dropout_rate: [
+        default: 0.1,
+        doc: "the dropout rate for embedding and encoder"
+      ],
+      embeddings_dropout_rate: [
+        default: 0.1,
+        doc: "the dropout rate for embeddings"
+      ],
+      attention_dropout_rate: [
+        default: 0.1,
+        doc: "the dropout rate for attention weights"
+      ],
+      classifier_dropout_rate: [
+        default: 0.1,
+        doc: "the dropout rate for the classification head"
+      ],
+      layer_norm_epsilon: [
+        default: 1.0e-5,
+        doc: "the epsilon used by the layer normalization layers"
+      ],
+      initializer_scale: [
+        default: 0.02,
+        doc:
+          "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ]
+    ] ++
+      Shared.common_options([
+        :use_cross_attention,
+        :output_hidden_states,
+        :output_attentions,
+        :num_labels,
+        :id_to_label
+      ]) ++
+      Shared.token_options(
+        bos_token_id: 50256,
+        eos_token_id: 50256,
+        pad_token_id: 50256
+      ) ++ Shared.generation_options()
 
   @moduledoc """
   Models based on GPT2 architecture.
@@ -48,7 +121,7 @@ defmodule Bumblebee.Text.Gpt2 do
       Indices of positions of each input sequence tokens in the position
       embeddings.
 
-    * `"head_mask"` - `{num_layers, num_attention_heads}`
+    * `"head_mask"` - `{num_blocks, num_attention_heads}`
 
       Mask to nullify selected heads of the self-attention blocks in
       the encoder.
@@ -73,7 +146,7 @@ defmodule Bumblebee.Text.Gpt2 do
       padding tokens, which are added when processing a batch of sequences
       with different length.
 
-    * `"cross_attention_head_mask"` - `{num_layers, num_attention_heads}`
+    * `"cross_attention_head_mask"` - `{num_blocks, num_attention_heads}`
 
       Mask to nullify selected heads of the cross-attention blocks in
       the decoder with shape.
@@ -88,73 +161,14 @@ defmodule Bumblebee.Text.Gpt2 do
 
   ## Configuration
 
-    * `:vocab_size` - vocabulary size of the model. Defines the number
-      of distinct tokens that can be represented by the in model input
-      and output. Defaults to `50265`
-
-    * `:n_position` - the maximum sequence length that this model might
-      ever be used with. Typically set this to something large just in
-      case (e.g. 512 or 1024 or 2048). Defaults to `1024`
-
-    * `:n_embd` - dimensionality of the embeddings and hidden layers.
-      Defaults to `768`
-
-    * `:n_layer` - number of the hidden layers. Defaults to `24`
-
-    * `:n_head` - the number of attention heads for each attention layer.
-      Defaults to `16`
-
-    * `:n_inner` - dimensionality of the inner feed-forward layers.
-      Defaults to 4 times `:n_embd`
-
-    * `:activation_function` - non-linear activation function used in
-      the model. Defaults to `:gelu_new`
-
-    * `:resid_pdrop` - dropout probability of all fully-connected layers
-      in the embeddings, encoder, and pooler. Defaults to `0.1`
-
-    * `:embd_pdrop` - dropout ratio for embeddings. Defaults to `0.1`
-
-    * `:attn_pdrop` - dropout ratio for attention weights. Defaults to `0.1`
-
-    * `:classifier_dropout` - dropout ratio for classifier. Defaults to `0.1`
-
-    * `:layer_norm_epsilon` - the epsilon used by the layer normalization
-      layers. Defaults to `1.0e-5`
-
-    * `:initializer_range` - the standard deviation of the normal initializer used
-      for initializing kernel parameters. Defaults to `0.02`
-
-  ### Common options
-
-  #{Bumblebee.Shared.common_config_docs(@common_keys)}
+  #{Shared.options_doc(options)}
   """
 
   import Bumblebee.Utils.Model, only: [join: 2]
 
-  alias Bumblebee.Shared
   alias Bumblebee.Layers
 
-  defstruct [
-              architecture: :base,
-              vocab_size: 50257,
-              n_position: 1024,
-              n_embd: 768,
-              n_layer: 24,
-              n_head: 16,
-              n_inner: nil,
-              activation_function: :gelu_new,
-              resid_pdrop: 0.1,
-              embd_pdrop: 0.1,
-              attn_pdrop: 0.1,
-              classifier_dropout: 0.1,
-              layer_norm_epsilon: 1.0e-5,
-              initializer_range: 0.02,
-              # Tokens
-              bos_token_id: 50256,
-              eos_token_id: 50256,
-              pad_token_id: 50256
-            ] ++ Shared.generation_defaults() ++ Shared.common_config_defaults(@common_keys)
+  defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Text.Generation
@@ -173,8 +187,9 @@ defmodule Bumblebee.Text.Gpt2 do
 
   @impl true
   def config(config, opts \\ []) do
-    opts = Shared.add_common_computed_options(opts)
-    Shared.put_config_attrs(config, opts)
+    config
+    |> Shared.put_config_attrs(opts)
+    |> Shared.validate_label_options()
   end
 
   @impl true
@@ -275,10 +290,10 @@ defmodule Bumblebee.Text.Gpt2 do
       end
 
     Layers.Decoder.init_cache(batch_size, max_length,
-      hidden_size: config.n_embd,
-      decoder_attention_heads: config.n_head,
-      encoder_attention_heads: config.n_head,
-      decoder_layers: config.n_layer,
+      hidden_size: config.hidden_size,
+      num_decoder_attention_heads: config.num_attention_heads,
+      num_encoder_attention_heads: config.num_attention_heads,
+      num_decoder_blocks: config.num_blocks,
       encoder_sequence_length: encoder_sequence_length
     )
   end
@@ -288,7 +303,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
     input_embeds =
       Layers.default inputs["input_embeds"] do
-        Axon.embedding(inputs["input_ids"], config.vocab_size, config.n_embd,
+        Axon.embedding(inputs["input_ids"], config.vocab_size, config.hidden_size,
           name: join(name, "wte")
         )
       end
@@ -299,7 +314,9 @@ defmodule Bumblebee.Text.Gpt2 do
       end
 
     position_embeds =
-      Axon.embedding(position_ids, config.n_position, config.n_embd, name: join(name, "wpe"))
+      Axon.embedding(position_ids, config.max_positions, config.hidden_size,
+        name: join(name, "wpe")
+      )
 
     attention_mask =
       Layers.default inputs["attention_mask"] do
@@ -314,7 +331,7 @@ defmodule Bumblebee.Text.Gpt2 do
     hidden_state =
       input_embeds
       |> Axon.add(position_embeds)
-      |> Axon.dropout(rate: config.embd_pdrop)
+      |> Axon.dropout(rate: config.embeddings_dropout_rate)
 
     block_outputs =
       blocks(
@@ -371,28 +388,28 @@ defmodule Bumblebee.Text.Gpt2 do
     offset = Layers.Decoder.get_cache_offset(state.cache)
 
     outputs =
-      for idx <- 0..(config.n_layer - 1), reduce: state do
+      for idx <- 0..(config.num_blocks - 1), reduce: state do
         state ->
-          layer_head_mask = Axon.nx(head_mask, & &1[idx])
-          cross_attention_layer_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
+          block_head_mask = Axon.nx(head_mask, & &1[idx])
+          cross_attention_block_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
 
-          layer_cache = Layers.Decoder.get_layer_cache(state.cache, idx)
+          block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
 
-          {hidden_state, attention, cross_attention, layer_cache} =
+          {hidden_state, attention, cross_attention, block_cache} =
             block(
               state.last_hidden_state,
               attention_mask,
               encoder_last_hidden_state,
               encoder_attention_mask,
-              layer_head_mask,
-              cross_attention_layer_head_mask,
-              layer_cache,
+              block_head_mask,
+              cross_attention_block_head_mask,
+              block_cache,
               offset,
               config,
               name: join(name, idx)
             )
 
-          cache = Layers.Decoder.put_layer_cache(state.cache, idx, layer_cache)
+          cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
 
           %{
             last_hidden_state: hidden_state,
@@ -413,18 +430,18 @@ defmodule Bumblebee.Text.Gpt2 do
          encoder_attention_mask,
          head_mask,
          cross_attention_head_mask,
-         layer_cache,
+         block_cache,
          offset,
          config,
          opts
        ) do
     name = opts[:name]
-    inner_dim = config.n_inner || 4 * config.n_embd
+    inner_dim = config.intermediate_size || 4 * config.hidden_size
 
     residual = hidden_state
 
     {self_attention_cache, cross_attention_cache} =
-      Layers.Decoder.get_attention_caches(layer_cache)
+      Layers.Decoder.get_attention_caches(block_cache)
 
     {attention_output, attention_weights, self_attention_cache} =
       hidden_state
@@ -440,7 +457,7 @@ defmodule Bumblebee.Text.Gpt2 do
         self_attention_cache,
         offset,
         config,
-        num_heads: config.n_head,
+        num_heads: config.num_attention_heads,
         causal?: true,
         name: join(name, "attn")
       )
@@ -448,7 +465,7 @@ defmodule Bumblebee.Text.Gpt2 do
     hidden_state = Axon.add(attention_output, residual)
 
     {hidden_state, cross_attention_weights, cross_attention_cache} =
-      if config.add_cross_attention do
+      if config.use_cross_attention do
         Layers.if_present encoder_last_hidden_state do
           residual = hidden_state
 
@@ -467,7 +484,7 @@ defmodule Bumblebee.Text.Gpt2 do
               offset,
               config,
               name: join(name, "crossattention"),
-              num_heads: config.n_head
+              num_heads: config.num_attention_heads
             )
 
           hidden_state = Axon.add(cross_attention_output, residual)
@@ -491,21 +508,21 @@ defmodule Bumblebee.Text.Gpt2 do
       |> mlp(inner_dim, config, name: join(name, "mlp"))
       |> Axon.add(residual)
 
-    layer_cache =
+    block_cache =
       Layers.Decoder.put_attention_caches(
-        layer_cache,
+        block_cache,
         self_attention_cache,
         cross_attention_cache
       )
 
-    {hidden_state, attention_weights, cross_attention_weights, layer_cache}
+    {hidden_state, attention_weights, cross_attention_weights, block_cache}
   end
 
   defp attention(
          hidden_state,
          attention_mask,
          cross_hidden_state,
-         layer_head_mask,
+         block_head_mask,
          attention_cache,
          offset,
          config,
@@ -519,7 +536,7 @@ defmodule Bumblebee.Text.Gpt2 do
     {query, key, value} =
       if cross_attention? do
         q_out =
-          Layers.conv1d(hidden_state, config.n_embd,
+          Layers.conv1d(hidden_state, config.hidden_size,
             kernel_initializer: kernel_initializer(config),
             name: join(name, "q_attn")
           )
@@ -527,7 +544,7 @@ defmodule Bumblebee.Text.Gpt2 do
         {query} = Axon.split(q_out, 1, axis: 1)
 
         kv_out =
-          Layers.conv1d(cross_hidden_state, config.n_embd * 2,
+          Layers.conv1d(cross_hidden_state, config.hidden_size * 2,
             kernel_initializer: kernel_initializer(config),
             name: join(name, "c_attn")
           )
@@ -537,7 +554,7 @@ defmodule Bumblebee.Text.Gpt2 do
         {query, key, value}
       else
         qkv_out =
-          Layers.conv1d(hidden_state, config.n_embd * 3,
+          Layers.conv1d(hidden_state, config.hidden_size * 3,
             kernel_initializer: kernel_initializer(config),
             name: join(name, "c_attn")
           )
@@ -569,18 +586,18 @@ defmodule Bumblebee.Text.Gpt2 do
 
     attention_weights =
       attention_weights
-      |> Axon.dropout(rate: config.attn_pdrop)
-      |> Layers.apply_layer_head_mask(layer_head_mask)
+      |> Axon.dropout(rate: config.attention_dropout_rate)
+      |> Layers.apply_block_head_mask(block_head_mask)
 
     attention_output =
       attention_weights
       |> Layers.attention_output(value)
       |> Layers.flatten_trailing()
-      |> Layers.conv1d(config.n_embd,
+      |> Layers.conv1d(config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "c_proj")
       )
-      |> Axon.dropout(rate: config.resid_pdrop)
+      |> Axon.dropout(rate: config.dropout_rate)
 
     {attention_output, attention_weights, attention_cache}
   end
@@ -593,18 +610,18 @@ defmodule Bumblebee.Text.Gpt2 do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "c_fc")
     )
-    |> Layers.activation(config.activation_function, name: join(name, "act"))
-    |> Layers.conv1d(config.n_embd,
+    |> Layers.activation(config.activation, name: join(name, "act"))
+    |> Layers.conv1d(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "c_proj")
     )
-    |> Axon.dropout(rate: config.resid_pdrop, name: join(name, "dropout"))
+    |> Axon.dropout(rate: config.dropout_rate, name: join(name, "dropout"))
   end
 
   defp inputs(config) do
     shape = {nil, nil}
-    hidden_shape = {nil, nil, config.n_embd}
-    decoder_head_mask_shape = {config.n_layer, config.n_head}
+    hidden_shape = {nil, nil, config.hidden_size}
+    decoder_head_mask_shape = {config.num_blocks, config.num_attention_heads}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("input_ids", optional: true, shape: shape),
@@ -620,19 +637,35 @@ defmodule Bumblebee.Text.Gpt2 do
   end
 
   defp classifier_dropout_rate(config) do
-    config.classifier_dropout || config.hidden_dropout
+    config.classifier_dropout_rate || config.hidden_dropout
   end
 
   defp kernel_initializer(config) do
-    Axon.Initializers.normal(scale: config.initializer_range)
+    Axon.Initializers.normal(scale: config.initializer_scale)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
-      data
-      |> Shared.convert_to_atom(["activation_function"])
-      |> Shared.convert_common()
-      |> Shared.data_into_config(config, except: [:architecture])
+      import Shared.Converters
+
+      opts =
+        convert!(data,
+          vocab_size: {"vocab_size", number()},
+          max_positions: {"n_position", number()},
+          hidden_size: {"n_embd", number()},
+          num_blocks: {"n_layer", number()},
+          num_attention_heads: {"n_head", number()},
+          intermediate_size: {"n_inner", optional(number())},
+          activation: {"activation_function", atom()},
+          dropout_rate: {"resid_pdrop", number()},
+          embeddings_dropout_rate: {"embd_pdrop", number()},
+          attention_dropout_rate: {"attn_pdrop", number()},
+          classifier_dropout_rate: {"classifier_dropout", number()},
+          layer_norm_epsilon: {"layer_norm_epsilon", number()},
+          initializer_scale: {"initializer_range", number()}
+        ) ++ Shared.common_options_from_transformers(data, config)
+
+      @for.config(config, opts)
     end
   end
 end

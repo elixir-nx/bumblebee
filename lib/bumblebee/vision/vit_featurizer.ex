@@ -1,42 +1,51 @@
 defmodule Bumblebee.Vision.VitFeaturizer do
+  alias Bumblebee.Shared
+
+  options = [
+    resize: [
+      default: true,
+      doc: "whether to resize the input to the given `:size`"
+    ],
+    size: [
+      default: 224,
+      doc: """
+      the size to resize the input to. Either a single number or a `{height, width}` tuple.
+      Only has an effect if `:resize` is `true`
+      """
+    ],
+    resize_method: [
+      default: :bilinear,
+      doc:
+        "the resizing method, either of `:nearest`, `:bilinear`, `:bicubic`, `:lanczos3`, `:lanczos5`"
+    ],
+    normalize: [
+      default: true,
+      doc: "whether or not to normalize the input with mean and standard deviation"
+    ],
+    image_mean: [
+      default: [0.5, 0.5, 0.5],
+      doc: "the sequence of mean values for each channel, to be used when normalizing images"
+    ],
+    image_std: [
+      default: [0.5, 0.5, 0.5],
+      doc:
+        "the sequence of standard deviations for each channel, to be used when normalizing images"
+    ]
+  ]
+
   @moduledoc """
   ViT featurizer for image data.
 
   ## Configuration
 
-    * `:do_resize` - whether to resize the input to the given `:size`.
-      Defaults to `true`
-
-    * `:size` - the size to resize the input to. Either a single number
-      or a `{height, width}` tuple. Only has an effect if `:do_resize`
-      is `true`. Defaults to `224`
-
-    * `:resample` - the resizing method, either of `:nearest`, `:bilinear`,
-      `:bicubic`, `:lanczos3`, `:lanczos5`. Defaults to `:bilinear`
-
-    * `:do_normalize` - whether or not to normalize the input with
-      mean and standard deviation. Defaults to `true`
-
-    * `:image_mean` - the sequence of mean values for each channel,
-      to be used when normalizing images. Defaults to `[0.5, 0.5, 0.5]`
-
-    * `:image_std` - the sequence of standard deviations for each
-      channel, to be used when normalizing images. Defaults to
-      `[0.5, 0.5, 0.5]`
-
+  #{Shared.options_doc(options)}
   """
 
-  alias Bumblebee.Shared
   alias Bumblebee.Utils.Image
 
   @behaviour Bumblebee.Featurizer
 
-  defstruct do_resize: true,
-            size: 224,
-            resample: :bilinear,
-            do_normalize: true,
-            image_mean: [0.5, 0.5, 0.5],
-            image_std: [0.5, 0.5, 0.5]
+  defstruct Shared.option_defaults(options)
 
   @impl true
   def config(config, opts \\ []) do
@@ -51,9 +60,9 @@ defmodule Bumblebee.Vision.VitFeaturizer do
       for image <- images do
         images = image |> Image.to_batched_tensor() |> Nx.as_type(:f32)
 
-        if config.do_resize do
+        if config.resize do
           size = Image.normalize_size(config.size)
-          Image.resize(images, size: size, method: config.resample)
+          Image.resize(images, size: size, method: config.resize_method)
         else
           images
         end
@@ -63,7 +72,7 @@ defmodule Bumblebee.Vision.VitFeaturizer do
     images = Image.to_continuous(images, 0, 1)
 
     images =
-      if config.do_normalize do
+      if config.normalize do
         Image.normalize(images, Nx.tensor(config.image_mean), Nx.tensor(config.image_std))
       else
         images
@@ -74,9 +83,19 @@ defmodule Bumblebee.Vision.VitFeaturizer do
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
-      data
-      |> Shared.convert_resample_method("resample")
-      |> Shared.data_into_config(config)
+      import Shared.Converters
+
+      opts =
+        convert!(data,
+          resize: {"do_resize", boolean()},
+          size: {"size", one_of([number(), tuple([number(), number()])])},
+          resize_method: {"resample", resize_method()},
+          normalize: {"do_normalize", boolean()},
+          image_mean: {"image_mean", list(number())},
+          image_std: {"image_std", list(number())}
+        )
+
+      @for.config(config, opts)
     end
   end
 end

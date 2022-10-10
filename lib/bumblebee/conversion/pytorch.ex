@@ -180,8 +180,8 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp param_from_pytorch(:conv_transpose, "kernel", pytorch_state, layer_name) do
     with {:ok, kernel, key} <- lookup_param(pytorch_state, layer_name, ["weight"]) do
-      [in_channels, out_channels | kernel_spacials] = Nx.axes(kernel)
-      kernel = Nx.transpose(kernel, axes: [out_channels, in_channels | kernel_spacials])
+      [in_channels, out_channels | kernel_spatials] = Nx.axes(kernel)
+      kernel = Nx.transpose(kernel, axes: [out_channels, in_channels | kernel_spatials])
       {:ok, kernel, [key]}
     end
   end

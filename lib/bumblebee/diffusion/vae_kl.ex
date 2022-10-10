@@ -1,4 +1,45 @@
 defmodule Bumblebee.Diffusion.VaeKl do
+  alias Bumblebee.Shared
+
+  options = [
+    sample_size: [
+      default: 32,
+      doc: "the size of the input spatial dimensions"
+    ],
+    in_channels: [
+      default: 3,
+      doc: "the number of channels in the input"
+    ],
+    out_channels: [
+      default: 3,
+      doc: "the number of channels in the output"
+    ],
+    latent_channels: [
+      default: 4,
+      doc: "the number of channels in the latent space"
+    ],
+    hidden_sizes: [
+      default: [64],
+      doc: "the dimensionality of hidden layers in each upsample/downsample block"
+    ],
+    depth: [
+      default: 1,
+      doc: "the number of residual blocks in each upsample/downsample block"
+    ],
+    down_block_types: [
+      default: [:down_block],
+      doc: "a list of downsample block types. Currently the only supported type is `:down_block`"
+    ],
+    up_block_types: [
+      default: [:up_block],
+      doc: "a list of upsample block types. Currently the only supported type is `:up_block`"
+    ],
+    activation: [
+      default: :silu,
+      doc: "the activation function"
+    ]
+  ]
+
   @moduledoc """
   Variational autoencoder (VAE) with Kullback–Leibler divergence (KL) loss.
 
@@ -23,33 +64,9 @@ defmodule Bumblebee.Diffusion.VaeKl do
       distribution. Otherwise the distribution mode value is used instead.
       This input is only relevant for the `:base` model. Defaults to `false`.
 
-  ## Config
+  ## Configuration
 
-    * `:in_channels` - the number of channels in the input. Defaults
-      to `3`
-
-    * `:out_channels` - the number of channels in the output. Defaults
-      to `3`
-
-    * `:sample_size` - size of the input spatial dimensions. Defaults
-      to `32`
-
-    * `:latent_channels` - the number of channels in the latent space.
-      Defaults to `4`
-
-    * `:down_block_types`- a list of downsample block types. Currently
-      the only supported type is `:down_block`. Defaults to `[:down_block]`
-
-    * `:up_block_types`- a list of upsampling block types. Currently
-      the only supported type is `:up_block`. Defaults to `[:up_block]`
-
-    * `:block_out_channels` - a list of block output channels. Defaults
-      to `[64]`
-
-    * `:layers_per_block` - the number of ResNet layers in each block.
-      Defaults to `1`
-
-    * `:act_fn` - the activation function. Defaults to `:silu`
+  #{Shared.options_doc(options)}
 
   ## References
 
@@ -57,22 +74,12 @@ defmodule Bumblebee.Diffusion.VaeKl do
 
   """
 
+  defstruct [architecture: :base] ++ Shared.option_defaults(options)
+
   import Bumblebee.Utils.Model, only: [join: 2]
 
-  alias Bumblebee.Shared
   alias Bumblebee.Layers
   alias Bumblebee.Diffusion
-
-  defstruct architecture: :base,
-            in_channels: 3,
-            out_channels: 3,
-            sample_size: 32,
-            latent_channels: 4,
-            down_block_types: [:down_block],
-            up_block_types: [:up_block],
-            block_out_channels: [64],
-            layers_per_block: 1,
-            act_fn: :silu
 
   @behaviour Bumblebee.ModelSpec
 
@@ -84,7 +91,6 @@ defmodule Bumblebee.Diffusion.VaeKl do
 
   @impl true
   def config(config, opts \\ []) do
-    opts = Shared.add_common_computed_options(opts)
     Shared.put_config_attrs(config, opts)
   end
 
@@ -127,7 +133,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
   end
 
   defp sample_shape(%__MODULE__{architecture: :decoder} = config) do
-    downsample_rate = (length(config.block_out_channels) - 1) * 2
+    downsample_rate = (length(config.hidden_sizes) - 1) * 2
     size = div(config.sample_size, downsample_rate)
     {nil, config.latent_channels, size, size}
   end
@@ -180,7 +186,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
     name = opts[:name]
 
     x
-    |> Axon.conv(hd(config.block_out_channels),
+    |> Axon.conv(hd(config.hidden_sizes),
       kernel_size: 3,
       strides: 1,
       padding: [{1, 1}, {1, 1}],
@@ -201,7 +207,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
     name = opts[:name]
 
     z
-    |> Axon.conv(List.last(config.block_out_channels),
+    |> Axon.conv(List.last(config.hidden_sizes),
       kernel_size: 3,
       strides: 1,
       padding: [{1, 1}, {1, 1}],
@@ -220,21 +226,21 @@ defmodule Bumblebee.Diffusion.VaeKl do
 
   defp down_blocks(sample, config, opts) do
     name = opts[:name]
-    blocks = Enum.zip(config.block_out_channels, config.down_block_types)
+    blocks = Enum.zip(config.hidden_sizes, config.down_block_types)
 
-    acc = {sample, hd(config.block_out_channels)}
+    acc = {sample, hd(config.hidden_sizes)}
 
     {sample, _} =
       for {{output_channel, down_block_type}, idx} <- Enum.with_index(blocks), reduce: acc do
         {sample, in_channels} ->
-          last_block? = idx == length(config.block_out_channels) - 1
+          last_block? = idx == length(config.hidden_sizes) - 1
 
           block_opts = [
-            num_layers: config.layers_per_block,
+            depth: config.depth,
             in_channels: in_channels,
             out_channels: output_channel,
             add_downsample: not last_block?,
-            resnet_activation: config.act_fn,
+            resnet_activation: config.activation,
             name: join(name, idx)
           ]
 
@@ -250,17 +256,17 @@ defmodule Bumblebee.Diffusion.VaeKl do
   defp down_block(hidden_state, opts) do
     in_channels = opts[:in_channels]
     out_channels = opts[:out_channels]
-    num_layers = opts[:num_layers]
+    depth = opts[:depth]
     resnet_activation = opts[:resnet_activation]
     add_downsample = opts[:add_downsample]
     name = opts[:name]
 
     hidden_state =
-      for idx <- 0..(num_layers - 1), reduce: hidden_state do
+      for idx <- 0..(depth - 1), reduce: hidden_state do
         hidden_state ->
           in_channels = if(idx == 0, do: in_channels, else: out_channels)
 
-          Diffusion.Layers.resnet_block(hidden_state, in_channels, out_channels,
+          Diffusion.Layers.residual_block(hidden_state, in_channels, out_channels,
             activation: resnet_activation,
             name: join(name, "resnets.#{idx}")
           )
@@ -278,22 +284,22 @@ defmodule Bumblebee.Diffusion.VaeKl do
 
   defp up_blocks(sample, config, opts) do
     name = opts[:name]
-    reversed_block_out_channels = Enum.reverse(config.block_out_channels)
-    blocks = Enum.zip(reversed_block_out_channels, config.up_block_types)
+    reversed_hidden_sizes = Enum.reverse(config.hidden_sizes)
+    blocks = Enum.zip(reversed_hidden_sizes, config.up_block_types)
 
-    acc = {sample, hd(reversed_block_out_channels)}
+    acc = {sample, hd(reversed_hidden_sizes)}
 
     {sample, _} =
       for {{output_channel, up_block_type}, idx} <- Enum.with_index(blocks), reduce: acc do
         {sample, in_channels} ->
-          last_block? = idx == length(config.block_out_channels) - 1
+          last_block? = idx == length(config.hidden_sizes) - 1
 
           block_opts = [
-            num_layers: config.layers_per_block + 1,
+            depth: config.depth + 1,
             in_channels: in_channels,
             out_channels: output_channel,
             add_upsample: not last_block?,
-            resnet_activation: config.act_fn,
+            resnet_activation: config.activation,
             name: join(name, idx)
           ]
 
@@ -309,17 +315,17 @@ defmodule Bumblebee.Diffusion.VaeKl do
   defp up_block(hidden_state, opts) do
     in_channels = opts[:in_channels]
     out_channels = opts[:out_channels]
-    num_layers = opts[:num_layers]
+    depth = opts[:depth]
     resnet_activation = opts[:resnet_activation]
     add_upsample = opts[:add_upsample]
     name = opts[:name]
 
     hidden_state =
-      for idx <- 0..(num_layers - 1), reduce: hidden_state do
+      for idx <- 0..(depth - 1), reduce: hidden_state do
         hidden_state ->
           in_channels = if(idx == 0, do: in_channels, else: out_channels)
 
-          Diffusion.Layers.resnet_block(hidden_state, in_channels, out_channels,
+          Diffusion.Layers.residual_block(hidden_state, in_channels, out_channels,
             activation: resnet_activation,
             name: join(name, "resnets.#{idx}")
           )
@@ -335,16 +341,16 @@ defmodule Bumblebee.Diffusion.VaeKl do
   defp mid_block(hidden_state, config, opts) do
     name = opts[:name]
 
-    in_channels = List.last(config.block_out_channels)
+    in_channels = List.last(config.hidden_sizes)
 
     hidden_state
-    |> Diffusion.Layers.resnet_block(in_channels, in_channels,
-      activation: config.act_fn,
+    |> Diffusion.Layers.residual_block(in_channels, in_channels,
+      activation: config.activation,
       name: join(name, "resnets.0")
     )
     |> visual_attention(in_channels, num_heads: 1, name: join(name, "attentions.0"))
-    |> Diffusion.Layers.resnet_block(in_channels, in_channels,
-      activation: config.act_fn,
+    |> Diffusion.Layers.residual_block(in_channels, in_channels,
+      activation: config.activation,
       name: join(name, "resnets.1")
     )
   end
@@ -419,12 +425,28 @@ defmodule Bumblebee.Diffusion.VaeKl do
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
-      data
-      |> Shared.convert_to_atom(["act_fn"])
-      |> Shared.convert_common()
-      |> Shared.map_items("down_block_types", %{"DownEncoderBlock2D" => :down_block})
-      |> Shared.map_items("up_block_types", %{"UpDecoderBlock2D" => :up_block})
-      |> Shared.data_into_config(config, except: [:architecture])
+      import Shared.Converters
+
+      opts =
+        convert!(data,
+          sample_size: {"sample_size", number()},
+          in_channels: {"in_channels", number()},
+          out_channels: {"out_channels", number()},
+          latent_channels: {"latent_channels", number()},
+          hidden_sizes: {"block_out_channels", list(number())},
+          depth: {"layers_per_block", number()},
+          down_block_types: {
+            "down_block_types",
+            list(mapping(%{"DownEncoderBlock2D" => :down_block}))
+          },
+          up_block_types: {
+            "up_block_types",
+            list(mapping(%{"UpDecoderBlock2D" => :up_block}))
+          },
+          activation: {"act_fn", atom()}
+        )
+
+      @for.config(config, opts)
     end
   end
 end

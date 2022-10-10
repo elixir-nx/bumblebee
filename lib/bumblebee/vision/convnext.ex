@@ -1,5 +1,46 @@
 defmodule Bumblebee.Vision.ConvNext do
-  @common_keys [:id2label, :num_labels, :output_hidden_states]
+  alias Bumblebee.Shared
+
+  options =
+    [
+      num_channels: [
+        default: 3,
+        doc: "the number of channels in the input"
+      ],
+      patch_size: [
+        default: 4,
+        doc: "the size of the patch spatial dimensions"
+      ],
+      hidden_sizes: [
+        default: [96, 192, 384, 768],
+        doc: "the dimensionality of hidden layers at each stage"
+      ],
+      depths: [
+        default: [3, 3, 9, 3],
+        doc: "the depth (number of residual blocks) at each stage"
+      ],
+      activation: [
+        default: :gelu,
+        doc: "the activation function"
+      ],
+      scale_initial_value: [
+        default: 1.0e-6,
+        doc: "the initial value for scaling layers"
+      ],
+      drop_path_rate: [
+        default: 0.0,
+        doc: "the drop path rate used to for stochastic depth"
+      ],
+      layer_norm_epsilon: [
+        default: 1.0e-12,
+        doc: "the epsilon used by the layer normalization layers"
+      ],
+      initializer_scale: [
+        default: 0.02,
+        doc:
+          "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ]
+    ] ++ Shared.common_options([:output_hidden_states, :num_labels, :id_to_label])
 
   @moduledoc """
   Models based on the ConvNeXT architecture.
@@ -20,61 +61,19 @@ defmodule Bumblebee.Vision.ConvNext do
 
   ## Configuration
 
-    * `:num_channels` - the number of input channels. Defaults to `3`
-
-    * `:patch_size` - patch size to use in the embedding layer. Defaults
-      to `4`
-
-    * `:num_stages` - the number of stages of the model. Defaults to `4`
-
-    * `:hidden_sizes` - dimensionality (hidden size) at each stage.
-      Defaults to `[96, 192, 384, 768]`
-
-    * `:depths` - depth (number of layers) for each stage. Defaults
-      to `[3, 3, 9, 3]`
-
-    * `:hidden_act` - the activation function in each block. Defaults
-      to `:gelu`
-
-    * `:initializer_range` - standard deviation of the truncated normal
-      initializer for initializing weight matrices. Defaults to `0.02`
-
-    * `:layer_norm_eps` - epsilon value used by layer normalization layers.
-      Defaults to `1.0e-12`
-
-    * `:layer_scale_init_value` - initial value for layer normalization scale.
-      Defaults to `1.0e-6`
-
-    * `:drop_path_rate` - drop path rate for stochastic depth. Defaults to
-      `0.0`
-
-  ### Common Options
-
-  #{Bumblebee.Shared.common_config_docs(@common_keys)}
+  #{Shared.options_doc(options)}
 
   ## References
 
     * [A ConvNet for the 2020s](https://arxiv.org/abs/2201.03545)
+
   """
 
   import Bumblebee.Utils.Model, only: [join: 2]
 
-  alias Bumblebee.Shared
   alias Bumblebee.Layers
 
-  defstruct [
-              architecture: :base,
-              num_channels: 3,
-              patch_size: 4,
-              num_stages: 4,
-              hidden_sizes: [96, 192, 384, 768],
-              depths: [3, 3, 9, 3],
-              hidden_act: :gelu,
-              initializer_range: 0.02,
-              layer_norm_eps: 1.0e-12,
-              layer_scale_init_value: 1.0e-6,
-              drop_path_rate: 0.0
-            ] ++ Shared.common_config_defaults(@common_keys)
+  defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
 
@@ -86,8 +85,9 @@ defmodule Bumblebee.Vision.ConvNext do
 
   @impl true
   def config(config, opts \\ []) do
-    opts = Shared.add_common_computed_options(opts)
-    Shared.put_config_attrs(config, opts)
+    config
+    |> Shared.put_config_attrs(opts)
+    |> Shared.validate_label_options()
   end
 
   @impl true
@@ -130,7 +130,7 @@ defmodule Bumblebee.Vision.ConvNext do
       encoder_output.last_hidden_state
       |> Axon.global_avg_pool()
       |> Axon.layer_norm(
-        epsilon: config.layer_norm_eps,
+        epsilon: config.layer_norm_epsilon,
         name: join(name, "layernorm"),
         beta_initializer: :zeros,
         gamma_initializer: :ones
@@ -167,8 +167,7 @@ defmodule Bumblebee.Vision.ConvNext do
 
     drop_path_rates = get_drop_path_rates(config.depths, config.drop_path_rate)
 
-    stages =
-      Enum.zip([0..(config.num_stages - 1), config.depths, drop_path_rates, config.hidden_sizes])
+    stages = Enum.zip([config.depths, drop_path_rates, config.hidden_sizes]) |> Enum.with_index()
 
     state = %{
       last_hidden_state: hidden_state,
@@ -176,12 +175,12 @@ defmodule Bumblebee.Vision.ConvNext do
       in_channels: hd(config.hidden_sizes)
     }
 
-    for {idx, depth, drop_path_rates, out_channels} <- stages, reduce: state do
+    for {{depth, drop_path_rates, out_channels}, idx} <- stages, reduce: state do
       state ->
         strides = if idx > 0, do: 2, else: 1
 
         hidden_state =
-          conv_next_stage(
+          stage(
             state.last_hidden_state,
             state.in_channels,
             out_channels,
@@ -200,7 +199,7 @@ defmodule Bumblebee.Vision.ConvNext do
     end
   end
 
-  defp conv_next_stage(hidden_state, in_channels, out_channels, config, opts) do
+  defp stage(hidden_state, in_channels, out_channels, config, opts) do
     name = opts[:name]
 
     strides = opts[:strides]
@@ -231,14 +230,14 @@ defmodule Bumblebee.Vision.ConvNext do
 
     for {drop_path_rate, idx} <- Enum.with_index(drop_path_rates), reduce: downsampled do
       x ->
-        conv_next_layer(x, out_channels, config,
+        block(x, out_channels, config,
           name: name |> join("layers") |> join(idx),
           drop_path_rate: drop_path_rate
         )
     end
   end
 
-  defp conv_next_layer(%Axon{} = hidden_state, out_channels, config, opts) do
+  defp block(%Axon{} = hidden_state, out_channels, config, opts) do
     name = opts[:name]
 
     drop_path_rate = opts[:drop_path_rate]
@@ -265,17 +264,17 @@ defmodule Bumblebee.Vision.ConvNext do
         name: join(name, "pwconv1"),
         kernel_initializer: kernel_initializer(config)
       )
-      |> Axon.activation(config.hidden_act, name: join(name, "activation"))
+      |> Axon.activation(config.activation, name: join(name, "activation"))
       |> Axon.dense(out_channels,
         name: join(name, "pwconv2"),
         kernel_initializer: kernel_initializer(config)
       )
 
     scaled =
-      if config.layer_scale_init_value > 0 do
+      if config.scale_initial_value > 0 do
         Layers.scale(x,
           name: name,
-          scale_init_value: config.layer_scale_init_value,
+          scale_initializer: Axon.Initializers.full(config.scale_initial_value),
           scale_name: "layer_scale_parameter",
           channel_index: 3
         )
@@ -306,15 +305,27 @@ defmodule Bumblebee.Vision.ConvNext do
   end
 
   defp kernel_initializer(config) do
-    Axon.Initializers.normal(scale: config.initializer_range)
+    Axon.Initializers.normal(scale: config.initializer_scale)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
-      data
-      |> Shared.convert_to_atom(["hidden_act"])
-      |> Shared.convert_common()
-      |> Shared.data_into_config(config, except: [:architecture])
+      import Shared.Converters
+
+      opts =
+        convert!(data,
+          num_channels: {"num_channels", number()},
+          patch_size: {"patch_size", number()},
+          hidden_sizes: {"hidden_sizes", list(number())},
+          depths: {"depths", list(number())},
+          activation: {"hidden_act", atom()},
+          scale_initial_value: {"layer_scale_init_value", number()},
+          drop_path_rate: {"drop_path_rate", number()},
+          layer_norm_epsilon: {"layer_norm_eps", number()},
+          initializer_scale: {"initializer_range", number()}
+        ) ++ Shared.common_options_from_transformers(data, config)
+
+      @for.config(config, opts)
     end
   end
 end
