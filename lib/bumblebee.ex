@@ -30,7 +30,8 @@ defmodule Bumblebee do
 
         * `:cache_dir` - the directory to store the downloaded files
           in. Defaults to the standard cache location for the given
-          operating system
+          operating system. You can also configure it globally by
+          setting the `BUMBLEBEE_CACHE_DIR` environment variable
 
         * `:auth_token` - the token to use as HTTP bearer authorization
           for remote files
