@@ -139,7 +139,15 @@ defmodule Bumblebee.HuggingFace.Hub do
   end
 
   defp default_cache_dir() do
-    base_dir = :filename.basedir(:user_cache, "bumblebee")
+    base_dir = bumblebee_cache_dir()
     Path.join(base_dir, "huggingface")
+  end
+
+  defp bumblebee_cache_dir() do
+    if dir = System.get_env("BUMBLEBEE_CACHE_DIR") do
+      Path.expand(dir)
+    else
+      :filename.basedir(:user_cache, "bumblebee")
+    end
   end
 end
