@@ -122,9 +122,9 @@ defmodule Bumblebee do
     architecture = opts[:architecture]
 
     with {:ok, path} <- download(repository, @config_filename),
-         {:ok, model_data} <- decode_config(path) do
+         {:ok, spec_data} <- decode_config(path) do
       {inferred_module, inferred_architecture, inference_error} =
-        case infer_model_type(model_data) do
+        case infer_model_type(spec_data) do
           {:ok, module, architecture} -> {module, architecture, nil}
           {:error, error} -> {nil, nil, error}
         end
@@ -150,7 +150,7 @@ defmodule Bumblebee do
           configure(module)
         end
 
-      spec = HuggingFace.Transformers.Config.load(spec, model_data)
+      spec = HuggingFace.Transformers.Config.load(spec, spec_data)
 
       {:ok, spec}
     end
@@ -249,7 +249,7 @@ defmodule Bumblebee do
     infer_model_type(%{"architectures" => [class_name]})
   end
 
-  defp infer_model_type(_model_data) do
+  defp infer_model_type(_spec_data) do
     {:error, "could not infer model type from the configuration"}
   end
 
@@ -418,8 +418,8 @@ defmodule Bumblebee do
 
   defp infer_featurizer_type(_featurizer_data, repository) do
     with {:ok, path} <- download(repository, @config_filename),
-         {:ok, model_data} <- decode_config(path) do
-      case model_data do
+         {:ok, featurizer_data} <- decode_config(path) do
+      case featurizer_data do
         %{"model_type" => model_type} ->
           case @model_type_to_featurizer[model_type] do
             nil ->
@@ -548,8 +548,8 @@ defmodule Bumblebee do
 
   defp infer_tokenizer_type(repository) do
     with {:ok, path} <- download(repository, @config_filename),
-         {:ok, model_data} <- decode_config(path) do
-      case model_data do
+         {:ok, tokenizer_data} <- decode_config(path) do
+      case tokenizer_data do
         %{"model_type" => model_type} ->
           case @model_type_to_tokenizer[model_type] do
             nil ->
