@@ -7,10 +7,10 @@ defmodule Bumblebee.Text.BertTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "bert-base-uncased"}, architecture: :base)
 
-      assert %Bumblebee.Text.Bert{architecture: :base} = config
+      assert %Bumblebee.Text.Bert{architecture: :base} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]),
@@ -29,9 +29,9 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "masked language modeling model" do
-      assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "bert-base-uncased"})
+      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "bert-base-uncased"})
 
-      assert %Bumblebee.Text.Bert{architecture: :for_masked_language_modeling} = config
+      assert %Bumblebee.Text.Bert{architecture: :for_masked_language_modeling} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]])
@@ -55,12 +55,12 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "sequence classification" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "textattack/bert-base-uncased-yelp-polarity"},
                  architecture: :for_sequence_classification
                )
 
-      assert %Bumblebee.Text.Bert{architecture: :for_sequence_classification} = config
+      assert %Bumblebee.Text.Bert{architecture: :for_sequence_classification} = spec
 
       input = %{
         "input_ids" =>
@@ -79,10 +79,10 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "token classification" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "dbmdz/bert-large-cased-finetuned-conll03-english"})
 
-      assert %Bumblebee.Text.Bert{architecture: :for_token_classification} = config
+      assert %Bumblebee.Text.Bert{architecture: :for_token_classification} = spec
 
       input = %{
         "input_ids" =>
@@ -105,10 +105,10 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "question answering" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "deepset/bert-base-cased-squad2"})
 
-      assert %Bumblebee.Text.Bert{architecture: :for_question_answering} = config
+      assert %Bumblebee.Text.Bert{architecture: :for_question_answering} = spec
 
       input = %{
         "input_ids" =>
@@ -138,10 +138,10 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "multiple choice" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "nightingal3/bert-finetuned-wsc"})
 
-      assert %Bumblebee.Text.Bert{architecture: :for_multiple_choice} = config
+      assert %Bumblebee.Text.Bert{architecture: :for_multiple_choice} = spec
 
       input = %{
         "input_ids" =>
@@ -179,12 +179,12 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "next sentence prediction" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "bert-base-uncased"},
                  architecture: :for_next_sentence_prediction
                )
 
-      assert %Bumblebee.Text.Bert{architecture: :for_next_sentence_prediction} = config
+      assert %Bumblebee.Text.Bert{architecture: :for_next_sentence_prediction} = spec
 
       input = %{
         "input_ids" =>
@@ -208,12 +208,12 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "causal language modeling" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "bert-base-uncased"},
                  architecture: :for_causal_language_modeling
                )
 
-      assert %Bumblebee.Text.Bert{architecture: :for_causal_language_modeling} = config
+      assert %Bumblebee.Text.Bert{architecture: :for_causal_language_modeling} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10140, 102]])

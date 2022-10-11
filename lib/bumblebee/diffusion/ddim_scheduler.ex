@@ -93,20 +93,24 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
   defstruct Bumblebee.Shared.option_defaults(options)
 
   @impl true
-  def config(config, opts) do
-    Bumblebee.Shared.put_config_attrs(config, opts)
+  def config(scheduler, opts) do
+    Bumblebee.Shared.put_config_attrs(scheduler, opts)
   end
 
   @impl true
-  def init(config, num_steps, _sample_shape) do
+  def init(scheduler, num_steps, _sample_shape) do
     timesteps =
-      SchedulerUtils.ddim_timesteps(config.num_train_steps, num_steps, config.timesteps_offset)
+      SchedulerUtils.ddim_timesteps(
+        scheduler.num_train_steps,
+        num_steps,
+        scheduler.timesteps_offset
+      )
 
-    alpha_bars = init_parameters(config: config)
+    alpha_bars = init_parameters(scheduler: scheduler)
 
     state = %{
       timesteps: timesteps,
-      timestep_gap: div(config.num_train_steps, num_steps),
+      timestep_gap: div(scheduler.num_train_steps, num_steps),
       alpha_bars: alpha_bars,
       iteration: 0
     }
@@ -120,7 +124,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
       beta_end: beta_end,
       beta_schedule: beta_schedule,
       num_train_steps: num_train_steps
-    } = opts[:config]
+    } = opts[:scheduler]
 
     betas =
       SchedulerUtils.beta_schedule(beta_schedule, num_train_steps,
@@ -134,11 +138,11 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
   end
 
   @impl true
-  deftransform step(config, state, sample, noise) do
-    do_step(config, state, sample, noise)
+  deftransform step(scheduler, state, sample, noise) do
+    do_step(scheduler, state, sample, noise)
   end
 
-  defnp do_step(config \\ [], state, sample, noise) do
+  defnp do_step(scheduler \\ [], state, sample, noise) do
     # See Equation (12)
 
     # Note that in the paper alpha_t represents a cumulative product,
@@ -154,7 +158,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
       if prev_timestep >= 0 do
         state.alpha_bars[prev_timestep]
       else
-        case config.alpha_clip_strategy do
+        case scheduler.alpha_clip_strategy do
           :one -> 1.0
           :alpha_zero -> state.alpha_bars[0]
         end
@@ -163,7 +167,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
     pred_denoised_sample = (sample - Nx.sqrt(1 - alpha_bar_t) * noise) / Nx.sqrt(alpha_bar_t)
 
     pred_denoised_sample =
-      if config.clip_denoised_sample do
+      if scheduler.clip_denoised_sample do
         Nx.clip(pred_denoised_sample, -1, 1)
       else
         pred_denoised_sample
@@ -171,11 +175,11 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
 
     # See Equation (16)
     sigma_t =
-      config.eta *
+      scheduler.eta *
         Nx.sqrt((1 - alpha_bar_t_prev) / (1 - alpha_bar_t) * (1 - alpha_bar_t / alpha_bar_t_prev))
 
     noise =
-      if config.rederive_noise do
+      if scheduler.rederive_noise do
         # Re-derive the noise as in GLIDE
         (sample - Nx.sqrt(alpha_bar_t) * pred_denoised_sample) / Nx.sqrt(1 - alpha_bar_t)
       else
@@ -187,7 +191,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
     prev_sample = Nx.sqrt(alpha_bar_t_prev) * pred_denoised_sample + pred_sample_direction
 
     prev_sample =
-      if config.eta > 0 do
+      if scheduler.eta > 0 do
         prev_sample + sigma_t * Nx.random_normal(prev_sample)
       else
         prev_sample
@@ -199,7 +203,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    def load(config, data) do
+    def load(scheduler, data) do
       import Bumblebee.Shared.Converters
 
       opts =
@@ -224,7 +228,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
           rederive_noise: {"use_clipped_model_output", boolean()}
         )
 
-      @for.config(config, opts)
+      @for.config(scheduler, opts)
     end
   end
 end

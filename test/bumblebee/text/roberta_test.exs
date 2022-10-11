@@ -7,10 +7,10 @@ defmodule Bumblebee.Text.RobertaTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "roberta-base"}, architecture: :base)
 
-      assert %Bumblebee.Text.Roberta{architecture: :base} = config
+      assert %Bumblebee.Text.Roberta{architecture: :base} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[0, 31414, 232, 328, 740, 1140, 12695, 69, 46078, 1588, 2]])
@@ -30,9 +30,9 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "masked language modeling model" do
-      assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "roberta-base"})
+      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "roberta-base"})
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = config
+      assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[0, 31414, 232, 328, 740, 1140, 12695, 69, 46078, 1588, 2]])
@@ -52,10 +52,10 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "sequence classification" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "cardiffnlp/twitter-roberta-base-emotion"})
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_sequence_classification} = config
+      assert %Bumblebee.Text.Roberta{architecture: :for_sequence_classification} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[0, 31414, 6, 127, 2335, 16, 11962, 37, 11639, 1168, 2]])
@@ -73,10 +73,10 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "token classification model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "Jean-Baptiste/roberta-large-ner-english"})
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_token_classification} = config
+      assert %Bumblebee.Text.Roberta{architecture: :for_token_classification} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[30581, 3923, 34892, 16, 10, 138, 716, 11, 2201, 8, 188, 469]])
@@ -94,10 +94,10 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "question answering model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_question_answering} = config
+      assert %Bumblebee.Text.Roberta{architecture: :for_question_answering} = spec
 
       input = %{
         "input_ids" =>
@@ -125,10 +125,9 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "multiple choice model" do
-      assert {:ok, model, params, config} =
-               Bumblebee.load_model({:hf, "LIAMF-USP/aristo-roberta"})
+      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "LIAMF-USP/aristo-roberta"})
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_multiple_choice} = config
+      assert %Bumblebee.Text.Roberta{architecture: :for_multiple_choice} = spec
 
       input = %{
         "input_ids" =>
@@ -151,12 +150,12 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "casual language modeling model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "roberta-base"},
                  architecture: :for_causal_language_modeling
                )
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_causal_language_modeling} = config
+      assert %Bumblebee.Text.Roberta{architecture: :for_causal_language_modeling} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[0, 31414, 6, 127, 2335, 16, 11962, 2]])

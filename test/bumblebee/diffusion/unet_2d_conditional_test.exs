@@ -7,13 +7,13 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model(
                  {:hf, "doohickey/trinart-waifu-diffusion-50-50", subdir: "unet"},
                  params_filename: "diffusion_pytorch_model.bin"
                )
 
-      assert %Bumblebee.Diffusion.UNet2DConditional{architecture: :base} = config
+      assert %Bumblebee.Diffusion.UNet2DConditional{architecture: :base} = spec
 
       inputs = %{
         "sample" => Nx.broadcast(0.5, {1, 4, 32, 32}),

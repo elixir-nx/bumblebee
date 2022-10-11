@@ -74,44 +74,44 @@ defmodule Bumblebee.Vision.ResNet do
   def base_model_prefix(), do: "resnet"
 
   @impl true
-  def config(config, opts \\ []) do
-    config
+  def config(spec, opts \\ []) do
+    spec
     |> Shared.put_config_attrs(opts)
     |> Shared.validate_label_options()
   end
 
   @impl true
-  def input_template(config) do
+  def input_template(spec) do
     %{
-      "pixel_values" => Nx.template({1, config.num_channels, 224, 224}, :f32)
+      "pixel_values" => Nx.template({1, spec.num_channels, 224, 224}, :f32)
     }
   end
 
   @impl true
-  def model(%__MODULE__{architecture: :base} = config) do
-    config
+  def model(%__MODULE__{architecture: :base} = spec) do
+    spec
     |> resnet()
     |> Layers.output()
   end
 
-  def model(%__MODULE__{architecture: :for_image_classification} = config) do
-    outputs = resnet(config, name: "resnet")
+  def model(%__MODULE__{architecture: :for_image_classification} = spec) do
+    outputs = resnet(spec, name: "resnet")
 
     logits =
       outputs.pooler_output
       |> Axon.flatten(name: "classifier.0")
-      |> Axon.dense(config.num_labels, name: "classifier.1")
+      |> Axon.dense(spec.num_labels, name: "classifier.1")
 
     Layers.output(%{logits: logits, hidden_states: outputs.hidden_states})
   end
 
-  defp resnet(config, opts \\ []) do
+  defp resnet(spec, opts \\ []) do
     name = opts[:name]
 
     encoder_outputs =
-      Axon.input("pixel_values", shape: {nil, config.num_channels, 224, 224})
-      |> embeddings(config, name: join(name, "embedder"))
-      |> encoder(config, name: join(name, "encoder"))
+      Axon.input("pixel_values", shape: {nil, spec.num_channels, 224, 224})
+      |> embeddings(spec, name: join(name, "embedder"))
+      |> encoder(spec, name: join(name, "encoder"))
 
     pooled_output =
       Axon.adaptive_avg_pool(encoder_outputs.last_hidden_state,
@@ -126,14 +126,14 @@ defmodule Bumblebee.Vision.ResNet do
     }
   end
 
-  defp embeddings(%Axon{} = hidden_state, config, opts) do
+  defp embeddings(%Axon{} = hidden_state, spec, opts) do
     name = opts[:name]
 
     hidden_state
-    |> conv(config.embedding_size,
+    |> conv(spec.embedding_size,
       kernel_size: 7,
       strides: 2,
-      activation: config.activation,
+      activation: spec.activation,
       name: join(name, "embedder")
     )
     |> Axon.max_pool(
@@ -144,23 +144,23 @@ defmodule Bumblebee.Vision.ResNet do
     )
   end
 
-  defp encoder(%Axon{} = hidden_state, config, opts) do
+  defp encoder(%Axon{} = hidden_state, spec, opts) do
     name = opts[:name]
 
-    stages = config.hidden_sizes |> Enum.zip(config.depths) |> Enum.with_index()
+    stages = spec.hidden_sizes |> Enum.zip(spec.depths) |> Enum.with_index()
 
     state = %{
       last_hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, config.output_hidden_states),
-      in_channels: config.embedding_size
+      hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
+      in_channels: spec.embedding_size
     }
 
     for {{size, depth}, idx} <- stages, reduce: state do
       state ->
-        strides = if idx == 0 and not config.downsample_in_first_stage, do: 1, else: 2
+        strides = if idx == 0 and not spec.downsample_in_first_stage, do: 1, else: 2
 
         hidden_state =
-          stage(state.last_hidden_state, state.in_channels, size, config,
+          stage(state.last_hidden_state, state.in_channels, size, spec,
             depth: depth,
             strides: strides,
             name: join(name, "stages.#{idx}")
@@ -174,14 +174,14 @@ defmodule Bumblebee.Vision.ResNet do
     end
   end
 
-  defp stage(%Axon{} = hidden_state, in_channels, out_channels, config, opts) do
+  defp stage(%Axon{} = hidden_state, in_channels, out_channels, spec, opts) do
     opts = Keyword.validate!(opts, [:name, strides: 2, depth: 2])
     name = opts[:name]
     strides = opts[:strides]
     depth = opts[:depth]
 
     residual_block =
-      case config.residual_block_type do
+      case spec.residual_block_type do
         :basic -> &basic_residual_block/4
         :bottleneck -> &bottleneck_residual_block/4
       end
@@ -190,14 +190,14 @@ defmodule Bumblebee.Vision.ResNet do
     hidden_state =
       residual_block.(hidden_state, in_channels, out_channels,
         strides: strides,
-        activation: config.activation,
+        activation: spec.activation,
         name: join(name, "layers.0")
       )
 
     for idx <- 1..(depth - 1), reduce: hidden_state do
       hidden_state ->
         residual_block.(hidden_state, out_channels, out_channels,
-          activation: config.activation,
+          activation: spec.activation,
           name: join(name, "layers.#{idx}")
         )
     end
@@ -274,13 +274,13 @@ defmodule Bumblebee.Vision.ResNet do
     activation = opts[:activation]
 
     edge_padding = div(kernel_size, 2)
-    padding_config = [{edge_padding, edge_padding}, {edge_padding, edge_padding}]
+    padding_spec = [{edge_padding, edge_padding}, {edge_padding, edge_padding}]
 
     hidden_state
     |> Axon.conv(out_channels,
       kernel_size: kernel_size,
       strides: strides,
-      padding: padding_config,
+      padding: padding_spec,
       use_bias: false,
       kernel_initializer: conv_kernel_initializer(),
       name: join(name, "convolution")
@@ -294,7 +294,7 @@ defmodule Bumblebee.Vision.ResNet do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    def load(config, data) do
+    def load(spec, data) do
       import Shared.Converters
 
       opts =
@@ -306,9 +306,9 @@ defmodule Bumblebee.Vision.ResNet do
           residual_block_type: {"layer_type", atom()},
           activation: {"hidden_act", atom()},
           downsample_in_first_stage: {"downsample_in_first_stage", boolean()}
-        ) ++ Shared.common_options_from_transformers(data, config)
+        ) ++ Shared.common_options_from_transformers(data, spec)
 
-      @for.config(config, opts)
+      @for.config(spec, opts)
     end
   end
 end

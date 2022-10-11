@@ -7,13 +7,13 @@ defmodule Bumblebee.Text.ClipTextTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "openai/clip-vit-base-patch32"},
                  module: Bumblebee.Text.ClipText,
                  architecture: :base
                )
 
-      assert %Bumblebee.Text.ClipText{architecture: :base} = config
+      assert %Bumblebee.Text.ClipText{architecture: :base} = spec
 
       input = %{
         "input_ids" =>

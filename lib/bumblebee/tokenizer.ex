@@ -8,13 +8,7 @@ defmodule Bumblebee.Tokenizer do
   a configuration struct.
   """
 
-  @typedoc """
-  Tokenizer configuration and metadata.
-  """
-  @type t :: %{
-          optional(atom()) => term(),
-          __struct__: atom()
-        }
+  @type t :: struct()
 
   @type input :: String.t() | {String.t(), String.t()}
   @type token :: String.t()

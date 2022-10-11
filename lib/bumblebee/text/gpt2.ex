@@ -187,37 +187,37 @@ defmodule Bumblebee.Text.Gpt2 do
   def base_model_prefix(), do: "transformer"
 
   @impl true
-  def config(config, opts \\ []) do
-    config
+  def config(spec, opts \\ []) do
+    spec
     |> Shared.put_config_attrs(opts)
     |> Shared.validate_label_options()
   end
 
   @impl true
-  def input_template(_config) do
+  def input_template(_spec) do
     %{
       "input_ids" => Nx.template({1, 1}, :s64)
     }
   end
 
   @impl true
-  def model(%__MODULE__{architecture: :base} = config) do
-    inputs = inputs(config)
+  def model(%__MODULE__{architecture: :base} = spec) do
+    inputs = inputs(spec)
 
     inputs
-    |> gpt2(config)
+    |> gpt2(spec)
     |> Layers.output()
   end
 
-  def model(%__MODULE__{architecture: :for_causal_language_modeling} = config) do
-    inputs = inputs(config)
+  def model(%__MODULE__{architecture: :for_causal_language_modeling} = spec) do
+    inputs = inputs(spec)
 
-    outputs = gpt2(inputs, config, name: "transformer")
+    outputs = gpt2(inputs, spec, name: "transformer")
 
-    # TODO: Tie lm-head to word embedding as a config option
+    # TODO: Tie lm-head to word embedding as a spec option
     logits =
-      Layers.dense_transposed(outputs.last_hidden_state, config.vocab_size,
-        kernel_initializer: kernel_initializer(config),
+      Layers.dense_transposed(outputs.last_hidden_state, spec.vocab_size,
+        kernel_initializer: kernel_initializer(spec),
         name: "transformer.wte"
       )
 
@@ -230,15 +230,15 @@ defmodule Bumblebee.Text.Gpt2 do
     })
   end
 
-  def model(%__MODULE__{architecture: :for_token_classification} = config) do
-    inputs = inputs(config)
+  def model(%__MODULE__{architecture: :for_token_classification} = spec) do
+    inputs = inputs(spec)
 
-    outputs = gpt2(inputs, config, name: "transformer")
+    outputs = gpt2(inputs, spec, name: "transformer")
 
     logits =
       outputs.last_hidden_state
-      |> Axon.dropout(rate: classifier_dropout_rate(config))
-      |> Axon.dense(config.num_labels, name: "classifier")
+      |> Axon.dropout(rate: classifier_dropout_rate(spec))
+      |> Axon.dense(spec.num_labels, name: "classifier")
 
     Layers.output(%{
       logits: logits,
@@ -247,14 +247,14 @@ defmodule Bumblebee.Text.Gpt2 do
     })
   end
 
-  def model(%__MODULE__{architecture: :for_sequence_classification} = config) do
-    inputs = inputs(config)
+  def model(%__MODULE__{architecture: :for_sequence_classification} = spec) do
+    inputs = inputs(spec)
 
-    outputs = gpt2(inputs, config, name: "transformer")
+    outputs = gpt2(inputs, spec, name: "transformer")
 
     logits =
       outputs.last_hidden_state
-      |> Layers.dense_transposed(config.num_labels, name: "score")
+      |> Layers.dense_transposed(spec.num_labels, name: "score")
 
     pooled_logits =
       Layers.if_present inputs["input_ids"] do
@@ -262,7 +262,7 @@ defmodule Bumblebee.Text.Gpt2 do
           fn logits, input_ids, _opts ->
             indices =
               input_ids
-              |> Nx.not_equal(config.pad_token_id)
+              |> Nx.not_equal(spec.pad_token_id)
               |> Nx.sum(axes: [-1])
               |> Nx.subtract(1)
               |> Nx.as_type({:s, 64})
@@ -284,27 +284,27 @@ defmodule Bumblebee.Text.Gpt2 do
   end
 
   @impl true
-  def init_cache(config, batch_size, max_length, inputs) do
+  def init_cache(spec, batch_size, max_length, inputs) do
     encoder_sequence_length =
       if encoder_last_hidden_state = inputs["encoder_last_hidden_state"] do
         Nx.axis_size(encoder_last_hidden_state, 1)
       end
 
     Layers.Decoder.init_cache(batch_size, max_length,
-      hidden_size: config.hidden_size,
-      num_decoder_attention_heads: config.num_attention_heads,
-      num_encoder_attention_heads: config.num_attention_heads,
-      num_decoder_blocks: config.num_blocks,
+      hidden_size: spec.hidden_size,
+      num_decoder_attention_heads: spec.num_attention_heads,
+      num_encoder_attention_heads: spec.num_attention_heads,
+      num_decoder_blocks: spec.num_blocks,
       encoder_sequence_length: encoder_sequence_length
     )
   end
 
-  defp gpt2(inputs, config, opts \\ []) do
+  defp gpt2(inputs, spec, opts \\ []) do
     name = opts[:name]
 
     input_embeds =
       Layers.default inputs["input_embeds"] do
-        Axon.embedding(inputs["input_ids"], config.vocab_size, config.hidden_size,
+        Axon.embedding(inputs["input_ids"], spec.vocab_size, spec.hidden_size,
           name: join(name, "wte")
         )
       end
@@ -315,9 +315,7 @@ defmodule Bumblebee.Text.Gpt2 do
       end
 
     position_embeds =
-      Axon.embedding(position_ids, config.max_positions, config.hidden_size,
-        name: join(name, "wpe")
-      )
+      Axon.embedding(position_ids, spec.max_positions, spec.hidden_size, name: join(name, "wpe"))
 
     attention_mask =
       Layers.default inputs["attention_mask"] do
@@ -332,7 +330,7 @@ defmodule Bumblebee.Text.Gpt2 do
     hidden_state =
       input_embeds
       |> Axon.add(position_embeds)
-      |> Axon.dropout(rate: config.embeddings_dropout_rate)
+      |> Axon.dropout(rate: spec.embeddings_dropout_rate)
 
     block_outputs =
       blocks(
@@ -343,14 +341,14 @@ defmodule Bumblebee.Text.Gpt2 do
         encoder_attention_mask,
         inputs["cross_attention_head_mask"],
         inputs["cache"],
-        config,
+        spec,
         name: join(name, "h")
       )
 
     last_hidden_state =
       Axon.layer_norm(block_outputs.last_hidden_state,
         channel_index: 2,
-        epsilon: config.layer_norm_epsilon,
+        epsilon: spec.layer_norm_epsilon,
         name: join(name, "ln_f")
       )
 
@@ -371,7 +369,7 @@ defmodule Bumblebee.Text.Gpt2 do
          encoder_attention_mask,
          cross_attention_head_mask,
          cache,
-         config,
+         spec,
          opts
        ) do
     name = opts[:name]
@@ -380,16 +378,16 @@ defmodule Bumblebee.Text.Gpt2 do
 
     state = %{
       last_hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, config.output_hidden_states),
-      attentions: Layers.maybe_container({}, config.output_attentions),
-      cross_attentions: Layers.maybe_container({}, config.output_attentions),
+      hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
+      attentions: Layers.maybe_container({}, spec.output_attentions),
+      cross_attentions: Layers.maybe_container({}, spec.output_attentions),
       cache: cache
     }
 
     offset = Layers.Decoder.get_cache_offset(state.cache)
 
     outputs =
-      for idx <- 0..(config.num_blocks - 1), reduce: state do
+      for idx <- 0..(spec.num_blocks - 1), reduce: state do
         state ->
           block_head_mask = Axon.nx(head_mask, & &1[idx])
           cross_attention_block_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
@@ -406,7 +404,7 @@ defmodule Bumblebee.Text.Gpt2 do
               cross_attention_block_head_mask,
               block_cache,
               offset,
-              config,
+              spec,
               name: join(name, idx)
             )
 
@@ -433,11 +431,11 @@ defmodule Bumblebee.Text.Gpt2 do
          cross_attention_head_mask,
          block_cache,
          offset,
-         config,
+         spec,
          opts
        ) do
     name = opts[:name]
-    inner_dim = config.intermediate_size || 4 * config.hidden_size
+    inner_dim = spec.intermediate_size || 4 * spec.hidden_size
 
     residual = hidden_state
 
@@ -448,7 +446,7 @@ defmodule Bumblebee.Text.Gpt2 do
       hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_epsilon,
+        epsilon: spec.layer_norm_epsilon,
         name: join(name, "ln_1")
       )
       |> attention(
@@ -457,8 +455,8 @@ defmodule Bumblebee.Text.Gpt2 do
         head_mask,
         self_attention_cache,
         offset,
-        config,
-        num_heads: config.num_attention_heads,
+        spec,
+        num_heads: spec.num_attention_heads,
         causal?: true,
         name: join(name, "attn")
       )
@@ -466,7 +464,7 @@ defmodule Bumblebee.Text.Gpt2 do
     hidden_state = Axon.add(attention_output, residual)
 
     {hidden_state, cross_attention_weights, cross_attention_cache} =
-      if config.use_cross_attention do
+      if spec.use_cross_attention do
         Layers.if_present encoder_last_hidden_state do
           residual = hidden_state
 
@@ -474,7 +472,7 @@ defmodule Bumblebee.Text.Gpt2 do
             hidden_state
             |> Axon.layer_norm(
               channel_index: 2,
-              epsilon: config.layer_norm_epsilon,
+              epsilon: spec.layer_norm_epsilon,
               name: join(name, "ln_cross_attn")
             )
             |> attention(
@@ -483,9 +481,9 @@ defmodule Bumblebee.Text.Gpt2 do
               cross_attention_head_mask,
               cross_attention_cache,
               offset,
-              config,
+              spec,
               name: join(name, "crossattention"),
-              num_heads: config.num_attention_heads
+              num_heads: spec.num_attention_heads
             )
 
           hidden_state = Axon.add(cross_attention_output, residual)
@@ -503,10 +501,10 @@ defmodule Bumblebee.Text.Gpt2 do
       hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_epsilon,
+        epsilon: spec.layer_norm_epsilon,
         name: join(name, "ln_2")
       )
-      |> mlp(inner_dim, config, name: join(name, "mlp"))
+      |> mlp(inner_dim, spec, name: join(name, "mlp"))
       |> Axon.add(residual)
 
     block_cache =
@@ -526,7 +524,7 @@ defmodule Bumblebee.Text.Gpt2 do
          block_head_mask,
          attention_cache,
          offset,
-         config,
+         spec,
          opts
        ) do
     name = opts[:name]
@@ -537,16 +535,16 @@ defmodule Bumblebee.Text.Gpt2 do
     {query, key, value} =
       if cross_attention? do
         q_out =
-          Layers.conv1d(hidden_state, config.hidden_size,
-            kernel_initializer: kernel_initializer(config),
+          Layers.conv1d(hidden_state, spec.hidden_size,
+            kernel_initializer: kernel_initializer(spec),
             name: join(name, "q_attn")
           )
 
         {query} = Axon.split(q_out, 1, axis: 1)
 
         kv_out =
-          Layers.conv1d(cross_hidden_state, config.hidden_size * 2,
-            kernel_initializer: kernel_initializer(config),
+          Layers.conv1d(cross_hidden_state, spec.hidden_size * 2,
+            kernel_initializer: kernel_initializer(spec),
             name: join(name, "c_attn")
           )
 
@@ -555,8 +553,8 @@ defmodule Bumblebee.Text.Gpt2 do
         {query, key, value}
       else
         qkv_out =
-          Layers.conv1d(hidden_state, config.hidden_size * 3,
-            kernel_initializer: kernel_initializer(config),
+          Layers.conv1d(hidden_state, spec.hidden_size * 3,
+            kernel_initializer: kernel_initializer(spec),
             name: join(name, "c_attn")
           )
 
@@ -587,42 +585,42 @@ defmodule Bumblebee.Text.Gpt2 do
 
     attention_weights =
       attention_weights
-      |> Axon.dropout(rate: config.attention_dropout_rate)
+      |> Axon.dropout(rate: spec.attention_dropout_rate)
       |> Layers.apply_attention_head_mask(block_head_mask)
 
     attention_output =
       attention_weights
       |> Layers.attention_output(value)
       |> Layers.flatten_trailing()
-      |> Layers.conv1d(config.hidden_size,
-        kernel_initializer: kernel_initializer(config),
+      |> Layers.conv1d(spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
         name: join(name, "c_proj")
       )
-      |> Axon.dropout(rate: config.dropout_rate)
+      |> Axon.dropout(rate: spec.dropout_rate)
 
     {attention_output, attention_weights, attention_cache}
   end
 
-  defp mlp(hidden_state, inner_dim, config, opts) do
+  defp mlp(hidden_state, inner_dim, spec, opts) do
     name = opts[:name]
 
     hidden_state
     |> Layers.conv1d(inner_dim,
-      kernel_initializer: kernel_initializer(config),
+      kernel_initializer: kernel_initializer(spec),
       name: join(name, "c_fc")
     )
-    |> Layers.activation(config.activation, name: join(name, "act"))
-    |> Layers.conv1d(config.hidden_size,
-      kernel_initializer: kernel_initializer(config),
+    |> Layers.activation(spec.activation, name: join(name, "act"))
+    |> Layers.conv1d(spec.hidden_size,
+      kernel_initializer: kernel_initializer(spec),
       name: join(name, "c_proj")
     )
-    |> Axon.dropout(rate: config.dropout_rate, name: join(name, "dropout"))
+    |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
   end
 
-  defp inputs(config) do
+  defp inputs(spec) do
     shape = {nil, nil}
-    hidden_shape = {nil, nil, config.hidden_size}
-    decoder_head_mask_shape = {config.num_blocks, config.num_attention_heads}
+    hidden_shape = {nil, nil, spec.hidden_size}
+    decoder_head_mask_shape = {spec.num_blocks, spec.num_attention_heads}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("input_ids", optional: true, shape: shape),
@@ -637,16 +635,16 @@ defmodule Bumblebee.Text.Gpt2 do
     ])
   end
 
-  defp classifier_dropout_rate(config) do
-    config.classifier_dropout_rate || config.hidden_dropout
+  defp classifier_dropout_rate(spec) do
+    spec.classifier_dropout_rate || spec.hidden_dropout
   end
 
-  defp kernel_initializer(config) do
-    Axon.Initializers.normal(scale: config.initializer_scale)
+  defp kernel_initializer(spec) do
+    Axon.Initializers.normal(scale: spec.initializer_scale)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    def load(config, data) do
+    def load(spec, data) do
       import Shared.Converters
 
       opts =
@@ -664,9 +662,9 @@ defmodule Bumblebee.Text.Gpt2 do
           classifier_dropout_rate: {"classifier_dropout", number()},
           layer_norm_epsilon: {"layer_norm_epsilon", number()},
           initializer_scale: {"initializer_range", number()}
-        ) ++ Shared.common_options_from_transformers(data, config)
+        ) ++ Shared.common_options_from_transformers(data, spec)
 
-      @for.config(config, opts)
+      @for.config(spec, opts)
     end
   end
 end

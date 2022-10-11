@@ -55,12 +55,12 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
   defstruct Shared.option_defaults(options)
 
   @impl true
-  def config(config, opts \\ []) do
-    Shared.put_config_attrs(config, opts)
+  def config(featurizer, opts \\ []) do
+    Shared.put_config_attrs(featurizer, opts)
   end
 
   @impl true
-  def apply(config, images) do
+  def apply(featurizer, images) do
     images = List.wrap(images)
 
     images =
@@ -68,18 +68,21 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
         images = image |> Image.to_batched_tensor() |> Nx.as_type(:f32)
 
         cond do
-          not config.resize ->
+          not featurizer.resize ->
             images
 
-          config.size >= 384 ->
-            Image.resize(images, size: {config.size, config.size}, method: config.resize_method)
+          featurizer.size >= 384 ->
+            Image.resize(images,
+              size: {featurizer.size, featurizer.size},
+              method: featurizer.resize_method
+            )
 
           true ->
-            scale_size = floor(config.size / config.crop_percentage)
+            scale_size = floor(featurizer.size / featurizer.crop_percentage)
 
             images
-            |> Image.resize_short(size: scale_size, method: config.resize_method)
-            |> Image.center_crop(size: {config.size, config.size})
+            |> Image.resize_short(size: scale_size, method: featurizer.resize_method)
+            |> Image.center_crop(size: {featurizer.size, featurizer.size})
         end
       end
       |> Nx.concatenate()
@@ -87,8 +90,8 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
     images = Image.to_continuous(images, 0, 1)
 
     images =
-      if config.normalize do
-        Image.normalize(images, Nx.tensor(config.image_mean), Nx.tensor(config.image_std))
+      if featurizer.normalize do
+        Image.normalize(images, Nx.tensor(featurizer.image_mean), Nx.tensor(featurizer.image_std))
       else
         images
       end
@@ -97,7 +100,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    def load(config, data) do
+    def load(featurizer, data) do
       import Shared.Converters
 
       opts =
@@ -111,7 +114,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
           image_std: {"image_std", list(number())}
         )
 
-      @for.config(config, opts)
+      @for.config(featurizer, opts)
     end
   end
 end

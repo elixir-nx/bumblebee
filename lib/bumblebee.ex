@@ -60,12 +60,12 @@ defmodule Bumblebee do
   To build a new configuration, pass a module:
 
       featurizer = Bumblebee.configure(Bumblebee.Vision.ConvNextFeaturizer)
-      model_spec = Bumblebee.configure(Bumblebee.Vision.ResNet, architecture: :for_image_classification)
+      spec = Bumblebee.configure(Bumblebee.Vision.ResNet, architecture: :for_image_classification)
 
   Similarly, you can update an existing configuration:
 
       featurizer = Bumblebee.configure(featurizer, resize_method: :bilinear)
-      model_spec = Bumblebee.configure(model_spec, embedding_size: 128)
+      spec = Bumblebee.configure(spec, embedding_size: 128)
 
   """
   @spec configure(module() | Bumblebee.Configurable.t(), keyword()) :: Bumblebee.Configurable.t()
@@ -79,22 +79,22 @@ defmodule Bumblebee do
 
   ## Example
 
-      config = Bumblebee.configure(Bumblebee.Vision.ResNet, architecture: :base, embedding_size: 128)
-      model = Bumblebee.build_model(config)
+      spec = Bumblebee.configure(Bumblebee.Vision.ResNet, architecture: :base, embedding_size: 128)
+      model = Bumblebee.build_model(spec)
 
   """
   @doc type: :model
   @spec build_model(Bumblebee.ModelSpec.t()) :: Axon.t()
-  def build_model(%module{} = config) do
-    module.model(config)
+  def build_model(%module{} = spec) do
+    module.model(spec)
   end
 
   @doc """
-  Loads model configuration from a model repository.
+  Loads model specification from a model repository.
 
   ## Options
 
-    * `:module` - the model configuration module. By default it is
+    * `:module` - the model specification module. By default it is
       inferred from the configuration file, if that is not possible,
       it must be specified explicitly
 
@@ -103,17 +103,17 @@ defmodule Bumblebee do
 
   ## Examples
 
-      {:ok, config} = Bumblebee.load_config({:hf, "microsoft/resnet-50"})
+      {:ok, spec} = Bumblebee.load_spec({:hf, "microsoft/resnet-50"})
 
   You can explicitly specify a different architecture:
 
-      {:ok, config} = Bumblebee.load_config({:hf, "microsoft/resnet-50"}, architecture: :base)
+      {:ok, spec} = Bumblebee.load_spec({:hf, "microsoft/resnet-50"}, architecture: :base)
 
   """
   @doc type: :model
-  @spec load_config(repository(), keyword()) ::
+  @spec load_spec(repository(), keyword()) ::
           {:ok, Bumblebee.ModelSpec.t()} | {:error, String.t()}
-  def load_config(repository, opts \\ []) do
+  def load_spec(repository, opts \\ []) do
     repository = normalize_repository!(repository)
 
     opts = Keyword.validate!(opts, [:module, :architecture])
@@ -143,10 +143,16 @@ defmodule Bumblebee do
               "expected architecture to be one of: #{Enum.map_join(architectures, ", ", &inspect/1)}, but got: #{inspect(architecture)}"
       end
 
-      config = struct!(module)
-      config = if architecture, do: %{config | architecture: architecture}, else: config
-      config = HuggingFace.Transformers.Config.load(config, model_data)
-      {:ok, config}
+      spec =
+        if architecture do
+          configure(module, architecture: architecture)
+        else
+          configure(module)
+        end
+
+      spec = HuggingFace.Transformers.Config.load(spec, model_data)
+
+      {:ok, spec}
     end
   end
 
@@ -252,10 +258,10 @@ defmodule Bumblebee do
 
   ## Options
 
-    * `:config` - the configuration to use when building the model.
-      By default the configuration is loaded from Hugging Face
+    * `:spec` - the model specification to use when building the model.
+      By default the specification is loaded using `load_spec/2`
 
-    * `:module` - the model configuration module. By default it is
+    * `:module` - the model specification module. By default it is
       inferred from the configuration file, if that is not possible,
       it must be specified explicitly
 
@@ -269,59 +275,59 @@ defmodule Bumblebee do
   By default the model type is inferred from configuration, so loading
   is as simple as:
 
-      {:ok, model, params, config} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
+      {:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
 
   You can explicitly specify a different architecture, in which case
   matching parameters are still loaded:
 
-      {:ok, model, params, config} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, architecture: :base)
+      {:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, architecture: :base)
 
   To further customize the model, you can also pass the configuration:
 
-      {:ok, config} = Bumblebee.load_config({:hf, "microsoft/resnet-50"})
-      config = Bumblebee.configure(config, num_labels: 10)
-      {:ok, model, params, config} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, config: config)
+      {:ok, spec} = Bumblebee.load_spec({:hf, "microsoft/resnet-50"})
+      spec = Bumblebee.configure(spec, num_labels: 10)
+      {:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, spec: spec)
 
   """
   @doc type: :model
   @spec load_model(repository(), keyword()) ::
-          {:ok, Axon.t(), params :: map(), config :: Bumblebee.ModelSpec.t()}
+          {:ok, Axon.t(), params :: map(), spec :: Bumblebee.ModelSpec.t()}
           | {:error, String.t()}
   def load_model(repository, opts \\ []) do
     repository = normalize_repository!(repository)
 
-    opts = Keyword.validate!(opts, [:config, :module, :architecture, :params_filename])
+    opts = Keyword.validate!(opts, [:spec, :module, :architecture, :params_filename])
 
-    config_response =
-      if config = opts[:config] do
-        {:ok, config}
+    spec_response =
+      if spec = opts[:spec] do
+        {:ok, spec}
       else
-        load_config(repository, Keyword.take(opts, [:module, :architecture]))
+        load_spec(repository, Keyword.take(opts, [:module, :architecture]))
       end
 
-    with {:ok, %module{} = config} <- config_response,
-         model <- build_model(config),
+    with {:ok, %module{} = spec} <- spec_response,
+         model <- build_model(spec),
          {:ok, params} <-
            load_params(
-             config,
+             spec,
              model,
              repository,
              opts
              |> Keyword.take([:params_filename])
              |> Keyword.put(:base_model_prefix, module.base_model_prefix())
            ) do
-      {:ok, model, params, config}
+      {:ok, model, params, spec}
     end
   end
 
-  defp load_params(%module{} = config, model, repository, opts) do
+  defp load_params(%module{} = spec, model, repository, opts) do
     base_model_prefix = opts[:base_model_prefix]
 
     # TODO: support format: :auto | :axon | :pytorch
     format = :pytorch
     filename = opts[:params_filename] || @params_filename[format]
 
-    input_template = module.input_template(config)
+    input_template = module.input_template(spec)
 
     with {:ok, path} <- download(repository, filename) do
       params =
@@ -380,9 +386,9 @@ defmodule Bumblebee do
             {:error, error} -> raise "#{error}, please specify the :module option"
           end
 
-      config = struct!(module)
-      config = HuggingFace.Transformers.Config.load(config, featurizer_data)
-      {:ok, config}
+      featurizer = configure(module)
+      featurizer = HuggingFace.Transformers.Config.load(featurizer, featurizer_data)
+      {:ok, featurizer}
     end
   end
 
@@ -524,9 +530,9 @@ defmodule Bumblebee do
             {:error, error} -> raise "#{error}, please specify the :module option"
           end
 
-      config = struct!(module)
-      config = HuggingFace.Transformers.Config.load(config, %{"tokenizer_file" => path})
-      {:ok, config}
+      tokenizer = struct!(module)
+      tokenizer = HuggingFace.Transformers.Config.load(tokenizer, %{"tokenizer_file" => path})
+      {:ok, tokenizer}
     end
   end
 
@@ -640,9 +646,9 @@ defmodule Bumblebee do
             {:error, error} -> raise "#{error}, please specify the :module option"
           end
 
-      config = struct!(module)
-      config = HuggingFace.Transformers.Config.load(config, scheduler_data)
-      {:ok, config}
+      scheduler = configure(module)
+      scheduler = HuggingFace.Transformers.Config.load(scheduler, scheduler_data)
+      {:ok, scheduler}
     end
   end
 

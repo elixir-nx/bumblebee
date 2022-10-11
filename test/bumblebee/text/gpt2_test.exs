@@ -7,10 +7,9 @@ defmodule Bumblebee.Text.Gpt2Test do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, config} =
-               Bumblebee.load_model({:hf, "gpt2"}, architecture: :base)
+      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "gpt2"}, architecture: :base)
 
-      assert %Bumblebee.Text.Gpt2{architecture: :base} = config
+      assert %Bumblebee.Text.Gpt2{architecture: :base} = spec
 
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
@@ -36,9 +35,9 @@ defmodule Bumblebee.Text.Gpt2Test do
     end
 
     test "causal language modeling" do
-      assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "gpt2"})
+      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "gpt2"})
 
-      assert %Bumblebee.Text.Gpt2{architecture: :for_causal_language_modeling} = config
+      assert %Bumblebee.Text.Gpt2{architecture: :for_causal_language_modeling} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[15496, 11, 616, 3290, 318, 13779]])
@@ -62,10 +61,10 @@ defmodule Bumblebee.Text.Gpt2Test do
     end
 
     test "token classification" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "brad1141/gpt2-finetuned-comp2"})
 
-      assert %Bumblebee.Text.Gpt2{architecture: :for_token_classification} = config
+      assert %Bumblebee.Text.Gpt2{architecture: :for_token_classification} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[15496, 11, 616, 3290, 318, 13779]])
@@ -85,10 +84,10 @@ defmodule Bumblebee.Text.Gpt2Test do
     end
 
     test "sequence classification" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "microsoft/DialogRPT-updown"})
 
-      assert %Bumblebee.Text.Gpt2{architecture: :for_sequence_classification} = config
+      assert %Bumblebee.Text.Gpt2{architecture: :for_sequence_classification} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[15496, 11, 616, 3290, 318, 13779]])

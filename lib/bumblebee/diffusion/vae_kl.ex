@@ -91,59 +91,59 @@ defmodule Bumblebee.Diffusion.VaeKl do
   def base_model_prefix(), do: "vae"
 
   @impl true
-  def config(config, opts \\ []) do
-    Shared.put_config_attrs(config, opts)
+  def config(spec, opts \\ []) do
+    Shared.put_config_attrs(spec, opts)
   end
 
   @impl true
-  def input_template(config) do
-    sample_shape = config |> sample_shape() |> put_elem(0, 1)
+  def input_template(spec) do
+    sample_shape = spec |> sample_shape() |> put_elem(0, 1)
     %{"sample" => Nx.template(sample_shape, :f32)}
   end
 
   @impl true
-  def model(%__MODULE__{architecture: :base} = config) do
-    inputs = inputs(config)
-    sample = vae_kl(inputs, config)
+  def model(%__MODULE__{architecture: :base} = spec) do
+    inputs = inputs(spec)
+    sample = vae_kl(inputs, spec)
     Layers.output(%{sample: sample})
   end
 
-  def model(%__MODULE__{architecture: :encoder} = config) do
-    inputs = inputs(config)
-    posterior = encode(inputs["sample"], config)
+  def model(%__MODULE__{architecture: :encoder} = spec) do
+    inputs = inputs(spec)
+    posterior = encode(inputs["sample"], spec)
     Layers.output(%{latent_dist: Axon.container(posterior)})
   end
 
-  def model(%__MODULE__{architecture: :decoder} = config) do
-    inputs = inputs(config)
-    sample = decode(inputs["sample"], config)
+  def model(%__MODULE__{architecture: :decoder} = spec) do
+    inputs = inputs(spec)
+    sample = decode(inputs["sample"], spec)
     Layers.output(%{sample: sample})
   end
 
-  defp inputs(%__MODULE__{architecture: :base} = config) do
+  defp inputs(%__MODULE__{architecture: :base} = spec) do
     Bumblebee.Utils.Model.inputs_to_map([
-      Axon.input("sample", shape: sample_shape(config)),
+      Axon.input("sample", shape: sample_shape(spec)),
       Axon.input("sample_posterior", shape: {}, optional: true)
     ])
   end
 
-  defp inputs(config) do
+  defp inputs(spec) do
     Bumblebee.Utils.Model.inputs_to_map([
-      Axon.input("sample", shape: sample_shape(config))
+      Axon.input("sample", shape: sample_shape(spec))
     ])
   end
 
-  defp sample_shape(%__MODULE__{architecture: :decoder} = config) do
-    downsample_rate = (length(config.hidden_sizes) - 1) * 2
-    size = div(config.sample_size, downsample_rate)
-    {nil, config.latent_channels, size, size}
+  defp sample_shape(%__MODULE__{architecture: :decoder} = spec) do
+    downsample_rate = (length(spec.hidden_sizes) - 1) * 2
+    size = div(spec.sample_size, downsample_rate)
+    {nil, spec.latent_channels, size, size}
   end
 
-  defp sample_shape(config) do
-    {nil, config.in_channels, config.sample_size, config.sample_size}
+  defp sample_shape(spec) do
+    {nil, spec.in_channels, spec.sample_size, spec.sample_size}
   end
 
-  defp vae_kl(inputs, config, opts \\ []) do
+  defp vae_kl(inputs, spec, opts \\ []) do
     name = opts[:name]
 
     x = inputs["sample"]
@@ -153,7 +153,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
         Axon.constant(Nx.tensor(0, type: {:u, 8}))
       end
 
-    posterior = encode(x, config, name: name)
+    posterior = encode(x, spec, name: name)
 
     z =
       Axon.cond(
@@ -163,85 +163,85 @@ defmodule Bumblebee.Diffusion.VaeKl do
         mode(posterior)
       )
 
-    decode(z, config, name: name)
+    decode(z, spec, name: name)
   end
 
-  defp encode(x, config, opts \\ []) do
+  defp encode(x, spec, opts \\ []) do
     name = opts[:name]
 
     x
-    |> encoder(config, name: join(name, "encoder"))
-    |> Axon.conv(2 * config.latent_channels, kernel_size: 1, name: join(name, "quant_conv"))
+    |> encoder(spec, name: join(name, "encoder"))
+    |> Axon.conv(2 * spec.latent_channels, kernel_size: 1, name: join(name, "quant_conv"))
     |> diagonal_gaussian_distribution()
   end
 
-  defp decode(z, config, opts \\ []) do
+  defp decode(z, spec, opts \\ []) do
     name = opts[:name]
 
     z
-    |> Axon.conv(config.latent_channels, kernel_size: 1, name: join(name, "post_quant_conv"))
-    |> decoder(config, name: join(name, "decoder"))
+    |> Axon.conv(spec.latent_channels, kernel_size: 1, name: join(name, "post_quant_conv"))
+    |> decoder(spec, name: join(name, "decoder"))
   end
 
-  defp encoder(x, config, opts) do
+  defp encoder(x, spec, opts) do
     name = opts[:name]
 
     x
-    |> Axon.conv(hd(config.hidden_sizes),
+    |> Axon.conv(hd(spec.hidden_sizes),
       kernel_size: 3,
       strides: 1,
       padding: [{1, 1}, {1, 1}],
       name: join(name, "conv_in")
     )
-    |> down_blocks(config, name: join(name, "down_blocks"))
-    |> mid_block(config, name: join(name, "mid_block"))
+    |> down_blocks(spec, name: join(name, "down_blocks"))
+    |> mid_block(spec, name: join(name, "mid_block"))
     |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "conv_norm_out"))
     |> Axon.activation(:silu, name: join(name, "activation"))
-    |> Axon.conv(2 * config.latent_channels,
+    |> Axon.conv(2 * spec.latent_channels,
       kernel_size: 3,
       padding: [{1, 1}, {1, 1}],
       name: join(name, "conv_out")
     )
   end
 
-  defp decoder(z, config, opts) do
+  defp decoder(z, spec, opts) do
     name = opts[:name]
 
     z
-    |> Axon.conv(List.last(config.hidden_sizes),
+    |> Axon.conv(List.last(spec.hidden_sizes),
       kernel_size: 3,
       strides: 1,
       padding: [{1, 1}, {1, 1}],
       name: join(name, "conv_in")
     )
-    |> mid_block(config, name: join(name, "mid_block"))
-    |> up_blocks(config, name: join(name, "up_blocks"))
+    |> mid_block(spec, name: join(name, "mid_block"))
+    |> up_blocks(spec, name: join(name, "up_blocks"))
     |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "conv_norm_out"))
     |> Axon.activation(:silu, name: join(name, "activation"))
-    |> Axon.conv(config.out_channels,
+    |> Axon.conv(spec.out_channels,
       kernel_size: 3,
       padding: [{1, 1}, {1, 1}],
       name: join(name, "conv_out")
     )
   end
 
-  defp down_blocks(sample, config, opts) do
+  defp down_blocks(sample, spec, opts) do
     name = opts[:name]
-    blocks = Enum.zip(config.hidden_sizes, config.down_block_types)
+    blocks = Enum.zip(spec.hidden_sizes, spec.down_block_types)
 
-    acc = {sample, hd(config.hidden_sizes)}
+    acc = {sample, hd(spec.hidden_sizes)}
 
     {sample, _} =
       for {{output_channel, down_block_type}, idx} <- Enum.with_index(blocks), reduce: acc do
         {sample, in_channels} ->
-          last_block? = idx == length(config.hidden_sizes) - 1
+          last_block? = idx == length(spec.hidden_sizes) - 1
 
           block_opts = [
-            depth: config.depth,
+            depth: spec.depth,
             in_channels: in_channels,
             out_channels: output_channel,
             add_downsample: not last_block?,
-            activation: config.activation,
+            activation: spec.activation,
             name: join(name, idx)
           ]
 
@@ -283,24 +283,24 @@ defmodule Bumblebee.Diffusion.VaeKl do
     end
   end
 
-  defp up_blocks(sample, config, opts) do
+  defp up_blocks(sample, spec, opts) do
     name = opts[:name]
-    reversed_hidden_sizes = Enum.reverse(config.hidden_sizes)
-    blocks = Enum.zip(reversed_hidden_sizes, config.up_block_types)
+    reversed_hidden_sizes = Enum.reverse(spec.hidden_sizes)
+    blocks = Enum.zip(reversed_hidden_sizes, spec.up_block_types)
 
     acc = {sample, hd(reversed_hidden_sizes)}
 
     {sample, _} =
       for {{output_channel, up_block_type}, idx} <- Enum.with_index(blocks), reduce: acc do
         {sample, in_channels} ->
-          last_block? = idx == length(config.hidden_sizes) - 1
+          last_block? = idx == length(spec.hidden_sizes) - 1
 
           block_opts = [
-            depth: config.depth + 1,
+            depth: spec.depth + 1,
             in_channels: in_channels,
             out_channels: output_channel,
             add_upsample: not last_block?,
-            activation: config.activation,
+            activation: spec.activation,
             name: join(name, idx)
           ]
 
@@ -339,19 +339,19 @@ defmodule Bumblebee.Diffusion.VaeKl do
     end
   end
 
-  defp mid_block(hidden_state, config, opts) do
+  defp mid_block(hidden_state, spec, opts) do
     name = opts[:name]
 
-    in_channels = List.last(config.hidden_sizes)
+    in_channels = List.last(spec.hidden_sizes)
 
     hidden_state
     |> Diffusion.Layers.residual_block(in_channels, in_channels,
-      activation: config.activation,
+      activation: spec.activation,
       name: join(name, "resnets.0")
     )
     |> visual_attention(in_channels, num_heads: 1, name: join(name, "attentions.0"))
     |> Diffusion.Layers.residual_block(in_channels, in_channels,
-      activation: config.activation,
+      activation: spec.activation,
       name: join(name, "resnets.1")
     )
   end
@@ -425,7 +425,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    def load(config, data) do
+    def load(spec, data) do
       import Shared.Converters
 
       opts =
@@ -447,7 +447,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
           activation: {"act_fn", atom()}
         )
 
-      @for.config(config, opts)
+      @for.config(spec, opts)
     end
   end
 end

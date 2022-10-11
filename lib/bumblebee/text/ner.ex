@@ -41,10 +41,10 @@ defmodule Bumblebee.Text.NER do
           String.t() | list(String.t()),
           keyword()
         ) :: list()
-  def extract(config, tokenizer, model, params, input, opts \\ [])
+  def extract(spec, tokenizer, model, params, input, opts \\ [])
 
   def extract(
-        %{architecture: :for_token_classification} = config,
+        %{architecture: :for_token_classification} = spec,
         tokenizer,
         model,
         params,
@@ -67,7 +67,7 @@ defmodule Bumblebee.Text.NER do
 
     scores = Axon.Activations.softmax(logits)
 
-    extract_from_scores(config, tokenizer, input, inputs, scores,
+    extract_from_scores(spec, tokenizer, input, inputs, scores,
       aggregation_strategy: aggregation_strategy
     )
   end
@@ -100,7 +100,7 @@ defmodule Bumblebee.Text.NER do
           map(),
           Nx.t()
         ) :: list()
-  def extract_from_scores(config, tokenizer, raw_input, inputs, scores, opts \\ []) do
+  def extract_from_scores(spec, tokenizer, raw_input, inputs, scores, opts \\ []) do
     aggregation_strategy = opts[:aggregation_strategy]
 
     raw_input = List.wrap(raw_input)
@@ -109,7 +109,7 @@ defmodule Bumblebee.Text.NER do
           Enum.zip([raw_input, to_batched(inputs, 1), to_batched(scores, 1)]) do
       tokenizer
       |> gather_pre_entities(raw, tensors, score)
-      |> then(&aggregate(config, tokenizer, &1, aggregation_strategy: aggregation_strategy))
+      |> then(&aggregate(spec, tokenizer, &1, aggregation_strategy: aggregation_strategy))
       |> filter_entities(@ignore_label)
     end
   end
@@ -150,15 +150,15 @@ defmodule Bumblebee.Text.NER do
     end
   end
 
-  defp aggregate(config, tokenizer, pre_entities, opts) do
+  defp aggregate(spec, tokenizer, pre_entities, opts) do
     aggregation_strategy = opts[:aggregation_strategy]
 
     case aggregation_strategy do
       nil ->
-        add_token_labels(config, pre_entities)
+        add_token_labels(spec, pre_entities)
 
       :simple ->
-        config
+        spec
         |> add_token_labels(pre_entities)
         |> then(&group_entities(tokenizer, &1))
     end
@@ -168,14 +168,14 @@ defmodule Bumblebee.Text.NER do
     Enum.filter(entities, fn %{"entity_group" => group} -> label != group end)
   end
 
-  defp add_token_labels(config, pre_entities) do
+  defp add_token_labels(spec, pre_entities) do
     Enum.map(pre_entities, fn pre_entity ->
       {scores, pre_entity} = Map.pop!(pre_entity, "scores")
       entity_idx = Nx.argmax(scores) |> Nx.to_number()
       score = scores[[entity_idx]] |> Nx.to_number()
 
       pre_entity
-      |> Map.put("entity", config.id_to_label[entity_idx])
+      |> Map.put("entity", spec.id_to_label[entity_idx])
       |> Map.put("score", score)
     end)
   end
