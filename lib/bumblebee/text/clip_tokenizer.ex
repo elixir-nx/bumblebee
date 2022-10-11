@@ -1,5 +1,5 @@
 defmodule Bumblebee.Text.ClipTokenizer do
-  @doc """
+  @moduledoc """
   CLIP tokenizer.
   """
 
@@ -33,9 +33,9 @@ defmodule Bumblebee.Text.ClipTokenizer do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    def load(config, %{"tokenizer_file" => path}) do
-      tokenizer = Bumblebee.Utils.Tokenizers.load!(path)
-      %{config | tokenizer: tokenizer}
+    def load(tokenizer, %{"tokenizer_file" => path}) do
+      native_tokenizer = Bumblebee.Utils.Tokenizers.load!(path)
+      %{tokenizer | tokenizer: native_tokenizer}
     end
   end
 end

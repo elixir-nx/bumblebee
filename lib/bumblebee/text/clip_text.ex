@@ -56,7 +56,7 @@ defmodule Bumblebee.Text.ClipText do
       ]) ++ Shared.token_options(pad_token_id: 1, bos_token_id: 0, eos_token_id: 2)
 
   @moduledoc """
-  The CLIP architectures for text encoding.
+  The CLIP model for text encoding.
 
   ## Architectures
 
@@ -103,25 +103,25 @@ defmodule Bumblebee.Text.ClipText do
   def base_model_prefix(), do: "text_model"
 
   @impl true
-  def config(config, opts \\ []) do
-    config
+  def config(spec, opts \\ []) do
+    spec
     |> Shared.put_config_attrs(opts)
     |> Shared.validate_label_options()
   end
 
   @impl true
-  def input_template(_config) do
+  def input_template(_spec) do
     %{
       "input_ids" => Nx.template({1, 1}, :s64)
     }
   end
 
   @impl true
-  def model(%__MODULE__{architecture: :base} = config) do
+  def model(%__MODULE__{architecture: :base} = spec) do
     inputs = inputs()
 
     inputs
-    |> clip_text(config)
+    |> clip_text(spec)
     |> Layers.output()
   end
 
@@ -135,7 +135,7 @@ defmodule Bumblebee.Text.ClipText do
     ])
   end
 
-  defp clip_text(inputs, config, opts \\ []) do
+  defp clip_text(inputs, spec, opts \\ []) do
     name = opts[:name]
 
     input_ids = inputs["input_ids"]
@@ -150,22 +150,21 @@ defmodule Bumblebee.Text.ClipText do
         Layers.default_position_ids(input_ids)
       end
 
-    text_transformer(input_ids, attention_mask, position_ids, config, name: name)
+    text_transformer(input_ids, attention_mask, position_ids, spec, name: name)
   end
 
-  defp text_transformer(input_ids, attention_mask, position_ids, config, opts) do
+  defp text_transformer(input_ids, attention_mask, position_ids, spec, opts) do
     name = opts[:name]
 
-    hidden_state =
-      text_embeddings(input_ids, position_ids, config, name: join(name, "embeddings"))
+    hidden_state = text_embeddings(input_ids, position_ids, spec, name: join(name, "embeddings"))
 
     encoder_outputs =
-      encoder(hidden_state, attention_mask, config, name: join(name, "encoder"), causal?: true)
+      encoder(hidden_state, attention_mask, spec, name: join(name, "encoder"), causal?: true)
 
     last_hidden_state =
       Axon.layer_norm(encoder_outputs.last_hidden_state,
         channel_index: 2,
-        epsilon: config.layer_norm_epsilon,
+        epsilon: spec.layer_norm_epsilon,
         name: join(name, "final_layer_norm")
       )
 
@@ -186,17 +185,17 @@ defmodule Bumblebee.Text.ClipText do
     }
   end
 
-  defp text_embeddings(input_ids, position_ids, config, opts) do
+  defp text_embeddings(input_ids, position_ids, spec, opts) do
     name = opts[:name]
 
     input_embeds =
-      Axon.embedding(input_ids, config.vocab_size, config.hidden_size,
+      Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
         kernel_initializer: Axon.Initializers.normal(),
         name: join(name, "token_embedding")
       )
 
     position_embeds =
-      Axon.embedding(position_ids, config.max_positions, config.hidden_size,
+      Axon.embedding(position_ids, spec.max_positions, spec.hidden_size,
         kernel_initializer: Axon.Initializers.normal(),
         name: join(name, "position_embedding")
       )
@@ -204,27 +203,27 @@ defmodule Bumblebee.Text.ClipText do
     Axon.add(input_embeds, position_embeds)
   end
 
-  defp encoder(input_embeds, attention_mask, config, opts) do
+  defp encoder(input_embeds, attention_mask, spec, opts) do
     name = opts[:name]
     causal? = Keyword.get(opts, :causal?, false)
 
-    encoder_blocks(input_embeds, attention_mask, config, name: name, causal?: causal?)
+    encoder_blocks(input_embeds, attention_mask, spec, name: name, causal?: causal?)
   end
 
-  defp encoder_blocks(hidden_state, attention_mask, config, opts) do
+  defp encoder_blocks(hidden_state, attention_mask, spec, opts) do
     name = opts[:name]
     causal? = Keyword.get(opts, :causal?, false)
 
     state = %{
       last_hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, config.output_hidden_states),
-      attentions: Layers.maybe_container({}, config.output_attentions)
+      hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
+      attentions: Layers.maybe_container({}, spec.output_attentions)
     }
 
-    for idx <- 0..(config.num_blocks - 1), reduce: state do
+    for idx <- 0..(spec.num_blocks - 1), reduce: state do
       state ->
         {hidden_state, attention} =
-          encoder_block(state.last_hidden_state, attention_mask, config,
+          encoder_block(state.last_hidden_state, attention_mask, spec,
             name: join(name, "layers.#{idx}"),
             causal?: causal?
           )
@@ -237,7 +236,7 @@ defmodule Bumblebee.Text.ClipText do
     end
   end
 
-  defp encoder_block(hidden_state, attention_mask, config, opts) do
+  defp encoder_block(hidden_state, attention_mask, spec, opts) do
     name = opts[:name]
     causal? = Keyword.get(opts, :causal?, false)
 
@@ -247,10 +246,10 @@ defmodule Bumblebee.Text.ClipText do
       hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_epsilon,
+        epsilon: spec.layer_norm_epsilon,
         name: join(name, "layer_norm1")
       )
-      |> attention(attention_mask, config, name: join(name, "self_attn"), causal?: causal?)
+      |> attention(attention_mask, spec, name: join(name, "self_attn"), causal?: causal?)
 
     hidden_state = Axon.add(residual, hidden_state)
 
@@ -260,41 +259,41 @@ defmodule Bumblebee.Text.ClipText do
       hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_epsilon,
+        epsilon: spec.layer_norm_epsilon,
         name: join(name, "layer_norm2")
       )
-      |> mlp(config, name: join(name, "mlp"))
+      |> mlp(spec, name: join(name, "mlp"))
       |> Axon.add(residual)
 
     {hidden_state, attention_weights}
   end
 
-  defp attention(hidden_state, attention_mask, config, opts) do
+  defp attention(hidden_state, attention_mask, spec, opts) do
     name = opts[:name]
     causal? = Keyword.get(opts, :causal?, false)
 
-    num_heads = config.num_attention_heads
+    num_heads = spec.num_attention_heads
 
     query =
       hidden_state
-      |> Axon.dense(config.hidden_size,
-        kernel_initializer: kernel_initializer(config),
+      |> Axon.dense(spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
         name: join(name, "q_proj")
       )
       |> Layers.split_heads(num_heads)
 
     value =
       hidden_state
-      |> Axon.dense(config.hidden_size,
-        kernel_initializer: kernel_initializer(config),
+      |> Axon.dense(spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
         name: join(name, "v_proj")
       )
       |> Layers.split_heads(num_heads)
 
     key =
       hidden_state
-      |> Axon.dense(config.hidden_size,
-        kernel_initializer: kernel_initializer(config),
+      |> Axon.dense(spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
         name: join(name, "k_proj")
       )
       |> Layers.split_heads(num_heads)
@@ -312,46 +311,46 @@ defmodule Bumblebee.Text.ClipText do
 
     attention_weights =
       Layers.attention_weights(query, key, attention_bias)
-      |> Axon.dropout(rate: config.attention_dropout_rate, name: join(name, "dropout"))
+      |> Axon.dropout(rate: spec.attention_dropout_rate, name: join(name, "dropout"))
 
     attention_output =
       attention_weights
       |> Layers.attention_output(value)
       |> Layers.flatten_trailing()
-      |> Axon.dense(config.hidden_size,
-        kernel_initializer: kernel_initializer(config),
+      |> Axon.dense(spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
         name: join(name, "out_proj")
       )
 
     {attention_output, attention_weights}
   end
 
-  defp mlp(hidden_state, config, opts) do
+  defp mlp(hidden_state, spec, opts) do
     name = opts[:name]
 
     hidden_state
-    |> Axon.dense(config.intermediate_size,
-      kernel_initializer: kernel_initializer(config),
+    |> Axon.dense(spec.intermediate_size,
+      kernel_initializer: kernel_initializer(spec),
       name: join(name, "fc1")
     )
-    |> Layers.activation(config.activation, name: join(name, "activation"))
-    |> Axon.dense(config.hidden_size,
-      kernel_initializer: kernel_initializer(config),
+    |> Layers.activation(spec.activation, name: join(name, "activation"))
+    |> Axon.dense(spec.hidden_size,
+      kernel_initializer: kernel_initializer(spec),
       name: join(name, "fc2")
     )
   end
 
-  defp kernel_initializer(_config) do
+  defp kernel_initializer(_spec) do
     Axon.Initializers.normal(scale: 0.01)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    # Support loading from the entire Clip config
-    def load(%{"model_type" => "clip", "text_config" => config}, data) do
-      load(config, data)
+    # Support loading from the entire Clip spec
+    def load(%{"model_type" => "clip", "text_spec" => spec}, data) do
+      load(spec, data)
     end
 
-    def load(config, data) do
+    def load(spec, data) do
       import Shared.Converters
 
       opts =
@@ -365,9 +364,9 @@ defmodule Bumblebee.Text.ClipText do
           activation: {"hidden_act", atom()},
           attention_dropout_rate: {"attention_dropout", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()}
-        ) ++ Shared.common_options_from_transformers(data, config)
+        ) ++ Shared.common_options_from_transformers(data, spec)
 
-      @for.config(config, opts)
+      @for.config(spec, opts)
     end
   end
 end

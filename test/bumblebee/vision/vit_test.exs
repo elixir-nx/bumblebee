@@ -7,10 +7,10 @@ defmodule Bumblebee.Vision.VitTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "google/vit-base-patch16-224"}, architecture: :base)
 
-      assert %Bumblebee.Vision.Vit{architecture: :base} = config
+      assert %Bumblebee.Vision.Vit{architecture: :base} = spec
 
       input = %{"pixel_values" => Nx.broadcast(0.5, {1, 3, 224, 224})}
       output = Axon.predict(model, params, input)
@@ -27,10 +27,10 @@ defmodule Bumblebee.Vision.VitTest do
     end
 
     test "image classification model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "google/vit-base-patch16-224"})
 
-      assert %Bumblebee.Vision.Vit{architecture: :for_image_classification} = config
+      assert %Bumblebee.Vision.Vit{architecture: :for_image_classification} = spec
 
       input = %{"pixel_values" => Nx.broadcast(0.5, {1, 3, 224, 224})}
       output = Axon.predict(model, params, input)
@@ -45,12 +45,12 @@ defmodule Bumblebee.Vision.VitTest do
     end
 
     test "masked image modeling model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "google/vit-base-patch16-224-in21k"},
                  architecture: :for_masked_image_modeling
                )
 
-      assert %Bumblebee.Vision.Vit{architecture: :for_masked_image_modeling} = config
+      assert %Bumblebee.Vision.Vit{architecture: :for_masked_image_modeling} = spec
 
       # There is no pre-trained version on Hugging Face, so we use a fixed parameter
       params =

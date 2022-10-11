@@ -7,10 +7,10 @@ defmodule Bumblebee.Text.AlbertTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "albert-base-v2"}, architecture: :base)
 
-      assert %Bumblebee.Text.Albert{architecture: :base} = config
+      assert %Bumblebee.Text.Albert{architecture: :base} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]),
@@ -31,9 +31,9 @@ defmodule Bumblebee.Text.AlbertTest do
     end
 
     test "masked language modeling model" do
-      assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "albert-base-v2"})
+      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "albert-base-v2"})
 
-      assert %Bumblebee.Text.Albert{architecture: :for_masked_language_modeling} = config
+      assert %Bumblebee.Text.Albert{architecture: :for_masked_language_modeling} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]]),
@@ -54,10 +54,10 @@ defmodule Bumblebee.Text.AlbertTest do
     end
 
     test "sequence classification model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "textattack/albert-base-v2-imdb"})
 
-      assert %Bumblebee.Text.Albert{architecture: :for_sequence_classification} = config
+      assert %Bumblebee.Text.Albert{architecture: :for_sequence_classification} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]]),
@@ -76,19 +76,19 @@ defmodule Bumblebee.Text.AlbertTest do
     end
 
     test "multiple choice model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "albert-base-v2"}, architecture: :for_multiple_choice)
 
       # The base is missing classifier params so we set
       # them to a static val here
       classifier_params = %{
-        "kernel" => Nx.broadcast(1.0e-3, {config.hidden_size, 1}),
+        "kernel" => Nx.broadcast(1.0e-3, {spec.hidden_size, 1}),
         "bias" => Nx.tensor(0.0)
       }
 
       params = Map.replace(params, "classifier", classifier_params)
 
-      assert %Bumblebee.Text.Albert{architecture: :for_multiple_choice} = config
+      assert %Bumblebee.Text.Albert{architecture: :for_multiple_choice} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]]]),
@@ -107,9 +107,9 @@ defmodule Bumblebee.Text.AlbertTest do
     end
 
     test "token classification model" do
-      assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "vumichien/tiny-albert"})
+      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "vumichien/tiny-albert"})
 
-      assert %Bumblebee.Text.Albert{architecture: :for_token_classification} = config
+      assert %Bumblebee.Text.Albert{architecture: :for_token_classification} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]])
@@ -127,10 +127,10 @@ defmodule Bumblebee.Text.AlbertTest do
     end
 
     test "question answering model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "twmkn9/albert-base-v2-squad2"})
 
-      assert %Bumblebee.Text.Albert{architecture: :for_question_answering} = config
+      assert %Bumblebee.Text.Albert{architecture: :for_question_answering} = spec
 
       input = %{
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]])

@@ -96,8 +96,8 @@ defmodule Bumblebee.Shared do
   @doc """
   Converts common options from huggingface/transformers configuration.
   """
-  @spec common_options_from_transformers(map(), struct()) :: keyword()
-  def common_options_from_transformers(data, config) do
+  @spec common_options_from_transformers(map(), Bumblebee.ModelSpec.t()) :: keyword()
+  def common_options_from_transformers(data, spec) do
     import Bumblebee.Shared.Converters
 
     converters = [
@@ -120,12 +120,12 @@ defmodule Bumblebee.Shared do
 
     converters =
       Keyword.filter(converters, fn {key, _} ->
-        Map.has_key?(config, key)
+        Map.has_key?(spec, key)
       end)
 
     opts = convert!(data, converters)
 
-    if Map.has_key?(config, :num_labels) and
+    if Map.has_key?(spec, :num_labels) and
          not Keyword.has_key?(opts, :num_labels) and opts[:id_to_label] do
       Keyword.put(opts, :num_labels, map_size(opts[:id_to_label]))
     else
@@ -155,13 +155,13 @@ defmodule Bumblebee.Shared do
   @doc """
   Validates that label-related attributes have consistent size.
   """
-  @spec validate_label_options(struct()) :: struct()
-  def validate_label_options(%{num_labels: num_labels, id_to_label: id_to_label} = config) do
-    if id_to_label != %{} and map_size(id_to_label) != config.num_labels do
+  @spec validate_label_options(Bumblebee.ModelSpec.t()) :: Bumblebee.ModelSpec.t()
+  def validate_label_options(%{num_labels: num_labels, id_to_label: id_to_label} = spec) do
+    if id_to_label != %{} and map_size(id_to_label) != spec.num_labels do
       raise ArgumentError,
             "size mismatch between :num_labels (#{inspect(num_labels)}) and :id_to_label (#{inspect(id_to_label)})"
     end
 
-    config
+    spec
   end
 end

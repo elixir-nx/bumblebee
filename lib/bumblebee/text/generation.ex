@@ -7,7 +7,7 @@ defmodule Bumblebee.Text.Generation do
   Initializes an opaque cache input for iterative inference.
   """
   @callback init_cache(
-              config :: Bumblebee.ModelSpec.t(),
+              spec :: Bumblebee.ModelSpec.t(),
               batch_size :: pos_integer(),
               max_length :: pos_integer(),
               inputs :: map()
@@ -19,8 +19,8 @@ defmodule Bumblebee.Text.Generation do
   Initializes an opaque cache input for iterative inference.
   """
   @spec init_cache(Bumblebee.ModelSpec.t(), pos_integer(), pos_integer(), map()) :: Nx.t()
-  def init_cache(%module{} = config, batch_size, max_length, inputs) do
-    module.init_cache(config, batch_size, max_length, inputs)
+  def init_cache(%module{} = spec, batch_size, max_length, inputs) do
+    module.init_cache(spec, batch_size, max_length, inputs)
   end
 
   @doc """
@@ -57,21 +57,21 @@ defmodule Bumblebee.Text.Generation do
     * `:forced_eos_token_id` - the id of the token to force as the last
       generated token when `:max_length` is reached
 
-  The default option values are taken from the given model configuration
+  The default option values are taken from the given model specification
   when available.
   """
   @spec generate(Bumblebee.ModelSpec.t(), Axon.t(), map(), map(), keyword()) :: Nx.t()
-  def generate(config, model, params, inputs, opts \\ []) do
+  def generate(spec, model, params, inputs, opts \\ []) do
     opts =
       Keyword.validate!(opts,
-        max_length: Map.get(config, :max_length),
-        min_length: Map.get(config, :min_length),
-        decoder_start_token_id: Map.get(config, :decoder_start_token_id),
-        bos_token_id: Map.get(config, :bos_token_id),
-        eos_token_id: Map.get(config, :eos_token_id),
-        pad_token_id: Map.get(config, :pad_token_id),
-        forced_bos_token_id: Map.get(config, :forced_bos_token_id),
-        forced_eos_token_id: Map.get(config, :forced_eos_token_id)
+        max_length: Map.get(spec, :max_length),
+        min_length: Map.get(spec, :min_length),
+        decoder_start_token_id: Map.get(spec, :decoder_start_token_id),
+        bos_token_id: Map.get(spec, :bos_token_id),
+        eos_token_id: Map.get(spec, :eos_token_id),
+        pad_token_id: Map.get(spec, :pad_token_id),
+        forced_bos_token_id: Map.get(spec, :forced_bos_token_id),
+        forced_eos_token_id: Map.get(spec, :forced_eos_token_id)
       )
 
     max_length = opts[:max_length]
@@ -83,7 +83,7 @@ defmodule Bumblebee.Text.Generation do
     forced_eos_token_id = opts[:forced_eos_token_id]
 
     {prepare_inputs_fun, update_inputs_fun} =
-      input_callbacks(config, model, max_length, decoder_start_token_id)
+      input_callbacks(spec, model, max_length, decoder_start_token_id)
 
     {_init_fun, predict_fun} = Axon.build(model)
 
@@ -134,7 +134,7 @@ defmodule Bumblebee.Text.Generation do
     end)
   end
 
-  defp input_callbacks(config, model, max_length, decoder_start_token_id) do
+  defp input_callbacks(spec, model, max_length, decoder_start_token_id) do
     if encoder_decoder?(model) do
       encoder = encoder_from_encoder_decoder(model)
       {_encoder_init_fun, encoder_predict_fun} = Axon.build(encoder)
@@ -151,7 +151,7 @@ defmodule Bumblebee.Text.Generation do
             "decoder_input_ids" => decoder_input_ids
           })
 
-        inputs = prepare_decoder_inputs(inputs, "decoder_", config, max_length)
+        inputs = prepare_decoder_inputs(inputs, "decoder_", spec, max_length)
         {inputs, inputs["decoder_input_ids"]}
       end
 
@@ -160,7 +160,7 @@ defmodule Bumblebee.Text.Generation do
       {prepare_inputs_fun, update_inputs_fun}
     else
       prepare_inputs_fun = fn inputs, _params ->
-        inputs = prepare_decoder_inputs(inputs, "", config, max_length)
+        inputs = prepare_decoder_inputs(inputs, "", spec, max_length)
         {inputs, inputs["input_ids"]}
       end
 
@@ -175,7 +175,7 @@ defmodule Bumblebee.Text.Generation do
     Map.has_key?(inputs, "input_ids") and Map.has_key?(inputs, "decoder_input_ids")
   end
 
-  defp prepare_decoder_inputs(inputs, prefix, config, max_length) do
+  defp prepare_decoder_inputs(inputs, prefix, spec, max_length) do
     input_ids = inputs[prefix <> "input_ids"]
     attention_mask = inputs[prefix <> "attention_mask"] || Nx.broadcast(1.0, input_ids)
 
@@ -190,7 +190,7 @@ defmodule Bumblebee.Text.Generation do
       |> Map.put(prefix <> "position_ids", position_ids)
 
     batch_size = Nx.axis_size(input_ids, 0)
-    cache = init_cache(config, batch_size, max_length, inputs)
+    cache = init_cache(spec, batch_size, max_length, inputs)
     Map.put(inputs, "cache", cache)
   end
 

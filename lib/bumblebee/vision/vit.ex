@@ -66,7 +66,7 @@ defmodule Bumblebee.Vision.Vit do
       ])
 
   @moduledoc """
-  Models based on the ViT architecture.
+  ViT model family.
 
   ## Architectures
 
@@ -114,32 +114,32 @@ defmodule Bumblebee.Vision.Vit do
   def base_model_prefix(), do: "vit"
 
   @impl true
-  def config(config, opts \\ []) do
-    config
+  def config(spec, opts \\ []) do
+    spec
     |> Shared.put_config_attrs(opts)
     |> Shared.validate_label_options()
   end
 
   @impl true
-  def input_template(config) do
+  def input_template(spec) do
     %{
       "pixel_values" =>
-        Nx.template({1, config.num_channels, config.image_size, config.image_size}, :f32)
+        Nx.template({1, spec.num_channels, spec.image_size, spec.image_size}, :f32)
     }
   end
 
   @impl true
-  def model(%__MODULE__{architecture: :for_image_classification} = config) do
+  def model(%__MODULE__{architecture: :for_image_classification} = spec) do
     outputs =
-      config
+      spec
       |> inputs()
-      |> vit(config, name: "vit")
+      |> vit(spec, name: "vit")
 
     logits =
       outputs.last_hidden_state
       |> Layers.take_token(index: 0, axis: 1, name: join("vit", "head"))
-      |> Axon.dense(config.num_labels,
-        kernel_initializer: kernel_initializer(config),
+      |> Axon.dense(spec.num_labels,
+        kernel_initializer: kernel_initializer(spec),
         name: "classifier"
       )
 
@@ -150,11 +150,11 @@ defmodule Bumblebee.Vision.Vit do
     })
   end
 
-  def model(%__MODULE__{architecture: :for_masked_image_modeling} = config) do
+  def model(%__MODULE__{architecture: :for_masked_image_modeling} = spec) do
     outputs =
-      config
+      spec
       |> inputs()
-      |> vit(config, name: "vit")
+      |> vit(spec, name: "vit")
 
     logits =
       outputs.last_hidden_state
@@ -169,12 +169,12 @@ defmodule Bumblebee.Vision.Vit do
         |> Nx.reshape({batch_size, channels, height, width})
       end)
       # Upsample to the original spatial resolution
-      |> Axon.conv(config.patch_size ** 2 * 3,
+      |> Axon.conv(spec.patch_size ** 2 * 3,
         kernel_size: 1,
-        kernel_initializer: kernel_initializer(config),
+        kernel_initializer: kernel_initializer(spec),
         name: join("decoder", 0)
       )
-      |> Layers.pixel_shuffle(config.patch_size, name: join("decoder", 1))
+      |> Layers.pixel_shuffle(spec.patch_size, name: join("decoder", 1))
 
     Layers.output(%{
       logits: logits,
@@ -183,15 +183,15 @@ defmodule Bumblebee.Vision.Vit do
     })
   end
 
-  def model(%__MODULE__{architecture: :base} = config) do
-    config
+  def model(%__MODULE__{architecture: :base} = spec) do
+    spec
     |> inputs()
-    |> vit(config)
+    |> vit(spec)
     |> Layers.output()
   end
 
-  defp inputs(config) do
-    shape = {nil, config.num_channels, config.image_size, config.image_size}
+  defp inputs(spec) do
+    shape = {nil, spec.num_channels, spec.image_size, spec.image_size}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("pixel_values", shape: shape),
@@ -199,23 +199,23 @@ defmodule Bumblebee.Vision.Vit do
     ])
   end
 
-  defp vit(inputs, config, opts \\ []) do
+  defp vit(inputs, spec, opts \\ []) do
     name = opts[:name]
 
-    hidden_state = embeddings(inputs, config, name: join(name, "embeddings"))
+    hidden_state = embeddings(inputs, spec, name: join(name, "embeddings"))
 
     {hidden_state, hidden_states, attentions} =
-      encoder(hidden_state, config, name: join(name, "encoder"))
+      encoder(hidden_state, spec, name: join(name, "encoder"))
 
     last_hidden_state =
       hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_epsilon,
+        epsilon: spec.layer_norm_epsilon,
         name: join(name, "layernorm")
       )
 
-    pooled = pooler(last_hidden_state, config, name: join(name, "pooler"))
+    pooled = pooler(last_hidden_state, spec, name: join(name, "pooler"))
 
     %{
       last_hidden_state: last_hidden_state,
@@ -225,49 +225,47 @@ defmodule Bumblebee.Vision.Vit do
     }
   end
 
-  defp embeddings(inputs, config, opts) do
+  defp embeddings(inputs, spec, opts) do
     name = opts[:name]
 
     inputs["pixel_values"]
-    |> patch_embeddings(config, name: join(name, "patch_embeddings"))
+    |> patch_embeddings(spec, name: join(name, "patch_embeddings"))
     |> Layers.apply_vision_patch_mask(inputs["patch_mask"], name: join(name, "mask_tokens"))
-    |> position_embeddings(config, name: name)
-    |> Axon.dropout(rate: config.dropout_rate, name: join(name, "dropout"))
+    |> position_embeddings(spec, name: name)
+    |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
   end
 
-  defp patch_embeddings(pixel_values, config, opts) do
+  defp patch_embeddings(pixel_values, spec, opts) do
     name = opts[:name]
 
     pixel_values
-    |> Axon.conv(config.hidden_size,
-      kernel_size: config.patch_size,
-      strides: config.patch_size,
+    |> Axon.conv(spec.hidden_size,
+      kernel_size: spec.patch_size,
+      strides: spec.patch_size,
       padding: :valid,
-      kernel_initializer: kernel_initializer(config),
+      kernel_initializer: kernel_initializer(spec),
       name: join(name, "projection")
     )
     |> Axon.nx(&Nx.transpose(&1, axes: [0, 2, 3, 1]))
-    |> Axon.reshape({:batch, :auto, config.hidden_size}, name: join(name, "reshape"))
+    |> Axon.reshape({:batch, :auto, spec.hidden_size}, name: join(name, "reshape"))
   end
 
-  defp position_embeddings(embeddings, config, opts) do
+  defp position_embeddings(embeddings, spec, opts) do
     name = opts[:name]
 
-    num_patches =
-      div(config.image_size, config.patch_size) * div(config.image_size, config.patch_size)
+    num_patches = div(spec.image_size, spec.patch_size) * div(spec.image_size, spec.patch_size)
 
-    cls_token =
-      Axon.param("cls_token", fn _ -> {1, 1, config.hidden_size} end, initializer: :zeros)
+    cls_token = Axon.param("cls_token", fn _ -> {1, 1, spec.hidden_size} end, initializer: :zeros)
 
     position_embeddings =
-      Axon.param("position_embeddings", fn _ -> {1, num_patches + 1, config.hidden_size} end,
+      Axon.param("position_embeddings", fn _ -> {1, num_patches + 1, spec.hidden_size} end,
         initializer: :zeros
       )
 
     Axon.layer(
       fn embeddings, cls_token, position_embeddings, _opts ->
         batch_size = Nx.axis_size(embeddings, 0)
-        cls_token = Nx.broadcast(cls_token, {batch_size, 1, config.hidden_size})
+        cls_token = Nx.broadcast(cls_token, {batch_size, 1, spec.hidden_size})
 
         Nx.concatenate([cls_token, embeddings], axis: 1)
         |> Nx.add(position_embeddings)
@@ -277,22 +275,22 @@ defmodule Bumblebee.Vision.Vit do
     )
   end
 
-  defp encoder(hidden_state, config, opts) do
+  defp encoder(hidden_state, spec, opts) do
     name = opts[:name]
 
-    encoder_blocks(hidden_state, config, name: join(name, "layer"))
+    encoder_blocks(hidden_state, spec, name: join(name, "layer"))
   end
 
-  defp encoder_blocks(hidden_state, config, opts) do
+  defp encoder_blocks(hidden_state, spec, opts) do
     name = opts[:name]
 
-    hidden_states = Layers.maybe_container({hidden_state}, config.output_hidden_states)
-    attentions = Layers.maybe_container({}, config.output_attentions)
+    hidden_states = Layers.maybe_container({hidden_state}, spec.output_hidden_states)
+    attentions = Layers.maybe_container({}, spec.output_attentions)
 
-    for idx <- 0..(config.num_blocks - 1),
+    for idx <- 0..(spec.num_blocks - 1),
         reduce: {hidden_state, hidden_states, attentions} do
       {hidden_state, hidden_states, attentions} ->
-        {hidden_state, attention} = encoder_block(hidden_state, config, name: join(name, idx))
+        {hidden_state, attention} = encoder_block(hidden_state, spec, name: join(name, idx))
 
         {
           hidden_state,
@@ -302,17 +300,17 @@ defmodule Bumblebee.Vision.Vit do
     end
   end
 
-  defp encoder_block(hidden_state, config, opts) do
+  defp encoder_block(hidden_state, spec, opts) do
     name = opts[:name]
 
     {attention_output, attention} =
       hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_epsilon,
+        epsilon: spec.layer_norm_epsilon,
         name: join(name, "layernorm_before")
       )
-      |> attention(config, name: join(name, "attention"))
+      |> attention(spec, name: join(name, "attention"))
 
     attention_output = Axon.add(attention_output, hidden_state)
 
@@ -320,55 +318,55 @@ defmodule Bumblebee.Vision.Vit do
       attention_output
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_epsilon,
+        epsilon: spec.layer_norm_epsilon,
         name: join(name, "layernorm_after")
       )
-      |> intermediate(config, name: join(name, "intermediate"))
-      |> output(attention_output, config, name: join(name, "output"))
+      |> intermediate(spec, name: join(name, "intermediate"))
+      |> output(attention_output, spec, name: join(name, "output"))
 
     {output, attention}
   end
 
-  defp attention(hidden_state, config, opts) do
+  defp attention(hidden_state, spec, opts) do
     name = opts[:name]
 
     {attention_output, attention} =
-      self_attention(hidden_state, config, name: join(name, "attention"))
+      self_attention(hidden_state, spec, name: join(name, "attention"))
 
     attention_output =
-      self_output(attention_output, hidden_state, config, name: join(name, "output"))
+      self_output(attention_output, hidden_state, spec, name: join(name, "output"))
 
     {attention_output, attention}
   end
 
-  defp self_attention(hidden_state, config, opts) do
+  defp self_attention(hidden_state, spec, opts) do
     name = opts[:name]
 
-    num_heads = config.num_attention_heads
+    num_heads = spec.num_attention_heads
 
     query =
       hidden_state
-      |> Axon.dense(config.hidden_size,
-        kernel_initializer: kernel_initializer(config),
-        use_bias: config.use_qkv_bias,
+      |> Axon.dense(spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
+        use_bias: spec.use_qkv_bias,
         name: join(name, "query")
       )
       |> Layers.split_heads(num_heads)
 
     key =
       hidden_state
-      |> Axon.dense(config.hidden_size,
-        kernel_initializer: kernel_initializer(config),
-        use_bias: config.use_qkv_bias,
+      |> Axon.dense(spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
+        use_bias: spec.use_qkv_bias,
         name: join(name, "key")
       )
       |> Layers.split_heads(num_heads)
 
     value =
       hidden_state
-      |> Axon.dense(config.hidden_size,
-        kernel_initializer: kernel_initializer(config),
-        use_bias: config.use_qkv_bias,
+      |> Axon.dense(spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
+        use_bias: spec.use_qkv_bias,
         name: join(name, "value")
       )
       |> Layers.split_heads(num_heads)
@@ -377,7 +375,7 @@ defmodule Bumblebee.Vision.Vit do
 
     attention_weights =
       Layers.attention_weights(query, key, attention_bias)
-      |> Axon.dropout(rate: config.attention_dropout_rate, name: join(name, "dropout"))
+      |> Axon.dropout(rate: spec.attention_dropout_rate, name: join(name, "dropout"))
 
     attention_output =
       attention_weights
@@ -387,58 +385,58 @@ defmodule Bumblebee.Vision.Vit do
     {attention_output, attention_weights}
   end
 
-  defp self_output(hidden_state, _input_tensor, config, opts) do
+  defp self_output(hidden_state, _input_tensor, spec, opts) do
     name = opts[:name]
 
     hidden_state
-    |> Axon.dense(config.hidden_size,
-      kernel_initializer: kernel_initializer(config),
+    |> Axon.dense(spec.hidden_size,
+      kernel_initializer: kernel_initializer(spec),
       name: join(name, "dense")
     )
-    |> Axon.dropout(rate: config.dropout_rate, name: join(name, "dropout"))
+    |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
   end
 
-  defp intermediate(hidden_state, config, opts) do
+  defp intermediate(hidden_state, spec, opts) do
     name = opts[:name]
 
     hidden_state
-    |> Axon.dense(config.intermediate_size,
-      kernel_initializer: kernel_initializer(config),
+    |> Axon.dense(spec.intermediate_size,
+      kernel_initializer: kernel_initializer(spec),
       name: join(name, "dense")
     )
-    |> Axon.activation(config.activation)
+    |> Axon.activation(spec.activation)
   end
 
-  defp output(hidden_state, attention_output, config, opts) do
+  defp output(hidden_state, attention_output, spec, opts) do
     name = opts[:name]
 
     hidden_state
-    |> Axon.dense(config.hidden_size,
-      kernel_initializer: kernel_initializer(config),
+    |> Axon.dense(spec.hidden_size,
+      kernel_initializer: kernel_initializer(spec),
       name: join(name, "dense")
     )
-    |> Axon.dropout(rate: config.dropout_rate, name: join(name, "dropout"))
+    |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
     |> Axon.add(attention_output, name: join(name, "residual"))
   end
 
-  defp pooler(hidden_state, config, opts) do
+  defp pooler(hidden_state, spec, opts) do
     name = opts[:name]
 
     hidden_state
     |> Layers.take_token(index: 0, axis: 1, name: join(name, "head"))
-    |> Axon.dense(config.hidden_size,
-      kernel_initializer: kernel_initializer(config),
+    |> Axon.dense(spec.hidden_size,
+      kernel_initializer: kernel_initializer(spec),
       name: join(name, "dense")
     )
     |> Axon.tanh(name: join(name, "tanh"))
   end
 
-  defp kernel_initializer(config) do
-    Axon.Initializers.normal(scale: config.initializer_scale)
+  defp kernel_initializer(spec) do
+    Axon.Initializers.normal(scale: spec.initializer_scale)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    def load(config, data) do
+    def load(spec, data) do
       import Shared.Converters
 
       opts =
@@ -456,9 +454,9 @@ defmodule Bumblebee.Vision.Vit do
           attention_dropout_rate: {"attention_probs_dropout_prob", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()},
           initializer_scale: {"initializer_range", number()}
-        ) ++ Shared.common_options_from_transformers(data, config)
+        ) ++ Shared.common_options_from_transformers(data, spec)
 
-      @for.config(config, opts)
+      @for.config(spec, opts)
     end
   end
 end

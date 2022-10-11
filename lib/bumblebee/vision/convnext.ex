@@ -43,7 +43,7 @@ defmodule Bumblebee.Vision.ConvNext do
     ] ++ Shared.common_options([:output_hidden_states, :num_labels, :id_to_label])
 
   @moduledoc """
-  Models based on the ConvNeXT architecture.
+  ConvNeXT model family.
 
   ## Architectures
 
@@ -85,53 +85,53 @@ defmodule Bumblebee.Vision.ConvNext do
   def base_model_prefix(), do: "convnext"
 
   @impl true
-  def config(config, opts \\ []) do
-    config
+  def config(featurizer, opts \\ []) do
+    featurizer
     |> Shared.put_config_attrs(opts)
     |> Shared.validate_label_options()
   end
 
   @impl true
-  def input_template(config) do
+  def input_template(featurizer) do
     %{
-      "pixel_values" => Nx.template({1, config.num_channels, 224, 224}, :f32)
+      "pixel_values" => Nx.template({1, featurizer.num_channels, 224, 224}, :f32)
     }
   end
 
   @impl true
-  def model(%__MODULE__{architecture: :base} = config) do
-    config
+  def model(%__MODULE__{architecture: :base} = featurizer) do
+    featurizer
     |> convnext()
     |> Layers.output()
   end
 
-  def model(%__MODULE__{architecture: :for_image_classification} = config) do
-    outputs = convnext(config, name: "convnext")
+  def model(%__MODULE__{architecture: :for_image_classification} = featurizer) do
+    outputs = convnext(featurizer, name: "convnext")
 
     logits =
       outputs.pooler_output
-      |> Axon.dense(config.num_labels,
+      |> Axon.dense(featurizer.num_labels,
         name: "classifier",
-        kernel_initializer: kernel_initializer(config)
+        kernel_initializer: kernel_initializer(featurizer)
       )
 
     Layers.output(%{logits: logits, hidden_states: outputs.hidden_states})
   end
 
-  defp convnext(config, opts \\ []) do
+  defp convnext(featurizer, opts \\ []) do
     name = opts[:name]
 
-    pixel_values = Axon.input("pixel_values", shape: {nil, config.num_channels, 224, 224})
+    pixel_values = Axon.input("pixel_values", shape: {nil, featurizer.num_channels, 224, 224})
 
-    embedding_output = embeddings(pixel_values, config, name: join(name, "embeddings"))
+    embedding_output = embeddings(pixel_values, featurizer, name: join(name, "embeddings"))
 
-    encoder_output = encoder(embedding_output, config, name: join(name, "encoder"))
+    encoder_output = encoder(embedding_output, featurizer, name: join(name, "encoder"))
 
     pooled_output =
       encoder_output.last_hidden_state
       |> Axon.global_avg_pool()
       |> Axon.layer_norm(
-        epsilon: config.layer_norm_epsilon,
+        epsilon: featurizer.layer_norm_epsilon,
         name: join(name, "layernorm"),
         beta_initializer: :zeros,
         gamma_initializer: :ones
@@ -144,16 +144,16 @@ defmodule Bumblebee.Vision.ConvNext do
     }
   end
 
-  defp embeddings(%Axon{} = pixel_values, config, opts) do
+  defp embeddings(%Axon{} = pixel_values, featurizer, opts) do
     name = opts[:name]
-    [embedding_size | _] = config.hidden_sizes
+    [embedding_size | _] = featurizer.hidden_sizes
 
     pixel_values
     |> Axon.conv(embedding_size,
-      kernel_size: config.patch_size,
-      strides: config.patch_size,
+      kernel_size: featurizer.patch_size,
+      strides: featurizer.patch_size,
       name: join(name, "patch_embeddings"),
-      kernel_initializer: kernel_initializer(config)
+      kernel_initializer: kernel_initializer(featurizer)
     )
     |> Axon.layer_norm(
       epsilon: 1.0e-6,
@@ -163,17 +163,18 @@ defmodule Bumblebee.Vision.ConvNext do
     )
   end
 
-  defp encoder(hidden_state, config, opts) do
+  defp encoder(hidden_state, featurizer, opts) do
     name = opts[:name]
 
-    drop_path_rates = get_drop_path_rates(config.depths, config.drop_path_rate)
+    drop_path_rates = get_drop_path_rates(featurizer.depths, featurizer.drop_path_rate)
 
-    stages = Enum.zip([config.depths, drop_path_rates, config.hidden_sizes]) |> Enum.with_index()
+    stages =
+      Enum.zip([featurizer.depths, drop_path_rates, featurizer.hidden_sizes]) |> Enum.with_index()
 
     state = %{
       last_hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, config.output_hidden_states),
-      in_channels: hd(config.hidden_sizes)
+      hidden_states: Layers.maybe_container({hidden_state}, featurizer.output_hidden_states),
+      in_channels: hd(featurizer.hidden_sizes)
     }
 
     for {{depth, drop_path_rates, out_channels}, idx} <- stages, reduce: state do
@@ -185,7 +186,7 @@ defmodule Bumblebee.Vision.ConvNext do
             state.last_hidden_state,
             state.in_channels,
             out_channels,
-            config,
+            featurizer,
             strides: strides,
             depth: depth,
             drop_path_rates: drop_path_rates,
@@ -200,7 +201,7 @@ defmodule Bumblebee.Vision.ConvNext do
     end
   end
 
-  defp stage(hidden_state, in_channels, out_channels, config, opts) do
+  defp stage(hidden_state, in_channels, out_channels, featurizer, opts) do
     name = opts[:name]
 
     strides = opts[:strides]
@@ -220,7 +221,7 @@ defmodule Bumblebee.Vision.ConvNext do
           kernel_size: 2,
           strides: strides,
           name: join(name, "downsampling_layer.1"),
-          kernel_initializer: kernel_initializer(config)
+          kernel_initializer: kernel_initializer(featurizer)
         )
       else
         hidden_state
@@ -231,14 +232,14 @@ defmodule Bumblebee.Vision.ConvNext do
 
     for {drop_path_rate, idx} <- Enum.with_index(drop_path_rates), reduce: downsampled do
       x ->
-        block(x, out_channels, config,
+        block(x, out_channels, featurizer,
           name: name |> join("layers") |> join(idx),
           drop_path_rate: drop_path_rate
         )
     end
   end
 
-  defp block(%Axon{} = hidden_state, out_channels, config, opts) do
+  defp block(%Axon{} = hidden_state, out_channels, featurizer, opts) do
     name = opts[:name]
 
     drop_path_rate = opts[:drop_path_rate]
@@ -251,7 +252,7 @@ defmodule Bumblebee.Vision.ConvNext do
         kernel_size: 7,
         padding: [{3, 3}, {3, 3}],
         name: join(name, "dwconv"),
-        kernel_initializer: kernel_initializer(config)
+        kernel_initializer: kernel_initializer(featurizer)
       )
       |> Axon.transpose([0, 2, 3, 1], name: join(name, "transpose1"))
       |> Axon.layer_norm(
@@ -263,19 +264,19 @@ defmodule Bumblebee.Vision.ConvNext do
       )
       |> Axon.dense(4 * out_channels,
         name: join(name, "pwconv1"),
-        kernel_initializer: kernel_initializer(config)
+        kernel_initializer: kernel_initializer(featurizer)
       )
-      |> Axon.activation(config.activation, name: join(name, "activation"))
+      |> Axon.activation(featurizer.activation, name: join(name, "activation"))
       |> Axon.dense(out_channels,
         name: join(name, "pwconv2"),
-        kernel_initializer: kernel_initializer(config)
+        kernel_initializer: kernel_initializer(featurizer)
       )
 
     scaled =
-      if config.scale_initial_value > 0 do
+      if featurizer.scale_initial_value > 0 do
         Layers.scale(x,
           name: name,
-          scale_initializer: Axon.Initializers.full(config.scale_initial_value),
+          scale_initializer: Axon.Initializers.full(featurizer.scale_initial_value),
           scale_name: "layer_scale_parameter",
           channel_index: 3
         )
@@ -305,12 +306,12 @@ defmodule Bumblebee.Vision.ConvNext do
     final_rates
   end
 
-  defp kernel_initializer(config) do
-    Axon.Initializers.normal(scale: config.initializer_scale)
+  defp kernel_initializer(featurizer) do
+    Axon.Initializers.normal(scale: featurizer.initializer_scale)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    def load(config, data) do
+    def load(featurizer, data) do
       import Shared.Converters
 
       opts =
@@ -324,9 +325,9 @@ defmodule Bumblebee.Vision.ConvNext do
           drop_path_rate: {"drop_path_rate", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()},
           initializer_scale: {"initializer_range", number()}
-        ) ++ Shared.common_options_from_transformers(data, config)
+        ) ++ Shared.common_options_from_transformers(data, featurizer)
 
-      @for.config(config, opts)
+      @for.config(featurizer, opts)
     end
   end
 end

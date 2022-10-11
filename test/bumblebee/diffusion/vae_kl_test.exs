@@ -7,12 +7,12 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "fusing/autoencoder-kl-dummy"},
                  params_filename: "diffusion_pytorch_model.bin"
                )
 
-      assert %Bumblebee.Diffusion.VaeKl{architecture: :base} = config
+      assert %Bumblebee.Diffusion.VaeKl{architecture: :base} = spec
 
       inputs = %{
         "sample" => Nx.broadcast(0.5, {1, 3, 32, 32})
@@ -60,13 +60,13 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
     end
 
     test "decoder model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "fusing/autoencoder-kl-dummy"},
                  architecture: :decoder,
                  params_filename: "diffusion_pytorch_model.bin"
                )
 
-      assert %Bumblebee.Diffusion.VaeKl{architecture: :decoder} = config
+      assert %Bumblebee.Diffusion.VaeKl{architecture: :decoder} = spec
 
       inputs = %{
         "sample" => Nx.broadcast(0.5, {1, 4, 16, 16})
@@ -90,13 +90,13 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
     end
 
     test "encoder model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "fusing/autoencoder-kl-dummy"},
                  architecture: :encoder,
                  params_filename: "diffusion_pytorch_model.bin"
                )
 
-      assert %Bumblebee.Diffusion.VaeKl{architecture: :encoder} = config
+      assert %Bumblebee.Diffusion.VaeKl{architecture: :encoder} = spec
 
       inputs = %{
         "sample" => Nx.broadcast(0.5, {1, 3, 32, 32})

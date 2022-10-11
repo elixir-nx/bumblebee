@@ -7,13 +7,13 @@ defmodule Bumblebee.Text.NERTest do
 
   describe "integration" do
     test "correctly extracts entities with simple aggregation" do
-      assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
+      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
 
       input = "I went with Jane Doe to Atlanta and we talked to John Smith about Microsoft"
 
       assert [[jane, atlanta, john, microsoft]] =
-               Bumblebee.Text.NER.extract(config, tokenizer, model, params, input,
+               Bumblebee.Text.NER.extract(spec, tokenizer, model, params, input,
                  aggregation_strategy: :simple,
                  compiler: EXLA
                )
@@ -52,7 +52,7 @@ defmodule Bumblebee.Text.NERTest do
     end
 
     test "correctly extracts entities with simple aggregation on batched input" do
-      assert {:ok, model, params, config} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
+      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
 
       inputs = [
@@ -61,7 +61,7 @@ defmodule Bumblebee.Text.NERTest do
       ]
 
       assert [_first, [john, philadelphia]] =
-               Bumblebee.Text.NER.extract(config, tokenizer, model, params, inputs,
+               Bumblebee.Text.NER.extract(spec, tokenizer, model, params, inputs,
                  aggregation_strategy: :simple,
                  compiler: EXLA
                )

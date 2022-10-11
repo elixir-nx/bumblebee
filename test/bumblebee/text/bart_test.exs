@@ -7,10 +7,10 @@ defmodule Bumblebee.Text.BartTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "facebook/bart-base"}, architecture: :base)
 
-      assert %Bumblebee.Text.Bart{architecture: :base} = config
+      assert %Bumblebee.Text.Bart{architecture: :base} = spec
 
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
@@ -32,12 +32,12 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     test "conditional generation model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "facebook/bart-base"},
                  architecture: :for_conditional_generation
                )
 
-      assert %Bumblebee.Text.Bart{architecture: :for_conditional_generation} = config
+      assert %Bumblebee.Text.Bart{architecture: :for_conditional_generation} = spec
 
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
@@ -61,10 +61,9 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     test "sequence classification model" do
-      assert {:ok, model, params, config} =
-               Bumblebee.load_model({:hf, "valhalla/bart-large-sst2"})
+      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "valhalla/bart-large-sst2"})
 
-      assert %Bumblebee.Text.Bart{architecture: :for_sequence_classification} = config
+      assert %Bumblebee.Text.Bart{architecture: :for_sequence_classification} = spec
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
       input = %{
@@ -83,10 +82,10 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     test "question answering model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "valhalla/bart-large-finetuned-squadv1"})
 
-      assert %Bumblebee.Text.Bart{architecture: :for_question_answering} = config
+      assert %Bumblebee.Text.Bart{architecture: :for_question_answering} = spec
 
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
@@ -113,12 +112,12 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     test "causal language model" do
-      assert {:ok, model, params, config} =
+      assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "facebook/bart-base"},
                  architecture: :for_causal_language_modeling
                )
 
-      assert %Bumblebee.Text.Bart{architecture: :for_causal_language_modeling} = config
+      assert %Bumblebee.Text.Bart{architecture: :for_causal_language_modeling} = spec
 
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
@@ -143,10 +142,10 @@ defmodule Bumblebee.Text.BartTest do
   end
 
   test "conditional generation" do
-    {:ok, model, params, config} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
+    {:ok, model, params, spec} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})
 
-    assert %Bumblebee.Text.Bart{architecture: :for_conditional_generation} = config
+    assert %Bumblebee.Text.Bart{architecture: :for_conditional_generation} = spec
 
     article = """
     PG&E stated it scheduled the blackouts in response to forecasts for high \
@@ -158,7 +157,7 @@ defmodule Bumblebee.Text.BartTest do
     inputs = Bumblebee.apply_tokenizer(tokenizer, article)
 
     token_ids =
-      Bumblebee.Text.Generation.generate(config, model, params, inputs,
+      Bumblebee.Text.Generation.generate(spec, model, params, inputs,
         min_length: 0,
         max_length: 8
       )
