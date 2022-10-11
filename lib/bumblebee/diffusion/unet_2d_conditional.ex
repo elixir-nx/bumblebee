@@ -28,7 +28,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       controls the frequency formula in the timestep sinusoidal embedding. The frequency is computed
       as $\\omega_i = \\frac{1}{10000^{\\frac{i}{n - s}}}$, for $i \\in \\{0, ..., n-1\\}$, where $n$
       is half of the embedding size and $s$ is the shift. Historically, certain implementations of
-      sinusoidal embedding used $s=0$, while other used $s=1$
+      sinusoidal embedding used $s=0$, while others used $s=1$
       """
     ],
     hidden_sizes: [
