@@ -7,14 +7,7 @@ defmodule Bumblebee.ModelSpec do
   a configuration struct.
   """
 
-  @typedoc """
-  Model configuration and metadata.
-  """
-  @type t :: %{
-          optional(atom()) => term(),
-          __struct__: atom(),
-          architecture: atom()
-        }
+  @type t :: Bumblebee.Configurable.t()
 
   @doc """
   Returns the list of supported model architectures.
@@ -30,11 +23,6 @@ defmodule Bumblebee.ModelSpec do
   to determine layer name mapping.
   """
   @callback base_model_prefix() :: String.t()
-
-  @doc """
-  Configures the model.
-  """
-  @callback config(t(), keyword()) :: t()
 
   @doc """
   Builds a template input for the model.

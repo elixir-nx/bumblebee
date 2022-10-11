@@ -75,6 +75,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
             act_fn: :silu
 
   @behaviour Bumblebee.ModelSpec
+  @behaviour Bumblebee.Configurable
 
   @impl true
   def architectures(), do: [:base, :encoder, :decoder]

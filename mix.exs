@@ -86,12 +86,19 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Diffusion.PndmScheduler
         ],
         Interfaces: [
+          Bumblebee.Configurable,
           Bumblebee.ModelSpec,
           Bumblebee.Featurizer,
           Bumblebee.Tokenizer,
-          Bumblebee.Scheduler,
-          Bumblebee.HuggingFace.Transformers.Config
+          Bumblebee.Scheduler
         ]
+      ],
+      groups_for_functions: [
+        # Bumblebee
+        Models: &(&1[:type] == :model),
+        Featurizers: &(&1[:type] == :featurizer),
+        Tokenizers: &(&1[:type] == :tokenizer),
+        Schedulers: &(&1[:type] == :scheduler)
       ],
       before_closing_body_tag: &before_closing_body_tag/1
     ]

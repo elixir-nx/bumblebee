@@ -77,6 +77,7 @@ defmodule Bumblebee.Vision.ConvNext do
             ] ++ Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
+  @behaviour Bumblebee.Configurable
 
   @impl true
   def architectures(), do: [:base, :for_image_classification]

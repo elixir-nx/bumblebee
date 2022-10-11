@@ -8,18 +8,7 @@ defmodule Bumblebee.Featurizer do
   a configuration struct.
   """
 
-  @typedoc """
-  Featurizer configuration and metadata.
-  """
-  @type t :: %{
-          optional(atom()) => term(),
-          __struct__: atom()
-        }
-
-  @doc """
-  Configures the featurizer.
-  """
-  @callback config(t(), keyword()) :: t()
+  @type t :: Bumblebee.Configurable.t()
 
   @doc """
   Performs feature extraction on the given input.

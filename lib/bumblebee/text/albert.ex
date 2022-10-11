@@ -149,6 +149,7 @@ defmodule Bumblebee.Text.Albert do
             ] ++ Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
+  @behaviour Bumblebee.Configurable
 
   @impl true
   def base_model_prefix(), do: "albert"

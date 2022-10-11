@@ -117,6 +117,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
             attention_head_dim: 8
 
   @behaviour Bumblebee.ModelSpec
+  @behaviour Bumblebee.Configurable
 
   @impl true
   def architectures(), do: [:base]

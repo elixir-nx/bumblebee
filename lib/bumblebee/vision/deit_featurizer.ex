@@ -38,6 +38,7 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
   alias Bumblebee.Utils.Image
 
   @behaviour Bumblebee.Featurizer
+  @behaviour Bumblebee.Configurable
 
   defstruct do_resize: true,
             size: 256,
