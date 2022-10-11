@@ -1,3 +1,10 @@
+Mix.install([
+  {:bumblebee, path: Path.expand("..", __DIR__)},
+  {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
+  {:exla, github: "elixir-nx/nx", sparse: "exla"},
+  {:stb_image, "~> 0.5.0"}
+])
+
 Nx.default_backend(EXLA.Backend)
 
 # Parameters
@@ -8,6 +15,7 @@ height = 512
 width = 512
 num_steps = 10
 guidance_scale = 7.5
+seed = 0
 latents_shape = {batch_size, in_channels, div(height, 8), div(width, 8)}
 
 auth_token = System.fetch_env!("HF_TOKEN")
@@ -59,7 +67,8 @@ IO.puts("Embedding text")
 %{last_hidden_state: text_embeddings} = Axon.predict(clip, clip_params, inputs)
 
 IO.puts("Generating latents")
-latents = Nx.random_normal(latents_shape)
+key = Nx.Random.key(seed)
+{latents, _key} = Nx.Random.normal(key, shape: latents_shape)
 
 {scheduler_state, timesteps} = Bumblebee.scheduler_init(scheduler, num_steps, Nx.shape(latents))
 
