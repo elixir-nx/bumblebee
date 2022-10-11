@@ -56,7 +56,7 @@ defmodule Bumblebee.Text.ClipText do
       ]) ++ Shared.token_options(pad_token_id: 1, bos_token_id: 0, eos_token_id: 2)
 
   @moduledoc """
-  The CLIP architectures for text encoding.
+  The CLIP model for text encoding.
 
   ## Architectures
 

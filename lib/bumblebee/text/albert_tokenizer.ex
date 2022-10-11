@@ -1,5 +1,5 @@
 defmodule Bumblebee.Text.AlbertTokenizer do
-  @doc """
+  @moduledoc """
   ALBERT tokenizer.
   """
 

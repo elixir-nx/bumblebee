@@ -93,7 +93,7 @@ defmodule Bumblebee.Text.Albert do
       Shared.token_options(pad_token_id: 0, bos_token_id: 2, eos_token_id: 3)
 
   @moduledoc """
-  Models based on the ALBERT architecture.
+  ALBERT model family.
 
   ## Architectures
 

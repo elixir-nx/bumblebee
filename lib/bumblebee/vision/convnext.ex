@@ -43,7 +43,7 @@ defmodule Bumblebee.Vision.ConvNext do
     ] ++ Shared.common_options([:output_hidden_states, :num_labels, :id_to_label])
 
   @moduledoc """
-  Models based on the ConvNeXT architecture.
+  ConvNeXT model family.
 
   ## Architectures
 

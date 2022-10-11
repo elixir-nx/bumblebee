@@ -1,5 +1,5 @@
 defmodule Bumblebee.Text.ClipTokenizer do
-  @doc """
+  @moduledoc """
   CLIP tokenizer.
   """
 

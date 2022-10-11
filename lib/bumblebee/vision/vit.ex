@@ -66,7 +66,7 @@ defmodule Bumblebee.Vision.Vit do
       ])
 
   @moduledoc """
-  Models based on the ViT architecture.
+  ViT model family.
 
   ## Architectures
 

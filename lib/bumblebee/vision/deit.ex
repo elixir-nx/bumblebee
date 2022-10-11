@@ -66,7 +66,7 @@ defmodule Bumblebee.Vision.Deit do
       ])
 
   @moduledoc """
-  Models based on the DeiT architecture.
+  DeiT model family.
 
   ## Architectures
 

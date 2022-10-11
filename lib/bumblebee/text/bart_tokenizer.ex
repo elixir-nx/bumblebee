@@ -1,5 +1,5 @@
 defmodule Bumblebee.Text.BartTokenizer do
-  @doc """
+  @moduledoc """
   BART tokenizer.
   """
 

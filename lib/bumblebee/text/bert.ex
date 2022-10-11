@@ -79,7 +79,7 @@ defmodule Bumblebee.Text.Bert do
       Shared.token_options(pad_token_id: 0) ++ Shared.generation_options()
 
   @moduledoc """
-  Models based on the BERT architecture.
+  BERT model family.
 
   ## Architectures
 

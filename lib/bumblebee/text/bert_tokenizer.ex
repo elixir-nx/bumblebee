@@ -1,5 +1,5 @@
 defmodule Bumblebee.Text.BertTokenizer do
-  @doc """
+  @moduledoc """
   BERT tokenizer.
   """
 

@@ -37,7 +37,7 @@ defmodule Bumblebee.Vision.ResNet do
     ] ++ Shared.common_options([:output_hidden_states, :num_labels, :id_to_label])
 
   @moduledoc """
-  Models based on the ResNet architecture.
+  ResNet model family.
 
   ## Architectures
 

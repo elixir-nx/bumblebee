@@ -1,6 +1,6 @@
 defmodule Bumblebee.Text.MbartTokenizer do
-  @doc """
-  MBART tokenizer.
+  @moduledoc """
+  mBART tokenizer.
   """
 
   defstruct [:tokenizer]

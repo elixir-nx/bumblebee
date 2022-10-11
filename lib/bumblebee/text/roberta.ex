@@ -80,7 +80,7 @@ defmodule Bumblebee.Text.Roberta do
       Shared.generation_options()
 
   @moduledoc """
-  Models based on the RoBERTa architecture.
+  RoBERTa model family.
 
   ## Architectures
 

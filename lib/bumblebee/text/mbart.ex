@@ -88,25 +88,25 @@ defmodule Bumblebee.Text.Mbart do
       Shared.generation_options(forced_eos_token_id: 2)
 
   @moduledoc """
-  Models based on MBART architecture.
+  mBART model family.
 
   ## Architectures
 
-    * `:base` - plain MBART without any head on top
+    * `:base` - plain mBART without any head on top
 
-    * `:for_causal_language_modeling` - MBART with a language modeling
+    * `:for_causal_language_modeling` - mBART with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_conditional_generation` - MBART with a language modeling
+    * `:for_conditional_generation` - mBART with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - MBART with a sequence
+    * `:for_sequence_classification` - mBART with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
-    * `:for_question_answering` - MBART with a span classification head.
+    * `:for_question_answering` - mBART with a span classification head.
       The head returns logits for the span start and end positions
 
   ## Inputs
@@ -574,7 +574,7 @@ defmodule Bumblebee.Text.Mbart do
   defp position_embedding(position_ids, spec, opts) do
     name = opts[:name]
 
-    # For MBART we need to offset the embeddings
+    # For mBART we need to offset the embeddings
     offset = 2
 
     position_ids

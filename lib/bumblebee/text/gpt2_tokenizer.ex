@@ -1,6 +1,6 @@
 defmodule Bumblebee.Text.Gpt2Tokenizer do
-  @doc """
-  BERT tokenizer.
+  @moduledoc """
+  GPT-2 tokenizer.
   """
 
   defstruct [:tokenizer]

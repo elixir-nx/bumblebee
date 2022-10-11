@@ -92,7 +92,7 @@ defmodule Bumblebee.Text.Bart do
       ) ++ Shared.generation_options(forced_bos_token_id: 0, forced_eos_token_id: 2)
 
   @moduledoc """
-  Models based on BART architecture.
+  BART model family.
 
   ## Architectures
 

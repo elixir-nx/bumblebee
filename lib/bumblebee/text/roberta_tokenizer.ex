@@ -1,5 +1,5 @@
 defmodule Bumblebee.Text.RobertaTokenizer do
-  @doc """
+  @moduledoc """
   RoBERTa tokenizer.
   """
 

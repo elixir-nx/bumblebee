@@ -81,21 +81,21 @@ defmodule Bumblebee.Text.Gpt2 do
       ) ++ Shared.generation_options()
 
   @moduledoc """
-  Models based on GPT2 architecture.
+  GPT-2 model family.
 
   ## Architectures
 
-    * `:base` - plain GPT2 without any head on top
+    * `:base` - plain GPT-2 without any head on top
 
-    * `:for_causal_language_modeling` - GPT2 with a language modeling
+    * `:for_causal_language_modeling` - GPT-2 with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - GPT2 with a sequence
+    * `:for_sequence_classification` - GPT-2 with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
-    * `:for_token_classification` - GPT2 with a token classification
+    * `:for_token_classification` - GPT-2 with a token classification
       head. The head returns logits for each token in the original
       sequence
 
