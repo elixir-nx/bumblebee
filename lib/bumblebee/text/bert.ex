@@ -138,7 +138,7 @@ defmodule Bumblebee.Text.Bert do
       Indices of positions of each input sequence tokens in the position
       embeddings.
 
-    * `"head_mask"` - `{num_blocks, encoder_attention_heads}`
+    * `"head_mask"` - `{num_blocks, num_attention_heads}`
 
       Mask to nullify selected heads of the self-attention blocks in
       the encoder.
