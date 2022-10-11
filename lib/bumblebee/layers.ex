@@ -103,14 +103,14 @@ defmodule Bumblebee.Layers do
   This layer expects computed attention weights and an optional mask.
   If the mask is not specified, it will skip masking altogether.
   """
-  def apply_block_head_mask(attention_weights, layer_head_mask) do
-    if_present layer_head_mask do
+  def apply_attention_head_mask(attention_weights, head_mask) do
+    if_present head_mask do
       Axon.layer(
-        fn attention_weights, layer_head_mask, _ ->
-          layer_head_mask = Nx.reshape(layer_head_mask, {1, :auto, 1, 1})
-          Nx.multiply(attention_weights, layer_head_mask)
+        fn attention_weights, head_mask, _ ->
+          head_mask = Nx.reshape(head_mask, {1, :auto, 1, 1})
+          Nx.multiply(attention_weights, head_mask)
         end,
-        [attention_weights, layer_head_mask]
+        [attention_weights, head_mask]
       )
     else
       attention_weights

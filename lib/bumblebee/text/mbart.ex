@@ -929,7 +929,7 @@ defmodule Bumblebee.Text.Mbart do
     attention_weights =
       Layers.attention_weights(query, key, attention_bias)
       |> Axon.dropout(rate: config.attention_dropout_rate)
-      |> Layers.apply_block_head_mask(block_head_mask)
+      |> Layers.apply_attention_head_mask(block_head_mask)
 
     attention_output =
       attention_weights
