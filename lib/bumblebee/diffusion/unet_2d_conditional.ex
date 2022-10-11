@@ -253,9 +253,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
               out_channels: out_channels,
               add_downsample: not last_block?,
               downsample_padding: config.downsample_padding,
-              resnet_activation: config.activation,
-              resnet_epsilon: config.group_norm_epsilon,
-              resnet_num_groups: config.group_norm_num_groups,
+              activation: config.activation,
+              norm_epsilon: config.group_norm_epsilon,
+              norm_num_groups: config.group_norm_num_groups,
               num_attention_heads: config.num_attention_heads,
               name: join(name, idx)
             )
@@ -272,9 +272,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       timesteps_embedding,
       encoder_last_hidden_state,
       channels: List.last(config.hidden_sizes),
-      resnet_activation: config.activation,
-      resnet_epsilon: config.group_norm_epsilon,
-      resnet_num_groups: config.group_norm_num_groups,
+      activation: config.activation,
+      norm_epsilon: config.group_norm_epsilon,
+      norm_num_groups: config.group_norm_num_groups,
       output_scale_factor: config.mid_block_scale_factor,
       num_attention_heads: config.num_attention_heads,
       name: opts[:name]
@@ -322,9 +322,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
               in_channels: in_channels,
               out_channels: out_channels,
               add_upsample: not last_block?,
-              resnet_epsilon: config.group_norm_epsilon,
-              resnet_num_groups: config.group_norm_num_groups,
-              resnet_activation: config.activation,
+              norm_epsilon: config.group_norm_epsilon,
+              norm_num_groups: config.group_norm_num_groups,
+              activation: config.activation,
               num_attention_heads: config.num_attention_heads,
               name: join(name, idx)
             )

@@ -240,7 +240,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
             in_channels: in_channels,
             out_channels: output_channel,
             add_downsample: not last_block?,
-            resnet_activation: config.activation,
+            activation: config.activation,
             name: join(name, idx)
           ]
 
@@ -257,7 +257,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
     in_channels = opts[:in_channels]
     out_channels = opts[:out_channels]
     depth = opts[:depth]
-    resnet_activation = opts[:resnet_activation]
+    activation = opts[:activation]
     add_downsample = opts[:add_downsample]
     name = opts[:name]
 
@@ -267,7 +267,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
           in_channels = if(idx == 0, do: in_channels, else: out_channels)
 
           Diffusion.Layers.residual_block(hidden_state, in_channels, out_channels,
-            activation: resnet_activation,
+            activation: activation,
             name: join(name, "resnets.#{idx}")
           )
       end
@@ -299,7 +299,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
             in_channels: in_channels,
             out_channels: output_channel,
             add_upsample: not last_block?,
-            resnet_activation: config.activation,
+            activation: config.activation,
             name: join(name, idx)
           ]
 
@@ -316,7 +316,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
     in_channels = opts[:in_channels]
     out_channels = opts[:out_channels]
     depth = opts[:depth]
-    resnet_activation = opts[:resnet_activation]
+    activation = opts[:activation]
     add_upsample = opts[:add_upsample]
     name = opts[:name]
 
@@ -326,7 +326,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
           in_channels = if(idx == 0, do: in_channels, else: out_channels)
 
           Diffusion.Layers.residual_block(hidden_state, in_channels, out_channels,
-            activation: resnet_activation,
+            activation: activation,
             name: join(name, "resnets.#{idx}")
           )
       end
