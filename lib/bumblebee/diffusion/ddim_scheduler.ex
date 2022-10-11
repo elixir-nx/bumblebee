@@ -63,6 +63,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
   alias Bumblebee.Diffusion.SchedulerUtils
 
   @behaviour Bumblebee.Scheduler
+  @behaviour Bumblebee.Configurable
 
   defstruct num_train_timesteps: 1000,
             beta_schedule: :linear,

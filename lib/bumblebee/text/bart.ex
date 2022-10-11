@@ -202,6 +202,7 @@ defmodule Bumblebee.Text.Bart do
               Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
+  @behaviour Bumblebee.Configurable
   @behaviour Bumblebee.Text.Generation
 
   @impl true

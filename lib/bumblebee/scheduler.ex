@@ -36,20 +36,9 @@ defmodule Bumblebee.Scheduler do
   values $t$ (points in time).
   """
 
-  @typedoc """
-  Scheduler configuration and metadata.
-  """
-  @type t :: %{
-          optional(atom()) => term(),
-          __struct__: atom()
-        }
+  @type t :: Bumblebee.Configurable.t()
 
   @type state :: Nx.Container.t()
-
-  @doc """
-  Configures the scheduler.
-  """
-  @callback config(t(), keyword()) :: t()
 
   @doc """
   Initializes state for a new scheduler loop.

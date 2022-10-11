@@ -158,6 +158,7 @@ defmodule Bumblebee.Text.Gpt2 do
             ] ++ Shared.generation_defaults() ++ Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
+  @behaviour Bumblebee.Configurable
   @behaviour Bumblebee.Text.Generation
 
   @impl true

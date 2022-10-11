@@ -89,6 +89,7 @@ defmodule Bumblebee.Text.ClipText do
             ] ++ Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
+  @behaviour Bumblebee.Configurable
 
   @impl true
   def architectures(), do: [:base]

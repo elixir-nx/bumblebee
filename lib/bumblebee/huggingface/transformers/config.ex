@@ -1,8 +1,8 @@
 defprotocol Bumblebee.HuggingFace.Transformers.Config do
-  @moduledoc """
-  This protocol defines a bridge between bumblebee and huggingface/transformers
-  configuration.
-  """
+  @moduledoc false
+
+  # This protocol defines a bridge between Bumblebee and huggingface/transformers
+  # configuration.
 
   @doc """
   Updates configuration based on a parsed JSON data.

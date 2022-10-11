@@ -44,27 +44,34 @@ defmodule Bumblebee do
   @type repository :: {:hf, String.t()} | {:hf, String.t(), keyword()} | {:local, Path.t()}
 
   @doc """
-  Builds a new model configuration.
+  Builds or updates a configuration object with the given options.
 
-  This function is primarily useful in combination with `build_model/1`
-  when building a fresh model for training.
+  Expects a configuration struct or a module supporting configuration.
+  These are usually configurable:
+
+    * model specification (`Bumblebee.ModelSpec`)
+
+    * featurizer (`Bumblebee.Featurizer`)
+
+    * scheduler (`Bumblebee.Scheduler`)
+
+  ## Examples
+
+  To build a new configuration, pass a module:
+
+      featurizer = Bumblebee.configure(Bumblebee.Vision.ConvNextFeaturizer)
+      model_spec = Bumblebee.configure(Bumblebee.Vision.ResNet, architecture: :for_image_classification)
+
+  Similarly, you can update an existing configuration:
+
+      featurizer = Bumblebee.configure(featurizer, resize_method: :bilinear)
+      model_spec = Bumblebee.configure(model_spec, embedding_size: 128)
+
   """
-  @spec build_config(module(), atom(), keyword()) :: Bumblebee.ModelSpec.t()
-  def build_config(module, architecture, config_opts \\ []) do
-    config = struct!(module)
-    config = %{config | architecture: architecture}
-    module.config(config, config_opts)
-  end
-
-  @doc """
-  Updates model configuration from options.
-
-  This function is primarily useful for adjusting pre-trained model,
-  see `load_model/2` for examples.
-  """
-  @spec update_config(Bumblebee.ModelSpec.t(), keyword()) :: Bumblebee.ModelSpec.t()
-  def update_config(%module{} = config, config_opts \\ []) do
-    module.config(config, config_opts)
+  @spec configure(module() | Bumblebee.Configurable.t(), keyword()) :: Bumblebee.Configurable.t()
+  def configure(config, options \\ []) do
+    %module{} = config = struct!(config)
+    module.config(config, options)
   end
 
   @doc """
@@ -72,10 +79,11 @@ defmodule Bumblebee do
 
   ## Example
 
-      config = Bumblebee.build_config(Bumblebee.Vision.ResNet, :base, embedding_size: 128)
+      config = Bumblebee.configure(Bumblebee.Vision.ResNet, architecture: :base, embedding_size: 128)
       model = Bumblebee.build_model(config)
 
   """
+  @doc type: :model
   @spec build_model(Bumblebee.ModelSpec.t()) :: Axon.t()
   def build_model(%module{} = config) do
     module.model(config)
@@ -102,6 +110,7 @@ defmodule Bumblebee do
       {:ok, config} = Bumblebee.load_config({:hf, "microsoft/resnet-50"}, architecture: :base)
 
   """
+  @doc type: :model
   @spec load_config(repository(), keyword()) ::
           {:ok, Bumblebee.ModelSpec.t()} | {:error, String.t()}
   def load_config(repository, opts \\ []) do
@@ -270,10 +279,11 @@ defmodule Bumblebee do
   To further customize the model, you can also pass the configuration:
 
       {:ok, config} = Bumblebee.load_config({:hf, "microsoft/resnet-50"})
-      config = Bumblebee.update_config(config, num_labels: 10)
+      config = Bumblebee.configure(config, num_labels: 10)
       {:ok, model, params, config} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, config: config)
 
   """
+  @doc type: :model
   @spec load_model(repository(), keyword()) ::
           {:ok, Axon.t(), params :: map(), config :: Bumblebee.ModelSpec.t()}
           | {:error, String.t()}
@@ -324,27 +334,16 @@ defmodule Bumblebee do
   end
 
   @doc """
-  Builds a new featurizer.
-
-  The featurizer can be then used with the `featurize/2` function to
-  convert raw data into model input features.
-  """
-  @spec build_featurizer(module(), keyword()) :: Bumblebee.Featurizer.t()
-  def build_featurizer(module, config_opts \\ []) do
-    config = struct!(module)
-    module.config(config, config_opts)
-  end
-
-  @doc """
   Featurizes `input` with the given featurizer.
 
   ## Examples
 
-      featurizer = Bumblebee.build_featurizer(Bumblebee.Vision.ConvNextFeaturizer)
+      featurizer = Bumblebee.configure(Bumblebee.Vision.ConvNextFeaturizer)
       {:ok, img} = StbImage.read_file(path)
       input = Bumblebee.apply_featurizer(featurizer, [img])
 
   """
+  @doc type: :featurizer
   @spec apply_featurizer(Bumblebee.Featurizer.t(), any()) :: any()
   def apply_featurizer(%module{} = featurizer, input) do
     module.apply(featurizer, input)
@@ -364,6 +363,7 @@ defmodule Bumblebee do
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "microsoft/resnet-50"})
 
   """
+  @doc type: :featurizer
   @spec load_featurizer(repository(), keyword()) ::
           {:ok, Bumblebee.Featurizer.t()} | {:error, String.t()}
   def load_featurizer(repository, opts \\ []) do
@@ -463,6 +463,7 @@ defmodule Bumblebee do
       inputs = Bumblebee.apply_tokenizer(tokenizer, ["The capital of France is [MASK]."])
 
   """
+  @doc type: :tokenizer
   @spec apply_tokenizer(
           Bumblebee.Tokenizer.t(),
           Bumblebee.Tokenizer.input() | list(Bumblebee.Tokenizer.input()),
@@ -507,6 +508,7 @@ defmodule Bumblebee do
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
 
   """
+  @doc type: :tokenizer
   @spec load_tokenizer(repository(), keyword()) ::
           {:ok, Bumblebee.Tokenizer.t()} | {:error, String.t()}
   def load_tokenizer(repository, opts \\ []) do
@@ -559,17 +561,6 @@ defmodule Bumblebee do
   end
 
   @doc """
-  Builds a new scheduler.
-
-  See `Bumblebee.Scheduler` to learn more about schedulers.
-  """
-  @spec build_scheduler(module(), keyword()) :: Bumblebee.Scheduler.t()
-  def build_scheduler(module, config_opts \\ []) do
-    config = struct!(module)
-    module.config(config, config_opts)
-  end
-
-  @doc """
   Initializes state for a new scheduler loop.
 
   Returns a pair of `{state, timesteps}`, where `state` is an opaque
@@ -582,6 +573,7 @@ defmodule Bumblebee do
   multiple forward passes of the model and each element in `timesteps`
   corresponds to a single forward pass.
   """
+  @doc type: :scheduler
   @spec scheduler_init(
           Bumblebee.Scheduler.t(),
           non_neg_integer(),
@@ -603,6 +595,7 @@ defmodule Bumblebee do
   (and a couple calls to this function) to make an actual prediction for
   the previous sample.
   """
+  @doc type: :scheduler
   @spec scheduler_step(
           Bumblebee.Scheduler.t(),
           Bumblebee.Scheduler.state(),
@@ -630,6 +623,7 @@ defmodule Bumblebee do
         )
 
   """
+  @doc type: :scheduler
   @spec load_scheduler(repository(), keyword()) ::
           {:ok, Bumblebee.Scheduler.t()} | {:error, String.t()}
   def load_scheduler(repository, opts \\ []) do

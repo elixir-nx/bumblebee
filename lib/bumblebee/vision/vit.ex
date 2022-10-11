@@ -99,6 +99,7 @@ defmodule Bumblebee.Vision.Vit do
             ] ++ Shared.common_config_defaults(@common_keys)
 
   @behaviour Bumblebee.ModelSpec
+  @behaviour Bumblebee.Configurable
 
   @impl true
   def architectures(), do: [:base, :for_image_classification, :for_masked_image_modeling]
