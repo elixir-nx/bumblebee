@@ -71,10 +71,10 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     in_channels = opts[:in_channels]
     out_channels = opts[:out_channels]
     dropout = opts[:dropout] || 0.0
-    num_layers = opts[:num_layers] || 1
-    resnet_epsilon = opts[:resnet_epsilon] || 1.0e-6
-    resnet_activation = opts[:resnet_activation] || :swish
-    resnet_num_groups = opts[:resnet_num_groups] || 32
+    depth = opts[:depth] || 1
+    activation = opts[:activation] || :swish
+    norm_epsilon = opts[:norm_epsilon] || 1.0e-6
+    norm_num_groups = opts[:norm_num_groups] || 32
     num_attention_heads = opts[:num_attention_heads] || 1
     output_scale_factor = opts[:output_scale_factor] || 1.0
     downsample_padding = opts[:downsample_padding] || [{1, 1}, {1, 1}]
@@ -84,20 +84,20 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     state = {hidden_state, {}}
 
     {hidden_state, output_states} =
-      for idx <- 0..(num_layers - 1), reduce: state do
+      for idx <- 0..(depth - 1), reduce: state do
         {hidden_state, output_states} ->
           in_channels = if(idx == 0, do: in_channels, else: out_channels)
 
           hidden_state =
-            Diffusion.Layers.resnet_block(
+            Diffusion.Layers.residual_block(
               hidden_state,
               in_channels,
               out_channels,
               timestep_embeds: timestep_embeds,
-              epsilon: resnet_epsilon,
-              num_groups: resnet_num_groups,
+              norm_epsilon: norm_epsilon,
+              norm_num_groups: norm_num_groups,
               dropout: dropout,
-              activation: resnet_activation,
+              activation: activation,
               output_scale_factor: output_scale_factor,
               name: join(name, "resnets.#{idx}")
             )
@@ -145,16 +145,16 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     in_channels = opts[:in_channels]
     out_channels = opts[:out_channels]
     dropout = opts[:dropout] || 0.0
-    num_layers = opts[:num_layers] || 1
-    resnet_epsilon = opts[:resnet_epsilon] || 1.0e-6
-    resnet_activation = opts[:resnet_activation] || :swish
-    resnet_num_groups = opts[:resnet_num_groups] || 32
+    depth = opts[:depth] || 1
+    activation = opts[:activation] || :swish
+    norm_epsilon = opts[:norm_epsilon] || 1.0e-6
+    norm_num_groups = opts[:norm_num_groups] || 32
     num_attention_heads = opts[:num_attention_heads] || 1
     output_scale_factor = opts[:output_scale_factor] || 1.0
     add_upsample = Keyword.get(opts, :add_upsample, true)
     name = opts[:name]
 
-    ^num_layers = length(residuals)
+    ^depth = length(residuals)
 
     hidden_state =
       for {{residual, residual_channels}, idx} <- Enum.with_index(residuals),
@@ -164,14 +164,14 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
 
           hidden_state =
             Axon.concatenate([hidden_state, residual], axis: 1)
-            |> Diffusion.Layers.resnet_block(
+            |> Diffusion.Layers.residual_block(
               in_channels + residual_channels,
               out_channels,
               timestep_embeds: timestep_embeds,
-              epsilon: resnet_epsilon,
-              num_groups: resnet_num_groups,
+              norm_epsilon: norm_epsilon,
+              norm_num_groups: norm_num_groups,
               dropout: dropout,
-              activation: resnet_activation,
+              activation: activation,
               output_scale_factor: output_scale_factor,
               name: join(name, "resnets.#{idx}")
             )
@@ -206,31 +206,31 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
       ) do
     channels = opts[:channels]
     dropout = opts[:dropout] || 0.0
-    num_layers = opts[:num_layers] || 1
-    resnet_epsilon = opts[:resnet_epsilon] || 1.0e-6
-    resnet_activation = opts[:resnet_activation] || :swish
-    resnet_num_groups = opts[:resnet_num_groups] || 32
+    depth = opts[:depth] || 1
+    norm_epsilon = opts[:norm_epsilon] || 1.0e-6
+    activation = opts[:activation] || :swish
+    norm_num_groups = opts[:norm_num_groups] || 32
     num_attention_heads = opts[:num_attention_heads] || 1
     output_scale_factor = opts[:output_scale_factor] || 1.0
     name = opts[:name]
 
-    resnet_block_opts = [
-      epsilon: resnet_epsilon,
-      num_groups: resnet_num_groups,
+    residual_block_opts = [
+      epsilon: norm_epsilon,
+      num_groups: norm_num_groups,
       dropout: dropout,
-      activation: resnet_activation,
+      activation: activation,
       output_scale_factor: output_scale_factor
     ]
 
     hidden_state =
-      Diffusion.Layers.resnet_block(
+      Diffusion.Layers.residual_block(
         hidden_state,
         channels,
         channels,
-        resnet_block_opts ++ [timestep_embeds: timestep_embeds, name: join(name, "resnets.0")]
+        residual_block_opts ++ [timestep_embeds: timestep_embeds, name: join(name, "resnets.0")]
       )
 
-    for idx <- 0..(num_layers - 1), reduce: hidden_state do
+    for idx <- 0..(depth - 1), reduce: hidden_state do
       hidden_state ->
         hidden_state
         |> spatial_transformer(
@@ -240,10 +240,10 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
           depth: 1,
           name: join(name, "attentions.#{idx}")
         )
-        |> Diffusion.Layers.resnet_block(
+        |> Diffusion.Layers.residual_block(
           channels,
           channels,
-          resnet_block_opts ++
+          residual_block_opts ++
             [timestep_embeds: timestep_embeds, name: join(name, "resnets.#{idx + 1}")]
         )
     end

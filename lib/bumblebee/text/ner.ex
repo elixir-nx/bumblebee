@@ -175,7 +175,7 @@ defmodule Bumblebee.Text.NER do
       score = scores[[entity_idx]] |> Nx.to_number()
 
       pre_entity
-      |> Map.put("entity", config.id2label[entity_idx])
+      |> Map.put("entity", config.id_to_label[entity_idx])
       |> Map.put("score", score)
     end)
   end

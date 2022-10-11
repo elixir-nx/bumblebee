@@ -567,11 +567,11 @@ defmodule Bumblebee do
   container expected by `scheduler_step/4` and `timesteps` is a sequence
   of subsequent timesteps for model forward pass.
 
-  Note that the number of `timesteps` may not match `num_inference_timesteps`
-  exactly. `num_inference_timesteps` parameterizes sampling points,
-  however depending on the method, sampling certain points may require
-  multiple forward passes of the model and each element in `timesteps`
-  corresponds to a single forward pass.
+  Note that the number of `timesteps` may not match `num_steps` exactly.
+  `num_steps` parameterizes sampling points, however depending on the
+  method, sampling certain points may require multiple forward passes
+  of the model and each element in `timesteps` corresponds to a single
+  forward pass.
   """
   @doc type: :scheduler
   @spec scheduler_init(
@@ -579,8 +579,8 @@ defmodule Bumblebee do
           non_neg_integer(),
           tuple()
         ) :: {Bumblebee.Scheduler.state(), Nx.Tensor.t()}
-  def scheduler_init(%module{} = scheduler, num_inference_timesteps, sample_shape) do
-    module.init(scheduler, num_inference_timesteps, sample_shape)
+  def scheduler_init(%module{} = scheduler, num_steps, sample_shape) do
+    module.init(scheduler, num_steps, sample_shape)
   end
 
   @doc """

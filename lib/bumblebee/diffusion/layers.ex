@@ -82,14 +82,14 @@ defmodule Bumblebee.Diffusion.Layers do
   end
 
   @doc """
-  Adds a ResNet block to the network.
+  Adds a residual block to the network.
   """
-  def resnet_block(x, in_channels, out_channels, opts \\ []) do
+  def residual_block(x, in_channels, out_channels, opts \\ []) do
     timestep_embeds = opts[:timestep_embeds]
     dropout = opts[:dropout] || 0.0
-    num_groups = opts[:num_groups] || 32
-    num_groups_out = opts[:num_groups_out] || num_groups
-    epsilon = opts[:epsilon] || 1.0e-6
+    norm_num_groups = opts[:norm_num_groups] || 32
+    norm_num_groups_out = opts[:norm_num_groups_out] || norm_num_groups
+    norm_epsilon = opts[:norm_epsilon] || 1.0e-6
     activation = opts[:activation] || :swish
     output_scale_factor = opts[:output_scale_factor] || 1.0
     use_shortcut = Keyword.get(opts, :use_shortcut, in_channels != out_channels)
@@ -99,7 +99,7 @@ defmodule Bumblebee.Diffusion.Layers do
 
     h =
       h
-      |> Axon.group_norm(num_groups, epsilon: epsilon, name: join(name, "norm1"))
+      |> Axon.group_norm(norm_num_groups, epsilon: norm_epsilon, name: join(name, "norm1"))
       |> Axon.activation(activation, name: join(name, "act1"))
 
     h =
@@ -123,7 +123,7 @@ defmodule Bumblebee.Diffusion.Layers do
 
     h =
       h
-      |> Axon.group_norm(num_groups_out, epsilon: epsilon, name: join(name, "norm2"))
+      |> Axon.group_norm(norm_num_groups_out, epsilon: norm_epsilon, name: join(name, "norm2"))
       |> Axon.activation(activation, name: join(name, "act2"))
       |> Axon.dropout(rate: dropout, name: join(name, "dropout"))
       |> Axon.conv(out_channels,
@@ -182,7 +182,7 @@ defmodule Bumblebee.Diffusion.Layers do
   end
 
   @doc """
-  Adds an upsample layer to the network.
+  Adds an upsample block to the network.
   """
   def upsample_2d(hidden_state, channels, opts \\ []) do
     name = opts[:name]

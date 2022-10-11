@@ -12,39 +12,39 @@ defmodule Bumblebee.Diffusion.SchedulerUtils do
 
     * `:linear` - a linear schedule from Ho et al. (https://arxiv.org/pdf/2006.11239.pdf)
 
-    * `:scaled_linear` - a schedule specific to the latent diffusion models
+    * `:quadratic` - a quadratic schedule specific to the latent diffusion models
 
-    * `:squaredcos_cap_v2` - a cosine schedule from OpenAI GLIDE
+    * `:squared_cosine` - a cosine schedule from Nichol et al. (https://arxiv.org/pdf/2102.09672.pdf),
+      used in OpenAI GLIDE
 
   ## Options
 
-    * `:linear_start` - start for the linear schedule. Defaults to `0.0001`
+    * `:start` - start for the linear and quadratic schedules. Defaults to `0.0001`
 
-    * `:linear_end` - end for the liner schedule. Defaults to `0.02`
+    * `:end` - end for the linear and quadratic schedules. Defaults to `0.02`
 
   """
   deftransform beta_schedule(type, num_timesteps, opts \\ []) do
-    opts = Keyword.validate!(opts, linear_start: 0.0001, linear_end: 0.02)
-    linear_start = opts[:linear_start]
-    linear_end = opts[:linear_end]
+    opts = Keyword.validate!(opts, start: 0.0001, end: 0.02)
+    beta_start = opts[:start]
+    beta_end = opts[:end]
 
     case type do
       :linear ->
-        Bumblebee.Utils.Nx.linspace(linear_start, linear_end, steps: num_timesteps)
+        Bumblebee.Utils.Nx.linspace(beta_start, beta_end, steps: num_timesteps)
 
-      :scaled_linear ->
-        Bumblebee.Utils.Nx.linspace(Nx.sqrt(linear_start), Nx.sqrt(linear_end),
-          steps: num_timesteps
-        )
+      :quadratic ->
+        Bumblebee.Utils.Nx.linspace(Nx.sqrt(beta_start), Nx.sqrt(beta_end), steps: num_timesteps)
         |> Nx.power(2)
 
-      :squaredcos_cap_v2 ->
-        betas_for_alpha_bar(&squaredcos_cap_v2_alpha_bar/1, num_timesteps: num_timesteps)
+      :squared_cosine ->
+        betas_for_alpha_bar(&squared_cosine_alpha_bar/1, num_timesteps: num_timesteps)
     end
   end
 
-  defnp squaredcos_cap_v2_alpha_bar(t) do
-    Nx.cos((t + 0.008) / 1.008 * @pi / 2) ** 2
+  defnp squared_cosine_alpha_bar(t) do
+    s = 0.008
+    Nx.cos((t + s) / (1 + s) * @pi / 2) ** 2
   end
 
   # Creates a beta schedule that discretizes the given alpha_t_bar function,
@@ -64,10 +64,10 @@ defmodule Bumblebee.Diffusion.SchedulerUtils do
   @doc """
   Returns evenly spaced timesteps as used in the DDIM schedule.
   """
-  deftransform ddim_timesteps(num_train_timesteps, num_inference_timesteps, offset) do
-    timestep_gap = div(num_train_timesteps, num_inference_timesteps)
+  deftransform ddim_timesteps(num_train_steps, num_steps, offset) do
+    timestep_gap = div(num_train_steps, num_steps)
 
-    Nx.iota({num_inference_timesteps})
+    Nx.iota({num_steps})
     |> Nx.multiply(timestep_gap)
     |> Nx.add(offset)
     |> Nx.reverse()

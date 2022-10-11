@@ -6,7 +6,7 @@ batch_size = 1
 in_channels = 4
 height = 512
 width = 512
-num_inference_steps = 10
+num_steps = 10
 guidance_scale = 7.5
 latents_shape = {batch_size, in_channels, div(height, 8), div(width, 8)}
 
@@ -61,15 +61,14 @@ IO.puts("Embedding text")
 IO.puts("Generating latents")
 latents = Nx.random_normal(latents_shape)
 
-{scheduler_state, timesteps} =
-  Bumblebee.scheduler_init(scheduler, num_inference_steps, Nx.shape(latents))
+{scheduler_state, timesteps} = Bumblebee.scheduler_init(scheduler, num_steps, Nx.shape(latents))
 
 timesteps = Nx.to_flat_list(timesteps)
 
 {_, latents} =
   for {timestep, i} <- Enum.with_index(timesteps), reduce: {scheduler_state, latents} do
     {scheduler_state, latents} ->
-      IO.puts("Diffusion step #{i}, timestep #{timestep}")
+      IO.puts("Iteration #{i}, timestep #{timestep}")
 
       unet_inputs = %{
         "sample" => Nx.concatenate([latents, latents]),

@@ -103,14 +103,14 @@ defmodule Bumblebee.Layers do
   This layer expects computed attention weights and an optional mask.
   If the mask is not specified, it will skip masking altogether.
   """
-  def apply_layer_head_mask(attention_weights, layer_head_mask) do
-    if_present layer_head_mask do
+  def apply_attention_head_mask(attention_weights, head_mask) do
+    if_present head_mask do
       Axon.layer(
-        fn attention_weights, layer_head_mask, _ ->
-          layer_head_mask = Nx.reshape(layer_head_mask, {1, :auto, 1, 1})
-          Nx.multiply(attention_weights, layer_head_mask)
+        fn attention_weights, head_mask, _ ->
+          head_mask = Nx.reshape(head_mask, {1, :auto, 1, 1})
+          Nx.multiply(attention_weights, head_mask)
         end,
-        [attention_weights, layer_head_mask]
+        [attention_weights, head_mask]
       )
     else
       attention_weights
@@ -214,7 +214,7 @@ defmodule Bumblebee.Layers do
 
     * `:scale_name` - scale parameter name
 
-    * `:scale_init_value` - initial value of scale parameter
+    * `:scale_initializer` - initializer for the scale parameter
 
   """
   def scale(%Axon{} = x, opts \\ []) do
@@ -222,13 +222,13 @@ defmodule Bumblebee.Layers do
       Keyword.validate!(opts, [
         :name,
         scale_name: "scale",
-        scale_init_value: 1.0e-6,
+        scale_initializer: Axon.Initializers.full(1.0e-6),
         channel_index: 1
       ])
 
     name = opts[:name]
     scale_name = opts[:scale_name]
-    scale_init_value = opts[:scale_init_value]
+    scale_initializer = opts[:scale_initializer]
     channel_index = opts[:channel_index]
 
     scale_shape = fn input_shape ->
@@ -236,8 +236,7 @@ defmodule Bumblebee.Layers do
       {out_channels}
     end
 
-    scale_param =
-      Axon.param(scale_name, scale_shape, initializer: Axon.Initializers.full(scale_init_value))
+    scale_param = Axon.param(scale_name, scale_shape, initializer: scale_initializer)
 
     Axon.layer(fn input, scale, _opts -> Nx.multiply(input, scale) end, [x, scale_param],
       name: name,
@@ -253,6 +252,10 @@ defmodule Bumblebee.Layers do
     * `:name` - layer name
 
     * `:rate` - drop path rate
+
+  ## References
+
+    * [Deep Networks with Stochastic Depth](https://arxiv.org/pdf/1603.09382.pdf)
 
   """
   def drop_path(%Axon{} = input, opts \\ []) do
@@ -275,14 +278,14 @@ defmodule Bumblebee.Layers do
     transform({x, opts[:rate], opts[:mode]}, fn
       {x, rate, :train} when Elixir.Kernel.!=(rate, 0.0) ->
         keep_prob = 1 - rate
-        shape = elem(Nx.shape(x), 0)
+        shape = Tuple.duplicate(1, Nx.rank(x)) |> put_elem(0, Nx.axis_size(x, 0))
 
-        random_tensor =
+        bernoulli_noise =
           keep_prob
           |> Nx.add(Nx.random_uniform(shape))
           |> Nx.floor()
 
-        x |> Nx.divide(keep_prob) |> Nx.multiply(random_tensor)
+        x |> Nx.divide(keep_prob) |> Nx.multiply(bernoulli_noise)
 
       {x, _rate, _mode} ->
         x

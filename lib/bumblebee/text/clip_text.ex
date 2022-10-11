@@ -1,5 +1,59 @@
 defmodule Bumblebee.Text.ClipText do
-  @common_keys [:output_hidden_states, :output_attentions, :id2label, :label2id, :num_labels]
+  alias Bumblebee.Shared
+
+  options =
+    [
+      vocab_size: [
+        default: 49408,
+        doc: """
+        the vocabulary size of the token embedding. This corresponds to the number of distinct
+        tokens that can be represented in model input and output
+        """
+      ],
+      max_positions: [
+        default: 77,
+        doc: """
+        the vocabulary size of the position embedding. This corresponds to the maximum sequence
+        length that this model can process. Typically this is set to a large value just in case,
+        such as 512, 1024 or 2048
+        """
+      ],
+      hidden_size: [
+        default: 512,
+        doc: "the dimensionality of hidden layers"
+      ],
+      num_blocks: [
+        default: 12,
+        doc: "the number of Transformer blocks in the encoder"
+      ],
+      num_attention_heads: [
+        default: 8,
+        doc: "the number of attention heads for each attention layer in the encoder"
+      ],
+      intermediate_size: [
+        default: 2048,
+        doc:
+          "the dimensionality of the intermediate (often named feed-forward) layer in the encoder"
+      ],
+      activation: [
+        default: :quick_gelu,
+        doc: "the activation function"
+      ],
+      attention_dropout_rate: [
+        default: 0.0,
+        doc: "the dropout rate for attention weights"
+      ],
+      layer_norm_epsilon: [
+        default: 1.0e-5,
+        doc: "the epsilon used by the layer normalization layers"
+      ]
+    ] ++
+      Shared.common_options([
+        :output_hidden_states,
+        :output_attentions,
+        :num_labels,
+        :id_to_label
+      ]) ++ Shared.token_options(pad_token_id: 1, bos_token_id: 0, eos_token_id: 2)
 
   @moduledoc """
   The CLIP architectures for text encoding.
@@ -26,67 +80,18 @@ defmodule Bumblebee.Text.ClipText do
       Indices of positions of each input sequence tokens in the position
       embeddings.
 
-  ## Config
+  ## Configuration
 
-    * `:vocab_size` - vocabulary size of the model. Defines the number
-      of distinct tokens that can be represented by the in model input
-      and output. Defaults to `49408`
-
-    * `:hidden_size` - dimensionality of the encoder layers and the
-      pooler layer. Defaults to `512`
-
-    * `:intermediate_size` - dimensionality of the "intermediate"
-      (often named feed-forward) layer in the Transformer encoder.
-      Defaults to `2048`
-
-    * `:num_hidden_layers` - the number of hidden layers in the
-      Transformer encoder. Defaults to `12`
-
-    * `:num_attention_heads` - the number of attention heads for each
-      attention layer in the Transformer encoder. Defaults to `8`
-
-    * `:max_position_embeddings` - the maximum sequence length that this
-      model might ever be used with. Typically set this to something
-      large just in case (e.g. 512 or 1024 or 2048). Defaults to `77`
-
-    * `:hidden_act` - the activation function in the encoder and
-      pooler. Defaults to `:quick_gelu`
-
-    * `:layer_norm_eps` - the epsilon used by the layer normalization
-      layers. Defaults to `1.0e-5`
-
-    * `:dropout` - the dropout probability for all fully connected layers
-      in the embeddings, encoder, and pooler. Defaults to `0.0`
-
-    * `:attention_dropout` - the dropout probability for attention
-      probabilities. Defaults to `0.0`
-
+  #{Shared.options_doc(options)}
   """
 
   # TODO: add ClipVision and joint Clip
 
   import Bumblebee.Utils.Model, only: [join: 2]
 
-  alias Bumblebee.Shared
   alias Bumblebee.Layers
 
-  defstruct [
-              architecture: :base,
-              vocab_size: 49408,
-              hidden_size: 512,
-              intermediate_size: 2048,
-              num_hidden_layers: 12,
-              num_attention_heads: 8,
-              max_position_embeddings: 77,
-              hidden_act: :quick_gelu,
-              layer_norm_eps: 1.0e-5,
-              dropout: 0.0,
-              attention_dropout: 0.0,
-              # Tokens
-              pad_token_id: 1,
-              bos_token_id: 0,
-              eos_token_id: 2
-            ] ++ Shared.common_config_defaults(@common_keys)
+  defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
@@ -99,8 +104,9 @@ defmodule Bumblebee.Text.ClipText do
 
   @impl true
   def config(config, opts \\ []) do
-    opts = Shared.add_common_computed_options(opts)
-    Shared.put_config_attrs(config, opts)
+    config
+    |> Shared.put_config_attrs(opts)
+    |> Shared.validate_label_options()
   end
 
   @impl true
@@ -159,7 +165,7 @@ defmodule Bumblebee.Text.ClipText do
     last_hidden_state =
       Axon.layer_norm(encoder_outputs.last_hidden_state,
         channel_index: 2,
-        epsilon: config.layer_norm_eps,
+        epsilon: config.layer_norm_epsilon,
         name: join(name, "final_layer_norm")
       )
 
@@ -190,7 +196,7 @@ defmodule Bumblebee.Text.ClipText do
       )
 
     position_embeds =
-      Axon.embedding(position_ids, config.max_position_embeddings, config.hidden_size,
+      Axon.embedding(position_ids, config.max_positions, config.hidden_size,
         kernel_initializer: Axon.Initializers.normal(),
         name: join(name, "position_embedding")
       )
@@ -202,10 +208,10 @@ defmodule Bumblebee.Text.ClipText do
     name = opts[:name]
     causal? = Keyword.get(opts, :causal?, false)
 
-    encoder_layer_collection(input_embeds, attention_mask, config, name: name, causal?: causal?)
+    encoder_blocks(input_embeds, attention_mask, config, name: name, causal?: causal?)
   end
 
-  defp encoder_layer_collection(hidden_state, attention_mask, config, opts) do
+  defp encoder_blocks(hidden_state, attention_mask, config, opts) do
     name = opts[:name]
     causal? = Keyword.get(opts, :causal?, false)
 
@@ -215,10 +221,10 @@ defmodule Bumblebee.Text.ClipText do
       attentions: Layers.maybe_container({}, config.output_attentions)
     }
 
-    for idx <- 0..(config.num_hidden_layers - 1), reduce: state do
+    for idx <- 0..(config.num_blocks - 1), reduce: state do
       state ->
         {hidden_state, attention} =
-          encoder_layer(state.last_hidden_state, attention_mask, config,
+          encoder_block(state.last_hidden_state, attention_mask, config,
             name: join(name, "layers.#{idx}"),
             causal?: causal?
           )
@@ -231,7 +237,7 @@ defmodule Bumblebee.Text.ClipText do
     end
   end
 
-  defp encoder_layer(hidden_state, attention_mask, config, opts) do
+  defp encoder_block(hidden_state, attention_mask, config, opts) do
     name = opts[:name]
     causal? = Keyword.get(opts, :causal?, false)
 
@@ -241,7 +247,7 @@ defmodule Bumblebee.Text.ClipText do
       hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_eps,
+        epsilon: config.layer_norm_epsilon,
         name: join(name, "layer_norm1")
       )
       |> attention(attention_mask, config, name: join(name, "self_attn"), causal?: causal?)
@@ -254,7 +260,7 @@ defmodule Bumblebee.Text.ClipText do
       hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
-        epsilon: config.layer_norm_eps,
+        epsilon: config.layer_norm_epsilon,
         name: join(name, "layer_norm2")
       )
       |> mlp(config, name: join(name, "mlp"))
@@ -306,7 +312,7 @@ defmodule Bumblebee.Text.ClipText do
 
     attention_weights =
       Layers.attention_weights(query, key, attention_bias)
-      |> Axon.dropout(rate: config.attention_dropout, name: join(name, "dropout"))
+      |> Axon.dropout(rate: config.attention_dropout_rate, name: join(name, "dropout"))
 
     attention_output =
       attention_weights
@@ -328,7 +334,7 @@ defmodule Bumblebee.Text.ClipText do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "fc1")
     )
-    |> Layers.activation(config.hidden_act, name: join(name, "activation"))
+    |> Layers.activation(config.activation, name: join(name, "activation"))
     |> Axon.dense(config.hidden_size,
       kernel_initializer: kernel_initializer(config),
       name: join(name, "fc2")
@@ -346,10 +352,22 @@ defmodule Bumblebee.Text.ClipText do
     end
 
     def load(config, data) do
-      data
-      |> Shared.convert_to_atom(["hidden_act"])
-      |> Shared.convert_common()
-      |> Shared.data_into_config(config, except: [:architecture])
+      import Shared.Converters
+
+      opts =
+        convert!(data,
+          vocab_size: {"vocab_size", number()},
+          max_positions: {"max_position_embeddings", number()},
+          hidden_size: {"hidden_size", number()},
+          num_blocks: {"num_hidden_layers", number()},
+          num_attention_heads: {"num_attention_heads", number()},
+          intermediate_size: {"intermediate_size", number()},
+          activation: {"hidden_act", atom()},
+          attention_dropout_rate: {"attention_dropout", number()},
+          layer_norm_epsilon: {"layer_norm_eps", number()}
+        ) ++ Shared.common_options_from_transformers(data, config)
+
+      @for.config(config, opts)
     end
   end
 end

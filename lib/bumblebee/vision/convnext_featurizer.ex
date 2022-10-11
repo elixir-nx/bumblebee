@@ -1,50 +1,58 @@
 defmodule Bumblebee.Vision.ConvNextFeaturizer do
+  alias Bumblebee.Shared
+
+  options = [
+    resize: [
+      default: true,
+      doc: "whether to resize (and optionally center crop) the input to the given `:size`"
+    ],
+    size: [
+      default: 224,
+      doc: """
+      the size to resize the input to. If 384 or larger, the image is resized to (`:size`, `:size`).
+      Otherwise, the shorter edge of the image is matched to `:size` / `:crop_percentage`, then image
+      is cropped to `:size`. Only has an effect if `:resize` is `true`
+      """
+    ],
+    resize_method: [
+      default: :bicubic,
+      doc:
+        "the resizing method, either of `:nearest`, `:bilinear`, `:bicubic`, `:lanczos3`, `:lanczos5`"
+    ],
+    crop_percentage: [
+      default: 224 / 256,
+      doc:
+        "the percentage of the image to crop. Only has an effect if `:resize` is `true` and `:size` < 384"
+    ],
+    normalize: [
+      default: true,
+      doc: "whether or not to normalize the input with mean and standard deviation"
+    ],
+    image_mean: [
+      default: [0.485, 0.456, 0.406],
+      doc: "the sequence of mean values for each channel, to be used when normalizing images"
+    ],
+    image_std: [
+      default: [0.229, 0.224, 0.225],
+      doc:
+        "the sequence of standard deviations for each channel, to be used when normalizing images"
+    ]
+  ]
+
   @moduledoc """
   ConvNeXT featurizer for image data.
 
   ## Configuration
 
-    * `:do_resize` - whether to resize (and optionally center crop)
-      the input to the given `:size`. Defaults to `true`
-
-    * `:size` - the size to resize the input to. If 384 or larger,
-      the image is resized to (`:size`, `:size`). Otherwise, the
-      shorter edge of the image is matched to `:size` / `:crop_pct`,
-      then image is cropped to `:size`. Only has an effect if
-      `:do_resize` is `true`. Defaults to `224`
-
-    * `:resample` - the resizing method, either of `:nearest`, `:bilinear`,
-      `:bicubic`, `:lanczos3`, `:lanczos5`. Defaults to `:bicubic`
-
-    * `:crop_pct` - the percentage of the image to crop. Only has
-      an effect if `:do_resize` is `true` and `:size` < 384. Defaults
-      to `224 / 256`
-
-    * `:do_normalize` - whether or not to normalize the input with
-      mean and standard deviation. Defaults to `true`
-
-    * `:image_mean` - the sequence of mean values for each channel,
-      to be used when normalizing images. Defaults to `[0.485, 0.456, 0.406]`
-
-    * `:image_std` - the sequence of standard deviations for each
-      channel, to be used when normalizing images. Defaults to
-      `[0.229, 0.224, 0.225]`
-
+  #{Shared.options_doc(options)}
   """
 
-  alias Bumblebee.Shared
   alias Bumblebee.Utils.Image
 
   @behaviour Bumblebee.Featurizer
   @behaviour Bumblebee.Configurable
 
-  defstruct do_resize: true,
-            size: 224,
-            resample: :bicubic,
-            crop_pct: 224 / 256,
-            do_normalize: true,
-            image_mean: [0.485, 0.456, 0.406],
-            image_std: [0.229, 0.224, 0.225]
+  defstruct Shared.option_defaults(options)
 
   @impl true
   def config(config, opts \\ []) do
@@ -60,17 +68,17 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
         images = image |> Image.to_batched_tensor() |> Nx.as_type(:f32)
 
         cond do
-          not config.do_resize ->
+          not config.resize ->
             images
 
           config.size >= 384 ->
-            Image.resize(images, size: {config.size, config.size}, method: config.resample)
+            Image.resize(images, size: {config.size, config.size}, method: config.resize_method)
 
           true ->
-            scale_size = floor(config.size / config.crop_pct)
+            scale_size = floor(config.size / config.crop_percentage)
 
             images
-            |> Image.resize_short(size: scale_size, method: config.resample)
+            |> Image.resize_short(size: scale_size, method: config.resize_method)
             |> Image.center_crop(size: {config.size, config.size})
         end
       end
@@ -79,7 +87,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
     images = Image.to_continuous(images, 0, 1)
 
     images =
-      if config.do_normalize do
+      if config.normalize do
         Image.normalize(images, Nx.tensor(config.image_mean), Nx.tensor(config.image_std))
       else
         images
@@ -90,9 +98,20 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
-      data
-      |> Shared.convert_resample_method("resample")
-      |> Shared.data_into_config(config)
+      import Shared.Converters
+
+      opts =
+        convert!(data,
+          resize: {"do_resize", boolean()},
+          size: {"size", number()},
+          resize_method: {"resample", resize_method()},
+          crop_percentage: {"crop_pct", number()},
+          normalize: {"do_normalize", boolean()},
+          image_mean: {"image_mean", list(number())},
+          image_std: {"image_std", list(number())}
+        )
+
+      @for.config(config, opts)
     end
   end
 end

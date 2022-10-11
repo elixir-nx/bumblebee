@@ -1,12 +1,82 @@
 defmodule Bumblebee.Text.Bert do
-  @common_keys [
-    :output_hidden_states,
-    :output_attentions,
-    :id2label,
-    :label2id,
-    :num_labels,
-    :add_cross_attention
-  ]
+  alias Bumblebee.Shared
+
+  options =
+    [
+      vocab_size: [
+        default: 30522,
+        doc: """
+        the vocabulary size of the token embedding. This corresponds to the number of distinct
+        tokens that can be represented in model input and output
+        """
+      ],
+      max_positions: [
+        default: 512,
+        doc: """
+        the vocabulary size of the position embedding. This corresponds to the maximum sequence
+        length that this model can process. Typically this is set to a large value just in case,
+        such as 512, 1024 or 2048
+        """
+      ],
+      max_token_types: [
+        default: 2,
+        doc: """
+        the vocabulary size of the token type embedding (also referred to as segment embedding).
+        This corresponds to how many different token groups can be distinguished in the input
+        """
+      ],
+      hidden_size: [
+        default: 768,
+        doc: "the dimensionality of hidden layers"
+      ],
+      num_blocks: [
+        default: 12,
+        doc: "the number of Transformer blocks in the encoder"
+      ],
+      num_attention_heads: [
+        default: 12,
+        doc: "the number of attention heads for each attention layer in the encoder"
+      ],
+      intermediate_size: [
+        default: 3072,
+        doc:
+          "the dimensionality of the intermediate (often named feed-forward) layer in the encoder"
+      ],
+      activation: [
+        default: :gelu,
+        doc: "the activation function"
+      ],
+      dropout_rate: [
+        default: 0.1,
+        doc: "the dropout rate for embedding and encoder"
+      ],
+      attention_dropout_rate: [
+        default: 0.1,
+        doc: "the dropout rate for attention weights"
+      ],
+      classifier_dropout_rate: [
+        default: nil,
+        doc:
+          "the dropout rate for the classification head. If not specified, the value of `:dropout_rate` is used instead"
+      ],
+      layer_norm_epsilon: [
+        default: 1.0e-12,
+        doc: "the epsilon used by the layer normalization layers"
+      ],
+      initializer_scale: [
+        default: 0.02,
+        doc:
+          "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ]
+    ] ++
+      Shared.common_options([
+        :use_cross_attention,
+        :output_hidden_states,
+        :output_attentions,
+        :num_labels,
+        :id_to_label
+      ]) ++
+      Shared.token_options(pad_token_id: 0) ++ Shared.generation_options()
 
   @moduledoc """
   Models based on the BERT architecture.
@@ -68,7 +138,7 @@ defmodule Bumblebee.Text.Bert do
       Indices of positions of each input sequence tokens in the position
       embeddings.
 
-    * `"head_mask"` - `{encoder_layers, encoder_attention_heads}`
+    * `"head_mask"` - `{num_blocks, num_attention_heads}`
 
       Mask to nullify selected heads of the self-attention blocks in
       the encoder.
@@ -84,79 +154,19 @@ defmodule Bumblebee.Text.Bert do
 
   ## Configuration
 
-    * `:vocab_size` - vocabulary size of the model. Defines the number
-      of distinct tokens that can be represented by the in model input
-      and output. Defaults to `30522`
+  #{Shared.options_doc(options)}
 
-    * `:hidden_size` - dimensionality of the encoder layers and the
-      pooler layer. Defaults to `768`
+  ## References
 
-    * `:num_hidden_layers` - the number of hidden layers in the
-      Transformer encoder. Defaults to `12`
+    * [BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding](https://arxiv.org/abs/1810.04805)
 
-    * `:num_attention_heads` - the number of attention heads for each
-      attention layer in the Transformer encoder. Defaults to `12`
-
-    * `:intermediate_size` - dimensionality of the "intermediate"
-      (often named feed-forward) layer in the Transformer encoder.
-      Defaults to `3072`
-
-    * `:hidden_act` - the activation function in the encoder and
-      pooler. Defaults to `:gelu`
-
-    * `:hidden_dropout_prob` - the dropout probability for all fully
-      connected layers in the embeddings, encoder, and pooler. Defaults
-      to `0.1`
-
-    * `:attention_probs_dropout_prob` - the dropout probability for
-      attention probabilities. Defaults to `0.1`
-
-    * `:max_position_embeddings` - the maximum sequence length that this
-      model might ever be used with. Typically set this to something
-      large just in case (e.g. 512 or 1024 or 2048). Defaults to `512`
-
-    * `:type_vocab_size` - the vocabulary size of the `token_type_ids`
-      passed as part of model input. Defaults to `2`
-
-    * `:initializer_range` - the standard deviation of the normal
-      initializer used for initializing kernel parameters. Defaults
-      to `0.02`
-
-    * `:layer_norm_eps` - the epsilon used by the layer normalization
-      layers. Defaults to `1.0e-12`
-
-    * `:classifier_dropout` - the dropout ratio for the classification
-      head. If not specified, the value of `:hidden_dropout_prob` is
-      used instead
-
-  ### Common options
-
-  #{Bumblebee.Shared.common_config_docs(@common_keys)}
   """
 
   import Bumblebee.Utils.Model, only: [join: 2]
 
-  alias Bumblebee.Shared
   alias Bumblebee.Layers
 
-  defstruct [
-              architecture: :base,
-              vocab_size: 30522,
-              hidden_size: 768,
-              num_hidden_layers: 12,
-              num_attention_heads: 12,
-              intermediate_size: 3072,
-              hidden_act: :gelu,
-              hidden_dropout_prob: 0.1,
-              attention_probs_dropout_prob: 0.1,
-              max_position_embeddings: 512,
-              type_vocab_size: 2,
-              initializer_range: 0.02,
-              layer_norm_eps: 1.0e-12,
-              classifier_dropout: nil,
-              # Tokens
-              pad_token_id: 0
-            ] ++ Shared.generation_defaults() ++ Shared.common_config_defaults(@common_keys)
+  defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
@@ -181,8 +191,9 @@ defmodule Bumblebee.Text.Bert do
 
   @impl true
   def config(config, opts \\ []) do
-    opts = Shared.add_common_computed_options(opts)
-    Shared.put_config_attrs(config, opts)
+    config
+    |> Shared.put_config_attrs(opts)
+    |> Shared.validate_label_options()
   end
 
   @impl true
@@ -368,9 +379,9 @@ defmodule Bumblebee.Text.Bert do
 
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: config.hidden_size,
-      decoder_attention_heads: config.num_attention_heads,
-      encoder_attention_heads: config.num_attention_heads,
-      decoder_layers: config.num_hidden_layers,
+      decoder_num_attention_heads: config.num_attention_heads,
+      encoder_num_attention_heads: config.num_attention_heads,
+      decoder_num_blocks: config.num_blocks,
       encoder_sequence_length: encoder_sequence_length
     )
   end
@@ -380,7 +391,7 @@ defmodule Bumblebee.Text.Bert do
     decoder? = Keyword.get(opts, :decoder?, false)
 
     hidden_shape = Tuple.append(shape, config.hidden_size)
-    head_mask_shape = {config.num_hidden_layers, config.num_attention_heads}
+    head_mask_shape = {config.num_blocks, config.num_attention_heads}
 
     inputs =
       Bumblebee.Utils.Model.inputs_to_map([
@@ -474,24 +485,24 @@ defmodule Bumblebee.Text.Bert do
       )
 
     position_embeds =
-      Axon.embedding(position_ids, config.max_position_embeddings, config.hidden_size,
+      Axon.embedding(position_ids, config.max_positions, config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "position_embeddings")
       )
 
     token_type_embeds =
-      Axon.embedding(token_type_ids, config.type_vocab_size, config.hidden_size,
+      Axon.embedding(token_type_ids, config.max_token_types, config.hidden_size,
         kernel_initializer: kernel_initializer(config),
         name: join(name, "token_type_embeddings")
       )
 
     Axon.add([inputs_embeds, position_embeds, token_type_embeds])
     |> Axon.layer_norm(
-      epsilon: config.layer_norm_eps,
+      epsilon: config.layer_norm_epsilon,
       name: join(name, "LayerNorm"),
       channel_index: 2
     )
-    |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
+    |> Axon.dropout(rate: config.dropout_rate, name: join(name, "dropout"))
   end
 
   defp encoder(
@@ -511,7 +522,7 @@ defmodule Bumblebee.Text.Bert do
     {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
 
     outputs =
-      encoder_layers(
+      encoder_blocks(
         hidden_state,
         attention_mask,
         head_mask,
@@ -527,7 +538,7 @@ defmodule Bumblebee.Text.Bert do
     update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, hidden_state))
   end
 
-  defp encoder_layers(
+  defp encoder_blocks(
          hidden_state,
          attention_mask,
          head_mask,
@@ -551,29 +562,29 @@ defmodule Bumblebee.Text.Bert do
 
     offset = Layers.Decoder.get_cache_offset(state.cache)
 
-    for idx <- 0..(config.num_hidden_layers - 1), reduce: state do
+    for idx <- 0..(config.num_blocks - 1), reduce: state do
       state ->
-        layer_head_mask = Axon.nx(head_mask, & &1[idx])
-        cross_attention_layer_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
+        block_head_mask = Axon.nx(head_mask, & &1[idx])
+        cross_attention_block_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
 
-        layer_cache = Layers.Decoder.get_layer_cache(state.cache, idx)
+        block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
 
-        {hidden_state, attention, cross_attention, layer_cache} =
-          bert_layer(
+        {hidden_state, attention, cross_attention, block_cache} =
+          bert_block(
             state.last_hidden_state,
             attention_mask,
-            layer_head_mask,
+            block_head_mask,
             encoder_hidden_state,
             encoder_attention_mask,
-            cross_attention_layer_head_mask,
-            layer_cache,
+            cross_attention_block_head_mask,
+            block_cache,
             offset,
             config,
             decoder?: decoder?,
             name: join(name, idx)
           )
 
-        cache = Layers.Decoder.put_layer_cache(state.cache, idx, layer_cache)
+        cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
 
         %{
           last_hidden_state: hidden_state,
@@ -585,14 +596,14 @@ defmodule Bumblebee.Text.Bert do
     end
   end
 
-  defp bert_layer(
+  defp bert_block(
          hidden_state,
          attention_mask,
-         layer_head_mask,
+         block_head_mask,
          encoder_hidden_state,
          encoder_attention_mask,
-         cross_attention_layer_head_mask,
-         layer_cache,
+         cross_attention_block_head_mask,
+         block_cache,
          offset,
          config,
          opts
@@ -601,14 +612,14 @@ defmodule Bumblebee.Text.Bert do
     decoder? = opts[:decoder?]
 
     {self_attention_cache, cross_attention_cache} =
-      Layers.Decoder.get_attention_caches(layer_cache)
+      Layers.Decoder.get_attention_caches(block_cache)
 
     {attention_output, attention, self_attention_cache} =
       attention(
         hidden_state,
         attention_mask,
         nil,
-        layer_head_mask,
+        block_head_mask,
         self_attention_cache,
         offset,
         config,
@@ -617,13 +628,13 @@ defmodule Bumblebee.Text.Bert do
       )
 
     {attention_output, cross_attention, cross_attention_cache} =
-      if decoder? and config.add_cross_attention do
+      if decoder? and config.use_cross_attention do
         Layers.if_present encoder_hidden_state do
           attention(
             attention_output,
             encoder_attention_mask,
             encoder_hidden_state,
-            cross_attention_layer_head_mask,
+            cross_attention_block_head_mask,
             cross_attention_cache,
             offset,
             config,
@@ -639,21 +650,21 @@ defmodule Bumblebee.Text.Bert do
     hidden_state = intermediate(attention_output, config, name: join(name, "intermediate"))
     hidden_state = output(hidden_state, attention_output, config, name: join(name, "output"))
 
-    layer_cache =
+    block_cache =
       Layers.Decoder.put_attention_caches(
-        layer_cache,
+        block_cache,
         self_attention_cache,
         cross_attention_cache
       )
 
-    {hidden_state, attention, cross_attention, layer_cache}
+    {hidden_state, attention, cross_attention, block_cache}
   end
 
   defp attention(
          hidden_state,
          attention_mask,
          cross_hidden_state,
-         layer_head_mask,
+         block_head_mask,
          attention_cache,
          offset,
          config,
@@ -662,12 +673,12 @@ defmodule Bumblebee.Text.Bert do
     name = opts[:name]
     causal? = Keyword.get(opts, :causal?, false)
 
-    {attention_output, attention, layer_cache} =
+    {attention_output, attention, block_cache} =
       self_attention(
         hidden_state,
         attention_mask,
         cross_hidden_state,
-        layer_head_mask,
+        block_head_mask,
         attention_cache,
         offset,
         config,
@@ -677,14 +688,14 @@ defmodule Bumblebee.Text.Bert do
 
     hidden_state = self_output(attention_output, hidden_state, config, name: join(name, "output"))
 
-    {hidden_state, attention, layer_cache}
+    {hidden_state, attention, block_cache}
   end
 
   defp self_attention(
          hidden_state,
          attention_mask,
          cross_hidden_state,
-         layer_head_mask,
+         block_head_mask,
          attention_cache,
          offset,
          config,
@@ -741,8 +752,8 @@ defmodule Bumblebee.Text.Bert do
 
     attention_weights =
       Layers.attention_weights(query, key, attention_bias)
-      |> Axon.dropout(rate: config.attention_probs_dropout_prob, name: join(name, "dropout"))
-      |> Layers.apply_layer_head_mask(layer_head_mask)
+      |> Axon.dropout(rate: config.attention_dropout_rate, name: join(name, "dropout"))
+      |> Layers.apply_attention_head_mask(block_head_mask)
 
     attention_output =
       attention_weights
@@ -760,10 +771,10 @@ defmodule Bumblebee.Text.Bert do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
     )
-    |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
+    |> Axon.dropout(rate: config.dropout_rate, name: join(name, "dropout"))
     |> Axon.add(input)
     |> Axon.layer_norm(
-      epsilon: config.layer_norm_eps,
+      epsilon: config.layer_norm_epsilon,
       name: join(name, "LayerNorm"),
       channel_index: 2
     )
@@ -777,7 +788,7 @@ defmodule Bumblebee.Text.Bert do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
     )
-    |> Layers.activation(config.hidden_act, name: join(name, "activation"))
+    |> Layers.activation(config.activation, name: join(name, "activation"))
   end
 
   defp output(hidden_state, attention_output, config, opts) do
@@ -788,10 +799,10 @@ defmodule Bumblebee.Text.Bert do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
     )
-    |> Axon.dropout(rate: config.hidden_dropout_prob, name: join(name, "dropout"))
+    |> Axon.dropout(rate: config.dropout_rate, name: join(name, "dropout"))
     |> Axon.add(attention_output)
     |> Axon.layer_norm(
-      epsilon: config.layer_norm_eps,
+      epsilon: config.layer_norm_epsilon,
       name: join(name, "LayerNorm"),
       channel_index: 2
     )
@@ -833,28 +844,44 @@ defmodule Bumblebee.Text.Bert do
       kernel_initializer: kernel_initializer(config),
       name: join(name, "dense")
     )
-    |> Layers.activation(config.hidden_act, name: join(name, "activation"))
+    |> Layers.activation(config.activation, name: join(name, "activation"))
     |> Axon.layer_norm(
-      epsilon: config.layer_norm_eps,
+      epsilon: config.layer_norm_epsilon,
       name: join(name, "LayerNorm"),
       channel_index: 2
     )
   end
 
   defp classifier_dropout_rate(config) do
-    config.classifier_dropout || config.hidden_dropout_prob
+    config.classifier_dropout_rate || config.dropout_rate
   end
 
   defp kernel_initializer(config) do
-    Axon.Initializers.normal(scale: config.initializer_range)
+    Axon.Initializers.normal(scale: config.initializer_scale)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(config, data) do
-      data
-      |> Shared.convert_to_atom(["hidden_act"])
-      |> Shared.convert_common()
-      |> Shared.data_into_config(config, except: [:architecture])
+      import Shared.Converters
+
+      opts =
+        convert!(data,
+          vocab_size: {"vocab_size", number()},
+          max_positions: {"max_position_embeddings", number()},
+          max_token_types: {"type_vocab_size", number()},
+          hidden_size: {"hidden_size", number()},
+          num_blocks: {"num_hidden_layers", number()},
+          num_attention_heads: {"num_attention_heads", number()},
+          intermediate_size: {"intermediate_size", number()},
+          activation: {"hidden_act", atom()},
+          dropout_rate: {"hidden_dropout_prob", number()},
+          attention_dropout_rate: {"attention_probs_dropout_prob", number()},
+          classifier_dropout_rate: {"classifier_dropout", optional(number())},
+          layer_norm_epsilon: {"layer_norm_eps", number()},
+          initializer_scale: {"initializer_range", number()}
+        ) ++ Shared.common_options_from_transformers(data, config)
+
+      @for.config(config, opts)
     end
   end
 end

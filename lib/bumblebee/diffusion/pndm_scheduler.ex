@@ -1,5 +1,50 @@
 defmodule Bumblebee.Diffusion.PndmScheduler do
-  @moduledoc ~S"""
+  options = [
+    num_train_steps: [
+      default: 1000,
+      doc: "the number of diffusion steps used to train the model"
+    ],
+    beta_schedule: [
+      default: :linear,
+      doc: """
+      the beta schedule type, a mapping from a beta range to a sequence of betas for stepping the model.
+      Either of `:linear`, `:quadratic`, or `:squared_cosine`
+      """
+    ],
+    beta_start: [
+      default: 0.0001,
+      doc: "the start value for the beta schedule"
+    ],
+    beta_end: [
+      default: 0.02,
+      doc: "the end value for the beta schedule"
+    ],
+    alpha_clip_strategy: [
+      default: :one,
+      doc: ~S"""
+      each step $t$ uses the values of $\bar{\alpha}\_t$ and $\bar{\alpha}\_{t-1}$,
+      however for $t = 0$ there is no previous alpha. The strategy can be either
+      `:one` ($\bar{\alpha}\_{t-1} = 1$) or `:alpha_zero` ($\bar{\alpha}\_{t-1} = \bar{\alpha}\_0$)
+      """
+    ],
+    timesteps_offset: [
+      default: 0,
+      doc: ~S"""
+      an offset added to the inference steps. You can use a combination of `timesteps_offset: 1` and
+      `alpha_clip_strategy: :alpha_zero`, so that the last step $t = 1$ uses $\bar{\alpha}\_1$
+      and $\bar{\alpha}\_0$, as done in stable diffusion
+      """
+    ],
+    reduce_warmup: [
+      default: false,
+      doc: """
+      when `true`, the first few samples are computed using lower-order linear multi-step,
+      rather than the Runge-Kutta method. This results in less forward passes of the model
+      """
+    ]
+  ]
+
+  @moduledoc """
   Pseudo numerical methods for diffusion models (PNDMs).
 
   The sampling is based on two numerical methods for solving ODE: the
@@ -12,37 +57,11 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
   ## Configuration
 
-    * `:num_train_timesteps` - the number of diffusion steps used to
-      train the model. Defaults to `1000`
-
-    * `:beta_schedule` - the beta schedule type, a mapping from a beta
-      range to a sequence of betas for stepping the model. Either of
-      `:linear`, `:scaled_linear`, or `:squaredcos_cap_v2`. Defaults to
-      `:linear`
-
-    * `:beta_start` - the start value for the beta schedule. Defaults
-      to `0.0001`
-
-    * `:beta_end` - the end value for the beta schedule. Defaults to `0.02`
-
-    * `:set_alpha_to_one` - each step $t$ uses the values of $\bar{\alpha}\_t$
-      and $\bar{\alpha}\_{t-1}$, however for $t = 0$ there is no previous
-      alpha. Setting this option to `true` implies $\bar{\alpha}\_{t-1} = 1$,
-      otherwise $\bar{\alpha}\_{t-1} = \bar{\alpha}\_0$. Defaults to `false`
-
-    * `:steps_offset` - an offset added to the inference steps. You can
-      use a combination of `offset: 1` and `set_alpha_to_one: false`,
-      so that the last step $t = 1$ uses $\bar{\alpha}\_1$ and $\bar{\alpha}\_0$,
-      as done in stable diffusion. Defaults to `0`
-
-    * `:skip_prk_steps` - when `true`, the first few samples are computed
-      using lower-order linear multi-step, rather than the Runge-Kutta
-      method. This results in less forward passes of the model. Defaults
-      to `false`
+  #{Bumblebee.Shared.options_doc(options)}
 
   ## References
 
-    * [Pseudo Numerical Methods for Diffusion Models on Manifolds](https://arxiv.org/pdf/2202.09778.pdf)
+    * [Pseudo Numerical Methods for Diffusion Models on Manifolds](https://arxiv.org/abs/2202.09778)
 
   """
 
@@ -53,13 +72,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
   @behaviour Bumblebee.Scheduler
   @behaviour Bumblebee.Configurable
 
-  defstruct num_train_timesteps: 1000,
-            beta_schedule: :linear,
-            beta_start: 0.0001,
-            beta_end: 0.02,
-            set_alpha_to_one: false,
-            steps_offset: 0,
-            skip_prk_steps: false
+  defstruct Bumblebee.Shared.option_defaults(options)
 
   @impl true
   def config(config, opts) do
@@ -67,14 +80,9 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
   end
 
   @impl true
-  def init(config, num_inference_timesteps, sample_shape) do
+  def init(config, num_steps, sample_shape) do
     timesteps =
-      timesteps(
-        config.num_train_timesteps,
-        num_inference_timesteps,
-        config.steps_offset,
-        config.skip_prk_steps
-      )
+      timesteps(config.num_train_steps, num_steps, config.timesteps_offset, config.reduce_warmup)
 
     alpha_bars = init_parameters(config: config)
 
@@ -82,7 +90,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
     state = %{
       timesteps: timesteps,
-      timestep_gap: div(config.num_train_timesteps, num_inference_timesteps),
+      timestep_gap: div(config.num_train_steps, num_steps),
       alpha_bars: alpha_bars,
       iteration: 0,
       recent_noise: empty |> List.duplicate(4) |> List.to_tuple(),
@@ -98,13 +106,13 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
       beta_start: beta_start,
       beta_end: beta_end,
       beta_schedule: beta_schedule,
-      num_train_timesteps: num_train_timesteps
+      num_train_steps: num_train_steps
     } = opts[:config]
 
     betas =
-      SchedulerUtils.beta_schedule(beta_schedule, num_train_timesteps,
-        linear_start: beta_start,
-        linear_end: beta_end
+      SchedulerUtils.beta_schedule(beta_schedule, num_train_steps,
+        start: beta_start,
+        end: beta_end
       )
 
     alphas = 1 - betas
@@ -112,20 +120,19 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     Nx.cumulative_product(alphas)
   end
 
-  deftransformp timesteps(num_train_timesteps, num_inference_timesteps, offset, skip_prk_steps) do
-    # Note that there are more timesteps than `num_inference_timesteps`.
+  deftransformp timesteps(num_train_steps, num_steps, offset, reduce_warmup) do
+    # Note that there are more timesteps than `num_steps`.
     # That's because each timestep corresponds to a single forward pass
     # of the denoising model and the first few steps require multiple such
     # passes. In other words, the timesteps list is used for subsequent
     # model calls, while the actual sampling happens at the same timesteps
     # as with DDIM.
 
-    timestep_gap = div(num_train_timesteps, num_inference_timesteps)
+    timestep_gap = div(num_train_steps, num_steps)
 
-    ddim_timesteps =
-      SchedulerUtils.ddim_timesteps(num_train_timesteps, num_inference_timesteps, offset)
+    ddim_timesteps = SchedulerUtils.ddim_timesteps(num_train_steps, num_steps, offset)
 
-    if skip_prk_steps do
+    if reduce_warmup do
       just_plms_timesteps(ddim_timesteps, timestep_gap)
     else
       prk_plms_timesteps(ddim_timesteps, timestep_gap)
@@ -168,7 +175,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
   defnp do_step(config \\ [], state, sample, noise) do
     {state, prev} =
-      if config.skip_prk_steps do
+      if config.reduce_warmup do
         step_just_plms(config, state, sample, noise)
       else
         step_prk_plms(config, state, sample, noise)
@@ -337,7 +344,10 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
       if prev_timestep >= 0 do
         state.alpha_bars[prev_timestep]
       else
-        if config.set_alpha_to_one, do: 1.0, else: state.alpha_bars[0]
+        case config.alpha_clip_strategy do
+          :one -> 1.0
+          :alpha_zero -> state.alpha_bars[0]
+        end
       end
 
     sample_coeff = (alpha_bar_t_prev / alpha_bar_t) ** 0.5
@@ -361,12 +371,31 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    alias Bumblebee.Shared
-
     def load(config, data) do
-      data
-      |> Shared.convert_to_atom(["beta_schedule"])
-      |> Shared.data_into_config(config)
+      import Bumblebee.Shared.Converters
+
+      opts =
+        convert!(data,
+          num_train_steps: {"num_train_timesteps", number()},
+          beta_schedule: {
+            "beta_schedule",
+            mapping(%{
+              "linear" => :linear,
+              "scaled_linear" => :quadratic,
+              "squaredcos_cap_v2" => :squared_cosine
+            })
+          },
+          beta_start: {"beta_start", number()},
+          beta_end: {"beta_end", number()},
+          alpha_clip_strategy: {
+            "set_alpha_to_one",
+            mapping(%{true => :one, false => :alpha_zero})
+          },
+          timesteps_offset: {"steps_offset", number()},
+          reduce_warmup: {"skip_prk_steps", boolean()}
+        )
+
+      @for.config(config, opts)
     end
   end
 end

@@ -3,56 +3,29 @@ defmodule Bumblebee.SharedTest do
 
   alias Bumblebee.Shared
 
-  describe "add_common_computed_options/1" do
-    test "computes :num_labels and :label2id when :id2label is present" do
-      id2label = %{0 => "cat", 1 => "dog", 2 => "squirrel"}
-      opts = [id2label: id2label]
+  describe "validate_label_options/1" do
+    test "passes when :id_to_label is empty" do
+      config = %{__struct__: TestConfig, num_labels: 3, id_to_label: %{}}
 
-      opts = Shared.add_common_computed_options(opts)
-      assert opts[:num_labels] == 3
-      assert opts[:id2label] == id2label
-      assert opts[:label2id] == %{"cat" => 0, "dog" => 1, "squirrel" => 2}
+      assert Shared.validate_label_options(config) == config
     end
 
-    test "computes :id2label and :label2id when :num_labels is present" do
-      opts = [num_labels: 3]
+    test "passes when :id_to_label is matches :num_labels" do
+      id_to_label = %{0 => "cat", 1 => "dog", 2 => "squirrel"}
+      config = %{__struct__: TestConfig, num_labels: 3, id_to_label: id_to_label}
 
-      opts = Shared.add_common_computed_options(opts)
-      assert opts[:num_labels] == 3
-      assert opts[:id2label] == %{}
-      assert opts[:label2id] == %{}
+      assert Shared.validate_label_options(config) == config
     end
 
-    test "raises an error if mismatched :num_labels and :id2label are given" do
-      id2label = %{0 => "cat", 1 => "dog"}
-      opts = [num_labels: 3, id2label: id2label]
+    test "raises an error if mismatched :num_labels and :id_to_label are given" do
+      id_to_label = %{0 => "cat", 1 => "dog"}
+      config = %{__struct__: TestConfig, num_labels: 3, id_to_label: id_to_label}
 
       assert_raise ArgumentError,
-                   ~s/size mismatch between :num_labels (3) and :id2label (%{0 => "cat", 1 => "dog"})/,
+                   ~s/size mismatch between :num_labels (3) and :id_to_label (%{0 => "cat", 1 => "dog"})/,
                    fn ->
-                     Shared.add_common_computed_options(opts)
+                     Shared.validate_label_options(config)
                    end
-    end
-  end
-
-  describe "convert_to_atom/2" do
-    test "converts specified keys to atoms" do
-      assert Shared.convert_to_atom(
-               %{"key1" => "value", "key2" => 1, "key3" => "value"},
-               ["key3"]
-             ) == %{"key1" => "value", "key2" => 1, "key3" => :value}
-    end
-
-    test "leaves nils unchanged" do
-      assert Shared.convert_to_atom(%{"key" => nil}, ["key"]) == %{"key" => nil}
-    end
-  end
-
-  describe "convert_common/1" do
-    test "converts id2label keys to numbers" do
-      assert Shared.convert_common(%{
-               "id2label" => %{"0" => "cat", "1" => "dog"}
-             }) == %{"id2label" => %{0 => "cat", 1 => "dog"}}
     end
   end
 end
