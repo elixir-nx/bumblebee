@@ -9,14 +9,11 @@ Nx.default_backend(EXLA.Backend)
 
 # Parameters
 
-batch_size = 1
-in_channels = 4
-height = 512
-width = 512
-num_steps = 10
+prompt = "numbat in forest, detailed, digital art"
+batch_size = 2
+num_steps = 20
 guidance_scale = 7.5
 seed = 0
-latents_shape = {batch_size, in_channels, div(height, 8), div(width, 8)}
 
 auth_token = System.fetch_env!("HF_TOKEN")
 
@@ -24,7 +21,7 @@ auth_token = System.fetch_env!("HF_TOKEN")
 
 IO.puts("Loading CLIP")
 
-{:ok, clip, clip_params, _clip_config} =
+{:ok, clip, clip_params, _clip_spec} =
   Bumblebee.load_model(
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "text_encoder"},
     architecture: :base
@@ -36,7 +33,7 @@ IO.puts("Loading tokenizer")
 
 IO.puts("Loading VAE")
 
-{:ok, vae, vae_params, _vae_config} =
+{:ok, vae, vae_params, _vae_spec} =
   Bumblebee.load_model(
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "vae"},
     architecture: :decoder,
@@ -45,7 +42,7 @@ IO.puts("Loading VAE")
 
 IO.puts("Loading UNet")
 
-{:ok, unet, unet_params, _unet_config} =
+{:ok, unet, unet_params, unet_spec} =
   Bumblebee.load_model(
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "unet"},
     params_filename: "diffusion_pytorch_model.bin"
@@ -60,8 +57,10 @@ IO.puts("Loading scheduler")
 
 # Inference
 
-prompt = "a photograph of an astronaut riding a horse"
-inputs = Bumblebee.apply_tokenizer(tokenizer, ["", prompt])
+prompts = List.duplicate("", batch_size) ++ List.duplicate(prompt, batch_size)
+inputs = Bumblebee.apply_tokenizer(tokenizer, prompts)
+
+latents_shape = {batch_size, unet_spec.in_channels, unet_spec.sample_size, unet_spec.sample_size}
 
 IO.puts("Embedding text")
 %{last_hidden_state: text_embeddings} = Axon.predict(clip, clip_params, inputs)
@@ -70,7 +69,7 @@ IO.puts("Generating latents")
 key = Nx.Random.key(seed)
 {latents, _key} = Nx.Random.normal(key, shape: latents_shape)
 
-{scheduler_state, timesteps} = Bumblebee.scheduler_init(scheduler, num_steps, Nx.shape(latents))
+{scheduler_state, timesteps} = Bumblebee.scheduler_init(scheduler, num_steps, latents_shape)
 
 timesteps = Nx.to_flat_list(timesteps)
 
@@ -107,6 +106,8 @@ images =
   |> Bumblebee.Utils.Image.from_continuous(-1, 1)
   |> Nx.transpose(axes: [0, 2, 3, 1])
 
-images[0]
-|> StbImage.from_nx()
-|> StbImage.write_file!("tmp/sample.png")
+for i <- 0..(batch_size - 1) do
+  images[i]
+  |> StbImage.from_nx()
+  |> StbImage.write_file!("tmp/sample_#{i}.png")
+end
