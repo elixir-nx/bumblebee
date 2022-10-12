@@ -27,7 +27,7 @@ defmodule Bumblebee.MixProject do
   defp deps do
     [
       {:axon, "~> 0.2.0-dev", axon_opts()},
-      {:tokenizers, "~> 0.1.0"},
+      {:tokenizers, "~> 0.1.1"},
       {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
       {:exla, github: "elixir-nx/nx", sparse: "exla", only: [:dev, :test]},
       {:torchx, github: "elixir-nx/nx", sparse: "torchx", only: [:dev, :test]},
