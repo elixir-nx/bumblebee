@@ -128,16 +128,16 @@ defmodule Bumblebee.Conversion.PyTorch do
 
       for prefixed_name <- prefixed_names,
           String.ends_with?(prefixed_name, suffix),
-          do: String.replace_suffix(prefixed_name, suffix, "")
+          do: String.replace_suffix(prefixed_name, suffix, ""),
+          into: MapSet.new()
     end)
-    |> Enum.reject(&(&1 == []))
+    |> Enum.reject(&Enum.empty?/1)
     |> case do
       [] ->
         nil
 
-      prefixes ->
-        prefixes
-        |> Enum.map(&MapSet.new/1)
+      prefix_sets ->
+        prefix_sets
         |> Enum.reduce(&MapSet.intersection/2)
         |> Enum.to_list()
         |> case do
