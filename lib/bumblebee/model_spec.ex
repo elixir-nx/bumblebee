@@ -15,16 +15,6 @@ defmodule Bumblebee.ModelSpec do
   @callback architectures :: list(atom())
 
   @doc """
-  Returns the prefix used to namespace layers of the base model when
-  used as part of a specialized model.
-
-  Since the base model is a subset of more specialized models, pre-trained
-  parameters from one can be applied to the other. The prefix helps
-  to determine layer name mapping.
-  """
-  @callback base_model_prefix() :: String.t()
-
-  @doc """
   Builds a template input for the model.
 
   The template is used to compile the model when initializing parameters.

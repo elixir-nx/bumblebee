@@ -31,7 +31,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params = PyTorch.load_params!(model, input_template(), path, base_model_prefix: "base")
+          params = PyTorch.load_params!(model, input_template(), path)
 
           assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 3, 2, 2}))
           assert_equal(params["conv"]["bias"], Nx.broadcast(0.0, {2}))
@@ -76,7 +76,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params = PyTorch.load_params!(model, input_template(), path, base_model_prefix: "base")
+          params = PyTorch.load_params!(model, input_template(), path)
 
           assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 3, 2, 2}))
           assert_equal(params["conv"]["bias"], Nx.broadcast(0.0, {2}))
@@ -91,7 +91,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params = PyTorch.load_params!(model, input_template(), path, base_model_prefix: "base")
+          params = PyTorch.load_params!(model, input_template(), path)
 
           assert_equal(params["base.conv"]["kernel"], Nx.broadcast(1.0, {2, 3, 2, 2}))
           assert_equal(params["base.conv"]["bias"], Nx.broadcast(0.0, {2}))

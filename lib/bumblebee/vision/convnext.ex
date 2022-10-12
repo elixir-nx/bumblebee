@@ -82,9 +82,6 @@ defmodule Bumblebee.Vision.ConvNext do
   def architectures(), do: [:base, :for_image_classification]
 
   @impl true
-  def base_model_prefix(), do: "convnext"
-
-  @impl true
   def config(featurizer, opts \\ []) do
     featurizer
     |> Shared.put_config_attrs(opts)

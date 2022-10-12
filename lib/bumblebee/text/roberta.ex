@@ -174,9 +174,6 @@ defmodule Bumblebee.Text.Roberta do
     ]
 
   @impl true
-  def base_model_prefix(), do: "roberta"
-
-  @impl true
   def config(spec, opts \\ []) do
     spec
     |> Shared.put_config_attrs(opts)

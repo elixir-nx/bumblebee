@@ -123,9 +123,6 @@ defmodule Bumblebee.Vision.Deit do
     ]
 
   @impl true
-  def base_model_prefix(), do: "deit"
-
-  @impl true
   def config(spec, opts \\ []) do
     spec
     |> Shared.put_config_attrs(opts)

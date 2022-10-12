@@ -71,9 +71,6 @@ defmodule Bumblebee.Vision.ResNet do
   def architectures(), do: [:base, :for_image_classification]
 
   @impl true
-  def base_model_prefix(), do: "resnet"
-
-  @impl true
   def config(spec, opts \\ []) do
     spec
     |> Shared.put_config_attrs(opts)

@@ -225,9 +225,6 @@ defmodule Bumblebee.Text.Bart do
     ]
 
   @impl true
-  def base_model_prefix(), do: "model"
-
-  @impl true
   def config(spec, opts \\ []) do
     spec
     |> Shared.put_config_attrs(opts)
