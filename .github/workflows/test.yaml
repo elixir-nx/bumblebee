@@ -16,6 +16,10 @@ jobs:
               elixir: 1.13.0
               otp: 24.0
             lint: true
+    env:
+      MIX_ENV: test
+      XLA_CACHE_DIR: ${{ github.workspace }}/cache/xla
+      LIBTORCH_DIR: ${{ github.workspace }}/cache/torch
     steps:
       - uses: actions/checkout@v3
       - uses: erlef/setup-beam@v1
@@ -27,6 +31,7 @@ jobs:
           path: |
             deps
             _build
+            cache
           key: ${{ runner.os }}-mix-${{ matrix.pair.elixir }}-${{ matrix.pair.otp }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-
