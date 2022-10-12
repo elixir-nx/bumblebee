@@ -100,9 +100,6 @@ defmodule Bumblebee.Text.ClipText do
   def architectures(), do: [:base]
 
   @impl true
-  def base_model_prefix(), do: "text_model"
-
-  @impl true
   def config(spec, opts \\ []) do
     spec
     |> Shared.put_config_attrs(opts)

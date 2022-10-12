@@ -306,7 +306,7 @@ defmodule Bumblebee do
         load_spec(repository, Keyword.take(opts, [:module, :architecture]))
       end
 
-    with {:ok, %module{} = spec} <- spec_response,
+    with {:ok, spec} <- spec_response,
          model <- build_model(spec),
          {:ok, params} <-
            load_params(
@@ -315,15 +315,12 @@ defmodule Bumblebee do
              repository,
              opts
              |> Keyword.take([:params_filename])
-             |> Keyword.put(:base_model_prefix, module.base_model_prefix())
            ) do
       {:ok, model, params, spec}
     end
   end
 
   defp load_params(%module{} = spec, model, repository, opts) do
-    base_model_prefix = opts[:base_model_prefix]
-
     # TODO: support format: :auto | :axon | :pytorch
     format = :pytorch
     filename = opts[:params_filename] || @params_filename[format]
@@ -331,11 +328,7 @@ defmodule Bumblebee do
     input_template = module.input_template(spec)
 
     with {:ok, path} <- download(repository, filename) do
-      params =
-        Bumblebee.Conversion.PyTorch.load_params!(model, input_template, path,
-          base_model_prefix: base_model_prefix
-        )
-
+      params = Bumblebee.Conversion.PyTorch.load_params!(model, input_template, path)
       {:ok, params}
     end
   end

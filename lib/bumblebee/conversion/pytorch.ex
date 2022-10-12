@@ -10,18 +10,9 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   This function expects files created with `torch.save(model.state_dict(), path)`,
   as described in [the documentation](https://pytorch.org/tutorials/beginner/saving_loading_models.html).
-
-  ## Options
-
-    * `:base_model_prefix` - the base model name in layer names.
-      Allows for loading base model parameters into specialized model
-      and vice versa
-
   """
-  @spec load_params!(Axon.t(), map(), Path.t(), keyword()) :: map()
-  def load_params!(model, input_template, path, opts \\ []) do
-    prefix = opts[:base_model_prefix]
-
+  @spec load_params!(Axon.t(), map(), Path.t()) :: map()
+  def load_params!(model, input_template, path) do
     pytorch_state = Bumblebee.Conversion.PyTorch.Loader.load!(path)
 
     unless state_dict?(pytorch_state) do
@@ -30,7 +21,7 @@ defmodule Bumblebee.Conversion.PyTorch do
 
     params_expr = Axon.trace_init(model, input_template)
 
-    {params, diff} = init_params(model, params_expr, pytorch_state, prefix)
+    {params, diff} = init_params(model, params_expr, pytorch_state)
 
     params =
       if diff.missing == [] do
@@ -51,13 +42,13 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp state_dict?(_other), do: false
 
-  defp init_params(model, params_expr, pytorch_state, prefix) do
+  defp init_params(model, params_expr, pytorch_state) do
     layers =
       model
       |> Utils.Axon.nodes_with_names()
       |> Enum.filter(fn {layer, _name} -> layer.parameters != [] end)
 
-    prefixed = check_prefix(prefix, layers, pytorch_state)
+    prefixes = infer_prefixes(layers, pytorch_state)
 
     diff = %{missing: [], mismatched: [], used_keys: []}
 
@@ -65,7 +56,7 @@ defmodule Bumblebee.Conversion.PyTorch do
       layers
       |> Enum.filter(fn {_layer, layer_name} -> params_expr[layer_name] end)
       |> Enum.map_reduce(diff, fn {layer, layer_name}, diff ->
-        source_layer_name = source_layer_name(layer_name, prefix, prefixed)
+        source_layer_name = source_layer_name(layer_name, prefixes)
 
         {params, diff} =
           Enum.reduce(layer.parameters, {[], diff}, fn param, {params, diff} ->
@@ -113,32 +104,58 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp prepend(diff, key, values), do: Map.update!(diff, key, &(values ++ &1))
 
-  defp check_prefix(nil, _layers, _pytorch_state), do: %{target: false, source: false}
+  defp infer_prefixes(layers, pytorch_state) do
+    target_names = for {_, name} <- layers, do: name
 
-  defp check_prefix(prefix, layers, pytorch_state) do
-    target_prefixed? =
-      Enum.any?(layers, fn {_, name} ->
-        String.starts_with?(name, prefix <> ".")
-      end)
+    source_names =
+      for {key, _} <- pytorch_state, uniq: true do
+        # Drop parameter name
+        key |> String.split(".") |> Enum.drop(-1) |> Enum.join(".")
+      end
 
-    source_prefixed? =
-      Enum.any?(pytorch_state, fn {key, _} ->
-        String.starts_with?(key, prefix <> ".")
-      end)
+    source_prefix = maybe_prefix(target_names, source_names)
+    target_prefix = maybe_prefix(source_names, target_names)
 
-    %{target: target_prefixed?, source: source_prefixed?}
+    %{target: target_prefix, source: source_prefix}
   end
 
-  defp source_layer_name(target_layer_name, prefix, prefixed) do
-    case prefixed do
-      %{target: false, source: true} ->
-        prefix <> "." <> target_layer_name
+  # If a subset of `names` is present in `prefixed_names` under the
+  # same prefix, finds that prefix.
+  defp maybe_prefix(names, prefixed_names) do
+    names
+    |> Enum.map(fn name ->
+      suffix = "." <> name
 
-      %{target: true, source: false} ->
-        String.replace_prefix(target_layer_name, prefix <> ".", "")
+      for prefixed_name <- prefixed_names,
+          String.ends_with?(prefixed_name, suffix),
+          do: String.replace_suffix(prefixed_name, suffix, ""),
+          into: MapSet.new()
+    end)
+    |> Enum.reject(&Enum.empty?/1)
+    |> case do
+      [] ->
+        nil
 
-      _ ->
+      prefix_sets ->
+        prefix_sets
+        |> Enum.reduce(&MapSet.intersection/2)
+        |> Enum.to_list()
+        |> case do
+          [prefix] -> prefix
+        end
+    end
+  end
+
+  defp source_layer_name(target_layer_name, prefixes) do
+    case prefixes do
+      %{target: prefix, source: prefix} ->
         target_layer_name
+
+      %{target: nil, source: source_prefix} ->
+        source_prefix <> "." <> target_layer_name
+
+      %{target: target_prefix, source: nil} ->
+        String.replace_prefix(target_layer_name, target_prefix <> ".", "")
     end
   end
 

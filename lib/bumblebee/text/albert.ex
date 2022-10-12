@@ -169,9 +169,6 @@ defmodule Bumblebee.Text.Albert do
   @behaviour Bumblebee.Configurable
 
   @impl true
-  def base_model_prefix(), do: "albert"
-
-  @impl true
   def architectures(),
     do: [
       :base,

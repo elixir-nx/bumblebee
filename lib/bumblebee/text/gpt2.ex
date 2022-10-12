@@ -184,9 +184,6 @@ defmodule Bumblebee.Text.Gpt2 do
     ]
 
   @impl true
-  def base_model_prefix(), do: "transformer"
-
-  @impl true
   def config(spec, opts \\ []) do
     spec
     |> Shared.put_config_attrs(opts)

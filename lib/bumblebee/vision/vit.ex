@@ -111,9 +111,6 @@ defmodule Bumblebee.Vision.Vit do
   def architectures(), do: [:base, :for_image_classification, :for_masked_image_modeling]
 
   @impl true
-  def base_model_prefix(), do: "vit"
-
-  @impl true
   def config(spec, opts \\ []) do
     spec
     |> Shared.put_config_attrs(opts)
