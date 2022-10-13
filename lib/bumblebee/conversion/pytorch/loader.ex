@@ -30,15 +30,21 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
 
     contents =
       Map.new(contents, fn {name, content} ->
-        {List.to_string(name), content}
+        # Strip the root dir from the file name
+        [_root_dir, name] =
+          name
+          |> List.to_string()
+          |> String.split("/", parts: 2)
+
+        {name, content}
       end)
 
     {term, ""} =
-      Unpickler.load!(contents["archive/data.pkl"],
+      Unpickler.load!(Map.fetch!(contents, "data.pkl"),
         object_resolver: &object_resolver/1,
         persistent_id_resolver: fn
           {"storage", storage_type, key, _location, _size} ->
-            binary = Map.fetch!(contents, "archive/data/#{key}")
+            binary = Map.fetch!(contents, "data/#{key}")
             {:storage, storage_type, binary}
         end
       )
