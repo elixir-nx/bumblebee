@@ -22,10 +22,6 @@ jobs:
           elixir-version: ${{env.elixir}}
       - uses: actions/cache@v3
         with:
-          path: ~/.cache/bumblebee
-          key: downloads
-      - uses: actions/cache@v3
-        with:
           path: |
             deps
             _build
