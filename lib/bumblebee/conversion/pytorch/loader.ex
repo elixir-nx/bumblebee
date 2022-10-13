@@ -31,10 +31,12 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
     contents =
       Map.new(contents, fn {name, content} ->
         # Strip the root dir from the file name
-        [_root_dir, name] =
+        name =
           name
           |> List.to_string()
-          |> String.split("/", parts: 2)
+          |> Path.split()
+          |> Enum.drop(1)
+          |> Enum.join("/")
 
         {name, content}
       end)
