@@ -199,7 +199,7 @@ There is also [gpt2-medium](https://huggingface.co/gpt2-medium) and [gpt2-large]
 
 ## Question answering
 
-Another text-related task is question answering, where the objective is to retrieve the answer to a question based on a given text. We will work with a [RoBERTA](https://huggingface.co/deepset/roberta-base-squad2) model trained to do just that.
+Another text-related task is question answering, where the objective is to retrieve the answer to a question based on a given text. We will work with a [RoBERTa](https://huggingface.co/deepset/roberta-base-squad2) model trained to do just that.
 
 ```elixir
 {:ok, model, params, config} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
