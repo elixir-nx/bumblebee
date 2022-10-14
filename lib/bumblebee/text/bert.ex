@@ -149,7 +149,7 @@ defmodule Bumblebee.Text.Bert do
   expected sequence shape is `{batch_size, num_choices, seq_length}`.
 
   The `:for_causal_language_modeling` model is a decoder and accepts
-  the following additional inputs: `"encoder_last_hidden_state"`,
+  the following additional inputs: `"encoder_hidden_state"`,
   `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache"`.
 
   ## Configuration
@@ -212,7 +212,7 @@ defmodule Bumblebee.Text.Bert do
   def model(%__MODULE__{architecture: :for_masked_language_modeling} = spec) do
     outputs = inputs(spec) |> bert(spec, name: "bert")
 
-    logits = lm_prediction_head(outputs.last_hidden_state, spec, name: "cls.predictions")
+    logits = lm_prediction_head(outputs.hidden_state, spec, name: "cls.predictions")
 
     Layers.output(%{
       logits: logits,
@@ -243,7 +243,7 @@ defmodule Bumblebee.Text.Bert do
     outputs = inputs(spec) |> bert(spec, name: "bert")
 
     logits =
-      outputs.last_hidden_state
+      outputs.hidden_state
       |> Axon.dropout(rate: classifier_dropout_rate(spec), name: "dropout")
       |> Axon.dense(spec.num_labels,
         kernel_initializer: kernel_initializer(spec),
@@ -261,7 +261,7 @@ defmodule Bumblebee.Text.Bert do
     outputs = inputs(spec) |> bert(spec, name: "bert")
 
     logits =
-      outputs.last_hidden_state
+      outputs.hidden_state
       |> Axon.dropout(rate: classifier_dropout_rate(spec), name: "dropout")
       |> Axon.dense(2,
         kernel_initializer: kernel_initializer(spec),
@@ -336,8 +336,7 @@ defmodule Bumblebee.Text.Bert do
   def model(%__MODULE__{architecture: :for_pre_training} = spec) do
     outputs = inputs(spec) |> bert(spec, name: "bert")
 
-    prediction_logits =
-      lm_prediction_head(outputs.last_hidden_state, spec, name: "cls.predictions")
+    prediction_logits = lm_prediction_head(outputs.hidden_state, spec, name: "cls.predictions")
 
     seq_relationship_logits =
       Axon.dense(outputs.pooler_output, 2,
@@ -356,7 +355,7 @@ defmodule Bumblebee.Text.Bert do
   def model(%__MODULE__{architecture: :for_causal_language_modeling} = spec) do
     outputs = inputs(spec, decoder?: true) |> bert(spec, decoder?: true, name: "bert")
 
-    logits = lm_prediction_head(outputs.last_hidden_state, spec, name: "cls.predictions")
+    logits = lm_prediction_head(outputs.hidden_state, spec, name: "cls.predictions")
 
     Layers.output(%{
       logits: logits,
@@ -370,8 +369,8 @@ defmodule Bumblebee.Text.Bert do
   @impl true
   def init_cache(spec, batch_size, max_length, inputs) do
     encoder_sequence_length =
-      if encoder_last_hidden_state = inputs["encoder_last_hidden_state"] do
-        Nx.axis_size(encoder_last_hidden_state, 1)
+      if encoder_hidden_state = inputs["encoder_hidden_state"] do
+        Nx.axis_size(encoder_hidden_state, 1)
       end
 
     Layers.Decoder.init_cache(batch_size, max_length,
@@ -401,7 +400,7 @@ defmodule Bumblebee.Text.Bert do
 
     extra_decoder_inputs =
       Bumblebee.Utils.Model.inputs_to_map([
-        Axon.input("encoder_last_hidden_state", optional: true, shape: hidden_shape),
+        Axon.input("encoder_hidden_state", optional: true, shape: hidden_shape),
         Axon.input("encoder_attention_mask", optional: true, shape: shape),
         Axon.input("cross_attention_head_mask", optional: true, shape: head_mask_shape),
         Axon.input("cache", optional: true)
@@ -440,7 +439,7 @@ defmodule Bumblebee.Text.Bert do
 
     encoder_attention_mask =
       Layers.default inputs["encoder_attention_mask"] do
-        Layers.default_attention_mask(inputs["encoder_last_hidden_state"])
+        Layers.default_attention_mask(inputs["encoder_hidden_state"])
       end
 
     hidden_state =
@@ -451,7 +450,7 @@ defmodule Bumblebee.Text.Bert do
         hidden_state,
         attention_mask,
         inputs["head_mask"],
-        inputs["encoder_last_hidden_state"],
+        inputs["encoder_hidden_state"],
         encoder_attention_mask,
         inputs["cross_attention_head_mask"],
         inputs["cache"],
@@ -460,10 +459,10 @@ defmodule Bumblebee.Text.Bert do
         name: join(name, "encoder")
       )
 
-    pooler_output = pooler(encoder_outputs.last_hidden_state, spec, name: join(name, "pooler"))
+    pooler_output = pooler(encoder_outputs.hidden_state, spec, name: join(name, "pooler"))
 
     %{
-      last_hidden_state: encoder_outputs.last_hidden_state,
+      hidden_state: encoder_outputs.hidden_state,
       pooler_output: pooler_output,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions,
@@ -550,7 +549,7 @@ defmodule Bumblebee.Text.Bert do
     decoder? = opts[:decoder?]
 
     state = %{
-      last_hidden_state: hidden_state,
+      hidden_state: hidden_state,
       hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
       attentions: Layers.maybe_container({}, spec.output_attentions),
       cross_attentions: Layers.maybe_container({}, spec.output_attentions),
@@ -568,7 +567,7 @@ defmodule Bumblebee.Text.Bert do
 
         {hidden_state, attention, cross_attention, block_cache} =
           bert_block(
-            state.last_hidden_state,
+            state.hidden_state,
             attention_mask,
             block_head_mask,
             encoder_hidden_state,
@@ -584,7 +583,7 @@ defmodule Bumblebee.Text.Bert do
         cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
 
         %{
-          last_hidden_state: hidden_state,
+          hidden_state: hidden_state,
           hidden_states: Layers.append(state.hidden_states, hidden_state),
           attentions: Layers.append(state.attentions, attention),
           cross_attentions: Layers.append(state.cross_attentions, cross_attention),

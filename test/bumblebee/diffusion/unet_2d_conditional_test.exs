@@ -18,7 +18,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
       inputs = %{
         "sample" => Nx.broadcast(0.5, {1, 4, 32, 32}),
         "timestep" => Nx.tensor(1),
-        "encoder_last_hidden_state" => Nx.broadcast(0.5, {1, 1, 768})
+        "encoder_hidden_state" => Nx.broadcast(0.5, {1, 1, 768})
       }
 
       output = Axon.predict(model, params, inputs)

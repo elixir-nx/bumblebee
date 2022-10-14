@@ -20,10 +20,10 @@ defmodule Bumblebee.Text.BartTest do
 
       output = Axon.predict(model, params, input)
 
-      assert Nx.shape(output.last_hidden_state) == {1, 11, 768}
+      assert Nx.shape(output.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        output.last_hidden_state[[0..-1//1, 1..3, 1..3]],
+        output.hidden_state[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [[-0.3985, -1.2727, 1.8201], [1.2444, -1.5131, -0.9588], [-1.0806, -0.0743, 0.5012]]
         ]),

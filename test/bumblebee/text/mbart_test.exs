@@ -22,10 +22,10 @@ defmodule Bumblebee.Text.MbartTest do
 
       output = Axon.predict(model, params, input)
 
-      assert Nx.shape(output.last_hidden_state) == {1, 8, 1024}
+      assert Nx.shape(output.hidden_state) == {1, 8, 1024}
 
       assert_all_close(
-        output.last_hidden_state[[0..-1//1, 1..3, 1..3]],
+        output.hidden_state[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [[-2.8804, -4.7890, -1.7658], [-3.0863, -4.9929, -1.2588], [-2.6020, -5.3808, -0.6461]]
         ]),

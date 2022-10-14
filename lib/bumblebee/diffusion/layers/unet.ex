@@ -34,13 +34,13 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
         :cross_attention_down_block,
         sample,
         timestep_embedding,
-        encoder_last_hidden_state,
+        encoder_hidden_state,
         opts
       ) do
-    down_block_2d(sample, timestep_embedding, encoder_last_hidden_state, opts)
+    down_block_2d(sample, timestep_embedding, encoder_hidden_state, opts)
   end
 
-  def down_block_2d(:down_block, sample, timestep_embedding, _encoder_last_hidden_state, opts) do
+  def down_block_2d(:down_block, sample, timestep_embedding, _encoder_hidden_state, opts) do
     down_block_2d(sample, timestep_embedding, nil, opts)
   end
 
@@ -52,10 +52,10 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
         sample,
         timestep_embedding,
         residuals,
-        encoder_last_hidden_state,
+        encoder_hidden_state,
         opts
       ) do
-    up_block_2d(sample, timestep_embedding, residuals, encoder_last_hidden_state, opts)
+    up_block_2d(sample, timestep_embedding, residuals, encoder_hidden_state, opts)
   end
 
   def up_block_2d(
@@ -63,7 +63,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
         sample,
         timestep_embedding,
         residuals,
-        _encoder_last_hidden_state,
+        _encoder_hidden_state,
         opts
       ) do
     up_block_2d(sample, timestep_embedding, residuals, nil, opts)
@@ -72,9 +72,9 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
   @doc """
   Adds U-Net downsample block to the network.
 
-  When `encoder_last_hidden_state` is not `nil`, applies cross-attention.
+  When `encoder_hidden_state` is not `nil`, applies cross-attention.
   """
-  def down_block_2d(hidden_state, timestep_embedding, encoder_last_hidden_state, opts \\ []) do
+  def down_block_2d(hidden_state, timestep_embedding, encoder_hidden_state, opts \\ []) do
     in_channels = opts[:in_channels]
     out_channels = opts[:out_channels]
     dropout = opts[:dropout] || 0.0
@@ -110,8 +110,8 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
             )
 
           hidden_state =
-            if encoder_last_hidden_state do
-              spatial_transformer(hidden_state, encoder_last_hidden_state,
+            if encoder_hidden_state do
+              spatial_transformer(hidden_state, encoder_hidden_state,
                 hidden_size: out_channels,
                 num_heads: num_attention_heads,
                 depth: 1,
@@ -140,13 +140,13 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
   @doc """
   Adds U-Net upsample block to the network.
 
-  When `encoder_last_hidden_state` is not `nil`, applies cross-attention.
+  When `encoder_hidden_state` is not `nil`, applies cross-attention.
   """
   def up_block_2d(
         hidden_state,
         timestep_embedding,
         residuals,
-        encoder_last_hidden_state,
+        encoder_hidden_state,
         opts
       ) do
     in_channels = opts[:in_channels]
@@ -183,8 +183,8 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
               name: join(name, "resnets.#{idx}")
             )
 
-          if encoder_last_hidden_state do
-            spatial_transformer(hidden_state, encoder_last_hidden_state,
+          if encoder_hidden_state do
+            spatial_transformer(hidden_state, encoder_hidden_state,
               hidden_size: out_channels,
               num_heads: num_attention_heads,
               depth: 1,
@@ -208,7 +208,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
   def mid_cross_attention_block_2d(
         hidden_state,
         timestep_embedding,
-        encoder_last_hidden_state,
+        encoder_hidden_state,
         opts \\ []
       ) do
     channels = opts[:channels]
@@ -242,7 +242,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
       hidden_state ->
         hidden_state
         |> spatial_transformer(
-          encoder_last_hidden_state,
+          encoder_hidden_state,
           hidden_size: channels,
           num_heads: num_attention_heads,
           depth: 1,

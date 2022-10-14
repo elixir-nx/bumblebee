@@ -125,7 +125,7 @@ defmodule Bumblebee.Vision.ConvNext do
     encoder_output = encoder(embedding_output, featurizer, name: join(name, "encoder"))
 
     pooled_output =
-      encoder_output.last_hidden_state
+      encoder_output.hidden_state
       |> Axon.global_avg_pool()
       |> Axon.layer_norm(
         epsilon: featurizer.layer_norm_epsilon,
@@ -135,7 +135,7 @@ defmodule Bumblebee.Vision.ConvNext do
       )
 
     %{
-      last_hidden_state: encoder_output.last_hidden_state,
+      hidden_state: encoder_output.hidden_state,
       pooler_output: pooled_output,
       hidden_states: encoder_output.hidden_states
     }
@@ -169,7 +169,7 @@ defmodule Bumblebee.Vision.ConvNext do
       Enum.zip([featurizer.depths, drop_path_rates, featurizer.hidden_sizes]) |> Enum.with_index()
 
     state = %{
-      last_hidden_state: hidden_state,
+      hidden_state: hidden_state,
       hidden_states: Layers.maybe_container({hidden_state}, featurizer.output_hidden_states),
       in_channels: hd(featurizer.hidden_sizes)
     }
@@ -180,7 +180,7 @@ defmodule Bumblebee.Vision.ConvNext do
 
         hidden_state =
           stage(
-            state.last_hidden_state,
+            state.hidden_state,
             state.in_channels,
             out_channels,
             featurizer,
@@ -191,7 +191,7 @@ defmodule Bumblebee.Vision.ConvNext do
           )
 
         %{
-          last_hidden_state: hidden_state,
+          hidden_state: hidden_state,
           hidden_states: Layers.append(state.hidden_states, hidden_state),
           in_channels: out_channels
         }

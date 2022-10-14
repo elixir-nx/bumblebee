@@ -111,13 +111,13 @@ defmodule Bumblebee.Vision.ResNet do
       |> encoder(spec, name: join(name, "encoder"))
 
     pooled_output =
-      Axon.adaptive_avg_pool(encoder_outputs.last_hidden_state,
+      Axon.adaptive_avg_pool(encoder_outputs.hidden_state,
         output_size: {1, 1},
         name: join(name, "pooler")
       )
 
     %{
-      last_hidden_state: encoder_outputs.last_hidden_state,
+      hidden_state: encoder_outputs.hidden_state,
       pooler_output: pooled_output,
       hidden_states: encoder_outputs.hidden_states
     }
@@ -147,7 +147,7 @@ defmodule Bumblebee.Vision.ResNet do
     stages = spec.hidden_sizes |> Enum.zip(spec.depths) |> Enum.with_index()
 
     state = %{
-      last_hidden_state: hidden_state,
+      hidden_state: hidden_state,
       hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
       in_channels: spec.embedding_size
     }
@@ -157,14 +157,14 @@ defmodule Bumblebee.Vision.ResNet do
         strides = if idx == 0 and not spec.downsample_in_first_stage, do: 1, else: 2
 
         hidden_state =
-          stage(state.last_hidden_state, state.in_channels, size, spec,
+          stage(state.hidden_state, state.in_channels, size, spec,
             depth: depth,
             strides: strides,
             name: join(name, "stages.#{idx}")
           )
 
         %{
-          last_hidden_state: hidden_state,
+          hidden_state: hidden_state,
           hidden_states: Layers.append(state.hidden_states, hidden_state),
           in_channels: size
         }

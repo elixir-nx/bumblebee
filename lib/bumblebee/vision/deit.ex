@@ -145,7 +145,7 @@ defmodule Bumblebee.Vision.Deit do
       |> deit(spec, name: "deit")
 
     logits =
-      outputs.last_hidden_state
+      outputs.hidden_state
       |> Layers.take_token(index: 0, axis: 1, name: "cls_head")
       |> Axon.dense(spec.num_labels,
         kernel_initializer: kernel_initializer(spec),
@@ -166,11 +166,11 @@ defmodule Bumblebee.Vision.Deit do
       |> deit(spec, name: "deit")
 
     cls_head =
-      outputs.last_hidden_state
+      outputs.hidden_state
       |> Layers.take_token(index: 0, axis: 1, name: "cls_head")
 
     dist_head =
-      outputs.last_hidden_state
+      outputs.hidden_state
       |> Layers.take_token(index: 1, axis: 1, name: "dist_head")
 
     cls_logits =
@@ -204,7 +204,7 @@ defmodule Bumblebee.Vision.Deit do
       |> deit(spec, name: "deit")
 
     logits =
-      outputs.last_hidden_state
+      outputs.hidden_state
       |> Axon.nx(fn x ->
         x = x[[0..-1//1, 1..-2//1]]
 
@@ -254,7 +254,7 @@ defmodule Bumblebee.Vision.Deit do
     {hidden_state, hidden_states, attentions} =
       encoder(hidden_state, spec, name: join(name, "encoder"))
 
-    last_hidden_state =
+    hidden_state =
       hidden_state
       |> Axon.layer_norm(
         channel_index: 2,
@@ -262,10 +262,10 @@ defmodule Bumblebee.Vision.Deit do
         name: join(name, "layernorm")
       )
 
-    pooled = pooler(last_hidden_state, spec, name: join(name, "pooler"))
+    pooled = pooler(hidden_state, spec, name: join(name, "pooler"))
 
     %{
-      last_hidden_state: last_hidden_state,
+      hidden_state: hidden_state,
       pooler_output: pooled,
       hidden_states: hidden_states,
       attentions: attentions

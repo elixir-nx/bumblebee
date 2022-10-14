@@ -172,7 +172,7 @@ defmodule Bumblebee.Text.Bart do
       `"decoder_input_embeddings"` are present, then `"decoder_input_ids"`
       will be ignored.
 
-    * `"encoder_last_hidden_state"` - `{batch_size, seq_length, hidden_size}`
+    * `"encoder_hidden_state"` - `{batch_size, seq_length, hidden_size}`
 
       Last hidden state output from the encoder. This hidden state is
       used in cross-attention blocks in the decoder. If specified, the
@@ -196,7 +196,7 @@ defmodule Bumblebee.Text.Bart do
 
   The `:for_causal_language_modeling` model is just the decoder part and
   accepts the following inputs instead: `"input_ids"`, `"attention_mask"`,
-  `"position_ids"`, `"head_mask"`, `"input_embeddings"`, `"encoder_last_hidden_state"`,
+  `"position_ids"`, `"head_mask"`, `"input_embeddings"`, `"encoder_hidden_state"`,
   `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache"`.
 
   ## Configuration
@@ -245,7 +245,7 @@ defmodule Bumblebee.Text.Bart do
 
     # TODO: Tie lm-head to word embedding as a spec option
     lm_logits =
-      outputs.last_hidden_state
+      outputs.hidden_state
       |> Layers.dense_transposed(spec.vocab_size,
         kernel_initializer: kernel_initializer(spec),
         name: "model.shared"
@@ -256,7 +256,7 @@ defmodule Bumblebee.Text.Bart do
       decoder_hidden_states: outputs.decoder_hidden_states,
       decoder_attentions: outputs.decoder_attentions,
       cross_attentions: outputs.cross_attentions,
-      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+      encoder_hidden_state: outputs.encoder_hidden_state,
       encoder_hidden_states: outputs.encoder_hidden_states,
       encoder_attentions: outputs.encoder_attentions,
       cache: outputs.cache
@@ -274,7 +274,7 @@ defmodule Bumblebee.Text.Bart do
           eos_idx = Nx.argmax(eos_mask, tie_break: :high, axis: 1)
           Bumblebee.Utils.Nx.batched_take(hidden_state, eos_idx)
         end,
-        [inputs["input_ids"], outputs.last_hidden_state]
+        [inputs["input_ids"], outputs.hidden_state]
       )
 
     logits = classification_head(sentence_representation, spec, name: "classification_head")
@@ -284,7 +284,7 @@ defmodule Bumblebee.Text.Bart do
       decoder_hidden_states: outputs.decoder_hidden_states,
       decoder_attentions: outputs.decoder_attentions,
       cross_attentions: outputs.cross_attentions,
-      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+      encoder_hidden_state: outputs.encoder_hidden_state,
       encoder_hidden_states: outputs.encoder_hidden_states,
       encoder_attentions: outputs.encoder_attentions
     })
@@ -295,7 +295,7 @@ defmodule Bumblebee.Text.Bart do
     outputs = bart(inputs, spec, name: "model")
 
     logits =
-      Axon.dense(outputs.last_hidden_state, 2,
+      Axon.dense(outputs.hidden_state, 2,
         kernel_initializer: kernel_initializer(spec),
         name: "qa_outputs"
       )
@@ -308,7 +308,7 @@ defmodule Bumblebee.Text.Bart do
       decoder_hidden_states: outputs.decoder_hidden_states,
       decoder_attentions: outputs.decoder_attentions,
       cross_attentions: outputs.cross_attentions,
-      encoder_last_hidden_state: outputs.encoder_last_hidden_state,
+      encoder_hidden_state: outputs.encoder_hidden_state,
       encoder_hidden_states: outputs.encoder_hidden_states,
       encoder_attentions: outputs.encoder_attentions
     })
@@ -326,7 +326,7 @@ defmodule Bumblebee.Text.Bart do
         Axon.input("position_ids", optional: true, shape: shape),
         Axon.input("head_mask", optional: true, shape: decoder_head_mask_shape),
         Axon.input("input_embeddings", optional: true, shape: hidden_shape),
-        Axon.input("encoder_last_hidden_state", optional: true, shape: hidden_shape),
+        Axon.input("encoder_hidden_state", optional: true, shape: hidden_shape),
         Axon.input("encoder_attention_mask", optional: true, shape: shape),
         Axon.input("cross_attention_head_mask", optional: true, shape: decoder_head_mask_shape),
         Axon.input("cache", optional: true)
@@ -349,7 +349,7 @@ defmodule Bumblebee.Text.Bart do
 
     encoder_attention_mask =
       Layers.default inputs["encoder_attention_mask"] do
-        Layers.default_attention_mask(inputs["encoder_last_hidden_state"])
+        Layers.default_attention_mask(inputs["encoder_hidden_state"])
       end
 
     outputs =
@@ -358,7 +358,7 @@ defmodule Bumblebee.Text.Bart do
         attention_mask,
         position_ids,
         inputs["head_mask"],
-        inputs["encoder_last_hidden_state"],
+        inputs["encoder_hidden_state"],
         encoder_attention_mask,
         inputs["cross_attention_head_mask"],
         inputs["cache"],
@@ -368,7 +368,7 @@ defmodule Bumblebee.Text.Bart do
 
     # TODO: Tie lm-head to word embedding as a spec option
     lm_logits =
-      outputs.last_hidden_state
+      outputs.hidden_state
       |> Layers.dense_transposed(spec.vocab_size,
         kernel_initializer: kernel_initializer(spec),
         name: "shared"
@@ -408,7 +408,7 @@ defmodule Bumblebee.Text.Bart do
       Axon.input("decoder_position_ids", optional: true, shape: shape),
       Axon.input("decoder_head_mask", optional: true, shape: decoder_head_mask_shape),
       Axon.input("decoder_input_embeddings", optional: true, shape: hidden_shape),
-      Axon.input("encoder_last_hidden_state", optional: true, shape: hidden_shape),
+      Axon.input("encoder_hidden_state", optional: true, shape: hidden_shape),
       Axon.input("cross_attention_head_mask", optional: true, shape: decoder_head_mask_shape),
       Axon.input("cache", optional: true)
     ])
@@ -417,8 +417,8 @@ defmodule Bumblebee.Text.Bart do
   @impl true
   def init_cache(spec, batch_size, max_length, inputs) do
     encoder_sequence_length =
-      if encoder_last_hidden_state = inputs["encoder_last_hidden_state"] do
-        Nx.axis_size(encoder_last_hidden_state, 1)
+      if encoder_hidden_state = inputs["encoder_hidden_state"] do
+        Nx.axis_size(encoder_hidden_state, 1)
       end
 
     Layers.Decoder.init_cache(batch_size, max_length,
@@ -469,9 +469,9 @@ defmodule Bumblebee.Text.Bart do
       end
 
     encoder_outputs =
-      Layers.if_present inputs["encoder_last_hidden_state"] do
+      Layers.if_present inputs["encoder_hidden_state"] do
         %{
-          last_hidden_state: inputs["encoder_last_hidden_state"],
+          hidden_state: inputs["encoder_hidden_state"],
           hidden_states: Layers.none(),
           attentions: Layers.none()
         }
@@ -487,7 +487,7 @@ defmodule Bumblebee.Text.Bart do
         decoder_attention_mask,
         decoder_position_ids,
         inputs["decoder_head_mask"],
-        encoder_outputs.last_hidden_state,
+        encoder_outputs.hidden_state,
         attention_mask,
         inputs["cross_attention_head_mask"],
         inputs["cache"],
@@ -496,12 +496,12 @@ defmodule Bumblebee.Text.Bart do
       )
 
     %{
-      last_hidden_state: decoder_outputs.last_hidden_state,
+      hidden_state: decoder_outputs.hidden_state,
       decoder_hidden_states: decoder_outputs.hidden_states,
       decoder_attentions: decoder_outputs.attentions,
       cross_attentions: decoder_outputs.cross_attentions,
       cache: decoder_outputs.cache,
-      encoder_last_hidden_state: encoder_outputs.last_hidden_state,
+      encoder_hidden_state: encoder_outputs.hidden_state,
       encoder_hidden_states: encoder_outputs.hidden_states,
       encoder_attentions: encoder_outputs.attentions
     }
@@ -552,7 +552,7 @@ defmodule Bumblebee.Text.Bart do
     name = opts[:name]
 
     state = %{
-      last_hidden_state: hidden_state,
+      hidden_state: hidden_state,
       hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
       attentions: Layers.maybe_container({}, spec.output_attentions)
     }
@@ -564,12 +564,12 @@ defmodule Bumblebee.Text.Bart do
         # TODO: wrap encoder block in a layer_drop combinator
 
         {hidden_state, attention} =
-          encoder_block(state.last_hidden_state, attention_mask, block_head_mask, spec,
+          encoder_block(state.hidden_state, attention_mask, block_head_mask, spec,
             name: join(name, idx)
           )
 
         %{
-          last_hidden_state: hidden_state,
+          hidden_state: hidden_state,
           hidden_states: Layers.append(state.hidden_states, hidden_state),
           attentions: Layers.append(state.attentions, attention)
         }
@@ -629,7 +629,7 @@ defmodule Bumblebee.Text.Bart do
          attention_mask,
          position_ids,
          head_mask,
-         encoder_last_hidden_state,
+         encoder_hidden_state,
          encoder_attention_mask,
          cross_attention_head_mask,
          cache,
@@ -654,7 +654,7 @@ defmodule Bumblebee.Text.Bart do
       |> decoder_blocks(
         attention_mask,
         head_mask,
-        encoder_last_hidden_state,
+        encoder_hidden_state,
         encoder_attention_mask,
         cross_attention_head_mask,
         cache,
@@ -679,7 +679,7 @@ defmodule Bumblebee.Text.Bart do
     name = opts[:name]
 
     state = %{
-      last_hidden_state: hidden_state,
+      hidden_state: hidden_state,
       hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
       attentions: Layers.maybe_container({}, spec.output_attentions),
       cross_attentions: Layers.maybe_container({}, spec.output_attentions),
@@ -699,7 +699,7 @@ defmodule Bumblebee.Text.Bart do
 
         {hidden_state, attention, cross_attention, block_cache} =
           decoder_block(
-            state.last_hidden_state,
+            state.hidden_state,
             attention_mask,
             block_head_mask,
             encoder_hidden_state,
@@ -714,7 +714,7 @@ defmodule Bumblebee.Text.Bart do
         cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
 
         %{
-          last_hidden_state: hidden_state,
+          hidden_state: hidden_state,
           hidden_states: Layers.append(state.hidden_states, hidden_state),
           attentions: Layers.append(state.attentions, attention),
           cross_attentions: Layers.append(state.cross_attentions, cross_attention),

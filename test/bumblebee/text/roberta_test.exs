@@ -18,10 +18,10 @@ defmodule Bumblebee.Text.RobertaTest do
 
       output = Axon.predict(model, params, input)
 
-      assert Nx.shape(output.last_hidden_state) == {1, 11, 768}
+      assert Nx.shape(output.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        output.last_hidden_state[[0..-1//1, 0..2, 0..2]],
+        output.hidden_state[[0..-1//1, 0..2, 0..2]],
         Nx.tensor([
           [[-0.0231, 0.0782, 0.0074], [-0.1854, 0.0540, -0.0175], [0.0548, 0.0799, 0.1687]]
         ]),

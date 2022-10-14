@@ -19,10 +19,10 @@ defmodule Bumblebee.Text.BertTest do
 
       output = Axon.predict(model, params, input)
 
-      assert Nx.shape(output.last_hidden_state) == {1, 11, 768}
+      assert Nx.shape(output.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        output.last_hidden_state[[0..-1//1, 1..3, 1..3]],
+        output.hidden_state[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([[[0.4249, 0.1008, 0.7531], [0.3771, 0.1188, 0.7467], [0.4152, 0.1098, 0.7108]]]),
         atol: 1.0e-4
       )

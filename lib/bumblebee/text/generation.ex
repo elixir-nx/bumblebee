@@ -117,12 +117,12 @@ defmodule Bumblebee.Text.Generation do
     Axon.nx(model, fn output ->
       case output do
         %{
-          encoder_last_hidden_state: last_hidden_state,
+          encoder_hidden_state: hidden_state,
           encoder_hidden_states: hidden_states,
           encoder_attentions: attentions
         } ->
           %{
-            last_hidden_state: last_hidden_state,
+            hidden_state: hidden_state,
             hidden_states: hidden_states,
             attentions: attentions
           }
@@ -147,7 +147,7 @@ defmodule Bumblebee.Text.Generation do
 
         inputs =
           Map.merge(inputs, %{
-            "encoder_last_hidden_state" => encoder_output.last_hidden_state,
+            "encoder_hidden_state" => encoder_output.hidden_state,
             "decoder_input_ids" => decoder_input_ids
           })
 
