@@ -13,7 +13,7 @@ defmodule Bumblebee.Text.NERTest do
       input = "I went with Jane Doe to Atlanta and we talked to John Smith about Microsoft"
 
       assert [[jane, atlanta, john, microsoft]] =
-               Bumblebee.Text.NER.extract(spec, tokenizer, model, params, input,
+               Bumblebee.Text.NER.extract(model, params, spec, tokenizer, input,
                  aggregation_strategy: :simple,
                  compiler: EXLA
                )
@@ -61,7 +61,7 @@ defmodule Bumblebee.Text.NERTest do
       ]
 
       assert [_first, [john, philadelphia]] =
-               Bumblebee.Text.NER.extract(spec, tokenizer, model, params, inputs,
+               Bumblebee.Text.NER.extract(model, params, spec, tokenizer, inputs,
                  aggregation_strategy: :simple,
                  compiler: EXLA
                )

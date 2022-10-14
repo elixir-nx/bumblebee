@@ -34,23 +34,17 @@ defmodule Bumblebee.Text.NER do
       input. Defaults to `nil`
   """
   @spec extract(
-          Bumblebee.ModelSpec.t(),
-          Bumblebee.Tokenizer.t(),
           Axon.t(),
           map(),
+          Bumblebee.ModelSpec.t(),
+          Bumblebee.Tokenizer.t(),
           String.t() | list(String.t()),
           keyword()
         ) :: list()
-  def extract(spec, tokenizer, model, params, input, opts \\ [])
+  def extract(model, params, spec, tokenizer, input, opts \\ [])
 
-  def extract(
-        %{architecture: :for_token_classification} = spec,
-        tokenizer,
-        model,
-        params,
-        input,
-        opts
-      ) do
+  def extract(model, params, spec, tokenizer, input, opts)
+      when spec.architecture == :for_token_classification do
     {aggregation_strategy, opts} = Keyword.pop(opts, :aggregation_strategy, nil)
     {length, compiler_opts} = Keyword.pop(opts, :length, nil)
 
@@ -72,7 +66,7 @@ defmodule Bumblebee.Text.NER do
     )
   end
 
-  def extract(%{architecture: arch}, _tokenizer, _model, _params, _input, _opts) do
+  def extract(_model, _params, %{architecture: arch}, _tokenizer, _input, _opts) do
     raise ArgumentError, "model spec must be a token classification model, got #{inspect(arch)}"
   end
 

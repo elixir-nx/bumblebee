@@ -167,7 +167,7 @@ defmodule Bumblebee.Text.MbartTest do
     inputs = Bumblebee.apply_tokenizer(tokenizer, english_phrase)
 
     token_ids =
-      Bumblebee.Text.Generation.generate(spec, model, params, inputs,
+      Bumblebee.Text.Generation.generate(model, params, spec, inputs,
         min_length: 0,
         max_length: 6
       )

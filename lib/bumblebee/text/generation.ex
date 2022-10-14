@@ -60,8 +60,8 @@ defmodule Bumblebee.Text.Generation do
   The default option values are taken from the given model specification
   when available.
   """
-  @spec generate(Bumblebee.ModelSpec.t(), Axon.t(), map(), map(), keyword()) :: Nx.t()
-  def generate(spec, model, params, inputs, opts \\ []) do
+  @spec generate(Axon.t(), map(), Bumblebee.ModelSpec.t(), map(), keyword()) :: Nx.t()
+  def generate(model, params, spec, inputs, opts \\ []) do
     opts =
       Keyword.validate!(opts,
         max_length: Map.get(spec, :max_length),
@@ -83,7 +83,7 @@ defmodule Bumblebee.Text.Generation do
     forced_eos_token_id = opts[:forced_eos_token_id]
 
     {prepare_inputs_fun, update_inputs_fun} =
-      input_callbacks(spec, model, max_length, decoder_start_token_id)
+      input_callbacks(model, spec, max_length, decoder_start_token_id)
 
     {_init_fun, predict_fun} = Axon.build(model)
 
@@ -134,7 +134,7 @@ defmodule Bumblebee.Text.Generation do
     end)
   end
 
-  defp input_callbacks(spec, model, max_length, decoder_start_token_id) do
+  defp input_callbacks(model, spec, max_length, decoder_start_token_id) do
     if encoder_decoder?(model) do
       encoder = encoder_from_encoder_decoder(model)
       {_encoder_init_fun, encoder_predict_fun} = Axon.build(encoder)

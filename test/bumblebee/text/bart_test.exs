@@ -157,7 +157,7 @@ defmodule Bumblebee.Text.BartTest do
     inputs = Bumblebee.apply_tokenizer(tokenizer, article)
 
     token_ids =
-      Bumblebee.Text.Generation.generate(spec, model, params, inputs,
+      Bumblebee.Text.Generation.generate(model, params, spec, inputs,
         min_length: 0,
         max_length: 8
       )
