@@ -19,10 +19,10 @@ defmodule Bumblebee.Vision.DeitTest do
 
       # Pre-trained checkpoints by default do not use
       # the pooler layers
-      assert Nx.shape(output.last_hidden_state) == {1, 198, 768}
+      assert Nx.shape(output.hidden_state) == {1, 198, 768}
 
       assert_all_close(
-        output.last_hidden_state[[0, 0, 0..2]],
+        output.hidden_state[[0, 0, 0..2]],
         Nx.tensor([-0.0738, -0.2792, -0.0235]),
         atol: 1.0e-4
       )

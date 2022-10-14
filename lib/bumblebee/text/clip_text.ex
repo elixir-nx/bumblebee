@@ -158,8 +158,8 @@ defmodule Bumblebee.Text.ClipText do
     encoder_outputs =
       encoder(hidden_state, attention_mask, spec, name: join(name, "encoder"), causal?: true)
 
-    last_hidden_state =
-      Axon.layer_norm(encoder_outputs.last_hidden_state,
+    hidden_state =
+      Axon.layer_norm(encoder_outputs.hidden_state,
         channel_index: 2,
         epsilon: spec.layer_norm_epsilon,
         name: join(name, "final_layer_norm")
@@ -167,15 +167,15 @@ defmodule Bumblebee.Text.ClipText do
 
     pooler_output =
       Axon.layer(
-        fn last_hidden_state, input_ids, _opts ->
+        fn hidden_state, input_ids, _opts ->
           eos_idx = Nx.argmax(input_ids, axis: -1)
-          Bumblebee.Utils.Nx.batched_take(last_hidden_state, eos_idx)
+          Bumblebee.Utils.Nx.batched_take(hidden_state, eos_idx)
         end,
-        [last_hidden_state, input_ids]
+        [hidden_state, input_ids]
       )
 
     %{
-      last_hidden_state: last_hidden_state,
+      hidden_state: hidden_state,
       pooler_output: pooler_output,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions
@@ -185,26 +185,26 @@ defmodule Bumblebee.Text.ClipText do
   defp text_embeddings(input_ids, position_ids, spec, opts) do
     name = opts[:name]
 
-    input_embeds =
+    input_embeddings =
       Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
         kernel_initializer: Axon.Initializers.normal(),
         name: join(name, "token_embedding")
       )
 
-    position_embeds =
+    position_embeddings =
       Axon.embedding(position_ids, spec.max_positions, spec.hidden_size,
         kernel_initializer: Axon.Initializers.normal(),
         name: join(name, "position_embedding")
       )
 
-    Axon.add(input_embeds, position_embeds)
+    Axon.add(input_embeddings, position_embeddings)
   end
 
-  defp encoder(input_embeds, attention_mask, spec, opts) do
+  defp encoder(input_embeddings, attention_mask, spec, opts) do
     name = opts[:name]
     causal? = Keyword.get(opts, :causal?, false)
 
-    encoder_blocks(input_embeds, attention_mask, spec, name: name, causal?: causal?)
+    encoder_blocks(input_embeddings, attention_mask, spec, name: name, causal?: causal?)
   end
 
   defp encoder_blocks(hidden_state, attention_mask, spec, opts) do
@@ -212,7 +212,7 @@ defmodule Bumblebee.Text.ClipText do
     causal? = Keyword.get(opts, :causal?, false)
 
     state = %{
-      last_hidden_state: hidden_state,
+      hidden_state: hidden_state,
       hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
       attentions: Layers.maybe_container({}, spec.output_attentions)
     }
@@ -220,13 +220,13 @@ defmodule Bumblebee.Text.ClipText do
     for idx <- 0..(spec.num_blocks - 1), reduce: state do
       state ->
         {hidden_state, attention} =
-          encoder_block(state.last_hidden_state, attention_mask, spec,
+          encoder_block(state.hidden_state, attention_mask, spec,
             name: join(name, "layers.#{idx}"),
             causal?: causal?
           )
 
         %{
-          last_hidden_state: hidden_state,
+          hidden_state: hidden_state,
           hidden_states: Layers.append(state.hidden_states, hidden_state),
           attentions: Layers.append(state.attentions, attention)
         }

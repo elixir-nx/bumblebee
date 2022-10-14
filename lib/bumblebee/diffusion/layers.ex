@@ -85,7 +85,7 @@ defmodule Bumblebee.Diffusion.Layers do
   Adds a residual block to the network.
   """
   def residual_block(x, in_channels, out_channels, opts \\ []) do
-    timestep_embeds = opts[:timestep_embeds]
+    timestep_embedding = opts[:timestep_embedding]
     dropout = opts[:dropout] || 0.0
     norm_num_groups = opts[:norm_num_groups] || 32
     norm_num_groups_out = opts[:norm_num_groups_out] || norm_num_groups
@@ -111,8 +111,8 @@ defmodule Bumblebee.Diffusion.Layers do
       )
 
     h =
-      if timestep_embeds do
-        timestep_embeds
+      if timestep_embedding do
+        timestep_embedding
         |> Axon.activation(activation, name: join(name, "timestep.act1"))
         |> Axon.dense(out_channels, name: join(name, "time_emb_proj"))
         |> Axon.nx(&Nx.new_axis(Nx.new_axis(&1, -1), -1))

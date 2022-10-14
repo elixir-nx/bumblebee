@@ -63,7 +63,7 @@ inputs = Bumblebee.apply_tokenizer(tokenizer, prompts)
 latents_shape = {batch_size, unet_spec.in_channels, unet_spec.sample_size, unet_spec.sample_size}
 
 IO.puts("Embedding text")
-%{last_hidden_state: text_embeddings} = Axon.predict(clip, clip_params, inputs)
+%{hidden_state: text_embeddings} = Axon.predict(clip, clip_params, inputs)
 
 IO.puts("Generating latents")
 key = Nx.Random.key(seed)
@@ -81,7 +81,7 @@ timesteps = Nx.to_flat_list(timesteps)
       unet_inputs = %{
         "sample" => Nx.concatenate([latents, latents]),
         "timestep" => Nx.tensor(timestep),
-        "encoder_last_hidden_state" => text_embeddings
+        "encoder_hidden_state" => text_embeddings
       }
 
       %{sample: noise_pred} = Axon.predict(unet, unet_params, unet_inputs, compiler: EXLA)

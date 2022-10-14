@@ -26,10 +26,10 @@ defmodule Bumblebee.Text.ClipTextTest do
 
       output = Axon.predict(model, params, input)
 
-      assert Nx.shape(output.last_hidden_state) == {2, 7, 512}
+      assert Nx.shape(output.hidden_state) == {2, 7, 512}
 
       assert_all_close(
-        output.last_hidden_state[[0..-1//1, 1..3, 1..3]],
+        output.hidden_state[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [[-0.5844, 0.3685, -2.0744], [-0.9600, 1.0018, -0.2415], [-0.5957, -0.1719, 0.4689]],
           [[-0.5844, 0.3685, -2.0744], [-0.0025, 0.1219, -0.0435], [0.0661, 0.1142, 0.0056]]

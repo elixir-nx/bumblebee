@@ -121,19 +121,19 @@ defmodule Bumblebee.Text.Gpt2 do
       Indices of positions of each input sequence tokens in the position
       embeddings.
 
-    * `"head_mask"` - `{num_blocks, num_attention_heads}`
+    * `"attention_head_mask"` - `{num_blocks, num_attention_heads}`
 
       Mask to nullify selected heads of the self-attention blocks in
       the encoder.
 
-    * `"input_embeds"` - `{batch_size, seq_length, hidden_size}`
+    * `"input_embeddings"` - `{batch_size, seq_length, hidden_size}`
 
       Embedded representation of `"input_ids"`, which can be specified
       for more control over how `"input_ids"` are embedded than the
-      model's internal embedding lookup. If `"input_embeds"` are present,
+      model's internal embedding lookup. If `"input_embeddings"` are present,
       then `"input_ids"` will be ignored.
 
-    * `"encoder_last_hidden_state"` - `{batch_size, encoder_seq_length, hidden_size}`
+    * `"encoder_hidden_state"` - `{batch_size, encoder_seq_length, hidden_size}`
 
       Last hidden state output from the encoder. This hidden state is
       used in cross-attention blocks in the decoder. If specified, the
@@ -213,7 +213,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
     # TODO: Tie lm-head to word embedding as a spec option
     logits =
-      Layers.dense_transposed(outputs.last_hidden_state, spec.vocab_size,
+      Layers.dense_transposed(outputs.hidden_state, spec.vocab_size,
         kernel_initializer: kernel_initializer(spec),
         name: "transformer.wte"
       )
@@ -233,7 +233,7 @@ defmodule Bumblebee.Text.Gpt2 do
     outputs = gpt2(inputs, spec, name: "transformer")
 
     logits =
-      outputs.last_hidden_state
+      outputs.hidden_state
       |> Axon.dropout(rate: classifier_dropout_rate(spec))
       |> Axon.dense(spec.num_labels, name: "classifier")
 
@@ -250,7 +250,7 @@ defmodule Bumblebee.Text.Gpt2 do
     outputs = gpt2(inputs, spec, name: "transformer")
 
     logits =
-      outputs.last_hidden_state
+      outputs.hidden_state
       |> Layers.dense_transposed(spec.num_labels, name: "score")
 
     pooled_logits =
@@ -283,8 +283,8 @@ defmodule Bumblebee.Text.Gpt2 do
   @impl true
   def init_cache(spec, batch_size, max_length, inputs) do
     encoder_sequence_length =
-      if encoder_last_hidden_state = inputs["encoder_last_hidden_state"] do
-        Nx.axis_size(encoder_last_hidden_state, 1)
+      if encoder_hidden_state = inputs["encoder_hidden_state"] do
+        Nx.axis_size(encoder_hidden_state, 1)
       end
 
     Layers.Decoder.init_cache(batch_size, max_length,
@@ -299,8 +299,8 @@ defmodule Bumblebee.Text.Gpt2 do
   defp gpt2(inputs, spec, opts \\ []) do
     name = opts[:name]
 
-    input_embeds =
-      Layers.default inputs["input_embeds"] do
+    input_embeddings =
+      Layers.default inputs["input_embeddings"] do
         Axon.embedding(inputs["input_ids"], spec.vocab_size, spec.hidden_size,
           name: join(name, "wte")
         )
@@ -308,33 +308,33 @@ defmodule Bumblebee.Text.Gpt2 do
 
     position_ids =
       Layers.default inputs["position_ids"] do
-        Layers.default_position_ids(input_embeds)
+        Layers.default_position_ids(input_embeddings)
       end
 
-    position_embeds =
+    position_embeddings =
       Axon.embedding(position_ids, spec.max_positions, spec.hidden_size, name: join(name, "wpe"))
 
     attention_mask =
       Layers.default inputs["attention_mask"] do
-        Layers.default_attention_mask(input_embeds)
+        Layers.default_attention_mask(input_embeddings)
       end
 
     encoder_attention_mask =
       Layers.default inputs["encoder_attention_mask"] do
-        Layers.default_attention_mask(inputs["encoder_last_hidden_state"])
+        Layers.default_attention_mask(inputs["encoder_hidden_state"])
       end
 
     hidden_state =
-      input_embeds
-      |> Axon.add(position_embeds)
+      input_embeddings
+      |> Axon.add(position_embeddings)
       |> Axon.dropout(rate: spec.embeddings_dropout_rate)
 
     block_outputs =
       blocks(
         hidden_state,
         attention_mask,
-        inputs["head_mask"],
-        inputs["encoder_last_hidden_state"],
+        inputs["attention_head_mask"],
+        inputs["encoder_hidden_state"],
         encoder_attention_mask,
         inputs["cross_attention_head_mask"],
         inputs["cache"],
@@ -342,15 +342,15 @@ defmodule Bumblebee.Text.Gpt2 do
         name: join(name, "h")
       )
 
-    last_hidden_state =
-      Axon.layer_norm(block_outputs.last_hidden_state,
+    hidden_state =
+      Axon.layer_norm(block_outputs.hidden_state,
         channel_index: 2,
         epsilon: spec.layer_norm_epsilon,
         name: join(name, "ln_f")
       )
 
     %{
-      last_hidden_state: last_hidden_state,
+      hidden_state: hidden_state,
       hidden_states: block_outputs.hidden_states,
       attentions: block_outputs.attentions,
       cross_attentions: block_outputs.cross_attentions,
@@ -361,8 +361,8 @@ defmodule Bumblebee.Text.Gpt2 do
   defp blocks(
          hidden_state,
          attention_mask,
-         head_mask,
-         encoder_last_hidden_state,
+         attention_head_mask,
+         encoder_hidden_state,
          encoder_attention_mask,
          cross_attention_head_mask,
          cache,
@@ -374,7 +374,7 @@ defmodule Bumblebee.Text.Gpt2 do
     {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
 
     state = %{
-      last_hidden_state: hidden_state,
+      hidden_state: hidden_state,
       hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
       attentions: Layers.maybe_container({}, spec.output_attentions),
       cross_attentions: Layers.maybe_container({}, spec.output_attentions),
@@ -386,19 +386,21 @@ defmodule Bumblebee.Text.Gpt2 do
     outputs =
       for idx <- 0..(spec.num_blocks - 1), reduce: state do
         state ->
-          block_head_mask = Axon.nx(head_mask, & &1[idx])
-          cross_attention_block_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
+          block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
+
+          cross_attention_block_attention_head_mask =
+            Axon.nx(cross_attention_head_mask, & &1[idx])
 
           block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
 
           {hidden_state, attention, cross_attention, block_cache} =
             block(
-              state.last_hidden_state,
+              state.hidden_state,
               attention_mask,
-              encoder_last_hidden_state,
+              encoder_hidden_state,
               encoder_attention_mask,
-              block_head_mask,
-              cross_attention_block_head_mask,
+              block_attention_head_mask,
+              cross_attention_block_attention_head_mask,
               block_cache,
               offset,
               spec,
@@ -408,7 +410,7 @@ defmodule Bumblebee.Text.Gpt2 do
           cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
 
           %{
-            last_hidden_state: hidden_state,
+            hidden_state: hidden_state,
             hidden_states: Layers.append(state.hidden_states, hidden_state),
             attentions: Layers.append(state.attentions, attention),
             cross_attentions: Layers.append(state.cross_attentions, cross_attention),
@@ -422,9 +424,9 @@ defmodule Bumblebee.Text.Gpt2 do
   defp block(
          hidden_state,
          attention_mask,
-         encoder_last_hidden_state,
+         encoder_hidden_state,
          encoder_attention_mask,
-         head_mask,
+         attention_head_mask,
          cross_attention_head_mask,
          block_cache,
          offset,
@@ -449,7 +451,7 @@ defmodule Bumblebee.Text.Gpt2 do
       |> attention(
         attention_mask,
         nil,
-        head_mask,
+        attention_head_mask,
         self_attention_cache,
         offset,
         spec,
@@ -462,7 +464,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
     {hidden_state, cross_attention_weights, cross_attention_cache} =
       if spec.use_cross_attention do
-        Layers.if_present encoder_last_hidden_state do
+        Layers.if_present encoder_hidden_state do
           residual = hidden_state
 
           {cross_attention_output, cross_attention_weights, cross_attention_cache} =
@@ -474,7 +476,7 @@ defmodule Bumblebee.Text.Gpt2 do
             )
             |> attention(
               encoder_attention_mask,
-              encoder_last_hidden_state,
+              encoder_hidden_state,
               cross_attention_head_mask,
               cross_attention_cache,
               offset,
@@ -518,7 +520,7 @@ defmodule Bumblebee.Text.Gpt2 do
          hidden_state,
          attention_mask,
          cross_hidden_state,
-         block_head_mask,
+         block_attention_head_mask,
          attention_cache,
          offset,
          spec,
@@ -583,7 +585,7 @@ defmodule Bumblebee.Text.Gpt2 do
     attention_weights =
       attention_weights
       |> Axon.dropout(rate: spec.attention_dropout_rate)
-      |> Layers.apply_attention_head_mask(block_head_mask)
+      |> Layers.apply_attention_head_mask(block_attention_head_mask)
 
     attention_output =
       attention_weights
@@ -617,17 +619,20 @@ defmodule Bumblebee.Text.Gpt2 do
   defp inputs(spec) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, spec.hidden_size}
-    decoder_head_mask_shape = {spec.num_blocks, spec.num_attention_heads}
+    decoder_attention_head_mask_shape = {spec.num_blocks, spec.num_attention_heads}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("input_ids", optional: true, shape: shape),
       Axon.input("attention_mask", optional: true, shape: shape),
       Axon.input("position_ids", optional: true, shape: shape),
-      Axon.input("head_mask", optional: true, shape: decoder_head_mask_shape),
-      Axon.input("input_embeds", optional: true, shape: hidden_shape),
-      Axon.input("encoder_last_hidden_state", optional: true, shape: hidden_shape),
+      Axon.input("attention_head_mask", optional: true, shape: decoder_attention_head_mask_shape),
+      Axon.input("input_embeddings", optional: true, shape: hidden_shape),
+      Axon.input("encoder_hidden_state", optional: true, shape: hidden_shape),
       Axon.input("encoder_attention_mask", optional: true, shape: shape),
-      Axon.input("cross_attention_head_mask", optional: true, shape: decoder_head_mask_shape),
+      Axon.input("cross_attention_head_mask",
+        optional: true,
+        shape: decoder_attention_head_mask_shape
+      ),
       Axon.input("cache", optional: true)
     ])
   end

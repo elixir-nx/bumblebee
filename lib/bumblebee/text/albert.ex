@@ -206,7 +206,7 @@ defmodule Bumblebee.Text.Albert do
   def model(%__MODULE__{architecture: :for_masked_language_modeling} = spec) do
     outputs = albert(inputs(), spec, name: "albert")
 
-    logits = lm_prediction_head(outputs.last_hidden_state, spec, name: "predictions")
+    logits = lm_prediction_head(outputs.hidden_state, spec, name: "predictions")
 
     Layers.output(%{
       logits: logits,
@@ -275,7 +275,7 @@ defmodule Bumblebee.Text.Albert do
     outputs = albert(inputs(), spec, name: "albert")
 
     logits =
-      outputs.last_hidden_state
+      outputs.hidden_state
       |> Axon.dropout(rate: classifier_dropout_rate(spec))
       |> Axon.dense(spec.num_labels,
         kernel_initializer: kernel_initializer(spec),
@@ -293,7 +293,7 @@ defmodule Bumblebee.Text.Albert do
     outputs = albert(inputs(), spec, name: "albert")
 
     logits =
-      Axon.dense(outputs.last_hidden_state, 2,
+      Axon.dense(outputs.hidden_state, 2,
         kernel_initializer: kernel_initializer(spec),
         name: "qa_outputs"
       )
@@ -341,13 +341,13 @@ defmodule Bumblebee.Text.Albert do
     hidden_state =
       embeddings(input_ids, position_ids, token_type_ids, spec, name: join(name, "embeddings"))
 
-    {last_hidden_state, hidden_states, attentions} =
+    {hidden_state, hidden_states, attentions} =
       encoder(hidden_state, attention_mask, spec, name: join(name, "encoder"))
 
-    pooler_output = pooler(last_hidden_state, spec, name: join(name, "pooler"))
+    pooler_output = pooler(hidden_state, spec, name: join(name, "pooler"))
 
     %{
-      last_hidden_state: last_hidden_state,
+      hidden_state: hidden_state,
       pooler_output: pooler_output,
       hidden_states: hidden_states,
       attentions: attentions
@@ -357,25 +357,25 @@ defmodule Bumblebee.Text.Albert do
   defp embeddings(input_ids, position_ids, token_type_ids, spec, opts) do
     name = opts[:name]
 
-    inputs_embeds =
+    inputs_embeddings =
       Axon.embedding(input_ids, spec.vocab_size, spec.embedding_size,
         kernel_initializer: kernel_initializer(spec),
         name: join(name, "word_embeddings")
       )
 
-    position_embeds =
+    position_embeddings =
       Axon.embedding(position_ids, spec.max_positions, spec.embedding_size,
         kernel_initializer: kernel_initializer(spec),
         name: join(name, "position_embeddings")
       )
 
-    token_type_embeds =
+    token_type_embeddings =
       Axon.embedding(token_type_ids, spec.max_token_types, spec.embedding_size,
         kernel_initializer: kernel_initializer(spec),
         name: join(name, "token_type_embeddings")
       )
 
-    Axon.add([inputs_embeds, position_embeds, token_type_embeds])
+    Axon.add([inputs_embeddings, position_embeddings, token_type_embeddings])
     |> Axon.layer_norm(
       epsilon: spec.layer_norm_epsilon,
       name: join(name, "LayerNorm"),

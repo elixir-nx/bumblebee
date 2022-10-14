@@ -17,10 +17,10 @@ defmodule Bumblebee.Vision.VitTest do
 
       # Pre-trained checkpoints by default do not use
       # the pooler layers
-      assert Nx.shape(output.last_hidden_state) == {1, 197, 768}
+      assert Nx.shape(output.hidden_state) == {1, 197, 768}
 
       assert_all_close(
-        output.last_hidden_state[[0, 0, 0..2]],
+        output.hidden_state[[0, 0, 0..2]],
         Nx.tensor([0.4435, 0.4302, -0.1585]),
         atol: 1.0e-4
       )

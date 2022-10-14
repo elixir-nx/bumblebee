@@ -107,7 +107,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       The timestep used to parameterize model behaviour in a multi-step
       process, such as diffusion.
 
-    * `"encoder_last_hidden_state"` - `{batch_size, seq_length, hidden_size}`
+    * `"encoder_hidden_state"` - `{batch_size, seq_length, hidden_size}`
 
       The conditional state (context) to use with cross-attention.
 
@@ -138,12 +138,12 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   def input_template(spec) do
     sample_shape = {1, spec.in_channels, spec.sample_size, spec.sample_size}
     timestep_shape = {}
-    encoder_last_hidden_state_shape = {1, 1, spec.cross_attention_size}
+    encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
     %{
       "sample" => Nx.template(sample_shape, :f32),
       "timestep" => Nx.template(timestep_shape, :s64),
-      "encoder_last_hidden_state" => Nx.template(encoder_last_hidden_state_shape, :f32)
+      "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)
     }
   end
 
@@ -160,7 +160,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("sample", shape: sample_shape),
       Axon.input("timestep", shape: {}),
-      Axon.input("encoder_last_hidden_state", shape: {nil, nil, spec.cross_attention_size})
+      Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size})
     ])
   end
 
@@ -169,7 +169,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
     sample = inputs["sample"]
     timestep = inputs["timestep"]
-    encoder_last_hidden_state = inputs["encoder_last_hidden_state"]
+    encoder_hidden_state = inputs["encoder_hidden_state"]
 
     sample =
       if spec.center_input_sample do
@@ -187,7 +187,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
         op_name: :broadcast
       )
 
-    timestep_embeds =
+    timestep_embedding =
       timestep
       |> Diffusion.Layers.timestep_sinusoidal_embedding(hd(spec.hidden_sizes),
         flip_sin_to_cos: spec.embedding_flip_sin_to_cos,
@@ -205,13 +205,13 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       )
 
     {sample, down_block_residuals} =
-      down_blocks(sample, timestep_embeds, encoder_last_hidden_state, spec,
+      down_blocks(sample, timestep_embedding, encoder_hidden_state, spec,
         name: join(name, "down_blocks")
       )
 
     sample
-    |> mid_block(timestep_embeds, encoder_last_hidden_state, spec, name: join(name, "mid_block"))
-    |> up_blocks(timestep_embeds, down_block_residuals, encoder_last_hidden_state, spec,
+    |> mid_block(timestep_embedding, encoder_hidden_state, spec, name: join(name, "mid_block"))
+    |> up_blocks(timestep_embedding, down_block_residuals, encoder_hidden_state, spec,
       name: join(name, "up_blocks")
     )
     |> Axon.group_norm(spec.group_norm_num_groups,
@@ -226,7 +226,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     )
   end
 
-  defp down_blocks(sample, timestep_embeds, encoder_last_hidden_state, spec, opts) do
+  defp down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, opts) do
     name = opts[:name]
     blocks = Enum.zip(spec.hidden_sizes, spec.down_block_types)
 
@@ -244,8 +244,8 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
             Diffusion.Layers.UNet.down_block_2d(
               block_type,
               sample,
-              timestep_embeds,
-              encoder_last_hidden_state,
+              timestep_embedding,
+              encoder_hidden_state,
               depth: spec.depth,
               in_channels: in_channels,
               out_channels: out_channels,
@@ -264,11 +264,11 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     {sample, List.to_tuple(down_block_residuals)}
   end
 
-  defp mid_block(hidden_state, timesteps_embedding, encoder_last_hidden_state, spec, opts) do
+  defp mid_block(hidden_state, timesteps_embedding, encoder_hidden_state, spec, opts) do
     Diffusion.Layers.UNet.mid_cross_attention_block_2d(
       hidden_state,
       timesteps_embedding,
-      encoder_last_hidden_state,
+      encoder_hidden_state,
       channels: List.last(spec.hidden_sizes),
       activation: spec.activation,
       norm_epsilon: spec.group_norm_epsilon,
@@ -281,9 +281,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
   defp up_blocks(
          sample,
-         timestep_embeds,
+         timestep_embedding,
          down_block_residuals,
-         encoder_last_hidden_state,
+         encoder_hidden_state,
          spec,
          opts
        ) do
@@ -313,9 +313,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
             Diffusion.Layers.UNet.up_block_2d(
               block_type,
               sample,
-              timestep_embeds,
+              timestep_embedding,
               residuals,
-              encoder_last_hidden_state,
+              encoder_hidden_state,
               depth: spec.depth + 1,
               in_channels: in_channels,
               out_channels: out_channels,
