@@ -332,12 +332,12 @@ defmodule Bumblebee.Layers do
     * `:name` - layer name
 
   """
-  def apply_vision_patch_mask(%Axon{} = embeds, patch_mask, opts \\ []) do
+  def apply_vision_patch_mask(%Axon{} = embeddings, patch_mask, opts \\ []) do
     opts = Keyword.validate!(opts, [:name])
     name = opts[:name]
 
-    mask_token_shape = fn embeds_shape, _ ->
-      hidden_size = elem(embeds_shape, 2)
+    mask_token_shape = fn embeddings_shape, _ ->
+      hidden_size = elem(embeddings_shape, 2)
       {1, 1, hidden_size}
     end
 
@@ -345,20 +345,20 @@ defmodule Bumblebee.Layers do
 
     if_present patch_mask do
       Axon.layer(
-        fn embeds, patch_mask, mask_tokens, _opts ->
-          hidden_size = Nx.axis_size(embeds, 2)
-          batch_size = Nx.axis_size(embeds, 0)
-          seq_len = Nx.axis_size(embeds, 1)
+        fn embeddings, patch_mask, mask_tokens, _opts ->
+          hidden_size = Nx.axis_size(embeddings, 2)
+          batch_size = Nx.axis_size(embeddings, 0)
+          seq_len = Nx.axis_size(embeddings, 1)
           mask_tokens = Nx.broadcast(mask_tokens, {batch_size, seq_len, hidden_size})
           mask = patch_mask |> Nx.new_axis(-1) |> Nx.broadcast({batch_size, seq_len, hidden_size})
-          Nx.select(mask, mask_tokens, embeds)
+          Nx.select(mask, mask_tokens, embeddings)
         end,
-        [embeds, patch_mask, mask_token],
+        [embeddings, patch_mask, mask_token],
         name: name,
         op_name: :apply_patch_mask
       )
     else
-      embeds
+      embeddings
     end
   end
 

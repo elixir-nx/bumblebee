@@ -126,11 +126,11 @@ defmodule Bumblebee.Text.Gpt2 do
       Mask to nullify selected heads of the self-attention blocks in
       the encoder.
 
-    * `"input_embeds"` - `{batch_size, seq_length, hidden_size}`
+    * `"input_embeddings"` - `{batch_size, seq_length, hidden_size}`
 
       Embedded representation of `"input_ids"`, which can be specified
       for more control over how `"input_ids"` are embedded than the
-      model's internal embedding lookup. If `"input_embeds"` are present,
+      model's internal embedding lookup. If `"input_embeddings"` are present,
       then `"input_ids"` will be ignored.
 
     * `"encoder_last_hidden_state"` - `{batch_size, encoder_seq_length, hidden_size}`
@@ -299,8 +299,8 @@ defmodule Bumblebee.Text.Gpt2 do
   defp gpt2(inputs, spec, opts \\ []) do
     name = opts[:name]
 
-    input_embeds =
-      Layers.default inputs["input_embeds"] do
+    input_embeddings =
+      Layers.default inputs["input_embeddings"] do
         Axon.embedding(inputs["input_ids"], spec.vocab_size, spec.hidden_size,
           name: join(name, "wte")
         )
@@ -308,15 +308,15 @@ defmodule Bumblebee.Text.Gpt2 do
 
     position_ids =
       Layers.default inputs["position_ids"] do
-        Layers.default_position_ids(input_embeds)
+        Layers.default_position_ids(input_embeddings)
       end
 
-    position_embeds =
+    position_embeddings =
       Axon.embedding(position_ids, spec.max_positions, spec.hidden_size, name: join(name, "wpe"))
 
     attention_mask =
       Layers.default inputs["attention_mask"] do
-        Layers.default_attention_mask(input_embeds)
+        Layers.default_attention_mask(input_embeddings)
       end
 
     encoder_attention_mask =
@@ -325,8 +325,8 @@ defmodule Bumblebee.Text.Gpt2 do
       end
 
     hidden_state =
-      input_embeds
-      |> Axon.add(position_embeds)
+      input_embeddings
+      |> Axon.add(position_embeddings)
       |> Axon.dropout(rate: spec.embeddings_dropout_rate)
 
     block_outputs =
@@ -624,7 +624,7 @@ defmodule Bumblebee.Text.Gpt2 do
       Axon.input("attention_mask", optional: true, shape: shape),
       Axon.input("position_ids", optional: true, shape: shape),
       Axon.input("head_mask", optional: true, shape: decoder_head_mask_shape),
-      Axon.input("input_embeds", optional: true, shape: hidden_shape),
+      Axon.input("input_embeddings", optional: true, shape: hidden_shape),
       Axon.input("encoder_last_hidden_state", optional: true, shape: hidden_shape),
       Axon.input("encoder_attention_mask", optional: true, shape: shape),
       Axon.input("cross_attention_head_mask", optional: true, shape: decoder_head_mask_shape),

@@ -203,15 +203,15 @@ defmodule Bumblebee.Layers.Decoder do
   end
 
   @doc """
-  Bumps the cache offset by the number of tokens in `input_embeds`.
+  Bumps the cache offset by the number of tokens in `input_embeddings`.
   """
-  def update_cache_offset(cache, input_embeds) do
+  def update_cache_offset(cache, input_embeddings) do
     Axon.layer(
-      fn cache, input_embeds, _ ->
-        seq_length = Nx.axis_size(input_embeds, 1)
+      fn cache, input_embeddings, _ ->
+        seq_length = Nx.axis_size(input_embeddings, 1)
         update_in(cache.offset, &Nx.add(&1, seq_length))
       end,
-      [cache, input_embeds]
+      [cache, input_embeddings]
     )
   end
 

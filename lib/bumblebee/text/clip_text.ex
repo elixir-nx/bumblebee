@@ -185,26 +185,26 @@ defmodule Bumblebee.Text.ClipText do
   defp text_embeddings(input_ids, position_ids, spec, opts) do
     name = opts[:name]
 
-    input_embeds =
+    input_embeddings =
       Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
         kernel_initializer: Axon.Initializers.normal(),
         name: join(name, "token_embedding")
       )
 
-    position_embeds =
+    position_embeddings =
       Axon.embedding(position_ids, spec.max_positions, spec.hidden_size,
         kernel_initializer: Axon.Initializers.normal(),
         name: join(name, "position_embedding")
       )
 
-    Axon.add(input_embeds, position_embeds)
+    Axon.add(input_embeddings, position_embeddings)
   end
 
-  defp encoder(input_embeds, attention_mask, spec, opts) do
+  defp encoder(input_embeddings, attention_mask, spec, opts) do
     name = opts[:name]
     causal? = Keyword.get(opts, :causal?, false)
 
-    encoder_blocks(input_embeds, attention_mask, spec, name: name, causal?: causal?)
+    encoder_blocks(input_embeddings, attention_mask, spec, name: name, causal?: causal?)
   end
 
   defp encoder_blocks(hidden_state, attention_mask, spec, opts) do

@@ -131,11 +131,11 @@ defmodule Bumblebee.Text.Mbart do
       Mask to nullify selected heads of the self-attention blocks in
       the encoder.
 
-    * `"input_embeds"` - `{batch_size, seq_length, hidden_size}`
+    * `"input_embeddings"` - `{batch_size, seq_length, hidden_size}`
 
       Embedded representation of `"input_ids"`, which can be specified
       for more control over how `"input_ids"` are embedded than the
-      model's internal embedding lookup. If `"input_embeds"` are present,
+      model's internal embedding lookup. If `"input_embeddings"` are present,
       then `"input_ids"` will be ignored.
 
     * `"decoder_input_ids"` - `{batch_size, target_seq_length}`
@@ -160,12 +160,12 @@ defmodule Bumblebee.Text.Mbart do
       Mask to nullify selected heads of the self-attention blocks in
       the decoder.
 
-    * `"decoder_input_embeds"` - `{batch_size, seq_length, hidden_size}`
+    * `"decoder_input_embeddings"` - `{batch_size, seq_length, hidden_size}`
 
       Embedded representation of `"decoder_input_ids"`, which can be
       specified for more control over how `"decoder_input_ids"` are
       embedded than the model's internal embedding lookup. If
-      `"decoder_input_embeds"` are present, then `"decoder_input_ids"`
+      `"decoder_input_embeddings"` are present, then `"decoder_input_ids"`
       will be ignored.
 
     * `"encoder_last_hidden_state"` - `{batch_size, seq_length, hidden_size}`
@@ -192,7 +192,7 @@ defmodule Bumblebee.Text.Mbart do
 
   The `:for_causal_language_modeling` model is just the decoder part and
   accepts the following inputs instead: `"input_ids"`, `"attention_mask"`,
-  `"position_ids"`, `"head_mask"`, `"input_embeds"`, `"encoder_last_hidden_state"`,
+  `"position_ids"`, `"head_mask"`, `"input_embeddings"`, `"encoder_last_hidden_state"`,
   `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache"`.
 
   ## Configuration
@@ -321,26 +321,26 @@ defmodule Bumblebee.Text.Mbart do
         Axon.input("attention_mask", optional: true, shape: shape),
         Axon.input("position_ids", optional: true, shape: shape),
         Axon.input("head_mask", optional: true, shape: decoder_head_mask_shape),
-        Axon.input("input_embeds", optional: true, shape: hidden_shape),
+        Axon.input("input_embeddings", optional: true, shape: hidden_shape),
         Axon.input("encoder_last_hidden_state", optional: true, shape: hidden_shape),
         Axon.input("encoder_attention_mask", optional: true, shape: shape),
         Axon.input("cross_attention_head_mask", optional: true, shape: decoder_head_mask_shape),
         Axon.input("cache", optional: true)
       ])
 
-    input_embeds =
-      Layers.default inputs["input_embeds"] do
+    input_embeddings =
+      Layers.default inputs["input_embeddings"] do
         token_embedding(inputs["input_ids"], spec, name: "model.decoder.embed_tokens")
       end
 
     attention_mask =
       Layers.default inputs["attention_mask"] do
-        Layers.default_attention_mask(input_embeds)
+        Layers.default_attention_mask(input_embeddings)
       end
 
     position_ids =
       Layers.default inputs["position_ids"] do
-        Layers.default_position_ids(input_embeds)
+        Layers.default_position_ids(input_embeddings)
       end
 
     encoder_attention_mask =
@@ -350,7 +350,7 @@ defmodule Bumblebee.Text.Mbart do
 
     outputs =
       decoder(
-        input_embeds,
+        input_embeddings,
         attention_mask,
         position_ids,
         inputs["head_mask"],
@@ -399,12 +399,12 @@ defmodule Bumblebee.Text.Mbart do
       Axon.input("attention_mask", optional: true, shape: shape),
       Axon.input("position_ids", optional: true, shape: shape),
       Axon.input("head_mask", optional: true, shape: encoder_head_mask_shape),
-      Axon.input("input_embeds", optional: true, shape: hidden_shape),
+      Axon.input("input_embeddings", optional: true, shape: hidden_shape),
       Axon.input("decoder_input_ids", optional: true, shape: shape),
       Axon.input("decoder_attention_mask", optional: true, shape: shape),
       Axon.input("decoder_position_ids", optional: true, shape: shape),
       Axon.input("decoder_head_mask", optional: true, shape: decoder_head_mask_shape),
-      Axon.input("decoder_input_embeds", optional: true, shape: hidden_shape),
+      Axon.input("decoder_input_embeddings", optional: true, shape: hidden_shape),
       Axon.input("encoder_last_hidden_state", optional: true, shape: hidden_shape),
       Axon.input("cross_attention_head_mask", optional: true, shape: decoder_head_mask_shape),
       Axon.input("cache", optional: true)
@@ -430,23 +430,23 @@ defmodule Bumblebee.Text.Mbart do
   defp mbart(inputs, spec, opts \\ []) do
     name = opts[:name]
 
-    input_embeds =
-      Layers.default inputs["input_embeds"] do
+    input_embeddings =
+      Layers.default inputs["input_embeddings"] do
         token_embedding(inputs["input_ids"], spec, name: join(name, "shared"))
       end
 
     attention_mask =
       Layers.default inputs["attention_mask"] do
-        Layers.default_attention_mask(input_embeds)
+        Layers.default_attention_mask(input_embeddings)
       end
 
     position_ids =
       Layers.default inputs["position_ids"] do
-        Layers.default_position_ids(input_embeds)
+        Layers.default_position_ids(input_embeddings)
       end
 
-    decoder_input_embeds =
-      Layers.default inputs["decoder_input_embeds"] do
+    decoder_input_embeddings =
+      Layers.default inputs["decoder_input_embeddings"] do
         decoder_input_ids =
           Layers.default inputs["decoder_input_ids"] do
             Axon.nx(inputs["input_ids"], fn input_ids ->
@@ -476,12 +476,12 @@ defmodule Bumblebee.Text.Mbart do
 
     decoder_attention_mask =
       Layers.default inputs["decoder_attention_mask"] do
-        Layers.default_attention_mask(decoder_input_embeds)
+        Layers.default_attention_mask(decoder_input_embeddings)
       end
 
     decoder_position_ids =
       Layers.default inputs["decoder_position_ids"] do
-        Layers.default_position_ids(decoder_input_embeds)
+        Layers.default_position_ids(decoder_input_embeddings)
       end
 
     encoder_outputs =
@@ -492,14 +492,14 @@ defmodule Bumblebee.Text.Mbart do
           attentions: Layers.none()
         }
       else
-        encoder(input_embeds, attention_mask, position_ids, inputs["head_mask"], spec,
+        encoder(input_embeddings, attention_mask, position_ids, inputs["head_mask"], spec,
           name: join(name, "encoder")
         )
       end
 
     decoder_outputs =
       decoder(
-        decoder_input_embeds,
+        decoder_input_embeddings,
         decoder_attention_mask,
         decoder_position_ids,
         inputs["decoder_head_mask"],
@@ -523,14 +523,14 @@ defmodule Bumblebee.Text.Mbart do
     }
   end
 
-  defp encoder(input_embeds, attention_mask, position_ids, head_mask, spec, opts) do
+  defp encoder(input_embeddings, attention_mask, position_ids, head_mask, spec, opts) do
     name = opts[:name]
 
-    position_embeds = position_embedding(position_ids, spec, opts)
+    position_embeddings = position_embedding(position_ids, spec, opts)
 
     encoder_outputs =
-      input_embeds
-      |> Axon.add(position_embeds)
+      input_embeddings
+      |> Axon.add(position_embeddings)
       |> Axon.layer_norm(
         channel_index: 2,
         epsilon: 1.0e-5,
@@ -555,16 +555,16 @@ defmodule Bumblebee.Text.Mbart do
   defp token_embedding(input_ids, spec, opts) do
     name = opts[:name]
 
-    input_embeds =
+    input_embeddings =
       Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
         name: name
       )
 
     if spec.scale_embedding do
-      Axon.nx(input_embeds, fn x -> Nx.multiply(x, Nx.sqrt(spec.hidden_size)) end)
+      Axon.nx(input_embeddings, fn x -> Nx.multiply(x, Nx.sqrt(spec.hidden_size)) end)
     else
-      input_embeds
+      input_embeddings
     end
   end
 
@@ -659,7 +659,7 @@ defmodule Bumblebee.Text.Mbart do
   end
 
   defp decoder(
-         input_embeds,
+         input_embeddings,
          attention_mask,
          position_ids,
          head_mask,
@@ -672,13 +672,13 @@ defmodule Bumblebee.Text.Mbart do
        ) do
     name = opts[:name]
 
-    position_embeds = position_embedding(position_ids, spec, opts)
+    position_embeddings = position_embedding(position_ids, spec, opts)
 
     {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
 
     decoder_outputs =
-      input_embeds
-      |> Axon.add(position_embeds)
+      input_embeddings
+      |> Axon.add(position_embeddings)
       |> Axon.layer_norm(
         channel_index: 2,
         epsilon: 1.0e-5,
@@ -701,7 +701,7 @@ defmodule Bumblebee.Text.Mbart do
       |> Axon.layer_norm(channel_index: 2, name: join(name, "layer_norm"))
 
     %{
-      cache: Layers.Decoder.update_cache_offset(decoder_outputs.cache, input_embeds),
+      cache: Layers.Decoder.update_cache_offset(decoder_outputs.cache, input_embeddings),
       last_hidden_state: hidden_state,
       hidden_states: Layers.append(decoder_outputs.hidden_states, hidden_state),
       attentions: decoder_outputs.attentions,

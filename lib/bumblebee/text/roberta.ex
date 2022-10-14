@@ -434,25 +434,25 @@ defmodule Bumblebee.Text.Roberta do
   defp embeddings(input_ids, position_ids, token_type_ids, spec, opts) do
     name = opts[:name]
 
-    inputs_embeds =
+    inputs_embeddings =
       Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
         name: join(name, "word_embeddings")
       )
 
-    position_embeds =
+    position_embeddings =
       Axon.embedding(position_ids, spec.max_positions, spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
         name: join(name, "position_embeddings")
       )
 
-    token_type_embeds =
+    token_type_embeddings =
       Axon.embedding(token_type_ids, spec.max_token_types, spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
         name: join(name, "token_type_embeddings")
       )
 
-    Axon.add([inputs_embeds, position_embeds, token_type_embeds])
+    Axon.add([inputs_embeddings, position_embeddings, token_type_embeddings])
     |> Axon.layer_norm(
       epsilon: spec.layer_norm_epsilon,
       name: join(name, "LayerNorm"),
