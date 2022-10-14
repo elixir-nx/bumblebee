@@ -289,9 +289,9 @@ defmodule Bumblebee.Text.Gpt2 do
 
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
-      num_decoder_attention_heads: spec.num_attention_heads,
-      num_encoder_attention_heads: spec.num_attention_heads,
-      num_decoder_blocks: spec.num_blocks,
+      decoder_num_attention_heads: spec.num_attention_heads,
+      encoder_num_attention_heads: spec.num_attention_heads,
+      decoder_num_blocks: spec.num_blocks,
       encoder_sequence_length: encoder_sequence_length
     )
   end
