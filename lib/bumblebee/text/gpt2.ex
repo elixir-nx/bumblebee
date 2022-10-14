@@ -121,7 +121,7 @@ defmodule Bumblebee.Text.Gpt2 do
       Indices of positions of each input sequence tokens in the position
       embeddings.
 
-    * `"head_mask"` - `{num_blocks, num_attention_heads}`
+    * `"attention_head_mask"` - `{num_blocks, num_attention_heads}`
 
       Mask to nullify selected heads of the self-attention blocks in
       the encoder.
@@ -333,7 +333,7 @@ defmodule Bumblebee.Text.Gpt2 do
       blocks(
         hidden_state,
         attention_mask,
-        inputs["head_mask"],
+        inputs["attention_head_mask"],
         inputs["encoder_hidden_state"],
         encoder_attention_mask,
         inputs["cross_attention_head_mask"],
@@ -361,7 +361,7 @@ defmodule Bumblebee.Text.Gpt2 do
   defp blocks(
          hidden_state,
          attention_mask,
-         head_mask,
+         attention_head_mask,
          encoder_hidden_state,
          encoder_attention_mask,
          cross_attention_head_mask,
@@ -386,8 +386,10 @@ defmodule Bumblebee.Text.Gpt2 do
     outputs =
       for idx <- 0..(spec.num_blocks - 1), reduce: state do
         state ->
-          block_head_mask = Axon.nx(head_mask, & &1[idx])
-          cross_attention_block_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
+          block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
+
+          cross_attention_block_attention_head_mask =
+            Axon.nx(cross_attention_head_mask, & &1[idx])
 
           block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
 
@@ -397,8 +399,8 @@ defmodule Bumblebee.Text.Gpt2 do
               attention_mask,
               encoder_hidden_state,
               encoder_attention_mask,
-              block_head_mask,
-              cross_attention_block_head_mask,
+              block_attention_head_mask,
+              cross_attention_block_attention_head_mask,
               block_cache,
               offset,
               spec,
@@ -424,7 +426,7 @@ defmodule Bumblebee.Text.Gpt2 do
          attention_mask,
          encoder_hidden_state,
          encoder_attention_mask,
-         head_mask,
+         attention_head_mask,
          cross_attention_head_mask,
          block_cache,
          offset,
@@ -449,7 +451,7 @@ defmodule Bumblebee.Text.Gpt2 do
       |> attention(
         attention_mask,
         nil,
-        head_mask,
+        attention_head_mask,
         self_attention_cache,
         offset,
         spec,
@@ -518,7 +520,7 @@ defmodule Bumblebee.Text.Gpt2 do
          hidden_state,
          attention_mask,
          cross_hidden_state,
-         block_head_mask,
+         block_attention_head_mask,
          attention_cache,
          offset,
          spec,
@@ -583,7 +585,7 @@ defmodule Bumblebee.Text.Gpt2 do
     attention_weights =
       attention_weights
       |> Axon.dropout(rate: spec.attention_dropout_rate)
-      |> Layers.apply_attention_head_mask(block_head_mask)
+      |> Layers.apply_attention_head_mask(block_attention_head_mask)
 
     attention_output =
       attention_weights
@@ -617,17 +619,20 @@ defmodule Bumblebee.Text.Gpt2 do
   defp inputs(spec) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, spec.hidden_size}
-    decoder_head_mask_shape = {spec.num_blocks, spec.num_attention_heads}
+    decoder_attention_head_mask_shape = {spec.num_blocks, spec.num_attention_heads}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("input_ids", optional: true, shape: shape),
       Axon.input("attention_mask", optional: true, shape: shape),
       Axon.input("position_ids", optional: true, shape: shape),
-      Axon.input("head_mask", optional: true, shape: decoder_head_mask_shape),
+      Axon.input("attention_head_mask", optional: true, shape: decoder_attention_head_mask_shape),
       Axon.input("input_embeddings", optional: true, shape: hidden_shape),
       Axon.input("encoder_hidden_state", optional: true, shape: hidden_shape),
       Axon.input("encoder_attention_mask", optional: true, shape: shape),
-      Axon.input("cross_attention_head_mask", optional: true, shape: decoder_head_mask_shape),
+      Axon.input("cross_attention_head_mask",
+        optional: true,
+        shape: decoder_attention_head_mask_shape
+      ),
       Axon.input("cache", optional: true)
     ])
   end

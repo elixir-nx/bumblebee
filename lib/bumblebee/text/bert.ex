@@ -138,7 +138,7 @@ defmodule Bumblebee.Text.Bert do
       Indices of positions of each input sequence tokens in the position
       embeddings.
 
-    * `"head_mask"` - `{num_blocks, num_attention_heads}`
+    * `"attention_head_mask"` - `{num_blocks, num_attention_heads}`
 
       Mask to nullify selected heads of the self-attention blocks in
       the encoder.
@@ -387,7 +387,7 @@ defmodule Bumblebee.Text.Bert do
     decoder? = Keyword.get(opts, :decoder?, false)
 
     hidden_shape = Tuple.append(shape, spec.hidden_size)
-    head_mask_shape = {spec.num_blocks, spec.num_attention_heads}
+    attention_head_mask_shape = {spec.num_blocks, spec.num_attention_heads}
 
     inputs =
       Bumblebee.Utils.Model.inputs_to_map([
@@ -395,14 +395,14 @@ defmodule Bumblebee.Text.Bert do
         Axon.input("attention_mask", optional: true, shape: shape),
         Axon.input("token_type_ids", optional: true, shape: shape),
         Axon.input("position_ids", optional: true, shape: shape),
-        Axon.input("head_mask", optional: true, shape: head_mask_shape)
+        Axon.input("attention_head_mask", optional: true, shape: attention_head_mask_shape)
       ])
 
     extra_decoder_inputs =
       Bumblebee.Utils.Model.inputs_to_map([
         Axon.input("encoder_hidden_state", optional: true, shape: hidden_shape),
         Axon.input("encoder_attention_mask", optional: true, shape: shape),
-        Axon.input("cross_attention_head_mask", optional: true, shape: head_mask_shape),
+        Axon.input("cross_attention_head_mask", optional: true, shape: attention_head_mask_shape),
         Axon.input("cache", optional: true)
       ])
 
@@ -449,7 +449,7 @@ defmodule Bumblebee.Text.Bert do
       encoder(
         hidden_state,
         attention_mask,
-        inputs["head_mask"],
+        inputs["attention_head_mask"],
         inputs["encoder_hidden_state"],
         encoder_attention_mask,
         inputs["cross_attention_head_mask"],
@@ -504,7 +504,7 @@ defmodule Bumblebee.Text.Bert do
   defp encoder(
          hidden_state,
          attention_mask,
-         head_mask,
+         attention_head_mask,
          encoder_hidden_state,
          encoder_attention_mask,
          cross_attention_head_mask,
@@ -521,7 +521,7 @@ defmodule Bumblebee.Text.Bert do
       encoder_blocks(
         hidden_state,
         attention_mask,
-        head_mask,
+        attention_head_mask,
         encoder_hidden_state,
         encoder_attention_mask,
         cross_attention_head_mask,
@@ -537,7 +537,7 @@ defmodule Bumblebee.Text.Bert do
   defp encoder_blocks(
          hidden_state,
          attention_mask,
-         head_mask,
+         attention_head_mask,
          encoder_hidden_state,
          encoder_attention_mask,
          cross_attention_head_mask,
@@ -560,8 +560,8 @@ defmodule Bumblebee.Text.Bert do
 
     for idx <- 0..(spec.num_blocks - 1), reduce: state do
       state ->
-        block_head_mask = Axon.nx(head_mask, & &1[idx])
-        cross_attention_block_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
+        block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
+        cross_attention_block_attention_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
 
         block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
 
@@ -569,10 +569,10 @@ defmodule Bumblebee.Text.Bert do
           bert_block(
             state.hidden_state,
             attention_mask,
-            block_head_mask,
+            block_attention_head_mask,
             encoder_hidden_state,
             encoder_attention_mask,
-            cross_attention_block_head_mask,
+            cross_attention_block_attention_head_mask,
             block_cache,
             offset,
             spec,
@@ -595,10 +595,10 @@ defmodule Bumblebee.Text.Bert do
   defp bert_block(
          hidden_state,
          attention_mask,
-         block_head_mask,
+         block_attention_head_mask,
          encoder_hidden_state,
          encoder_attention_mask,
-         cross_attention_block_head_mask,
+         cross_attention_block_attention_head_mask,
          block_cache,
          offset,
          spec,
@@ -615,7 +615,7 @@ defmodule Bumblebee.Text.Bert do
         hidden_state,
         attention_mask,
         nil,
-        block_head_mask,
+        block_attention_head_mask,
         self_attention_cache,
         offset,
         spec,
@@ -630,7 +630,7 @@ defmodule Bumblebee.Text.Bert do
             attention_output,
             encoder_attention_mask,
             encoder_hidden_state,
-            cross_attention_block_head_mask,
+            cross_attention_block_attention_head_mask,
             cross_attention_cache,
             offset,
             spec,
@@ -660,7 +660,7 @@ defmodule Bumblebee.Text.Bert do
          hidden_state,
          attention_mask,
          cross_hidden_state,
-         block_head_mask,
+         block_attention_head_mask,
          attention_cache,
          offset,
          spec,
@@ -674,7 +674,7 @@ defmodule Bumblebee.Text.Bert do
         hidden_state,
         attention_mask,
         cross_hidden_state,
-        block_head_mask,
+        block_attention_head_mask,
         attention_cache,
         offset,
         spec,
@@ -691,7 +691,7 @@ defmodule Bumblebee.Text.Bert do
          hidden_state,
          attention_mask,
          cross_hidden_state,
-         block_head_mask,
+         block_attention_head_mask,
          attention_cache,
          offset,
          spec,
@@ -749,7 +749,7 @@ defmodule Bumblebee.Text.Bert do
     attention_weights =
       Layers.attention_weights(query, key, attention_bias)
       |> Axon.dropout(rate: spec.attention_dropout_rate, name: join(name, "dropout"))
-      |> Layers.apply_attention_head_mask(block_head_mask)
+      |> Layers.apply_attention_head_mask(block_attention_head_mask)
 
     attention_output =
       attention_weights
