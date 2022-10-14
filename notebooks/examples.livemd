@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:bumblebee, path: "~/_/bumblebee"},
+  {:bumblebee, path: Path.expand("..", __DIR__)},
   {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
   {:exla, github: "elixir-nx/nx", sparse: "exla", override: true},
   {:axon, github: "elixir-nx/axon", override: true},
