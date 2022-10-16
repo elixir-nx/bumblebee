@@ -53,6 +53,8 @@ defmodule Bumblebee.MixProject do
       main: "Bumblebee",
       source_url: "https://github.com/elixir-nx/bumblebee",
       source_ref: "v#{@version}",
+      extras: ["notebooks/examples.livemd"],
+      extra_section: "GUIDES",
       groups_for_modules: [
         Models: [
           Bumblebee.Diffusion.UNet2DConditional,

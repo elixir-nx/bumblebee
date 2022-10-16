@@ -1,0 +1,243 @@
+# Examples
+
+```elixir
+Mix.install([
+  {:bumblebee, path: Path.expand("..", __DIR__)},
+  {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
+  {:exla, github: "elixir-nx/nx", sparse: "exla", override: true},
+  {:axon, github: "elixir-nx/axon", override: true},
+  {:stb_image, "~> 0.5.0"},
+  {:req, "~> 0.3.0"},
+  {:kino, "~> 0.7.0"}
+])
+
+Nx.global_default_backend(EXLA.Backend)
+```
+
+## Introduction
+
+In this notebook we go through a number of examples to get a quick overview of what Bumblebee brings to the table.
+
+<!-- livebook:{"branch_parent_index":0} -->
+
+## Image classification
+
+Let's start with image classification. First, we load a pre-trained [ResNet-50](https://huggingface.co/microsoft/resnet-50) model from a HuggingFace repository. We also load the corresponding featurizer for preprocessing input images.
+
+```elixir
+{:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
+{:ok, featurizer} = Bumblebee.load_featurizer({:hf, "microsoft/resnet-50"})
+:ok
+```
+
+Next, we need an image to clssify.
+
+```elixir
+url_input =
+  Kino.Input.url("Image URL",
+    default:
+      "https://images.unsplash.com/photo-1462888210965-cdf193fb74de?ixlib=rb-1.2.1&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=1074&q=80"
+  )
+```
+
+```elixir
+url = Kino.Input.read(url_input)
+
+image = Req.get!(url).body |> StbImage.read_binary!()
+
+image |> StbImage.to_binary(:jpg) |> Kino.Image.new(:jpeg)
+```
+
+With both the model and image at hand, we are ready to do the classification! We pass the image through our featurizer to get normalized model inputs, then we run the model and extract the most probable label.
+
+```elixir
+input = Bumblebee.apply_featurizer(featurizer, image)
+output = Axon.predict(model, params, input)
+
+id = output.logits |> Nx.argmax() |> Nx.to_number()
+spec.id_to_label[id]
+```
+
+You can try a number of other models, just replace the repository id with one of these:
+
+* [**facebook/convnext-tiny-224**](https://huggingface.co/facebook/convnext-tiny-224) (ConvNeXT)
+
+* [**google/vit-base-patch16-224**](https://huggingface.co/google/vit-base-patch16-224) (ViT)
+
+* [**facebook/deit-base-distilled-patch16-224**](https://huggingface.co/facebook/deit-base-distilled-patch16-224) (DeiT)
+
+<!-- livebook:{"branch_parent_index":0} -->
+
+## Fill-mask
+
+Now time for some text processing. Specifically, we want to fill in the missing word in a sentence. This time we load the [BERT](https://huggingface.co/bert-base-uncased) model together with a matching tokenizer. We will use the tokenizer to preprocess our text input.
+
+```elixir
+{:ok, model, params, spec} = Bumblebee.load_model({:hf, "bert-base-uncased"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+:ok
+```
+
+For the masked word we need to use:
+
+```elixir
+mask_token_id = Bumblebee.Tokenizer.special_token_id(tokenizer, :mask)
+Bumblebee.Tokenizer.id_to_token(tokenizer, mask_token_id)
+```
+
+```elixir
+text_input = Kino.Input.text("Sentence with mask", default: "The capital of [MASK] is Paris.")
+```
+
+```elixir
+text = Kino.Input.read(text_input)
+
+inputs = Bumblebee.apply_tokenizer(tokenizer, text)
+output = Axon.predict(model, params, inputs)
+
+# Find the location of the mask token in the input sequence
+mask_token_id = Bumblebee.Tokenizer.special_token_id(tokenizer, :mask)
+mask_idx = inputs["input_ids"] |> Nx.equal(mask_token_id) |> Nx.argmax()
+
+# Get the most probable token for that location
+id = output.logits[[0, mask_idx]] |> Nx.argmax() |> Nx.to_number()
+Bumblebee.Tokenizer.id_to_token(tokenizer, id)
+```
+
+Again, you can try other models, such as [**albert-base-v2**](https://huggingface.co/albert-base-v2) or [**roberta-base**](https://huggingface.co/roberta-base).
+
+<!-- livebook:{"branch_parent_index":0} -->
+
+## Text classification
+
+In this example we will analyze text sentiment.
+
+We will use the [BERTweet](https://huggingface.co/finiteautomata/bertweet-base-sentiment-analysis) model, trained to classify text into one of three categories: positive (POS), negative (NEG) or neutral (NEU).
+
+```elixir
+{:ok, model, params, spec} =
+  Bumblebee.load_model({:hf, "finiteautomata/bertweet-base-sentiment-analysis"})
+
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "vinai/bertweet-base"})
+
+:ok
+```
+
+*Note: this time we need to load a matching tokenizer from a different repository.*
+
+```elixir
+text_input = Kino.Input.text("Text", default: "I love my friends.")
+```
+
+```elixir
+text = Kino.Input.read(text_input)
+
+inputs = Bumblebee.apply_tokenizer(tokenizer, text)
+output = Axon.predict(model, params, inputs)
+
+id = output.logits |> Nx.argmax() |> Nx.to_number()
+spec.id_to_label[id]
+```
+
+<!-- livebook:{"branch_parent_index":0} -->
+
+## Named-entity recognition
+
+Bumblebee also brings a couple modules for performing end-to-end tasks. In this section we look at named-entity recognition (NER), where the objective is to identify and categorize entities in text. We will once again use a fine-tuned [BERT](https://huggingface.co/dslim/bert-base-NER) model.
+
+```elixir
+{:ok, model, params, spec} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+:ok
+```
+
+```elixir
+text_input =
+  Kino.Input.text("Text",
+    default: "Rachel Green works at Ralph Lauren in New York City in the sitcom Friends"
+  )
+```
+
+Having loaded the model and the tokenizer, all we need is a single function call!
+
+```elixir
+text = Kino.Input.read(text_input)
+
+Bumblebee.Text.NER.extract(model, params, spec, tokenizer, text, aggregation_strategy: :simple)
+```
+
+<!-- livebook:{"branch_parent_index":0} -->
+
+## Text generation
+
+Generation is where things get even more exciting. In this section w will use the extremely popular [GPT-2](https://huggingface.co/gpt2) model to generate text continuation.
+
+```elixir
+{:ok, model, params, spec} = Bumblebee.load_model({:hf, "gpt2"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+:ok
+```
+
+```elixir
+text_input = Kino.Input.text("Text", default: "Yesterday, I was reading a book and")
+```
+
+Bumblebee comes with a high-level function for text generation. It will iteratively call the model to geneate the result token by token, adhering to the given length constraints.
+
+```elixir
+text = Kino.Input.read(text_input)
+
+inputs = Bumblebee.apply_tokenizer(tokenizer, text)
+token_ids = Bumblebee.Text.Generation.generate(model, params, spec, inputs, max_length: 20)
+
+Bumblebee.Tokenizer.decode(tokenizer, token_ids)
+```
+
+There is also [gpt2-medium](https://huggingface.co/gpt2-medium) and [gpt2-large](https://huggingface.co/gpt2-large) - heavier versions of the model with much more parameters.
+
+<!-- livebook:{"branch_parent_index":0} -->
+
+## Question answering
+
+Another text-related task is question answering, where the objective is to retrieve the answer to a question based on a given text. We will work with a [RoBERTa](https://huggingface.co/deepset/roberta-base-squad2) model trained to do just that.
+
+```elixir
+{:ok, model, params, config} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
+:ok
+```
+
+```elixir
+question_input =
+  Kino.Input.text("Question",
+    default: "Which name is also used to describe the Amazon rainforest in English?"
+  )
+  |> Kino.render()
+
+context_input =
+  Kino.Input.textarea("Context",
+    default:
+      ~s/The Amazon rainforest (Portuguese: Floresta Amazônica or Amazônia; Spanish: Selva Amazónica, Amazonía or usually Amazonia; French: Forêt amazonienne; Dutch: Amazoneregenwoud), also known in English as Amazonia or the Amazon Jungle, is a moist broadleaf forest that covers most of the Amazon basin of South America. This basin encompasses 7,000,000 square kilometres (2,700,000 sq mi), of which 5,500,000 square kilometres (2,100,000 sq mi) are covered by the rainforest. This region includes territory belonging to nine nations. The majority of the forest is contained within Brazil, with 60% of the rainforest, followed by Peru with 13%, Colombia with 10%, and with minor amounts in Venezuela, Ecuador, Bolivia, Guyana, Suriname and French Guiana. States or departments in four nations contain "Amazonas" in their names. The Amazon represents over half of the planet's remaining rainforests, and comprises the largest and most biodiverse tract of tropical rainforest in the world, with an estimated 390 billion individual trees divided into 16,000 species./
+  )
+```
+
+```elixir
+question = Kino.Input.read(question_input)
+context = Kino.Input.read(context_input)
+
+inputs = Bumblebee.apply_tokenizer(tokenizer, {question, context})
+
+output = Axon.predict(model, params, inputs)
+
+answer_start_index = output.start_logits |> Nx.argmax() |> Nx.to_number()
+answer_end_index = output.end_logits |> Nx.argmax() |> Nx.to_number()
+
+answer_tokens =
+  inputs["input_ids"][[0, answer_start_index..answer_end_index]] |> Nx.to_flat_list()
+
+Bumblebee.Tokenizer.decode(tokenizer, answer_tokens)
+```
+
+## Final notes
+
+The examples we covered should give you a good idea of what Bumblebee is about. We are excited about enabling easy access to the pre-trained, powerful deep learning models in Elixir. We are actively working on adding more models and high-level APIs, so stay tuned 🚀
