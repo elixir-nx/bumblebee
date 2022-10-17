@@ -258,7 +258,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
         true ->
           noise_prime = noise_prime + noise / 6
-          {0, current_sample, noise_prime}
+          {Nx.broadcast(0.0, noise_prime), current_sample, noise_prime}
       end
 
     state = %{state | current_sample: current_sample, noise_prime: noise_prime}
