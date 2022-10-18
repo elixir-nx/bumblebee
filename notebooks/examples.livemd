@@ -30,7 +30,7 @@ Let's start with image classification. First, we load a pre-trained [ResNet-50](
 :ok
 ```
 
-Next, we need an image to clssify.
+Next, we need an image to classify.
 
 ```elixir
 url_input =
