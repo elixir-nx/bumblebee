@@ -30,7 +30,7 @@ Let's start with image classification. First, we load a pre-trained [ResNet-50](
 :ok
 ```
 
-Next, we need an image to clssify.
+Next, we need an image to classify.
 
 ```elixir
 url_input =
@@ -182,7 +182,7 @@ Generation is where things get even more exciting. In this section w will use th
 text_input = Kino.Input.text("Text", default: "Yesterday, I was reading a book and")
 ```
 
-Bumblebee comes with a high-level function for text generation. It will iteratively call the model to geneate the result token by token, adhering to the given length constraints.
+Bumblebee comes with a high-level function for text generation. It will iteratively call the model to generate the result token by token, adhering to the given length constraints.
 
 ```elixir
 text = Kino.Input.read(text_input)
