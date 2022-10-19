@@ -1,6 +1,8 @@
 defmodule Bumblebee.HuggingFace.Hub do
   @moduledoc false
 
+  require Logger
+
   alias Bumblebee.Utils.HTTP
 
   @huggingface_endpoint "https://huggingface.co"
@@ -45,7 +47,7 @@ defmodule Bumblebee.HuggingFace.Hub do
         []
       end
 
-    with {:ok, etag, download_url} <- head_download(url, headers) do
+    with {:ok, etag, download_url, size} <- head_download(url, headers) do
       metadata_path = Path.join(cache_dir, metadata_filename(url))
       entry_path = Path.join(cache_dir, entry_filename(url, etag))
 
@@ -55,6 +57,11 @@ defmodule Bumblebee.HuggingFace.Hub do
 
         _ ->
           tmp_path = get_tmp_path()
+
+          if size && size > 5_000_000 do
+            formatted_bytes = Bumblebee.Utils.format_bytes(size)
+            Logger.debug("Downloading #{inspect(url)} (#{formatted_bytes})")
+          end
 
           with :ok <- HTTP.download(download_url, tmp_path, headers: headers) |> finish_request() do
             File.rename!(tmp_path, entry_path)
@@ -76,7 +83,9 @@ defmodule Bumblebee.HuggingFace.Hub do
           url
         end
 
-      {:ok, etag, download_url}
+      size = get_response_size(response)
+
+      {:ok, etag, download_url, size}
     end
   end
 
@@ -102,6 +111,14 @@ defmodule Bumblebee.HuggingFace.Hub do
       {:ok, etag}
     else
       {:error, "no ETag found on the resource"}
+    end
+  end
+
+  defp get_response_size(response) do
+    if size =
+         HTTP.get_header(response, "x-linked-size") ||
+           HTTP.get_header(response, "content-length") do
+      String.to_integer(size)
     end
   end
 

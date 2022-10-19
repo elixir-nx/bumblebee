@@ -152,6 +152,34 @@ defmodule Bumblebee.HuggingFace.HubTest do
 
       assert {:error, "repository not found"} = Hub.cached_download(url, cache_dir: tmp_dir)
     end
+
+    @tag :tmp_dir
+    test "logs a message when downloading a large file", %{bypass: bypass, tmp_dir: tmp_dir} do
+      Bypass.expect_once(bypass, "HEAD", "/file.bin", fn conn ->
+        url = Plug.Conn.request_url(conn)
+
+        conn
+        |> Plug.Conn.put_resp_header("x-linked-etag", ~s/"hash"/)
+        |> Plug.Conn.put_resp_header("location", url <> "/storage")
+        |> Plug.Conn.put_resp_header("x-linked-size", "1111000000")
+        |> Plug.Conn.resp(302, "")
+      end)
+
+      Bypass.expect_once(bypass, "GET", "/file.bin/storage", fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("etag", ~s/"hash"/)
+        |> Plug.Conn.resp(200, <<0, 1>>)
+      end)
+
+      url = url(bypass.port) <> "/file.bin"
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          Hub.cached_download(url, cache_dir: tmp_dir)
+        end)
+
+      assert log =~ ~s/Downloading "#{url}" (1.1 GB)/
+    end
   end
 
   defp url(port), do: "http://localhost:#{port}"
