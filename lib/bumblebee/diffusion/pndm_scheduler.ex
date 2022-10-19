@@ -174,7 +174,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
   end
 
   @impl true
-  deftransform step(scheduler, state, sample, noise) do
+  def step(scheduler, state, sample, noise) do
     do_step(scheduler, state, sample, noise)
   end
 
