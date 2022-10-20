@@ -22,7 +22,7 @@ defmodule Bumblebee.Utils.HTTP do
     * `:headers` - request headers
 
   """
-  @spec download(String.t(), Path.t(), keyword()) :: :ok | {:error, term()}
+  @spec download(String.t(), Path.t(), keyword()) :: :ok | {:error, String.t()}
   def download(url, path, opts \\ []) do
     path = IO.chardata_to_string(path)
     headers = build_headers(opts[:headers] || [])
@@ -122,7 +122,7 @@ defmodule Bumblebee.Utils.HTTP do
       to the redirect location. Defaults to `true`
 
   """
-  @spec request(atom(), String.t(), keyword()) :: {:ok, response()} | {:error, term()}
+  @spec request(atom(), String.t(), keyword()) :: {:ok, response()} | {:error, String.t()}
   def request(method, url, opts \\ []) do
     headers = build_headers(opts[:headers] || [])
     follow_redirects = Keyword.get(opts, :follow_redirects, true)
@@ -148,7 +148,7 @@ defmodule Bumblebee.Utils.HTTP do
         {:ok, %{status: status, headers: parse_headers(headers), body: body}}
 
       {:error, error} ->
-        {:error, error}
+        {:error, "HTTP request failed, reason: #{inspect(error)}"}
     end
   end
 
