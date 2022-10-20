@@ -33,10 +33,12 @@ defmodule Bumblebee.HuggingFace.Hub do
   """
   @spec cached_download(String.t(), keyword()) :: {:ok, String.t()} | {:error, String.t()}
   def cached_download(url, opts \\ []) do
-    cache_dir = opts[:cache_dir] || default_cache_dir()
+    cache_dir = opts[:cache_dir] || bumblebee_cache_dir()
     auth_token = opts[:auth_token]
 
-    File.mkdir_p!(cache_dir)
+    dir = Path.join(cache_dir, "huggingface")
+
+    File.mkdir_p!(dir)
 
     headers =
       if auth_token do
@@ -46,8 +48,8 @@ defmodule Bumblebee.HuggingFace.Hub do
       end
 
     with {:ok, etag, download_url} <- head_download(url, headers) do
-      metadata_path = Path.join(cache_dir, metadata_filename(url))
-      entry_path = Path.join(cache_dir, entry_filename(url, etag))
+      metadata_path = Path.join(dir, metadata_filename(url))
+      entry_path = Path.join(dir, entry_filename(url, etag))
 
       case load_json(metadata_path) do
         {:ok, %{"etag" => ^etag}} ->
@@ -56,10 +58,15 @@ defmodule Bumblebee.HuggingFace.Hub do
         _ ->
           tmp_path = get_tmp_path()
 
-          with :ok <- HTTP.download(download_url, tmp_path, headers: headers) |> finish_request() do
-            File.rename!(tmp_path, entry_path)
-            :ok = store_json(metadata_path, %{"etag" => etag, "url" => url})
-            {:ok, entry_path}
+          case HTTP.download(download_url, tmp_path, headers: headers) |> finish_request() do
+            :ok ->
+              File.rename!(tmp_path, entry_path)
+              :ok = store_json(metadata_path, %{"etag" => etag, "url" => url})
+              {:ok, entry_path}
+
+            error ->
+              File.rm_rf!(tmp_path)
+              error
           end
       end
     end
@@ -136,11 +143,6 @@ defmodule Bumblebee.HuggingFace.Hub do
   defp store_json(path, data) do
     json = Jason.encode!(data)
     File.write(path, json)
-  end
-
-  defp default_cache_dir() do
-    base_dir = bumblebee_cache_dir()
-    Path.join(base_dir, "huggingface")
   end
 
   defp bumblebee_cache_dir() do

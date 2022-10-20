@@ -22,27 +22,88 @@ defmodule Bumblebee.Utils.HTTP do
     * `:headers` - request headers
 
   """
-  @spec download(String.t(), Path.t(), keyword()) :: :ok | {:error, term()}
+  @spec download(String.t(), Path.t(), keyword()) :: :ok | {:error, String.t()}
   def download(url, path, opts \\ []) do
     path = IO.chardata_to_string(path)
     headers = build_headers(opts[:headers] || [])
 
-    request = {url, headers}
-    http_opts = [ssl: http_ssl_opts()]
-    opts = [stream: String.to_charlist(path)]
+    case File.open(path, [:write]) do
+      {:ok, file} ->
+        try do
+          request = {url, headers}
+          http_opts = [ssl: http_ssl_opts()]
+          opts = [stream: :self, sync: false]
 
-    case :httpc.request(:get, request, http_opts, opts) do
-      {:ok, :saved_to_file} ->
-        :ok
-
-      {:ok, {{_, 200, _}, _headers, body}} ->
-        File.write(path, body)
-
-      {:ok, {{_, status, _}, _headers, _body}} ->
-        {:error, "download failed, got HTTP status: #{status}"}
+          {:ok, request_id} = :httpc.request(:get, request, http_opts, opts)
+          download_loop(%{request_id: request_id, file: file, total_size: nil, size: nil})
+        after
+          File.close(file)
+        end
 
       {:error, error} ->
-        {:error, error}
+        {:error, "failed to open file for download, reason: #{:file.format_error(error)}"}
+    end
+  end
+
+  defp download_loop(state) do
+    receive do
+      {:http, reply_info} when elem(reply_info, 0) == state.request_id ->
+        download_receive(state, reply_info)
+    end
+  end
+
+  defp download_receive(_state, {_, {:error, error}}) do
+    {:error, "download failed, reason: #{inspect(error)}"}
+  end
+
+  defp download_receive(state, {_, {{_, 200, _}, _headers, body}}) do
+    case IO.binwrite(state.file, body) do
+      :ok ->
+        :ok
+
+      {:error, error} ->
+        {:error, "failed to write to file, reason: #{:file.format_error(error)}"}
+    end
+  end
+
+  defp download_receive(_state, {_, {{_, status, _}, _headers, _body}}) do
+    {:error, "download failed, got HTTP status: #{status}"}
+  end
+
+  defp download_receive(state, {_, :stream_start, headers}) do
+    total_size = total_size(headers)
+    download_loop(%{state | total_size: total_size, size: 0})
+  end
+
+  defp download_receive(state, {_, :stream, body_part}) do
+    case IO.binwrite(state.file, body_part) do
+      :ok ->
+        part_size = byte_size(body_part)
+        state = update_in(state.size, &(&1 + part_size))
+
+        if state.total_size && part_size != state.total_size do
+          ProgressBar.render(state.size, state.total_size, suffix: :bytes)
+        end
+
+        download_loop(state)
+
+      {:error, error} ->
+        :httpc.cancel_request(state.request_id)
+        {:error, "failed to write to file, reason: #{:file.format_error(error)}"}
+    end
+  end
+
+  defp download_receive(_state, {_, :stream_end, _headers}) do
+    :ok
+  end
+
+  defp total_size(headers) do
+    case List.keyfind(headers, ~c"content-length", 0) do
+      {_, content_length} ->
+        content_length |> List.to_string() |> String.to_integer()
+
+      _ ->
+        nil
     end
   end
 
@@ -61,7 +122,7 @@ defmodule Bumblebee.Utils.HTTP do
       to the redirect location. Defaults to `true`
 
   """
-  @spec request(atom(), String.t(), keyword()) :: {:ok, response()} | {:error, term()}
+  @spec request(atom(), String.t(), keyword()) :: {:ok, response()} | {:error, String.t()}
   def request(method, url, opts \\ []) do
     headers = build_headers(opts[:headers] || [])
     follow_redirects = Keyword.get(opts, :follow_redirects, true)
@@ -87,7 +148,7 @@ defmodule Bumblebee.Utils.HTTP do
         {:ok, %{status: status, headers: parse_headers(headers), body: body}}
 
       {:error, error} ->
-        {:error, error}
+        {:error, "HTTP request failed, reason: #{inspect(error)}"}
     end
   end
 
