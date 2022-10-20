@@ -143,7 +143,7 @@ spec.id_to_label[id]
 
 ## Named-entity recognition
 
-Bumblebee also brings a couple modules for performing end-to-end tasks. In this section we look at named-entity recognition (NER), where the objective is to identify and categorize entities in text. We will once again use a fine-tuned [BERT](https://huggingface.co/dslim/bert-base-NER) model.
+Bumblebee also brings a couple modules for performing end-to-end tasks. In this section we look at token classification, more specifically named-entity recognition (NER), where the objective is to identify and categorize entities in text. We will once again use a fine-tuned [BERT](https://huggingface.co/dslim/bert-base-NER) model.
 
 ```elixir
 {:ok, model, params, spec} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
@@ -163,7 +163,9 @@ Having loaded the model and the tokenizer, all we need is a single function call
 ```elixir
 text = Kino.Input.read(text_input)
 
-Bumblebee.Text.NER.extract(model, params, spec, tokenizer, text, aggregation_strategy: :simple)
+Bumblebee.Text.TokenClassification.extract(model, params, spec, tokenizer, text,
+  aggregation: :same
+)
 ```
 
 <!-- livebook:{"branch_parent_index":0} -->
