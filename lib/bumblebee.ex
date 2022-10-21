@@ -2,10 +2,28 @@ defmodule Bumblebee do
   @moduledoc """
   Pre-trained `Axon` models for easy inference and boosted training.
 
-  Bumblebee provides ready-to-use, configurable `Axon` models. On top
-  of that, it streamlines the process of loading and using pre-trained
-  models by integrating with Hugging Face and
-  [huggingface/transformers](https://github.com/huggingface/transformers).
+  Bumblebee provides state-of-the-art, configurable `Axon` models. On
+  top of that, it streamlines the process of loading pre-trained models
+  by integrating with Hugging Face Hub and [🤗 Transformers](https://github.com/huggingface/transformers).
+
+  ## Usage
+
+  You can load one of the supported models by specifying the model repository:
+
+      {:ok, model, params, spec} = Bumblebee.load_model({:hf, "bert-base-uncased"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+
+  Then you are ready to make predictions:
+
+      inputs = Bumblebee.apply_tokenizer(tokenizer, "Hello Bumblebee!")
+      output = Axon.predict(model, params, inputs)
+
+  For complete examples see the [Examples](examples.livemd) notebook.
+
+  > #### Note {: .info}
+  >
+  > The models are generally large, so make sure to configure an efficient
+  > `Nx` backend, such as `EXLA` or `Torchx`.
   """
 
   alias Bumblebee.HuggingFace
@@ -183,7 +201,7 @@ defmodule Bumblebee do
   end
 
   @doc """
-  Builds an `Axon` model according to the given configuration.
+  Builds an `Axon` model according to the given specification.
 
   ## Example
 
@@ -294,7 +312,7 @@ defmodule Bumblebee do
   end
 
   @doc """
-  Loads a pretrained model from a model repository.
+  Loads a pre-trained model from a model repository.
 
   ## Options
 
@@ -308,7 +326,7 @@ defmodule Bumblebee do
     * `:architecture` - the model architecture, must be supported by
       `:module`. By default it is inferred from the configuration file
 
-    * `:params_filename` - the file with the parameters to be loaded
+    * `:params_filename` - the file with the model parameters to be loaded
 
   ## Examples
 
@@ -323,7 +341,7 @@ defmodule Bumblebee do
 
       {:ok, resnet} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, architecture: :base)
 
-  To further customize the model, you can also pass the configuration:
+  To further customize the model, you can also pass the specification:
 
       {:ok, spec} = Bumblebee.load_spec({:hf, "microsoft/resnet-50"})
       spec = Bumblebee.configure(spec, num_labels: 10)
