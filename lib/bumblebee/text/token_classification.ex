@@ -84,17 +84,13 @@ defmodule Bumblebee.Text.TokenClassification do
     %{logits: logits} = predict_fun.(params, inputs)
     scores = Axon.Activations.softmax(logits)
 
-    for {text, inputs, scores} <-
-          Enum.zip([
-            List.wrap(text),
-            Utils.Nx.to_batched(inputs, 1),
-            Utils.Nx.to_batched(scores, 1)
-          ]) do
+    [List.wrap(text), Utils.Nx.to_batched(inputs, 1), Utils.Nx.to_batched(scores, 1)]
+    |> Enum.zip_with(fn [text, inputs, scores] ->
       scores
       |> gather_raw_entities(tokenizer, text, inputs)
       |> aggregate(spec, tokenizer, aggregation)
       |> filter_entities(ignored_labels)
-    end
+    end)
   end
 
   def extract(_model, _params, %{architecture: arch}, _tokenizer, _text, _opts) do
