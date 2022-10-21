@@ -26,11 +26,14 @@ defmodule Bumblebee.MixProject do
 
   defp deps do
     [
-      {:axon, "~> 0.2.0-dev", axon_opts()},
+      # {:axon, "~> 0.2.0-dev", axon_opts()},
       {:tokenizers, "~> 0.1.2"},
-      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-      {:exla, github: "elixir-nx/nx", sparse: "exla", only: [:dev, :test]},
-      {:torchx, github: "elixir-nx/nx", sparse: "torchx", only: [:dev, :test]},
+      # {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
+      # {:exla, github: "elixir-nx/nx", sparse: "exla", only: [:dev, :test]},
+      # {:torchx, github: "elixir-nx/nx", sparse: "torchx", only: [:dev, :test]},
+      {:nx, path: "~/dev/nx/nx", override: true},
+      {:exla, path: "~/dev/nx/exla", override: true},
+      {:axon, path: "~/dev/axon", override: true},
       {:stb_image, "~> 0.5.0", optional: true},
       {:unpickler, github: "dashbitco/unpickler"},
       {:castore, "~> 0.1.0"},

@@ -16,17 +16,17 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
       assert %Bumblebee.Diffusion.UNet2DConditional{architecture: :base} = spec
 
       inputs = %{
-        "sample" => Nx.broadcast(0.5, {1, 4, 32, 32}),
+        "sample" => Nx.broadcast(0.5, {1, 32, 32, 4}),
         "timestep" => Nx.tensor(1),
         "encoder_hidden_state" => Nx.broadcast(0.5, {1, 1, 768})
       }
 
       output = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.sample) == {1, 4, 32, 32}
+      assert Nx.shape(output.sample) == {1, 32, 32, 4}
 
       assert_all_close(
-        output.sample[[0..-1//1, 0..-1//1, 1..3, 1..3]],
+        to_channels_first(output.sample)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [
             [[0.0472, -0.0103, 0.0759], [-0.1094, -0.0668, -0.0210], [-0.0628, -0.0139, 0.0059]],

@@ -63,7 +63,13 @@ defmodule Bumblebee.Conversion.PyTorch do
             param_expr = params_expr[layer_name][param.name]
 
             {value, diff} =
-              case param_from_pytorch(layer.op_name, param.name, pytorch_state, source_layer_name) do
+              case param_from_pytorch(
+                     layer.op_name,
+                     Map.new(layer.opts),
+                     param.name,
+                     pytorch_state,
+                     source_layer_name
+                   ) do
                 {:ok, value, keys} ->
                   diff = prepend(diff, :used_keys, keys)
 
@@ -187,7 +193,7 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp format_list(items), do: Enum.map_join(items, "\n", &("  * " <> &1))
 
-  defp param_from_pytorch(:dense, "kernel", pytorch_state, layer_name) do
+  defp param_from_pytorch(:dense, _, "kernel", pytorch_state, layer_name) do
     with {:ok, kernel, key} <- lookup_param(pytorch_state, layer_name, ["weight"]) do
       [out_features, in_features] = Nx.axes(kernel)
       kernel = Nx.transpose(kernel, axes: [in_features, out_features])
@@ -195,15 +201,35 @@ defmodule Bumblebee.Conversion.PyTorch do
     end
   end
 
-  defp param_from_pytorch(:conv_transpose, "kernel", pytorch_state, layer_name) do
+  defp param_from_pytorch(:conv, opts, "kernel", pytorch_state, layer_name) do
     with {:ok, kernel, key} <- lookup_param(pytorch_state, layer_name, ["weight"]) do
-      [in_channels, out_channels | kernel_spatials] = Nx.axes(kernel)
-      kernel = Nx.transpose(kernel, axes: [out_channels, in_channels | kernel_spatials])
+      [out_channels, in_channels | kernel_spatials] = Nx.axes(kernel)
+
+      kernel =
+        case opts.channels do
+          :first -> kernel
+          :last -> Nx.transpose(kernel, axes: kernel_spatials ++ [in_channels, out_channels])
+        end
+
       {:ok, kernel, [key]}
     end
   end
 
-  defp param_from_pytorch(:lstm, "bias", pytorch_state, layer_name) do
+  defp param_from_pytorch(:conv_transpose, opts, "kernel", pytorch_state, layer_name) do
+    with {:ok, kernel, key} <- lookup_param(pytorch_state, layer_name, ["weight"]) do
+      [in_channels, out_channels | kernel_spatials] = Nx.axes(kernel)
+
+      kernel =
+        case opts.channels do
+          :first -> Nx.transpose(kernel, axes: [out_channels, in_channels | kernel_spatials])
+          :last -> Nx.transpose(kernel, axes: kernel_spatials ++ [in_channels, out_channels])
+        end
+
+      {:ok, kernel, [key]}
+    end
+  end
+
+  defp param_from_pytorch(:lstm, _, "bias", pytorch_state, layer_name) do
     with {:ok, bias_hh, key1} <- lookup_param(pytorch_state, layer_name, ["bias_hh"]),
          {:ok, bias_ih, key2} <- lookup_param(pytorch_state, layer_name, ["bias_ih"]) do
       bias = Nx.add(bias_ih, bias_hh)
@@ -212,21 +238,21 @@ defmodule Bumblebee.Conversion.PyTorch do
     end
   end
 
-  defp param_from_pytorch(:lstm, "input_kernel", pytorch_state, layer_name) do
+  defp param_from_pytorch(:lstm, _, "input_kernel", pytorch_state, layer_name) do
     with {:ok, weight_ih, key} <- lookup_param(pytorch_state, layer_name, ["weight_ih"]) do
       weight_ih = weight_ih |> unflatten_leading(4) |> Nx.transpose(axes: [0, 2, 1])
       {:ok, {weight_ih[0], weight_ih[1], weight_ih[2], weight_ih[3]}, [key]}
     end
   end
 
-  defp param_from_pytorch(:lstm, "hidden_kernel", pytorch_state, layer_name) do
+  defp param_from_pytorch(:lstm, _, "hidden_kernel", pytorch_state, layer_name) do
     with {:ok, weight_hh, key} <- lookup_param(pytorch_state, layer_name, ["weight_hh"]) do
       weight_hh = weight_hh |> unflatten_leading(4) |> Nx.transpose(axes: [0, 2, 1])
       {:ok, {weight_hh[0], weight_hh[1], weight_hh[2], weight_hh[3]}, [key]}
     end
   end
 
-  defp param_from_pytorch(:gru, "bias", pytorch_state, layer_name) do
+  defp param_from_pytorch(:gru, _, "bias", pytorch_state, layer_name) do
     with {:ok, bias_hh, key1} <- lookup_param(pytorch_state, layer_name, ["bias_hh"]),
          {:ok, bias_ih, key2} <- lookup_param(pytorch_state, layer_name, ["bias_ih"]) do
       bias_hh = unflatten_leading(bias_hh, 3)
@@ -239,21 +265,21 @@ defmodule Bumblebee.Conversion.PyTorch do
     end
   end
 
-  defp param_from_pytorch(:gru, "input_kernel", pytorch_state, layer_name) do
+  defp param_from_pytorch(:gru, _, "input_kernel", pytorch_state, layer_name) do
     with {:ok, weight_ih, key} <- lookup_param(pytorch_state, layer_name, ["weight_ih"]) do
       weight_ih = weight_ih |> unflatten_leading(3) |> Nx.transpose(axes: [0, 2, 1])
       {:ok, {weight_ih[0], weight_ih[1], weight_ih[2]}, [key]}
     end
   end
 
-  defp param_from_pytorch(:gru, "hidden_kernel", pytorch_state, layer_name) do
+  defp param_from_pytorch(:gru, _, "hidden_kernel", pytorch_state, layer_name) do
     with {:ok, weight_hh, key} <- lookup_param(pytorch_state, layer_name, ["weight_hh"]) do
       weight_hh = weight_hh |> unflatten_leading(3) |> Nx.transpose(axes: [0, 2, 1])
       {:ok, {weight_hh[0], weight_hh[1], weight_hh[2]}, [key]}
     end
   end
 
-  defp param_from_pytorch(_op, param_name, pytorch_state, layer_name) do
+  defp param_from_pytorch(_op, _, param_name, pytorch_state, layer_name) do
     pytorch_names =
       case param_name do
         # PyTorch uses "weight" instead of "kernel" everywhere
