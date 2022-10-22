@@ -7,11 +7,11 @@ defmodule Bumblebee.Vision.VitFeaturizerTest do
 
       assert %Bumblebee.Vision.VitFeaturizer{} = featurizer
 
-      image = Nx.tensor([[50, 100], [150, 200]]) |> Nx.broadcast({3, 2, 2})
+      image = Nx.tensor([[[50], [100]], [[150], [200]]])
 
       input = Bumblebee.apply_featurizer(featurizer, image)
 
-      assert Nx.shape(input["pixel_values"]) == {1, 3, 224, 224}
+      assert Nx.shape(input["pixel_values"]) == {1, 224, 224, 3}
     end
   end
 end

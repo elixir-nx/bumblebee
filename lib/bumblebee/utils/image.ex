@@ -25,7 +25,6 @@ defmodule Bumblebee.Utils.Image do
   def to_batched_tensor(image) when is_struct(image, StbImage) do
     image
     |> StbImage.to_nx()
-    |> Nx.transpose(axes: [:channels, :height, :width])
     |> Nx.new_axis(0, :batch)
   end
 
@@ -40,32 +39,39 @@ defmodule Bumblebee.Utils.Image do
     * `:size` - the target image size specified as `{height, width}`
 
     * `:channels` - channels location, either `:first` or `:last`.
-      Defaults to `:first`
+      Defaults to `:last`
 
   ## Examples
 
-      iex> images = Nx.iota({1, 1, 4, 4})
+      iex> images = Nx.iota({1, 4, 4, 1})
       iex> Bumblebee.Utils.Image.center_crop(images, size: {2, 2})
       #Nx.Tensor<
-        s64[1][1][2][2]
+        s64[1][2][2][1]
         [
           [
             [
-              [5, 6],
-              [9, 10]
+              [5],
+              [6]
+            ],
+            [
+              [9],
+              [10]
             ]
           ]
         ]
       >
 
-      iex> images = Nx.iota({1, 1, 2, 2})
+      iex> images = Nx.iota({1, 2, 2, 1})
       iex> Bumblebee.Utils.Image.center_crop(images, size: {1, 4})
       #Nx.Tensor<
-        s64[1][1][1][4]
+        s64[1][1][4][1]
         [
           [
             [
-              [0, 0, 1, 0]
+              [0],
+              [0],
+              [1],
+              [0]
             ]
           ]
         ]
@@ -73,7 +79,7 @@ defmodule Bumblebee.Utils.Image do
 
   """
   defn center_crop(input, opts \\ []) do
-    opts = keyword!(opts, [:size, channels: :first])
+    opts = keyword!(opts, [:size, channels: :last])
 
     pad_config =
       transform({input, opts}, fn {input, opts} ->
@@ -108,33 +114,55 @@ defmodule Bumblebee.Utils.Image do
       `:bilinear`
 
     * `:channels` - channels location, either `:first` or `:last`.
-      Defaults to `:first`
+      Defaults to `:last`
 
   ## Examples
 
-      iex> images = Nx.iota({1, 1, 2, 2}, type: {:f, 32})
+      iex> images = Nx.iota({1, 2, 2, 1}, type: {:f, 32})
       iex> Bumblebee.Utils.Image.resize(images, size: {3, 3}, method: :nearest)
       #Nx.Tensor<
-        f32[1][1][3][3]
+        f32[1][3][3][1]
         [
           [
             [
-              [0.0, 1.0, 1.0],
-              [2.0, 3.0, 3.0],
-              [2.0, 3.0, 3.0]
+              [0.0],
+              [1.0],
+              [1.0]
+            ],
+            [
+              [2.0],
+              [3.0],
+              [3.0]
+            ],
+            [
+              [2.0],
+              [3.0],
+              [3.0]
             ]
           ]
         ]
       >
+
+      iex> images = Nx.iota({1, 2, 2, 1}, type: {:f, 32})
       iex> Bumblebee.Utils.Image.resize(images, size: {3, 3}, method: :bilinear)
       #Nx.Tensor<
-        f32[1][1][3][3]
+        f32[1][3][3][1]
         [
           [
             [
-              [0.0, 0.5, 1.0],
-              [1.0, 1.5, 2.0],
-              [2.0, 2.5, 3.0]
+              [0.0],
+              [0.5],
+              [1.0]
+            ],
+            [
+              [1.0],
+              [1.5],
+              [2.0]
+            ],
+            [
+              [2.0],
+              [2.5],
+              [3.0]
             ]
           ]
         ]
@@ -142,7 +170,7 @@ defmodule Bumblebee.Utils.Image do
 
   """
   defn resize(input, opts \\ []) do
-    opts = keyword!(opts, [:size, channels: :first, method: :bilinear])
+    opts = keyword!(opts, [:size, channels: :last, method: :bilinear])
 
     transform({input, opts}, fn {input, opts} ->
       {spatial_axes, out_shape} =
@@ -296,11 +324,11 @@ defmodule Bumblebee.Utils.Image do
     * `:method` - the resizing method to use, same as `resize/2`
 
     * `:channels` - channels location, either `:first` or `:last`.
-      Defaults to `:first`
+      Defaults to `:last`
 
   """
   defn resize_short(input, opts \\ []) do
-    opts = keyword!(opts, [:size, channels: :first, method: :bilinear])
+    opts = keyword!(opts, [:size, channels: :last, method: :bilinear])
 
     size = opts[:size]
     method = opts[:method]
@@ -327,11 +355,11 @@ defmodule Bumblebee.Utils.Image do
   ## Options
 
       * `:channels` - channels location, either `:first` or `:last`.
-      Defaults to `:first`
+      Defaults to `:last`
 
   """
   defn size(input, opts \\ []) do
-    opts = keyword!(opts, channels: :first)
+    opts = keyword!(opts, channels: :last)
     {height_axis, width_axis} = spatial_axes(input, channels: opts[:channels])
     {Nx.axis_size(input, height_axis), Nx.axis_size(input, width_axis)}
   end
@@ -339,12 +367,33 @@ defmodule Bumblebee.Utils.Image do
   @doc """
   Normalizes an image according to the given per-channel mean and
   standard deviation.
+
+    * `:channels` - channels location, either `:first` or `:last`.
+      Defaults to `:last`
+
   """
-  defn normalize(input, mean, std) do
-    type = Nx.type(input)
-    mean = mean |> Nx.as_type(type) |> Nx.reshape({1, :auto, 1, 1})
-    std = std |> Nx.as_type(type) |> Nx.reshape({1, :auto, 1, 1})
+  defn normalize(input, mean, std, opts \\ []) do
+    opts = keyword!(opts, channels: :last)
+
+    mean = broadcast_channel_info(mean, input, opts[:channels])
+    std = broadcast_channel_info(std, input, opts[:channels])
+
     (input - mean) / std
+  end
+
+  deftransformp broadcast_channel_info(tensor, input, channels) do
+    rank = Nx.rank(input)
+    type = Nx.type(input)
+
+    channels_axis =
+      case channels do
+        :first -> rank - 3
+        :last -> rank - 1
+      end
+
+    shape = 1 |> Tuple.duplicate(rank) |> put_elem(channels_axis, :auto)
+
+    tensor |> Nx.reshape(shape) |> Nx.as_type(type)
   end
 
   @doc """

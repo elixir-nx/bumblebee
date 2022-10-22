@@ -424,8 +424,8 @@ defmodule Bumblebee.Layers do
   @doc """
   Adds a pixel rearrangement layer to the network.
 
-  Rearranges elements in a tensor of shape `{*, C × r^2, H, W}` to a
-  tensor of shape `{*, C, H × r, W × r}`, where r is an upscale factor.
+  Rearranges elements in a tensor of shape `{*, H, W, C × r^2}` to a
+  tensor of shape `{*, H × r, W × r, C}`, where r is an upscale factor.
 
   This is useful for implementing efficient sub-pixel convolution
   with a stride of `1 / r`.
@@ -449,23 +449,23 @@ defmodule Bumblebee.Layers do
     opts = keyword!(opts, [:upscale_factor, mode: :inference])
 
     transform({input, opts[:upscale_factor]}, fn {input, upscale_factor} ->
-      {batch, [channels, height, width]} =
+      {batch, [height, width, channels]} =
         input
         |> Nx.shape()
         |> Tuple.to_list()
         |> Enum.split(-3)
 
-      out_channels = div(channels, upscale_factor * upscale_factor)
       out_height = height * upscale_factor
       out_width = width * upscale_factor
+      out_channels = div(channels, upscale_factor * upscale_factor)
 
       x =
         Nx.reshape(
           input,
-          List.to_tuple(batch ++ [out_channels, upscale_factor, upscale_factor, height, width])
+          List.to_tuple(batch ++ [height, width, out_channels, upscale_factor, upscale_factor])
         )
 
-      {batch_axes, [out_channels_axis, upscale_axis1, upscale_axis2, height_axis, width_axis]} =
+      {batch_axes, [height_axis, width_axis, out_channels_axis, upscale_axis1, upscale_axis2]} =
         x
         |> Nx.axes()
         |> Enum.split(-5)
@@ -473,9 +473,9 @@ defmodule Bumblebee.Layers do
       x
       |> Nx.transpose(
         axes:
-          batch_axes ++ [out_channels_axis, height_axis, upscale_axis1, width_axis, upscale_axis2]
+          batch_axes ++ [height_axis, upscale_axis1, width_axis, upscale_axis2, out_channels_axis]
       )
-      |> Nx.reshape(List.to_tuple(batch ++ [out_channels, out_height, out_width]))
+      |> Nx.reshape(List.to_tuple(batch ++ [out_height, out_width, out_channels]))
     end)
   end
 

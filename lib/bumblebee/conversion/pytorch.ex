@@ -201,7 +201,8 @@ defmodule Bumblebee.Conversion.PyTorch do
     end
   end
 
-  defp param_from_pytorch(:conv, opts, "kernel", pytorch_state, layer_name) do
+  defp param_from_pytorch(op, opts, "kernel", pytorch_state, layer_name)
+       when op in [:conv, :depthwise_conv] do
     with {:ok, kernel, key} <- lookup_param(pytorch_state, layer_name, ["weight"]) do
       [out_channels, in_channels | kernel_spatials] = Nx.axes(kernel)
 

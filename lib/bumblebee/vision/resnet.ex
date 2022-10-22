@@ -49,7 +49,7 @@ defmodule Bumblebee.Vision.ResNet do
 
   ## Inputs
 
-    * `"pixel_values"` - {batch_size, num_channels, height, width}
+    * `"pixel_values"` - {batch_size, height, width, num_channels}
 
       Featurized image pixel values (224x224).
 
@@ -80,7 +80,7 @@ defmodule Bumblebee.Vision.ResNet do
   @impl true
   def input_template(spec) do
     %{
-      "pixel_values" => Nx.template({1, spec.num_channels, 224, 224}, :f32)
+      "pixel_values" => Nx.template({1, 224, 224, spec.num_channels}, :f32)
     }
   end
 
@@ -106,7 +106,7 @@ defmodule Bumblebee.Vision.ResNet do
     name = opts[:name]
 
     encoder_outputs =
-      Axon.input("pixel_values", shape: {nil, spec.num_channels, 224, 224})
+      Axon.input("pixel_values", shape: {nil, 224, 224, spec.num_channels})
       |> embeddings(spec, name: join(name, "embedder"))
       |> encoder(spec, name: join(name, "encoder"))
 

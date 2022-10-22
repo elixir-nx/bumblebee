@@ -12,7 +12,7 @@ defmodule Bumblebee.Vision.ConvNextTest do
 
       assert %Bumblebee.Vision.ConvNext{architecture: :base} = spec
 
-      input = Nx.broadcast(0.5, {1, 3, 224, 224})
+      input = Nx.broadcast(0.5, {1, 224, 224, 3})
       output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.pooler_output) == {1, 768}
@@ -30,7 +30,7 @@ defmodule Bumblebee.Vision.ConvNextTest do
 
       assert %Bumblebee.Vision.ConvNext{architecture: :for_image_classification} = spec
 
-      input = Nx.broadcast(0.5, {1, 3, 224, 224})
+      input = Nx.broadcast(0.5, {1, 224, 224, 3})
       output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.logits) == {1, 1000}
