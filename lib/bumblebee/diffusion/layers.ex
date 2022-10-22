@@ -115,7 +115,7 @@ defmodule Bumblebee.Diffusion.Layers do
         timestep_embedding
         |> Axon.activation(activation, name: join(name, "timestep.act1"))
         |> Axon.dense(out_channels, name: join(name, "time_emb_proj"))
-        |> Axon.nx(&Nx.new_axis(Nx.new_axis(&1, -1), -1))
+        |> Axon.nx(&Nx.new_axis(Nx.new_axis(&1, 1), 1))
         |> Axon.add(h)
       else
         h
@@ -162,7 +162,7 @@ defmodule Bumblebee.Diffusion.Layers do
       cond do
         padding == 0 ->
           hidden_state =
-            Axon.nx(hidden_state, &Nx.pad(&1, 0.0, [{0, 0, 0}, {0, 0, 0}, {0, 1, 0}, {0, 1, 0}]))
+            Axon.nx(hidden_state, &Nx.pad(&1, 0.0, [{0, 0, 0}, {0, 1, 0}, {0, 1, 0}, {0, 0, 0}]))
 
           {hidden_state, :valid}
 
@@ -189,7 +189,7 @@ defmodule Bumblebee.Diffusion.Layers do
 
     hidden_state
     |> Axon.nx(fn hidden_state ->
-      {_, _, h, w} = Nx.shape(hidden_state)
+      {_, h, w, _} = Nx.shape(hidden_state)
       Axon.Layers.resize(hidden_state, size: {2 * h, 2 * w}, mode: :nearest)
     end)
     |> Axon.conv(channels,

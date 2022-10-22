@@ -170,7 +170,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
           in_channels = if(idx == 0, do: in_channels, else: out_channels)
 
           hidden_state =
-            Axon.concatenate([hidden_state, residual], axis: 1)
+            Axon.concatenate([hidden_state, residual], axis: -1)
             |> Diffusion.Layers.residual_block(
               in_channels + residual_channels,
               out_channels,
@@ -276,9 +276,9 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     )
     |> then(
       &Axon.layer(
-        fn x, x_in, _opts ->
-          {b, c, h, w} = Nx.shape(x_in)
-          x |> Nx.transpose(axes: [0, 2, 3, 1]) |> Nx.reshape({b, h * w, c})
+        fn hidden_state, residual, _opts ->
+          {b, h, w, c} = Nx.shape(residual)
+          Nx.reshape(hidden_state, {b, h * w, c})
         end,
         [&1, residual]
       )
@@ -292,9 +292,8 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     )
     |> then(
       &Axon.layer(
-        fn x, x_in, _opts ->
-          {b, c, h, w} = Nx.shape(x_in)
-          x |> Nx.reshape({b, h, w, c}) |> Nx.transpose(axes: [0, 3, 1, 2])
+        fn hidden_state, residual, _opts ->
+          Nx.reshape(hidden_state, Nx.shape(residual))
         end,
         [&1, residual]
       )

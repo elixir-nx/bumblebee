@@ -98,7 +98,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
   ## Inputs
 
-    * `"sample"` - `{batch_size, in_channels, sample_size, sample_size}`
+    * `"sample"` - `{batch_size, sample_size, sample_size, in_channels}`
 
       Sample input with two spatial dimensions.
 
@@ -136,7 +136,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
   @impl true
   def input_template(spec) do
-    sample_shape = {1, spec.in_channels, spec.sample_size, spec.sample_size}
+    sample_shape = {1, spec.sample_size, spec.sample_size, spec.in_channels}
     timestep_shape = {}
     encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
@@ -155,7 +155,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   end
 
   defp inputs(spec) do
-    sample_shape = {nil, spec.in_channels, spec.sample_size, spec.sample_size}
+    sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("sample", shape: sample_shape),

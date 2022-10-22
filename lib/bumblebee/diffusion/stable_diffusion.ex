@@ -75,8 +75,8 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     inputs = Bumblebee.apply_tokenizer(tokenizer, prompts, length: length)
 
     latents_shape =
-      {batch_size * num_images_per_prompt, unet_spec.in_channels, unet_spec.sample_size,
-       unet_spec.sample_size}
+      {batch_size * num_images_per_prompt, unet_spec.sample_size, unet_spec.sample_size,
+       unet_spec.in_channels}
 
     scheduler_init = fn -> Bumblebee.scheduler_init(scheduler, num_steps, latents_shape) end
     scheduler_step = &Bumblebee.scheduler_step(scheduler, &1, &2, &3)
@@ -92,7 +92,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
         scheduler_init,
         scheduler_step,
         inputs,
-        opts
+        opts ++ [latents_shape: latents_shape]
       )
 
     for idx <- 0..(batch_size - 1) do
@@ -156,9 +156,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     %{sample: images} = vae_predict.(vae_params, latents)
 
-    images
-    |> Bumblebee.Utils.Image.from_continuous(-1, 1)
-    |> Nx.transpose(axes: [0, 2, 3, 1])
+    Bumblebee.Utils.Image.from_continuous(images, -1, 1)
   end
 
   defnp split_in_half(tensor) do

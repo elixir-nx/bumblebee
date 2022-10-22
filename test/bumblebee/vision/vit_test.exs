@@ -12,7 +12,7 @@ defmodule Bumblebee.Vision.VitTest do
 
       assert %Bumblebee.Vision.Vit{architecture: :base} = spec
 
-      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 3, 224, 224})}
+      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
       output = Axon.predict(model, params, input)
 
       # Pre-trained checkpoints by default do not use
@@ -32,7 +32,7 @@ defmodule Bumblebee.Vision.VitTest do
 
       assert %Bumblebee.Vision.Vit{architecture: :for_image_classification} = spec
 
-      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 3, 224, 224})}
+      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
       output = Axon.predict(model, params, input)
 
       assert Nx.shape(output.logits) == {1, 1000}
@@ -55,16 +55,21 @@ defmodule Bumblebee.Vision.VitTest do
       # There is no pre-trained version on Hugging Face, so we use a fixed parameter
       params =
         update_in(params["decoder.0"]["kernel"], fn x ->
-          x |> Nx.iota(type: :f32) |> Nx.divide(Nx.size(x))
+          # We use iota in the order of the pytorch kernel
+          x
+          |> Nx.transpose(axes: [3, 2, 1, 0])
+          |> Nx.iota(type: :f32)
+          |> Nx.divide(Nx.size(x))
+          |> Nx.transpose(axes: [2, 3, 1, 0])
         end)
 
-      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 3, 224, 224})}
+      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
       output = Axon.predict(model, params, input)
 
-      assert Nx.shape(output.logits) == {1, 3, 224, 224}
+      assert Nx.shape(output.logits) == {1, 224, 224, 3}
 
       assert_all_close(
-        output.logits[[0, 0, 0..2, 0..2]],
+        to_channels_first(output.logits)[[0, 0, 0..2, 0..2]],
         Nx.tensor([
           [-0.0103, -0.0275, -0.0447],
           [-0.2853, -0.3025, -0.3197],

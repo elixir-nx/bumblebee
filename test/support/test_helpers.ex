@@ -39,4 +39,8 @@ defmodule Bumblebee.TestHelpers do
   def model_test_tags() do
     [slow: true, capture_log: true, timeout: 200_000]
   end
+
+  def to_channels_first(tensor) do
+    Nx.transpose(tensor, axes: [0, 3, 1, 2])
+  end
 end

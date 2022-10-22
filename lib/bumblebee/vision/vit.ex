@@ -81,7 +81,7 @@ defmodule Bumblebee.Vision.Vit do
 
   ## Inputs
 
-    * `"pixel_values"` - `{batch_size, num_channels, image_size, image_size}`
+    * `"pixel_values"` - `{batch_size, image_size, image_size, num_channels}`
 
       Featurized image pixel values.
 
@@ -121,7 +121,7 @@ defmodule Bumblebee.Vision.Vit do
   def input_template(spec) do
     %{
       "pixel_values" =>
-        Nx.template({1, spec.num_channels, spec.image_size, spec.image_size}, :f32)
+        Nx.template({1, spec.image_size, spec.image_size, spec.num_channels}, :f32)
     }
   end
 
@@ -157,13 +157,9 @@ defmodule Bumblebee.Vision.Vit do
       outputs.hidden_state
       |> Axon.nx(fn x ->
         x = x[[0..-1//1, 1..-1//1]]
-
         {batch_size, seq_length, channels} = Nx.shape(x)
         height = width = seq_length |> :math.sqrt() |> floor()
-
-        x
-        |> Nx.transpose(axes: [0, 2, 1])
-        |> Nx.reshape({batch_size, channels, height, width})
+        Nx.reshape(x, {batch_size, height, width, channels})
       end)
       # Upsample to the original spatial resolution
       |> Axon.conv(spec.patch_size ** 2 * 3,
@@ -188,7 +184,7 @@ defmodule Bumblebee.Vision.Vit do
   end
 
   defp inputs(spec) do
-    shape = {nil, spec.num_channels, spec.image_size, spec.image_size}
+    shape = {nil, spec.image_size, spec.image_size, spec.num_channels}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("pixel_values", shape: shape),
@@ -243,7 +239,6 @@ defmodule Bumblebee.Vision.Vit do
       kernel_initializer: kernel_initializer(spec),
       name: join(name, "projection")
     )
-    |> Axon.nx(&Nx.transpose(&1, axes: [0, 2, 3, 1]))
     |> Axon.reshape({:batch, :auto, spec.hidden_size}, name: join(name, "reshape"))
   end
 

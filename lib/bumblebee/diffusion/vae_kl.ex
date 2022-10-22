@@ -53,7 +53,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
 
   ## Inputs
 
-    * `"sample"` - `{batch_size, in_channels, sample_size, sample_size}`
+    * `"sample"` - `{batch_size, sample_size, sample_size, in_channels}`
 
       Sample input with two spatial dimensions. Note that in case of
       the `:decoder` model, the input usually has lower dimensionality.
@@ -133,11 +133,11 @@ defmodule Bumblebee.Diffusion.VaeKl do
   defp sample_shape(%__MODULE__{architecture: :decoder} = spec) do
     downsample_rate = (length(spec.hidden_sizes) - 1) * 2
     size = div(spec.sample_size, downsample_rate)
-    {nil, spec.latent_channels, size, size}
+    {nil, size, size, spec.latent_channels}
   end
 
   defp sample_shape(spec) do
-    {nil, spec.in_channels, spec.sample_size, spec.sample_size}
+    {nil, spec.sample_size, spec.sample_size, spec.in_channels}
   end
 
   defp vae_kl(inputs, spec, opts \\ []) do
@@ -362,8 +362,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
     hidden_state =
       hidden_state
       |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "group_norm"))
-      |> Axon.reshape({:batch, channels, :auto})
-      |> Axon.transpose([0, 2, 1])
+      |> Axon.reshape({:batch, :auto, channels})
 
     query =
       hidden_state
@@ -388,8 +387,8 @@ defmodule Bumblebee.Diffusion.VaeKl do
       |> Layers.flatten_trailing()
 
     attention_output
+    |> Axon.reshape({:batch, :auto, channels})
     |> Axon.dense(channels, name: join(name, "proj_attn"))
-    |> Axon.transpose([0, 2, 1])
     |> then(
       &Axon.layer(
         fn state, residual, _opts ->
@@ -402,7 +401,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
   end
 
   defp diagonal_gaussian_distribution(x) do
-    {mean, logvar} = Axon.split(x, 2, axis: 1)
+    {mean, logvar} = Axon.split(x, 2, axis: -1)
     logvar = Axon.nx(logvar, &Nx.clip(&1, -30.0, 20.0))
     std = Axon.nx(logvar, &Nx.exp(Nx.multiply(0.5, &1)))
     var = Axon.nx(logvar, &Nx.exp/1)

@@ -9,12 +9,12 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
   describe "load_params!/3" do
     defp base_model() do
-      Axon.input("input", shape: {nil, 3, 4, 4})
+      Axon.input("input", shape: {nil, 4, 4, 3})
       |> Axon.conv(2, kernel_size: 2, name: "conv")
     end
 
     defp full_model() do
-      Axon.input("input", shape: {nil, 3, 4, 4})
+      Axon.input("input", shape: {nil, 4, 4, 3})
       |> Axon.conv(2, kernel_size: 2, name: "base.conv")
       |> Axon.flatten()
       |> Axon.dense(2, name: "classifier.layers.0")
@@ -22,7 +22,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
     end
 
     defp input_template() do
-      Nx.broadcast(1, {1, 3, 4, 4})
+      Nx.broadcast(1, {1, 4, 4, 3})
     end
 
     test "silently loads parameters if all match" do
@@ -33,7 +33,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
         ExUnit.CaptureLog.capture_log(fn ->
           params = PyTorch.load_params!(model, input_template(), path)
 
-          assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 3, 2, 2}))
+          assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 2, 3, 2}))
           assert_equal(params["conv"]["bias"], Nx.broadcast(0.0, {2}))
         end)
 
@@ -78,7 +78,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
         ExUnit.CaptureLog.capture_log(fn ->
           params = PyTorch.load_params!(model, input_template(), path)
 
-          assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 3, 2, 2}))
+          assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 2, 3, 2}))
           assert_equal(params["conv"]["bias"], Nx.broadcast(0.0, {2}))
         end)
 
@@ -93,7 +93,7 @@ defmodule Bumblebee.Conversion.PyTorchTest do
         ExUnit.CaptureLog.capture_log(fn ->
           params = PyTorch.load_params!(model, input_template(), path)
 
-          assert_equal(params["base.conv"]["kernel"], Nx.broadcast(1.0, {2, 3, 2, 2}))
+          assert_equal(params["base.conv"]["kernel"], Nx.broadcast(1.0, {2, 2, 3, 2}))
           assert_equal(params["base.conv"]["bias"], Nx.broadcast(0.0, {2}))
         end)
 
