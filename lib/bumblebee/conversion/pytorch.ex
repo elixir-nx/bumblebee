@@ -65,7 +65,7 @@ defmodule Bumblebee.Conversion.PyTorch do
             {value, diff} =
               case param_from_pytorch(
                      layer.op_name,
-                     Map.new(layer.opts),
+                     layer.opts,
                      param.name,
                      pytorch_state,
                      source_layer_name
@@ -207,7 +207,7 @@ defmodule Bumblebee.Conversion.PyTorch do
       [out_channels, in_channels | kernel_spatials] = Nx.axes(kernel)
 
       kernel =
-        case opts.channels do
+        case opts[:channels] do
           :first -> kernel
           :last -> Nx.transpose(kernel, axes: kernel_spatials ++ [in_channels, out_channels])
         end
@@ -221,7 +221,7 @@ defmodule Bumblebee.Conversion.PyTorch do
       [in_channels, out_channels | kernel_spatials] = Nx.axes(kernel)
 
       kernel =
-        case opts.channels do
+        case opts[:channels] do
           :first -> Nx.transpose(kernel, axes: [out_channels, in_channels | kernel_spatials])
           :last -> Nx.transpose(kernel, axes: kernel_spatials ++ [in_channels, out_channels])
         end
