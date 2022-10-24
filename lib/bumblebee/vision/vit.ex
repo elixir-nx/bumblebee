@@ -245,7 +245,7 @@ defmodule Bumblebee.Vision.Vit do
   defp position_embeddings(embeddings, spec, opts) do
     name = opts[:name]
 
-    num_patches = div(spec.image_size, spec.patch_size) * div(spec.image_size, spec.patch_size)
+    num_patches = div(spec.image_size, spec.patch_size) ** 2
 
     cls_token = Axon.param("cls_token", fn _ -> {1, 1, spec.hidden_size} end, initializer: :zeros)
 
