@@ -81,7 +81,8 @@ defmodule Bumblebee.Utils.HTTP do
         part_size = byte_size(body_part)
         state = update_in(state.size, &(&1 + part_size))
 
-        if state.total_size && part_size != state.total_size do
+        if Bumblebee.Utils.progress_bar_enabled?() &&
+             state.total_size && part_size != state.total_size do
           ProgressBar.render(state.size, state.total_size, suffix: :bytes)
         end
 
