@@ -389,7 +389,8 @@ defmodule Bumblebee do
   @transformers_class_to_featurizer %{
     "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer,
     "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer,
-    "DeiTFeatureExtractor" => Bumblebee.Vision.DeitFeaturizer
+    "DeiTFeatureExtractor" => Bumblebee.Vision.DeitFeaturizer,
+    "CLIPFeatureExtractor" => Bumblebee.Vision.ClipFeaturizer
   }
 
   @model_type_to_featurizer %{

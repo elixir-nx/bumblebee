@@ -122,8 +122,8 @@ defmodule Bumblebee.Text.ClipText do
     |> Layers.output()
   end
 
-  defp inputs(opts \\ []) do
-    shape = Keyword.get(opts, :shape, {nil, nil})
+  defp inputs() do
+    shape = {nil, nil}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("input_ids", shape: shape),
@@ -156,7 +156,10 @@ defmodule Bumblebee.Text.ClipText do
     hidden_state = text_embeddings(input_ids, position_ids, spec, name: join(name, "embeddings"))
 
     encoder_outputs =
-      encoder(hidden_state, attention_mask, spec, name: join(name, "encoder"), causal?: true)
+      Bumblebee.Layers.Clip.encoder(hidden_state, attention_mask, spec,
+        name: join(name, "encoder"),
+        causal?: true
+      )
 
     hidden_state =
       Axon.layer_norm(encoder_outputs.hidden_state,
@@ -200,150 +203,9 @@ defmodule Bumblebee.Text.ClipText do
     Axon.add(input_embeddings, position_embeddings)
   end
 
-  defp encoder(input_embeddings, attention_mask, spec, opts) do
-    name = opts[:name]
-    causal? = Keyword.get(opts, :causal?, false)
-
-    encoder_blocks(input_embeddings, attention_mask, spec, name: name, causal?: causal?)
-  end
-
-  defp encoder_blocks(hidden_state, attention_mask, spec, opts) do
-    name = opts[:name]
-    causal? = Keyword.get(opts, :causal?, false)
-
-    state = %{
-      hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
-      attentions: Layers.maybe_container({}, spec.output_attentions)
-    }
-
-    for idx <- 0..(spec.num_blocks - 1), reduce: state do
-      state ->
-        {hidden_state, attention} =
-          encoder_block(state.hidden_state, attention_mask, spec,
-            name: join(name, "layers.#{idx}"),
-            causal?: causal?
-          )
-
-        %{
-          hidden_state: hidden_state,
-          hidden_states: Layers.append(state.hidden_states, hidden_state),
-          attentions: Layers.append(state.attentions, attention)
-        }
-    end
-  end
-
-  defp encoder_block(hidden_state, attention_mask, spec, opts) do
-    name = opts[:name]
-    causal? = Keyword.get(opts, :causal?, false)
-
-    residual = hidden_state
-
-    {hidden_state, attention_weights} =
-      hidden_state
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "layer_norm1")
-      )
-      |> attention(attention_mask, spec, name: join(name, "self_attn"), causal?: causal?)
-
-    hidden_state = Axon.add(residual, hidden_state)
-
-    residual = hidden_state
-
-    hidden_state =
-      hidden_state
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "layer_norm2")
-      )
-      |> mlp(spec, name: join(name, "mlp"))
-      |> Axon.add(residual)
-
-    {hidden_state, attention_weights}
-  end
-
-  defp attention(hidden_state, attention_mask, spec, opts) do
-    name = opts[:name]
-    causal? = Keyword.get(opts, :causal?, false)
-
-    num_heads = spec.num_attention_heads
-
-    query =
-      hidden_state
-      |> Axon.dense(spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "q_proj")
-      )
-      |> Layers.split_heads(num_heads)
-
-    value =
-      hidden_state
-      |> Axon.dense(spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "v_proj")
-      )
-      |> Layers.split_heads(num_heads)
-
-    key =
-      hidden_state
-      |> Axon.dense(spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "k_proj")
-      )
-      |> Layers.split_heads(num_heads)
-
-    attention_mask = Layers.expand_attention_mask(attention_mask)
-
-    attention_mask =
-      if causal? do
-        Layers.Decoder.apply_causal_mask(attention_mask, query, Axon.constant(Nx.tensor(0)))
-      else
-        attention_mask
-      end
-
-    attention_bias = Layers.attention_bias(attention_mask)
-
-    attention_weights =
-      Layers.attention_weights(query, key, attention_bias)
-      |> Axon.dropout(rate: spec.attention_dropout_rate, name: join(name, "dropout"))
-
-    attention_output =
-      attention_weights
-      |> Layers.attention_output(value)
-      |> Layers.flatten_trailing()
-      |> Axon.dense(spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "out_proj")
-      )
-
-    {attention_output, attention_weights}
-  end
-
-  defp mlp(hidden_state, spec, opts) do
-    name = opts[:name]
-
-    hidden_state
-    |> Axon.dense(spec.intermediate_size,
-      kernel_initializer: kernel_initializer(spec),
-      name: join(name, "fc1")
-    )
-    |> Layers.activation(spec.activation, name: join(name, "activation"))
-    |> Axon.dense(spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      name: join(name, "fc2")
-    )
-  end
-
-  defp kernel_initializer(_spec) do
-    Axon.Initializers.normal(scale: 0.01)
-  end
-
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    # Support loading from the entire Clip spec
-    def load(%{"model_type" => "clip", "text_spec" => spec}, data) do
+    # Support loading from the entire Clip configuration
+    def load(spec, %{"model_type" => "clip", "text_config" => data}) do
       load(spec, data)
     end
 
