@@ -53,11 +53,7 @@ defmodule Bumblebee.Layers.Clip do
 
     {hidden_state, attention_weights} =
       hidden_state
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "layer_norm1")
-      )
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layer_norm1"))
       |> attention(attention_mask, spec, name: join(name, "self_attn"), causal?: causal?)
 
     hidden_state = Axon.add(residual, hidden_state)
@@ -66,11 +62,7 @@ defmodule Bumblebee.Layers.Clip do
 
     hidden_state =
       hidden_state
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "layer_norm2")
-      )
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layer_norm2"))
       |> mlp(spec, name: join(name, "mlp"))
       |> Axon.add(residual)
 

@@ -453,11 +453,7 @@ defmodule Bumblebee.Text.Roberta do
       )
 
     Axon.add([inputs_embeddings, position_embeddings, token_type_embeddings])
-    |> Axon.layer_norm(
-      epsilon: spec.layer_norm_epsilon,
-      name: join(name, "LayerNorm"),
-      channel_index: 2
-    )
+    |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "LayerNorm"))
     |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
   end
 
@@ -729,11 +725,7 @@ defmodule Bumblebee.Text.Roberta do
     )
     |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
     |> Axon.add(input)
-    |> Axon.layer_norm(
-      epsilon: spec.layer_norm_epsilon,
-      name: join(name, "LayerNorm"),
-      channel_index: 2
-    )
+    |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "LayerNorm"))
   end
 
   defp intermediate(hidden_state, spec, opts) do
@@ -757,11 +749,7 @@ defmodule Bumblebee.Text.Roberta do
     )
     |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
     |> Axon.add(attention_output)
-    |> Axon.layer_norm(
-      epsilon: spec.layer_norm_epsilon,
-      name: join(name, "LayerNorm"),
-      channel_index: 2
-    )
+    |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "LayerNorm"))
   end
 
   defp pooler(hidden_state, spec, opts) do
@@ -801,11 +789,7 @@ defmodule Bumblebee.Text.Roberta do
       name: join(name, "dense")
     )
     |> Layers.activation(spec.activation, name: join(name, "activation"))
-    |> Axon.layer_norm(
-      epsilon: spec.layer_norm_epsilon,
-      name: join(name, "layer_norm"),
-      channel_index: 2
-    )
+    |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layer_norm"))
   end
 
   defp classifier_dropout_rate(spec) do

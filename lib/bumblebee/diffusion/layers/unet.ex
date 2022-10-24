@@ -328,7 +328,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
 
     hidden_state =
       hidden_state
-      |> Axon.layer_norm(name: join(name, "norm1"), channel_index: 2)
+      |> Axon.layer_norm(name: join(name, "norm1"))
       |> attention(nil,
         hidden_size: opts[:hidden_size],
         num_heads: opts[:num_heads],
@@ -341,7 +341,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
 
     hidden_state =
       hidden_state
-      |> Axon.layer_norm(name: join(name, "norm2"), channel_index: 2)
+      |> Axon.layer_norm(name: join(name, "norm2"))
       |> attention(cross_hidden_state,
         hidden_size: opts[:hidden_size],
         num_heads: opts[:num_heads],
@@ -353,7 +353,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     residual = hidden_state
 
     hidden_state
-    |> Axon.layer_norm(name: join(name, "norm3"), channel_index: 2)
+    |> Axon.layer_norm(name: join(name, "norm3"))
     |> feed_forward_geglu(opts[:hidden_size], dropout: opts[:dropout], name: join(name, "ff"))
     |> Axon.add(residual)
   end

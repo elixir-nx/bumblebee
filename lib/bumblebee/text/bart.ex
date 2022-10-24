@@ -534,7 +534,7 @@ defmodule Bumblebee.Text.Bart do
 
     input_embeddings
     |> Axon.add(position_embeddings)
-    |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
+    |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
     |> Axon.dropout(rate: spec.dropout_rate)
     |> encoder_blocks(attention_mask, attention_head_mask, spec, name: join(name, "layers"))
   end
@@ -618,11 +618,7 @@ defmodule Bumblebee.Text.Bart do
       hidden_state
       |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout.0"))
       |> Axon.add(residual, name: join(name, "residual.0"))
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: 1.0e-5,
-        name: join(name, "self_attn_layer_norm")
-      )
+      |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "self_attn_layer_norm"))
 
     residual = hidden_state
 
@@ -639,7 +635,7 @@ defmodule Bumblebee.Text.Bart do
         name: join(name, "fc2")
       )
       |> Axon.add(residual, name: join(name, "residual.1"))
-      |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "final_layer_norm"))
+      |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "final_layer_norm"))
 
     {hidden_state, attention}
   end
@@ -665,11 +661,7 @@ defmodule Bumblebee.Text.Bart do
     outputs =
       input_embeddings
       |> Axon.add(position_embeddings)
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: 1.0e-5,
-        name: join(name, "layernorm_embedding")
-      )
+      |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
       |> Axon.dropout(rate: spec.dropout_rate)
       |> decoder_blocks(
         attention_mask,
@@ -780,11 +772,7 @@ defmodule Bumblebee.Text.Bart do
       hidden_state
       |> Axon.dropout(rate: spec.dropout_rate)
       |> Axon.add(residual)
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: 1.0e-5,
-        name: join(name, "self_attn_layer_norm")
-      )
+      |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "self_attn_layer_norm"))
 
     {hidden_state, cross_attention, cross_attention_cache} =
       Layers.if_present encoder_hidden_state do
@@ -807,11 +795,7 @@ defmodule Bumblebee.Text.Bart do
           hidden_state
           |> Axon.dropout(rate: spec.dropout_rate)
           |> Axon.add(residual)
-          |> Axon.layer_norm(
-            channel_index: 2,
-            epsilon: 1.0e-5,
-            name: join(name, "encoder_attn_layer_norm")
-          )
+          |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "encoder_attn_layer_norm"))
 
         {hidden_state, cross_attention, cross_attention_cache}
       else
@@ -828,7 +812,7 @@ defmodule Bumblebee.Text.Bart do
       |> Axon.dense(spec.hidden_size, name: join(name, "fc2"))
       |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout.2"))
       |> Axon.add(residual)
-      |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "final_layer_norm"))
+      |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "final_layer_norm"))
 
     block_cache =
       Layers.Decoder.put_attention_caches(
