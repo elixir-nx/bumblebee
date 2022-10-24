@@ -13,16 +13,16 @@ defmodule Bumblebee.Text.Gpt2Test do
 
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
-      input = %{
+      inputs = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.hidden_state) == {1, 11, 768}
+      assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        output.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [
             [-0.0436, 0.0046, -0.1025],
@@ -39,16 +39,16 @@ defmodule Bumblebee.Text.Gpt2Test do
 
       assert %Bumblebee.Text.Gpt2{architecture: :for_causal_language_modeling} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[15496, 11, 616, 3290, 318, 13779]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 6, 50257}
+      assert Nx.shape(outputs.logits) == {1, 6, 50257}
 
       assert_all_close(
-        output.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [
             [-114.5832, -116.5725, -116.0830],
@@ -66,16 +66,16 @@ defmodule Bumblebee.Text.Gpt2Test do
 
       assert %Bumblebee.Text.Gpt2{architecture: :for_token_classification} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[15496, 11, 616, 3290, 318, 13779]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 6, 7}
+      assert Nx.shape(outputs.logits) == {1, 6, 7}
 
       assert_all_close(
-        output.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [[0.4187, 3.4156, -2.8762], [2.9556, 0.9153, -1.0290], [1.3047, 1.0234, -1.2765]]
         ]),
@@ -89,16 +89,16 @@ defmodule Bumblebee.Text.Gpt2Test do
 
       assert %Bumblebee.Text.Gpt2{architecture: :for_sequence_classification} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[15496, 11, 616, 3290, 318, 13779]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 1}
+      assert Nx.shape(outputs.logits) == {1, 1}
 
       assert_all_close(
-        output.logits,
+        outputs.logits,
         Nx.tensor([[-1.2981]]),
         atol: 1.0e-4
       )

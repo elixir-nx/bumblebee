@@ -16,16 +16,16 @@ defmodule Bumblebee.Text.MbartTest do
 
       input_ids = Nx.tensor([[35378, 4, 759, 10269, 83, 99942, 2, 250_004]])
 
-      input = %{
+      inputs = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.hidden_state) == {1, 8, 1024}
+      assert Nx.shape(outputs.hidden_state) == {1, 8, 1024}
 
       assert_all_close(
-        output.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [[-2.8804, -4.7890, -1.7658], [-3.0863, -4.9929, -1.2588], [-2.6020, -5.3808, -0.6461]]
         ]),
@@ -44,16 +44,16 @@ defmodule Bumblebee.Text.MbartTest do
 
       input_ids = Nx.tensor([[4828, 83, 70, 35166, 2, 250_004]])
 
-      input = %{
+      inputs = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 6, 250_027}
+      assert Nx.shape(outputs.logits) == {1, 6, 250_027}
 
       assert_all_close(
-        output.logits[[0, 1..3, 1..3]],
+        outputs.logits[[0, 1..3, 1..3]],
         Nx.tensor([
           [[3.6470, 11.0182, 3.5707], [3.5739, 7.6637, 1.8500], [3.2506, 8.7177, 2.7895]]
         ]),
@@ -72,16 +72,16 @@ defmodule Bumblebee.Text.MbartTest do
 
       input_ids = Nx.tensor([[157, 87, 21, 4, 44, 93, 43, 47, 70, 152, 16, 2, 1004]])
 
-      input = %{
+      inputs = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 2}
+      assert Nx.shape(outputs.logits) == {1, 2}
 
       assert_all_close(
-        output.logits,
+        outputs.logits,
         Nx.tensor([[-0.0062, 0.0032]]),
         atol: 1.0e-4
       )
@@ -98,23 +98,23 @@ defmodule Bumblebee.Text.MbartTest do
 
       input_ids = Nx.tensor([[8, 324, 53, 21, 22, 8, 338, 434, 157, 25, 7, 110, 153]])
 
-      input = %{
+      inputs = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.start_logits) == {1, 13}
-      assert Nx.shape(output.end_logits) == {1, 13}
+      assert Nx.shape(outputs.start_logits) == {1, 13}
+      assert Nx.shape(outputs.end_logits) == {1, 13}
 
       assert_all_close(
-        output.start_logits[[0, 1..3]],
+        outputs.start_logits[[0, 1..3]],
         Nx.tensor([-0.1411, 0.1579, 0.1181]),
         atol: 1.0e-4
       )
 
       assert_all_close(
-        output.end_logits[[0, 1..3]],
+        outputs.end_logits[[0, 1..3]],
         Nx.tensor([-0.0198, -0.2103, -0.1095]),
         atol: 1.0e-4
       )
@@ -131,16 +131,16 @@ defmodule Bumblebee.Text.MbartTest do
 
       input_ids = Nx.tensor([[35378, 4, 759, 10269, 83, 99942, 2, 250_004]])
 
-      input = %{
+      inputs = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 8, 250_027}
+      assert Nx.shape(outputs.logits) == {1, 8, 250_027}
 
       assert_all_close(
-        output.logits[[0, 1..3, 1..3]],
+        outputs.logits[[0, 1..3, 1..3]],
         Nx.tensor([
           [-0.1630, 20.1722, 20.1680],
           [-1.2354, 59.5818, 59.0031],

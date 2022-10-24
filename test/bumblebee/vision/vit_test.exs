@@ -12,15 +12,15 @@ defmodule Bumblebee.Vision.VitTest do
 
       assert %Bumblebee.Vision.Vit{architecture: :base} = spec
 
-      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
-      output = Axon.predict(model, params, input)
+      inputs = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
+      outputs = Axon.predict(model, params, inputs)
 
       # Pre-trained checkpoints by default do not use
       # the pooler layers
-      assert Nx.shape(output.hidden_state) == {1, 197, 768}
+      assert Nx.shape(outputs.hidden_state) == {1, 197, 768}
 
       assert_all_close(
-        output.hidden_state[[0, 0, 0..2]],
+        outputs.hidden_state[[0, 0, 0..2]],
         Nx.tensor([0.4435, 0.4302, -0.1585]),
         atol: 1.0e-4
       )
@@ -32,13 +32,13 @@ defmodule Bumblebee.Vision.VitTest do
 
       assert %Bumblebee.Vision.Vit{architecture: :for_image_classification} = spec
 
-      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
-      output = Axon.predict(model, params, input)
+      inputs = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 1000}
+      assert Nx.shape(outputs.logits) == {1, 1000}
 
       assert_all_close(
-        output.logits[[0, 0..2]],
+        outputs.logits[[0, 0..2]],
         Nx.tensor([0.0112, -0.5065, -0.7792]),
         atol: 1.0e-4
       )
@@ -63,13 +63,13 @@ defmodule Bumblebee.Vision.VitTest do
           |> Nx.transpose(axes: [2, 3, 1, 0])
         end)
 
-      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
-      output = Axon.predict(model, params, input)
+      inputs = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 224, 224, 3}
+      assert Nx.shape(outputs.logits) == {1, 224, 224, 3}
 
       assert_all_close(
-        to_channels_first(output.logits)[[0, 0, 0..2, 0..2]],
+        to_channels_first(outputs.logits)[[0, 0, 0..2, 0..2]],
         Nx.tensor([
           [-0.0103, -0.0275, -0.0447],
           [-0.2853, -0.3025, -0.3197],

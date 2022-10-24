@@ -110,12 +110,12 @@ defmodule Bumblebee.Text.Generation do
   end
 
   defp encoder_from_encoder_decoder(model) do
-    # We cherry-pick encoder output from the encoder-decoder output.
+    # We cherry-pick encoder outputs from the encoder-decoder outputs.
     # The expanded expression will have no decoder bits, so it will
     # effectively be the same as an encoder built from scratch
 
-    Axon.nx(model, fn output ->
-      case output do
+    Axon.nx(model, fn outputs ->
+      case outputs do
         %{
           encoder_hidden_state: hidden_state,
           encoder_hidden_states: hidden_states,
@@ -129,7 +129,7 @@ defmodule Bumblebee.Text.Generation do
 
         _ ->
           raise ArgumentError,
-                "expected an encoder-decoder model, but it does not have the expected output"
+                "expected an encoder-decoder model, but it does not have the expected outputs"
       end
     end)
   end
@@ -140,14 +140,14 @@ defmodule Bumblebee.Text.Generation do
       {_encoder_init_fun, encoder_predict_fun} = Axon.build(encoder)
 
       prepare_inputs_fun = fn inputs, params ->
-        encoder_output = encoder_predict_fun.(params, inputs)
+        encoder_outputs = encoder_predict_fun.(params, inputs)
 
         batch_size = Nx.axis_size(inputs["input_ids"], 0)
         decoder_input_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
 
         inputs =
           Map.merge(inputs, %{
-            "encoder_hidden_state" => encoder_output.hidden_state,
+            "encoder_hidden_state" => encoder_outputs.hidden_state,
             "decoder_input_ids" => decoder_input_ids
           })
 
@@ -194,7 +194,7 @@ defmodule Bumblebee.Text.Generation do
     Map.put(inputs, "cache", cache)
   end
 
-  defp update_decoder_inputs(inputs, output, token_ids, prefix) do
+  defp update_decoder_inputs(inputs, outputs, token_ids, prefix) do
     inputs
     |> Map.replace!(prefix <> "input_ids", token_ids)
     |> Map.replace!(prefix <> "attention_mask", Nx.broadcast(1.0, token_ids))
@@ -203,7 +203,7 @@ defmodule Bumblebee.Text.Generation do
       |> Nx.slice_along_axis(Nx.axis_size(position_ids, -1) - 1, 1, axis: -1)
       |> Nx.add(1)
     end)
-    |> Map.replace!("cache", output.cache)
+    |> Map.replace!("cache", outputs.cache)
   end
 
   defp get_logits_processor(
@@ -341,9 +341,9 @@ defmodule Bumblebee.Text.Generation do
     pad_token_id = opts[:pad_token_id]
     eos_token_id = opts[:eos_token_id]
 
-    output = predict_fun.(params, inputs)
+    outputs = predict_fun.(params, inputs)
 
-    logits = output.logits[[0..-1//1, -1]]
+    logits = outputs.logits[[0..-1//1, -1]]
     logits = logits_processor_fun.(logits, sequences, length)
 
     token_id = Nx.argmax(logits, axis: -1)
@@ -360,7 +360,7 @@ defmodule Bumblebee.Text.Generation do
 
     sequences = Nx.put_slice(sequences, [0, length], token_id)
 
-    inputs = update_inputs_fun.(inputs, output, token_id)
+    inputs = update_inputs_fun.(inputs, outputs, token_id)
 
     {sequences, length + 1, finished?, inputs}
   end

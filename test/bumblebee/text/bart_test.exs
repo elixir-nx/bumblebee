@@ -14,16 +14,16 @@ defmodule Bumblebee.Text.BartTest do
 
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
-      input = %{
+      inputs = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.hidden_state) == {1, 11, 768}
+      assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        output.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [[-0.3985, -1.2727, 1.8201], [1.2444, -1.5131, -0.9588], [-1.0806, -0.0743, 0.5012]]
         ]),
@@ -41,16 +41,16 @@ defmodule Bumblebee.Text.BartTest do
 
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
-      input = %{
+      inputs = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 11, 50265}
+      assert Nx.shape(outputs.logits) == {1, 11, 50265}
 
       assert_all_close(
-        output.logits[[0, 1..3, 1..3]],
+        outputs.logits[[0, 1..3, 1..3]],
         Nx.tensor([
           [-4.3683, 2.3527, -4.6605],
           [-5.9831, 1.2762, -5.9307],
@@ -66,16 +66,16 @@ defmodule Bumblebee.Text.BartTest do
       assert %Bumblebee.Text.Bart{architecture: :for_sequence_classification} = spec
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
-      input = %{
+      inputs = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 2}
+      assert Nx.shape(outputs.logits) == {1, 2}
 
       assert_all_close(
-        output.logits,
+        outputs.logits,
         Nx.tensor([[-0.1599, -0.0090]]),
         atol: 1.0e-4
       )
@@ -89,23 +89,23 @@ defmodule Bumblebee.Text.BartTest do
 
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
-      input = %{
+      inputs = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.start_logits) == {1, 11}
-      assert Nx.shape(output.end_logits) == {1, 11}
+      assert Nx.shape(outputs.start_logits) == {1, 11}
+      assert Nx.shape(outputs.end_logits) == {1, 11}
 
       assert_all_close(
-        output.start_logits[[0, 1..3]],
+        outputs.start_logits[[0, 1..3]],
         Nx.tensor([-8.3735, -10.8867, -12.2982]),
         atol: 1.0e-4
       )
 
       assert_all_close(
-        output.end_logits[[0, 1..3]],
+        outputs.end_logits[[0, 1..3]],
         Nx.tensor([-8.7642, -7.8842, -11.4208]),
         atol: 1.0e-4
       )
@@ -121,16 +121,16 @@ defmodule Bumblebee.Text.BartTest do
 
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
 
-      input = %{
+      inputs = %{
         "input_ids" => input_ids
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 11, 50265}
+      assert Nx.shape(outputs.logits) == {1, 11, 50265}
 
       assert_all_close(
-        output.logits[[0, 1..3, 1..3]],
+        outputs.logits[[0, 1..3, 1..3]],
         Nx.tensor([
           [-1.7658, -1.1057, -0.6313],
           [-1.0344, 4.4774, 0.5581],

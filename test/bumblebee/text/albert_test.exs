@@ -12,17 +12,17 @@ defmodule Bumblebee.Text.AlbertTest do
 
       assert %Bumblebee.Text.Albert{architecture: :base} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]),
         "attention_mask" => Nx.tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.hidden_state) == {1, 11, 768}
+      assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        output.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [[-0.6513, 1.5035, -0.2766], [-0.6515, 1.5046, -0.2780], [-0.6512, 1.5049, -0.2784]]
         ]),
@@ -35,17 +35,17 @@ defmodule Bumblebee.Text.AlbertTest do
 
       assert %Bumblebee.Text.Albert{architecture: :for_masked_language_modeling} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]]),
         "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 9, 30000}
+      assert Nx.shape(outputs.logits) == {1, 9, 30000}
 
       assert_all_close(
-        output.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [[1.0450, -2.2835, -3.8152], [1.0635, -2.3124, -3.8890], [1.2576, -2.4207, -3.9500]]
         ]),
@@ -59,17 +59,17 @@ defmodule Bumblebee.Text.AlbertTest do
 
       assert %Bumblebee.Text.Albert{architecture: :for_sequence_classification} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]]),
         "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 2}
+      assert Nx.shape(outputs.logits) == {1, 2}
 
       assert_all_close(
-        output.logits,
+        outputs.logits,
         Nx.tensor([[0.4954, 0.1815]]),
         atol: 1.0e-4
       )
@@ -90,17 +90,17 @@ defmodule Bumblebee.Text.AlbertTest do
 
       assert %Bumblebee.Text.Albert{architecture: :for_multiple_choice} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]]]),
         "attention_mask" => Nx.tensor([[[1, 1, 1, 1, 1, 1, 1, 1, 1]]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 1}
+      assert Nx.shape(outputs.logits) == {1, 1}
 
       assert_all_close(
-        output.logits,
+        outputs.logits,
         Nx.tensor([[-0.0200]]),
         atol: 1.0e-3
       )
@@ -111,16 +111,16 @@ defmodule Bumblebee.Text.AlbertTest do
 
       assert %Bumblebee.Text.Albert{architecture: :for_token_classification} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 9, 2}
+      assert Nx.shape(outputs.logits) == {1, 9, 2}
 
       assert_all_close(
-        output.logits[[0..-1//1, 1..3//1, 0..-1//1]],
+        outputs.logits[[0..-1//1, 1..3//1, 0..-1//1]],
         Nx.tensor([[[0.1364, -0.0437], [0.0360, -0.0786], [-0.1296, 0.0436]]]),
         atol: 1.0e-4
       )
@@ -132,23 +132,23 @@ defmodule Bumblebee.Text.AlbertTest do
 
       assert %Bumblebee.Text.Albert{architecture: :for_question_answering} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.start_logits) == {1, 9}
-      assert Nx.shape(output.end_logits) == {1, 9}
+      assert Nx.shape(outputs.start_logits) == {1, 9}
+      assert Nx.shape(outputs.end_logits) == {1, 9}
 
       assert_all_close(
-        output.start_logits[[0..-1//1, 1..3]],
+        outputs.start_logits[[0..-1//1, 1..3]],
         Nx.tensor([[-0.2464, -0.1028, -0.2076]]),
         atol: 1.0e-4
       )
 
       assert_all_close(
-        output.end_logits[[0..-1//1, 1..3]],
+        outputs.end_logits[[0..-1//1, 1..3]],
         Nx.tensor([[-1.3742, -1.3609, -1.3454]]),
         atol: 1.0e-4
       )

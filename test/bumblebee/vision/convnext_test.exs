@@ -12,13 +12,13 @@ defmodule Bumblebee.Vision.ConvNextTest do
 
       assert %Bumblebee.Vision.ConvNext{architecture: :base} = spec
 
-      input = Nx.broadcast(0.5, {1, 224, 224, 3})
-      output = Axon.predict(model, params, input)
+      inputs = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.pooler_output) == {1, 768}
+      assert Nx.shape(outputs.pooler_output) == {1, 768}
 
       assert_all_close(
-        Nx.sum(output.pooler_output),
+        Nx.sum(outputs.pooler_output),
         Nx.tensor(-2.1095),
         atol: 1.0e-4
       )
@@ -30,13 +30,13 @@ defmodule Bumblebee.Vision.ConvNextTest do
 
       assert %Bumblebee.Vision.ConvNext{architecture: :for_image_classification} = spec
 
-      input = Nx.broadcast(0.5, {1, 224, 224, 3})
-      output = Axon.predict(model, params, input)
+      inputs = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 1000}
+      assert Nx.shape(outputs.logits) == {1, 1000}
 
       assert_all_close(
-        output.logits[[0, 0..2]],
+        outputs.logits[[0, 0..2]],
         Nx.tensor([-0.4239, -0.2082, 0.0709]),
         atol: 1.0e-4
       )

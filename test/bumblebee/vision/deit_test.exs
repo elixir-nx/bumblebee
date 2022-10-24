@@ -14,15 +14,15 @@ defmodule Bumblebee.Vision.DeitTest do
 
       assert %Bumblebee.Vision.Deit{architecture: :base} = spec
 
-      input = Nx.broadcast(0.5, {1, 224, 224, 3})
-      output = Axon.predict(model, params, %{"pixel_values" => input})
+      inputs = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
+      outputs = Axon.predict(model, params, inputs)
 
       # Pre-trained checkpoints by default do not use
       # the pooler layers
-      assert Nx.shape(output.hidden_state) == {1, 198, 768}
+      assert Nx.shape(outputs.hidden_state) == {1, 198, 768}
 
       assert_all_close(
-        output.hidden_state[[0, 0, 0..2]],
+        outputs.hidden_state[[0, 0, 0..2]],
         Nx.tensor([-0.0738, -0.2792, -0.0235]),
         atol: 1.0e-4
       )
@@ -34,13 +34,13 @@ defmodule Bumblebee.Vision.DeitTest do
 
       assert %Bumblebee.Vision.Deit{architecture: :for_image_classification_with_teacher} = spec
 
-      input = Nx.broadcast(0.5, {1, 224, 224, 3})
-      output = Axon.predict(model, params, %{"pixel_values" => input})
+      inputs = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 1000}
+      assert Nx.shape(outputs.logits) == {1, 1000}
 
       assert_all_close(
-        output.logits[[0, 0..2]],
+        outputs.logits[[0, 0..2]],
         Nx.tensor([-0.7490, 0.7397, 0.6383]),
         atol: 1.0e-4
       )
@@ -65,13 +65,13 @@ defmodule Bumblebee.Vision.DeitTest do
           |> Nx.transpose(axes: [2, 3, 1, 0])
         end)
 
-      input = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
-      output = Axon.predict(model, params, input)
+      inputs = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 224, 224, 3}
+      assert Nx.shape(outputs.logits) == {1, 224, 224, 3}
 
       assert_all_close(
-        to_channels_first(output.logits)[[0, 0, 0..2, 0..2]],
+        to_channels_first(outputs.logits)[[0, 0, 0..2, 0..2]],
         Nx.tensor([
           [-0.0159, 0.0084, 0.0326],
           [0.3719, 0.3961, 0.4204],

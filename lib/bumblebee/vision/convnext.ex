@@ -122,10 +122,10 @@ defmodule Bumblebee.Vision.ConvNext do
 
     embedding_output = embeddings(pixel_values, spec, name: join(name, "embeddings"))
 
-    encoder_output = encoder(embedding_output, spec, name: join(name, "encoder"))
+    encoder_outputs = encoder(embedding_output, spec, name: join(name, "encoder"))
 
     pooled_output =
-      encoder_output.hidden_state
+      encoder_outputs.hidden_state
       |> Axon.global_avg_pool()
       |> Axon.layer_norm(
         epsilon: spec.layer_norm_epsilon,
@@ -135,9 +135,9 @@ defmodule Bumblebee.Vision.ConvNext do
       )
 
     %{
-      hidden_state: encoder_output.hidden_state,
+      hidden_state: encoder_outputs.hidden_state,
       pooler_output: pooled_output,
-      hidden_states: encoder_output.hidden_states
+      hidden_states: encoder_outputs.hidden_states
     }
   end
 

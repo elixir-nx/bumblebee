@@ -18,13 +18,13 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
         "sample" => Nx.broadcast(0.5, {1, 32, 32, 3})
       }
 
-      output = Axon.predict(model, params, inputs)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.sample) == {1, 32, 32, 3}
+      assert Nx.shape(outputs.sample) == {1, 32, 32, 3}
 
       # Values from the Flax implementation using the same checkpoint
       assert_all_close(
-        to_channels_first(output.sample)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
+        to_channels_first(outputs.sample)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [
             [[-0.2663, -0.1856, -0.0328], [-0.3195, -0.2043, 0.0261], [-0.1438, 0.1093, -0.0887]],
@@ -43,7 +43,7 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
       # This is expected, because the 2D convolution (conv_in) gives
       # slightly different values
       assert_all_close(
-        to_channels_first(output.sample)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
+        to_channels_first(outputs.sample)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [
             [[-0.2663, -0.1856, -0.0329], [-0.3195, -0.2043, 0.0261], [-0.1437, 0.1092, -0.0886]],
@@ -72,12 +72,12 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
         "sample" => Nx.broadcast(0.5, {1, 16, 16, 4})
       }
 
-      output = Axon.predict(model, params, inputs)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.sample) == {1, 32, 32, 3}
+      assert Nx.shape(outputs.sample) == {1, 32, 32, 3}
 
       assert_all_close(
-        to_channels_first(output.sample)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
+        to_channels_first(outputs.sample)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [
             [[-0.3571, -0.2580, -0.0133], [-0.0827, 0.0831, 0.1217], [0.8464, 0.5589, 0.0858]],
@@ -102,15 +102,15 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
         "sample" => Nx.broadcast(0.5, {1, 32, 32, 3})
       }
 
-      output = Axon.predict(model, params, inputs)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.latent_dist.mean) == {1, 16, 16, 4}
-      assert Nx.shape(output.latent_dist.var) == {1, 16, 16, 4}
-      assert Nx.shape(output.latent_dist.logvar) == {1, 16, 16, 4}
-      assert Nx.shape(output.latent_dist.std) == {1, 16, 16, 4}
+      assert Nx.shape(outputs.latent_dist.mean) == {1, 16, 16, 4}
+      assert Nx.shape(outputs.latent_dist.var) == {1, 16, 16, 4}
+      assert Nx.shape(outputs.latent_dist.logvar) == {1, 16, 16, 4}
+      assert Nx.shape(outputs.latent_dist.std) == {1, 16, 16, 4}
 
       assert_all_close(
-        to_channels_first(output.latent_dist.mean)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
+        to_channels_first(outputs.latent_dist.mean)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [
             [[0.1872, 0.4903, 0.1864], [0.0671, 0.5873, 0.1105], [-0.1166, 0.2500, 0.1097]],
@@ -123,7 +123,7 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
       )
 
       assert_all_close(
-        to_channels_first(output.latent_dist.var)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
+        to_channels_first(outputs.latent_dist.var)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [
             [[1.5876, 1.0834, 1.4341], [1.7221, 1.0370, 1.2434], [1.2043, 0.8315, 1.2684]],

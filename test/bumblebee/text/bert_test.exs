@@ -12,17 +12,17 @@ defmodule Bumblebee.Text.BertTest do
 
       assert %Bumblebee.Text.Bert{architecture: :base} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]),
         "attention_mask" => Nx.tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.hidden_state) == {1, 11, 768}
+      assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        output.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([[[0.4249, 0.1008, 0.7531], [0.3771, 0.1188, 0.7467], [0.4152, 0.1098, 0.7108]]]),
         atol: 1.0e-4
       )
@@ -33,16 +33,16 @@ defmodule Bumblebee.Text.BertTest do
 
       assert %Bumblebee.Text.Bert{architecture: :for_masked_language_modeling} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[101, 1996, 3007, 1997, 2605, 2003, 103, 1012, 102]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 9, 30522}
+      assert Nx.shape(outputs.logits) == {1, 9, 30522}
 
       assert_all_close(
-        output.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [
             [-14.7240, -14.2120, -14.6434],
@@ -62,17 +62,17 @@ defmodule Bumblebee.Text.BertTest do
 
       assert %Bumblebee.Text.Bert{architecture: :for_sequence_classification} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" =>
           Nx.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10140, 2002, 7317, 4747, 102]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 2}
+      assert Nx.shape(outputs.logits) == {1, 2}
 
       assert_all_close(
-        output.logits,
+        outputs.logits,
         Nx.tensor([[-1.3199, 1.5447]]),
         atol: 1.0e-4
       )
@@ -84,19 +84,19 @@ defmodule Bumblebee.Text.BertTest do
 
       assert %Bumblebee.Text.Bert{architecture: :for_token_classification} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" =>
           Nx.tensor([
             [101, 20164, 10932, 2271, 7954, 1110, 1359, 1107, 2123, 1105, 1203, 1365, 102]
           ])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 13, 9}
+      assert Nx.shape(outputs.logits) == {1, 13, 9}
 
       assert_all_close(
-        output.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [[-3.1215, -0.4028, -3.3213], [-2.4627, 0.0613, -3.2501], [-3.1475, -0.7705, -2.8248]]
         ]),
@@ -110,7 +110,7 @@ defmodule Bumblebee.Text.BertTest do
 
       assert %Bumblebee.Text.Bert{architecture: :for_question_answering} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" =>
           Nx.tensor([
             [101, 2627, 1108, 3104, 1124, 15703, 136] ++
@@ -119,19 +119,19 @@ defmodule Bumblebee.Text.BertTest do
         "token_type_ids" => Nx.tensor([[0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.start_logits) == {1, 16}
-      assert Nx.shape(output.end_logits) == {1, 16}
+      assert Nx.shape(outputs.start_logits) == {1, 16}
+      assert Nx.shape(outputs.end_logits) == {1, 16}
 
       assert_all_close(
-        output.start_logits[[0..-1//1, 1..3]],
+        outputs.start_logits[[0..-1//1, 1..3]],
         Nx.tensor([[-6.9344, -6.9556, -2.8814]]),
         atol: 1.0e-4
       )
 
       assert_all_close(
-        output.end_logits[[0..-1//1, 1..3]],
+        outputs.end_logits[[0..-1//1, 1..3]],
         Nx.tensor([[-7.3395, -7.9609, -7.4926]]),
         atol: 1.0e-4
       )
@@ -143,7 +143,7 @@ defmodule Bumblebee.Text.BertTest do
 
       assert %Bumblebee.Text.Bert{architecture: :for_multiple_choice} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" =>
           Nx.tensor([
             [
@@ -167,12 +167,12 @@ defmodule Bumblebee.Text.BertTest do
           ])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 2}
+      assert Nx.shape(outputs.logits) == {1, 2}
 
       assert_all_close(
-        output.logits,
+        outputs.logits,
         Nx.tensor([[0.3749, -3.9458]]),
         atol: 1.0e-4
       )
@@ -186,7 +186,7 @@ defmodule Bumblebee.Text.BertTest do
 
       assert %Bumblebee.Text.Bert{architecture: :for_next_sentence_prediction} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" =>
           Nx.tensor([
             [101, 1999, 3304, 10733, 2003, 2366, 4895, 14540, 6610, 2094, 1012] ++
@@ -196,12 +196,12 @@ defmodule Bumblebee.Text.BertTest do
           Nx.tensor([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 2}
+      assert Nx.shape(outputs.logits) == {1, 2}
 
       assert_all_close(
-        output.logits,
+        outputs.logits,
         Nx.tensor([[6.1459, -5.7820]]),
         atol: 1.0e-4
       )
@@ -215,16 +215,16 @@ defmodule Bumblebee.Text.BertTest do
 
       assert %Bumblebee.Text.Bert{architecture: :for_causal_language_modeling} = spec
 
-      input = %{
+      inputs = %{
         "input_ids" => Nx.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10140, 102]])
       }
 
-      output = Axon.predict(model, params, input)
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 8, 30522}
+      assert Nx.shape(outputs.logits) == {1, 8, 30522}
 
       assert_all_close(
-        output.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [[-6.0980, -6.1492, -6.0886], [-6.1857, -6.2198, -6.2982], [-6.3880, -6.3918, -6.3503]]
         ]),

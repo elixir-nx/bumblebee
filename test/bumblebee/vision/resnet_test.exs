@@ -12,13 +12,13 @@ defmodule Bumblebee.Vision.ResNetTest do
 
       assert %Bumblebee.Vision.ResNet{architecture: :base} = spec
 
-      input = Nx.broadcast(0.5, {1, 224, 224, 3})
-      output = Axon.predict(model, params, input)
+      inputs = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.pooler_output) == {1, 1, 1, 2048}
+      assert Nx.shape(outputs.pooler_output) == {1, 1, 1, 2048}
 
       assert_all_close(
-        Nx.sum(output.pooler_output),
+        Nx.sum(outputs.pooler_output),
         Nx.tensor(14.5119),
         atol: 1.0e-4
       )
@@ -29,13 +29,13 @@ defmodule Bumblebee.Vision.ResNetTest do
 
       assert %Bumblebee.Vision.ResNet{architecture: :for_image_classification} = spec
 
-      input = Nx.broadcast(0.5, {1, 224, 224, 3})
-      output = Axon.predict(model, params, input)
+      inputs = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
+      outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(output.logits) == {1, 1000}
+      assert Nx.shape(outputs.logits) == {1, 1000}
 
       assert_all_close(
-        output.logits[[0, 0..2]],
+        outputs.logits[[0, 0..2]],
         Nx.tensor([-6.6223, -6.2090, -5.8592]),
         atol: 1.0e-4
       )

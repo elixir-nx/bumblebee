@@ -10,9 +10,9 @@ defmodule Bumblebee.Vision.DeitFeaturizerTest do
 
       image = Nx.tensor([[[50], [100]], [[150], [200]]])
 
-      input = Bumblebee.apply_featurizer(featurizer, image)
+      inputs = Bumblebee.apply_featurizer(featurizer, image)
 
-      assert Nx.shape(input["pixel_values"]) == {1, 224, 224, 3}
+      assert Nx.shape(inputs["pixel_values"]) == {1, 224, 224, 3}
     end
   end
 end

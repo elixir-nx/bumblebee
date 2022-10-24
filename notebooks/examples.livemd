@@ -51,10 +51,10 @@ image |> StbImage.to_binary(:jpg) |> Kino.Image.new(:jpeg)
 With both the model and image at hand, we are ready to do the classification! We pass the image through our featurizer to get normalized model inputs, then we run the model and extract the most probable label.
 
 ```elixir
-input = Bumblebee.apply_featurizer(featurizer, image)
-output = Axon.predict(model, params, input)
+inputs = Bumblebee.apply_featurizer(featurizer, image)
+outputs = Axon.predict(model, params, inputs)
 
-id = output.logits |> Nx.argmax() |> Nx.to_number()
+id = outputs.logits |> Nx.argmax() |> Nx.to_number()
 spec.id_to_label[id]
 ```
 
@@ -93,14 +93,14 @@ text_input = Kino.Input.text("Sentence with mask", default: "The capital of [MAS
 text = Kino.Input.read(text_input)
 
 inputs = Bumblebee.apply_tokenizer(tokenizer, text)
-output = Axon.predict(model, params, inputs)
+outputs = Axon.predict(model, params, inputs)
 
 # Find the location of the mask token in the input sequence
 mask_token_id = Bumblebee.Tokenizer.special_token_id(tokenizer, :mask)
 mask_idx = inputs["input_ids"] |> Nx.equal(mask_token_id) |> Nx.argmax()
 
 # Get the most probable token for that location
-id = output.logits[[0, mask_idx]] |> Nx.argmax() |> Nx.to_number()
+id = outputs.logits[[0, mask_idx]] |> Nx.argmax() |> Nx.to_number()
 Bumblebee.Tokenizer.id_to_token(tokenizer, id)
 ```
 
@@ -133,9 +133,9 @@ text_input = Kino.Input.text("Text", default: "I love my friends.")
 text = Kino.Input.read(text_input)
 
 inputs = Bumblebee.apply_tokenizer(tokenizer, text)
-output = Axon.predict(model, params, inputs)
+outputs = Axon.predict(model, params, inputs)
 
-id = output.logits |> Nx.argmax() |> Nx.to_number()
+id = outputs.logits |> Nx.argmax() |> Nx.to_number()
 spec.id_to_label[id]
 ```
 
@@ -229,10 +229,10 @@ context = Kino.Input.read(context_input)
 
 inputs = Bumblebee.apply_tokenizer(tokenizer, {question, context})
 
-output = Axon.predict(model, params, inputs)
+outputs = Axon.predict(model, params, inputs)
 
-answer_start_index = output.start_logits |> Nx.argmax() |> Nx.to_number()
-answer_end_index = output.end_logits |> Nx.argmax() |> Nx.to_number()
+answer_start_index = outputs.start_logits |> Nx.argmax() |> Nx.to_number()
+answer_end_index = outputs.end_logits |> Nx.argmax() |> Nx.to_number()
 
 answer_tokens =
   inputs["input_ids"][[0, answer_start_index..answer_end_index]] |> Nx.to_flat_list()

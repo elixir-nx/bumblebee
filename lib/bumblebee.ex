@@ -340,7 +340,7 @@ defmodule Bumblebee do
 
       featurizer = Bumblebee.configure(Bumblebee.Vision.ConvNextFeaturizer)
       {:ok, img} = StbImage.read_file(path)
-      input = Bumblebee.apply_featurizer(featurizer, [img])
+      inputs = Bumblebee.apply_featurizer(featurizer, [img])
 
   """
   @doc type: :featurizer
