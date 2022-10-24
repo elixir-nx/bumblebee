@@ -107,13 +107,13 @@ defmodule Bumblebee.Diffusion.VaeKl do
 
   def model(%__MODULE__{architecture: :encoder} = spec) do
     inputs = inputs(spec)
-    posterior = encode(inputs["sample"], spec)
+    posterior = encoder(inputs["sample"], spec)
     Layers.output(%{latent_dist: Axon.container(posterior)})
   end
 
   def model(%__MODULE__{architecture: :decoder} = spec) do
     inputs = inputs(spec)
-    sample = decode(inputs["sample"], spec)
+    sample = decoder(inputs["sample"], spec)
     Layers.output(%{sample: sample})
   end
 
@@ -150,7 +150,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
         Axon.constant(Nx.tensor(0, type: {:u, 8}))
       end
 
-    posterior = encode(x, spec, name: name)
+    posterior = encoder(x, spec, name: name)
 
     z =
       Axon.cond(
@@ -160,27 +160,27 @@ defmodule Bumblebee.Diffusion.VaeKl do
         mode(posterior)
       )
 
-    decode(z, spec, name: name)
+    decoder(z, spec, name: name)
   end
 
-  defp encode(x, spec, opts \\ []) do
+  defp encoder(x, spec, opts \\ []) do
     name = opts[:name]
 
     x
-    |> encoder(spec, name: join(name, "encoder"))
+    |> encoder_blocks(spec, name: join(name, "encoder"))
     |> Axon.conv(2 * spec.latent_channels, kernel_size: 1, name: join(name, "quant_conv"))
     |> diagonal_gaussian_distribution()
   end
 
-  defp decode(z, spec, opts \\ []) do
+  defp decoder(z, spec, opts \\ []) do
     name = opts[:name]
 
     z
     |> Axon.conv(spec.latent_channels, kernel_size: 1, name: join(name, "post_quant_conv"))
-    |> decoder(spec, name: join(name, "decoder"))
+    |> decoder_blocks(spec, name: join(name, "decoder"))
   end
 
-  defp encoder(x, spec, opts) do
+  defp encoder_blocks(x, spec, opts) do
     name = opts[:name]
 
     x
@@ -201,7 +201,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
     )
   end
 
-  defp decoder(z, spec, opts) do
+  defp decoder_blocks(z, spec, opts) do
     name = opts[:name]
 
     z
