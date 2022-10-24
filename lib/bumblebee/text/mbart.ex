@@ -551,19 +551,11 @@ defmodule Bumblebee.Text.Mbart do
     encoder_outputs =
       input_embeddings
       |> Axon.add(position_embeddings)
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: 1.0e-5,
-        name: join(name, "layernorm_embedding")
-      )
+      |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
       |> Axon.dropout(rate: spec.dropout_rate)
       |> encoder_blocks(attention_mask, attention_head_mask, spec, name: join(name, "layers"))
 
-    hidden_state =
-      Axon.layer_norm(encoder_outputs.hidden_state,
-        channel_index: 2,
-        name: join(name, "layer_norm")
-      )
+    hidden_state = Axon.layer_norm(encoder_outputs.hidden_state, name: join(name, "layer_norm"))
 
     %{
       hidden_state: hidden_state,
@@ -636,11 +628,7 @@ defmodule Bumblebee.Text.Mbart do
 
     {hidden_state, attention, _} =
       hidden_state
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: 1.0e-5,
-        name: join(name, "self_attn_layer_norm")
-      )
+      |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "self_attn_layer_norm"))
       |> attention(
         attention_mask,
         nil,
@@ -661,7 +649,7 @@ defmodule Bumblebee.Text.Mbart do
 
     hidden_state =
       hidden_state
-      |> Axon.layer_norm(channel_index: 2, name: join(name, "final_layer_norm"))
+      |> Axon.layer_norm(name: join(name, "final_layer_norm"))
       |> Axon.dense(spec.encoder_intermediate_size,
         kernel_initializer: kernel_initializer(spec),
         name: join(name, "fc1")
@@ -699,11 +687,7 @@ defmodule Bumblebee.Text.Mbart do
     decoder_outputs =
       input_embeddings
       |> Axon.add(position_embeddings)
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: 1.0e-5,
-        name: join(name, "layernorm_embedding")
-      )
+      |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "layernorm_embedding"))
       |> Axon.dropout(rate: spec.dropout_rate)
       |> decoder_blocks(
         attention_mask,
@@ -718,7 +702,7 @@ defmodule Bumblebee.Text.Mbart do
 
     hidden_state =
       decoder_outputs.hidden_state
-      |> Axon.layer_norm(channel_index: 2, name: join(name, "layer_norm"))
+      |> Axon.layer_norm(name: join(name, "layer_norm"))
 
     %{
       cache: Layers.Decoder.update_cache_offset(decoder_outputs.cache, input_embeddings),
@@ -808,11 +792,7 @@ defmodule Bumblebee.Text.Mbart do
 
     {hidden_state, self_attention, self_attention_cache} =
       hidden_state
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: 1.0e-5,
-        name: join(name, "self_attn_layer_norm")
-      )
+      |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "self_attn_layer_norm"))
       |> attention(
         attention_mask,
         nil,
@@ -836,11 +816,7 @@ defmodule Bumblebee.Text.Mbart do
 
         {hidden_state, cross_attention, cross_attention_cache} =
           hidden_state
-          |> Axon.layer_norm(
-            channel_index: 2,
-            epsilon: 1.0e-5,
-            name: join(name, "encoder_attn_layer_norm")
-          )
+          |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "encoder_attn_layer_norm"))
           |> attention(
             encoder_attention_mask,
             encoder_hidden_state,
@@ -866,7 +842,7 @@ defmodule Bumblebee.Text.Mbart do
 
     hidden_state =
       hidden_state
-      |> Axon.layer_norm(channel_index: 2, epsilon: 1.0e-5, name: join(name, "final_layer_norm"))
+      |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "final_layer_norm"))
       |> Axon.dense(spec.decoder_intermediate_size, name: join(name, "fc1"))
       |> Axon.activation(spec.activation, name: join(name, "activation"))
       |> Axon.dropout(rate: spec.activation_dropout_rate, name: join(name, "dropout.1"))

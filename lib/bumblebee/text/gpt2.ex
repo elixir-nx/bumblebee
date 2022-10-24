@@ -344,7 +344,6 @@ defmodule Bumblebee.Text.Gpt2 do
 
     hidden_state =
       Axon.layer_norm(block_outputs.hidden_state,
-        channel_index: 2,
         epsilon: spec.layer_norm_epsilon,
         name: join(name, "ln_f")
       )
@@ -443,11 +442,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
     {attention_output, attention_weights, self_attention_cache} =
       hidden_state
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "ln_1")
-      )
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "ln_1"))
       |> attention(
         attention_mask,
         nil,
@@ -470,7 +465,6 @@ defmodule Bumblebee.Text.Gpt2 do
           {cross_attention_output, cross_attention_weights, cross_attention_cache} =
             hidden_state
             |> Axon.layer_norm(
-              channel_index: 2,
               epsilon: spec.layer_norm_epsilon,
               name: join(name, "ln_cross_attn")
             )
@@ -498,11 +492,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
     hidden_state =
       hidden_state
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "ln_2")
-      )
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "ln_2"))
       |> mlp(inner_dim, spec, name: join(name, "mlp"))
       |> Axon.add(residual)
 

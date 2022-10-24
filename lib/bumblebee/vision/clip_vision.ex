@@ -133,11 +133,7 @@ defmodule Bumblebee.Vision.ClipVision do
 
     pooler_output =
       encoder_outputs.hidden_state
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "post_layernorm")
-      )
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "post_layernorm"))
       |> Layers.take_token(index: 0, axis: 1, name: join(name, "head"))
 
     %{

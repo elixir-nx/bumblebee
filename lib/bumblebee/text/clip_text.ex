@@ -163,7 +163,6 @@ defmodule Bumblebee.Text.ClipText do
 
     hidden_state =
       Axon.layer_norm(encoder_outputs.hidden_state,
-        channel_index: 2,
         epsilon: spec.layer_norm_epsilon,
         name: join(name, "final_layer_norm")
       )

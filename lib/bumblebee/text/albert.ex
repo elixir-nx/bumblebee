@@ -376,11 +376,7 @@ defmodule Bumblebee.Text.Albert do
       )
 
     Axon.add([inputs_embeddings, position_embeddings, token_type_embeddings])
-    |> Axon.layer_norm(
-      epsilon: spec.layer_norm_epsilon,
-      name: join(name, "LayerNorm"),
-      channel_index: 2
-    )
+    |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "LayerNorm"))
     |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
   end
 
@@ -451,8 +447,7 @@ defmodule Bumblebee.Text.Albert do
       |> Axon.add(attention_output, name: join(name, "ffn.residual"))
       |> Axon.layer_norm(
         epsilon: spec.layer_norm_epsilon,
-        name: join(name, "full_layer_layer_norm"),
-        channel_index: 2
+        name: join(name, "full_layer_layer_norm")
       )
 
     {hidden_state, attention_weights}
@@ -507,11 +502,7 @@ defmodule Bumblebee.Text.Albert do
       )
       |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dense.dropout"))
       |> Axon.add(hidden_state)
-      |> Axon.layer_norm(
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "LayerNorm"),
-        channel_index: 2
-      )
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "LayerNorm"))
 
     {projected, attention_weights}
   end
@@ -552,11 +543,7 @@ defmodule Bumblebee.Text.Albert do
       name: join(name, "dense")
     )
     |> Layers.activation(spec.activation, name: join(name, "activation"))
-    |> Axon.layer_norm(
-      epsilon: spec.layer_norm_epsilon,
-      name: join(name, "LayerNorm"),
-      channel_index: 2
-    )
+    |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "LayerNorm"))
   end
 
   defp classifier_dropout_rate(spec) do

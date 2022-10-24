@@ -202,11 +202,7 @@ defmodule Bumblebee.Vision.Vit do
 
     hidden_state =
       hidden_state
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "layernorm")
-      )
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm"))
 
     pooled = pooler(hidden_state, spec, name: join(name, "pooler"))
 
@@ -297,22 +293,14 @@ defmodule Bumblebee.Vision.Vit do
 
     {attention_output, attention} =
       hidden_state
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "layernorm_before")
-      )
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_before"))
       |> attention(spec, name: join(name, "attention"))
 
     attention_output = Axon.add(attention_output, hidden_state)
 
     output =
       attention_output
-      |> Axon.layer_norm(
-        channel_index: 2,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "layernorm_after")
-      )
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_after"))
       |> intermediate(spec, name: join(name, "intermediate"))
       |> output(attention_output, spec, name: join(name, "output"))
 
