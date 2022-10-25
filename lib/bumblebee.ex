@@ -227,7 +227,7 @@ defmodule Bumblebee do
     "MBartForSequenceClassification" => {Bumblebee.Text.Mbart, :for_sequence_classification},
     "MBartForQuestionAnswering" => {Bumblebee.Text.Mbart, :for_question_answering},
     "MBartForCausalLM" => {Bumblebee.Text.Mbart, :for_causal_language_modeling},
-    # ClipText
+    # Clip
     "CLIPModel" => {Bumblebee.Multimodal.Clip, :base},
     "CLIPTextModel" => {Bumblebee.Text.ClipText, :base},
     "CLIPVisionModel" => {Bumblebee.Vision.ClipVision, :base},
