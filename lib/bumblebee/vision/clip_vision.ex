@@ -33,7 +33,7 @@ defmodule Bumblebee.Vision.ClipVision do
           "the dimensionality of the intermediate (often named feed-forward) layer in the encoder"
       ],
       activation: [
-        default: :gelu,
+        default: :quick_gelu,
         doc: "the activation function"
       ],
       dropout_rate: [
@@ -202,7 +202,7 @@ defmodule Bumblebee.Vision.ClipVision do
     Axon.layer(
       fn _opts -> Nx.iota({1, num_position_ids}) end,
       [],
-      op: :position_ids
+      op_name: :position_ids
     )
   end
 

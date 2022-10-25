@@ -60,6 +60,7 @@ defmodule Bumblebee.MixProject do
         Models: [
           Bumblebee.Diffusion.UNet2DConditional,
           Bumblebee.Diffusion.VaeKl,
+          Bumblebee.Multimodal.Clip,
           Bumblebee.Text.Albert,
           Bumblebee.Text.Bart,
           Bumblebee.Text.Bert,
@@ -67,6 +68,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.Gpt2,
           Bumblebee.Text.Mbart,
           Bumblebee.Text.Roberta,
+          Bumblebee.Vision.ClipVision,
           Bumblebee.Vision.ConvNext,
           Bumblebee.Vision.Deit,
           Bumblebee.Vision.ResNet,
@@ -80,6 +82,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.Gpt2Tokenizer,
           Bumblebee.Text.MbartTokenizer,
           Bumblebee.Text.RobertaTokenizer,
+          Bumblebee.Vision.ClipFeaturizer,
           Bumblebee.Vision.ConvNextFeaturizer,
           Bumblebee.Vision.DeitFeaturizer,
           Bumblebee.Vision.VitFeaturizer
