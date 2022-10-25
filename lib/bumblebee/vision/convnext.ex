@@ -272,8 +272,7 @@ defmodule Bumblebee.Vision.ConvNext do
         Layers.scale(x,
           name: name,
           scale_initializer: Axon.Initializers.full(spec.scale_initial_value),
-          scale_name: "layer_scale_parameter",
-          channel_index: 3
+          scale_name: "layer_scale_parameter"
         )
       else
         x

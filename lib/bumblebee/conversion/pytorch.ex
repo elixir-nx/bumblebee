@@ -303,9 +303,12 @@ defmodule Bumblebee.Conversion.PyTorch do
   end
 
   defp lookup_param(pytorch_state, layer_name, pytorch_names) do
-    Enum.find_value(pytorch_names, :error, fn pytorch_name ->
-      pytorch_key = layer_name <> "." <> pytorch_name
+    # Note: the PyTorch model may have some root-level parameters that
+    # we need to namespace under a layer in Axon, so after trying params
+    # within layer_name, we also try the parameter name directly
+    pytorch_keys = Enum.map(pytorch_names, &(layer_name <> "." <> &1)) ++ pytorch_names
 
+    Enum.find_value(pytorch_keys, :error, fn pytorch_key ->
       if value = pytorch_state[pytorch_key] do
         {:ok, value, pytorch_key}
       end

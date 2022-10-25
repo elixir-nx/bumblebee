@@ -216,6 +216,9 @@ defmodule Bumblebee.Layers do
 
     * `:scale_initializer` - initializer for the scale parameter
 
+    * `:channel_index` - index of the axis to scale. Defaults to the
+      last axis
+
   """
   def scale(%Axon{} = x, opts \\ []) do
     opts =
@@ -223,7 +226,7 @@ defmodule Bumblebee.Layers do
         :name,
         scale_name: "scale",
         scale_initializer: Axon.Initializers.full(1.0e-6),
-        channel_index: 1
+        channel_index: -1
       ])
 
     name = opts[:name]
@@ -232,13 +235,22 @@ defmodule Bumblebee.Layers do
     channel_index = opts[:channel_index]
 
     scale_shape = fn input_shape ->
+      rank = tuple_size(input_shape)
+      channel_index = rem(rank + channel_index, rank)
       out_channels = elem(input_shape, channel_index)
       {out_channels}
     end
 
     scale_param = Axon.param(scale_name, scale_shape, initializer: scale_initializer)
 
-    Axon.layer(fn input, scale, _opts -> Nx.multiply(input, scale) end, [x, scale_param],
+    Axon.layer(
+      fn input, scale, _opts ->
+        channel_index = Nx.axis_index(input, channel_index)
+        shape = Tuple.duplicate(1, Nx.rank(input)) |> put_elem(channel_index, :auto)
+        scale = Nx.reshape(scale, shape)
+        Nx.multiply(input, scale)
+      end,
+      [x, scale_param],
       name: name,
       op_name: :scale
     )

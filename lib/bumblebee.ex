@@ -228,7 +228,9 @@ defmodule Bumblebee do
     "MBartForQuestionAnswering" => {Bumblebee.Text.Mbart, :for_question_answering},
     "MBartForCausalLM" => {Bumblebee.Text.Mbart, :for_causal_language_modeling},
     # ClipText
+    "CLIPModel" => {Bumblebee.Multimodal.Clip, :base},
     "CLIPTextModel" => {Bumblebee.Text.ClipText, :base},
+    "CLIPVisionModel" => {Bumblebee.Vision.ClipVision, :base},
     # VaeKl
     "AutoencoderKL" => {Bumblebee.Diffusion.VaeKl, :base},
     # UNet2DConditional
