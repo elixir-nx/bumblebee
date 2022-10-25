@@ -234,7 +234,15 @@ defmodule Bumblebee do
     # VaeKl
     "AutoencoderKL" => {Bumblebee.Diffusion.VaeKl, :base},
     # UNet2DConditional
-    "UNet2DConditionModel" => {Bumblebee.Diffusion.UNet2DConditional, :base}
+    "UNet2DConditionModel" => {Bumblebee.Diffusion.UNet2DConditional, :base},
+    # LayoutLM
+    "LayoutLMModel" => {Bumblebee.Text.LayoutLm, :base},
+    "LayoutLMForMaskedLanguageModeling" =>
+      {Bumblebee.Text.LayoutLm, :for_masked_language_modeling},
+    "LayoutLMForSequenceClassification" =>
+      {Bumblebee.Text.LayoutLm, :for_sequence_classification},
+    "LayoutLMForTokenClassification" => {Bumblebee.Text.LayoutLm, :for_token_classification},
+    "LayoutLMForQuestionAnswering" => {Bumblebee.Text.LayoutLm, :for_question_answering}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do

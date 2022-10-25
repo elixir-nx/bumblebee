@@ -695,6 +695,17 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  Computes 0-full bounding box for document-understanding models.
+  """
+  def default_bounding_box(%Axon{} = input) do
+    Axon.nx(input, fn input ->
+      batch_size = Nx.axis_size(input, 0)
+      seq_length = Nx.axis_size(input, 1)
+      Nx.broadcast(0, {batch_size, seq_length, 4})
+    end)
+  end
+
+  @doc """
   Shifts the given input ids by removing the last token and prepending
   the given start token.
 
