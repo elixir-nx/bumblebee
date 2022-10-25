@@ -492,6 +492,29 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  Adds a layer that that computes cosine similarity between the inputs.
+  """
+  def cosine_similarity(x, y) do
+    Axon.layer(&cosine_similarity_impl/3, [x, y], op_names: :cosine_similarity)
+  end
+
+  defnp cosine_similarity_impl(x, y, _opts \\ []) do
+    x = normalize(x)
+    y = normalize(y)
+    Nx.dot(x, [-1], y, [-1])
+  end
+
+  defnp normalize(tensor) do
+    norm =
+      tensor
+      |> Nx.power(2)
+      |> Nx.sum(axes: [-1], keep_axes: true)
+      |> Nx.sqrt()
+
+    tensor / norm
+  end
+
+  @doc """
   Unwraps a tuple result from `Axon` node into separate nodes.
   """
   def unwrap_tuple(%Axon{} = input, size) do

@@ -128,7 +128,7 @@ defmodule Bumblebee.Multimodal.Clip do
 
     logits_per_text =
       text_embeddings
-      |> cosine_similarity(image_embeddings)
+      |> Layers.cosine_similarity(image_embeddings)
       |> exp_scale(
         name: "scale",
         scale_name: "logit_scale",
@@ -143,28 +143,6 @@ defmodule Bumblebee.Multimodal.Clip do
       text_embeddings: text_embeddings,
       image_embeddings: image_embeddings
     })
-  end
-
-  defp cosine_similarity(x, y) do
-    Axon.layer(
-      fn x, y, _opts ->
-        x = normalize(x)
-        y = normalize(y)
-        Nx.dot(x, [1], y, [1])
-      end,
-      [x, y],
-      op_names: :cosine_similarity
-    )
-  end
-
-  defp normalize(tensor) do
-    norm =
-      tensor
-      |> Nx.power(2)
-      |> Nx.sum(axes: [-1], keep_axes: true)
-      |> Nx.sqrt()
-
-    Nx.divide(tensor, norm)
   end
 
   defp exp_scale(input, opts) do
