@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.LayoutLm do
+defmodule Bumblebee.Multimodal.LayoutLm do
   alias Bumblebee.Shared
 
   options =

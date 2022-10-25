@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.LayoutLmTest do
+defmodule Bumblebee.Multimodal.LayoutLmTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
@@ -9,11 +9,11 @@ defmodule Bumblebee.Text.LayoutLmTest do
     test "base model" do
       assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
-                 module: Bumblebee.Text.LayoutLm,
+                 module: Bumblebee.Multimodal.LayoutLm,
                  architecture: :base
                )
 
-      assert %Bumblebee.Text.LayoutLm{architecture: :base} = spec
+      assert %Bumblebee.Multimodal.LayoutLm{architecture: :base} = spec
 
       inputs = %{
         "input_ids" => Nx.tensor([[101, 7592, 2088, 102]]),
@@ -41,11 +41,11 @@ defmodule Bumblebee.Text.LayoutLmTest do
     test "masked language modeling model" do
       assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
-                 module: Bumblebee.Text.LayoutLm,
+                 module: Bumblebee.Multimodal.LayoutLm,
                  architecture: :for_masked_language_modeling
                )
 
-      assert %Bumblebee.Text.LayoutLm{architecture: :for_masked_language_modeling} = spec
+      assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_masked_language_modeling} = spec
 
       inputs = %{
         "input_ids" => Nx.tensor([[101, 7592, 2088, 102]]),
@@ -73,11 +73,11 @@ defmodule Bumblebee.Text.LayoutLmTest do
     test "sequence classification model" do
       assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
-                 module: Bumblebee.Text.LayoutLm,
+                 module: Bumblebee.Multimodal.LayoutLm,
                  architecture: :for_sequence_classification
                )
 
-      assert %Bumblebee.Text.LayoutLm{architecture: :for_sequence_classification} = spec
+      assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_sequence_classification} = spec
 
       %{"kernel" => k, "bias" => b} = params["classifier"]
 
@@ -110,11 +110,11 @@ defmodule Bumblebee.Text.LayoutLmTest do
     test "token classification model" do
       assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
-                 module: Bumblebee.Text.LayoutLm,
+                 module: Bumblebee.Multimodal.LayoutLm,
                  architecture: :for_token_classification
                )
 
-      assert %Bumblebee.Text.LayoutLm{architecture: :for_token_classification} = spec
+      assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_token_classification} = spec
 
       %{"kernel" => k, "bias" => b} = params["classifier"]
 
@@ -149,11 +149,11 @@ defmodule Bumblebee.Text.LayoutLmTest do
     test "question answering model" do
       assert {:ok, model, params, spec} =
                Bumblebee.load_model({:hf, "impira/layoutlm-document-qa"},
-                 module: Bumblebee.Text.LayoutLm,
+                 module: Bumblebee.Multimodal.LayoutLm,
                  architecture: :for_question_answering
                )
 
-      assert %Bumblebee.Text.LayoutLm{architecture: :for_question_answering} = spec
+      assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_question_answering} = spec
 
       inputs = %{
         "input_ids" => Nx.tensor([[0, 20920, 232, 2]]),

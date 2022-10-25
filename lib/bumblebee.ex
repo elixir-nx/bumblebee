@@ -236,13 +236,14 @@ defmodule Bumblebee do
     # UNet2DConditional
     "UNet2DConditionModel" => {Bumblebee.Diffusion.UNet2DConditional, :base},
     # LayoutLM
-    "LayoutLMModel" => {Bumblebee.Text.LayoutLm, :base},
+    "LayoutLMModel" => {Bumblebee.Multimodal.LayoutLm, :base},
     "LayoutLMForMaskedLanguageModeling" =>
-      {Bumblebee.Text.LayoutLm, :for_masked_language_modeling},
+      {Bumblebee.Multimodal.LayoutLm, :for_masked_language_modeling},
     "LayoutLMForSequenceClassification" =>
-      {Bumblebee.Text.LayoutLm, :for_sequence_classification},
-    "LayoutLMForTokenClassification" => {Bumblebee.Text.LayoutLm, :for_token_classification},
-    "LayoutLMForQuestionAnswering" => {Bumblebee.Text.LayoutLm, :for_question_answering}
+      {Bumblebee.Multimodal.LayoutLm, :for_sequence_classification},
+    "LayoutLMForTokenClassification" =>
+      {Bumblebee.Multimodal.LayoutLm, :for_token_classification},
+    "LayoutLMForQuestionAnswering" => {Bumblebee.Multimodal.LayoutLm, :for_question_answering}
   }
 
   defp infer_model_type(%{"architectures" => [class_name]}) do
@@ -548,7 +549,8 @@ defmodule Bumblebee do
     "bart" => Bumblebee.Text.BartTokenizer,
     "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
     "mbart" => Bumblebee.Text.MbartTokenizer,
-    "clip" => Bumblebee.Text.ClipTokenizer
+    "clip" => Bumblebee.Text.ClipTokenizer,
+    "layoutlm" => Bumblebee.Text.LayoutLmTokenizer
   }
 
   defp infer_tokenizer_type(repository) do
