@@ -145,5 +145,41 @@ defmodule Bumblebee.Text.LayoutLmTest do
         atol: 1.0e-4
       )
     end
+
+    test "question answering model" do
+      assert {:ok, model, params, spec} =
+               Bumblebee.load_model({:hf, "impira/layoutlm-document-qa"},
+                 module: Bumblebee.Text.LayoutLm,
+                 architecture: :for_question_answering
+               )
+
+      assert %Bumblebee.Text.LayoutLm{architecture: :for_question_answering} = spec
+
+      inputs = %{
+        "input_ids" => Nx.tensor([[0, 20920, 232, 2]]),
+        "attention_mask" => Nx.tensor([[1, 1, 1, 1]]),
+        "bounding_box" =>
+          Nx.tensor([
+            [[0, 0, 0, 0], [637, 773, 693, 782], [698, 773, 733, 782], [1000, 1000, 1000, 1000]]
+          ])
+      }
+
+      outputs = Axon.predict(model, params, inputs)
+
+      assert Nx.shape(outputs.start_logits) == {1, 4}
+      assert Nx.shape(outputs.end_logits) == {1, 4}
+
+      assert_all_close(
+        outputs.start_logits,
+        Nx.tensor([[-5.7846, -9.4211, -14.8011, -18.0101]]),
+        atol: 1.0e-4
+      )
+
+      assert_all_close(
+        outputs.end_logits,
+        Nx.tensor([[-7.8913, -11.3020, -10.6801, -19.1530]]),
+        atol: 1.0e-4
+      )
+    end
   end
 end
