@@ -3,8 +3,8 @@
 ```elixir
 Mix.install([
   {:bumblebee, path: Path.expand("..", __DIR__)},
-  {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-  {:exla, github: "elixir-nx/nx", sparse: "exla", override: true},
+  {:nx, "~> 0.4.0"},
+  {:exla, "~> 0.4.0"},
   {:axon, github: "elixir-nx/axon", override: true},
   {:stb_image, "~> 0.5.0"},
   {:req, "~> 0.3.0"},
@@ -25,8 +25,9 @@ In this notebook we go through a number of examples to get a quick overview of w
 Let's start with image classification. First, we load a pre-trained [ResNet-50](https://huggingface.co/microsoft/resnet-50) model from a HuggingFace repository. We also load the corresponding featurizer for preprocessing input images.
 
 ```elixir
-{:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
+{:ok, resnet} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
 {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "microsoft/resnet-50"})
+
 :ok
 ```
 
@@ -52,10 +53,10 @@ With both the model and image at hand, we are ready to do the classification! We
 
 ```elixir
 inputs = Bumblebee.apply_featurizer(featurizer, image)
-outputs = Axon.predict(model, params, inputs)
+outputs = Axon.predict(resnet.model, resnet.params, inputs)
 
 id = outputs.logits |> Nx.argmax() |> Nx.to_number()
-spec.id_to_label[id]
+resnet.spec.id_to_label[id]
 ```
 
 You can try a number of other models, just replace the repository id with one of these:
@@ -73,8 +74,9 @@ You can try a number of other models, just replace the repository id with one of
 Now time for some text processing. Specifically, we want to fill in the missing word in a sentence. This time we load the [BERT](https://huggingface.co/bert-base-uncased) model together with a matching tokenizer. We will use the tokenizer to preprocess our text input.
 
 ```elixir
-{:ok, model, params, spec} = Bumblebee.load_model({:hf, "bert-base-uncased"})
+{:ok, bert} = Bumblebee.load_model({:hf, "bert-base-uncased"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+
 :ok
 ```
 
@@ -93,7 +95,7 @@ text_input = Kino.Input.text("Sentence with mask", default: "The capital of [MAS
 text = Kino.Input.read(text_input)
 
 inputs = Bumblebee.apply_tokenizer(tokenizer, text)
-outputs = Axon.predict(model, params, inputs)
+outputs = Axon.predict(bert.model, bert.params, inputs)
 
 # Find the location of the mask token in the input sequence
 mask_token_id = Bumblebee.Tokenizer.special_token_id(tokenizer, :mask)
@@ -115,9 +117,7 @@ In this example we will analyze text sentiment.
 We will use the [BERTweet](https://huggingface.co/finiteautomata/bertweet-base-sentiment-analysis) model, trained to classify text into one of three categories: positive (POS), negative (NEG) or neutral (NEU).
 
 ```elixir
-{:ok, model, params, spec} =
-  Bumblebee.load_model({:hf, "finiteautomata/bertweet-base-sentiment-analysis"})
-
+{:ok, bertweet} = Bumblebee.load_model({:hf, "finiteautomata/bertweet-base-sentiment-analysis"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "vinai/bertweet-base"})
 
 :ok
@@ -133,10 +133,10 @@ text_input = Kino.Input.text("Text", default: "I love my friends.")
 text = Kino.Input.read(text_input)
 
 inputs = Bumblebee.apply_tokenizer(tokenizer, text)
-outputs = Axon.predict(model, params, inputs)
+outputs = Axon.predict(bertweet.model, bertweet.params, inputs)
 
 id = outputs.logits |> Nx.argmax() |> Nx.to_number()
-spec.id_to_label[id]
+bertweet.spec.id_to_label[id]
 ```
 
 <!-- livebook:{"branch_parent_index":0} -->
@@ -146,8 +146,9 @@ spec.id_to_label[id]
 Bumblebee also brings a couple modules for performing end-to-end tasks. In this section we look at token classification, more specifically named-entity recognition (NER), where the objective is to identify and categorize entities in text. We will once again use a fine-tuned [BERT](https://huggingface.co/dslim/bert-base-NER) model.
 
 ```elixir
-{:ok, model, params, spec} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
+{:ok, bert} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+
 :ok
 ```
 
@@ -163,9 +164,7 @@ Having loaded the model and the tokenizer, all we need is a single function call
 ```elixir
 text = Kino.Input.read(text_input)
 
-Bumblebee.Text.TokenClassification.extract(model, params, spec, tokenizer, text,
-  aggregation: :same
-)
+Bumblebee.Text.TokenClassification.extract(bert, tokenizer, text, aggregation: :same)
 ```
 
 <!-- livebook:{"branch_parent_index":0} -->
@@ -175,8 +174,9 @@ Bumblebee.Text.TokenClassification.extract(model, params, spec, tokenizer, text,
 Generation is where things get even more exciting. In this section w will use the extremely popular [GPT-2](https://huggingface.co/gpt2) model to generate text continuation.
 
 ```elixir
-{:ok, model, params, spec} = Bumblebee.load_model({:hf, "gpt2"})
+{:ok, gpt2} = Bumblebee.load_model({:hf, "gpt2"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+
 :ok
 ```
 
@@ -190,7 +190,7 @@ Bumblebee comes with a high-level function for text generation. It will iterativ
 text = Kino.Input.read(text_input)
 
 inputs = Bumblebee.apply_tokenizer(tokenizer, text)
-token_ids = Bumblebee.Text.Generation.generate(model, params, spec, inputs, max_length: 20)
+token_ids = Bumblebee.Text.Generation.generate(gpt2, inputs, max_length: 20)
 
 Bumblebee.Tokenizer.decode(tokenizer, token_ids)
 ```
@@ -204,7 +204,7 @@ There is also [gpt2-medium](https://huggingface.co/gpt2-medium) and [gpt2-large]
 Another text-related task is question answering, where the objective is to retrieve the answer to a question based on a given text. We will work with a [RoBERTa](https://huggingface.co/deepset/roberta-base-squad2) model trained to do just that.
 
 ```elixir
-{:ok, model, params, config} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
+{:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
 :ok
 ```
@@ -229,7 +229,7 @@ context = Kino.Input.read(context_input)
 
 inputs = Bumblebee.apply_tokenizer(tokenizer, {question, context})
 
-outputs = Axon.predict(model, params, inputs)
+outputs = Axon.predict(roberta.model, roberta.params, inputs)
 
 answer_start_index = outputs.start_logits |> Nx.argmax() |> Nx.to_number()
 answer_end_index = outputs.end_logits |> Nx.argmax() |> Nx.to_number()

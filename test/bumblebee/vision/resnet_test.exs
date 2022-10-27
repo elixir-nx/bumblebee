@@ -7,7 +7,7 @@ defmodule Bumblebee.Vision.ResNetTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "microsoft/resnet-50"}, architecture: :base)
 
       assert %Bumblebee.Vision.ResNet{architecture: :base} = spec
@@ -25,7 +25,8 @@ defmodule Bumblebee.Vision.ResNetTest do
     end
 
     test "image classification model" do
-      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "microsoft/resnet-50"})
 
       assert %Bumblebee.Vision.ResNet{architecture: :for_image_classification} = spec
 

@@ -13,8 +13,8 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
   ## Options
 
-    * `:safety_checker` - a model info triplet with the safety checker.
-      When a safety checker is used, each output entry has an additional
+    * `:safety_checker` - the safety checker model info map. When a
+      safety checker is used, each output entry has an additional
       `:is_safe` property and unsafe images are automatically zeroed.
       Make sure to also set `:safety_checker_featurizer`
 
@@ -46,9 +46,9 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
   """
   @spec text_to_image(
-          model_triplet,
-          model_triplet,
-          model_triplet,
+          Bumblebee.model_info(),
+          Bumblebee.model_info(),
+          Bumblebee.model_info(),
           Bumblebee.Tokenizer.t(),
           Bumblebee.Scheduler.t(),
           String.t() | list(String.t()),
@@ -58,7 +58,6 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
             :image => Nx.Tensor.t(),
             optional(:is_safe) => boolean()
           })
-        when model_triplet: {model :: Axon.t(), params :: map(), spec :: Bumblebee.ModelSpec.t()}
   def text_to_image(encoder, vae, unet, tokenizer, scheduler, prompt, opts \\ []) do
     opts =
       Keyword.validate!(opts, [
@@ -86,20 +85,16 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
       raise ArgumentError, "got :safety_checker but no :safety_checker_featurizer was specified"
     end
 
-    {encoder_model, encoder_params, _encoder_spec} = encoder
-    {vae_model, vae_params, _vae_spec} = vae
-    {unet_model, unet_params, unet_spec} = unet
-
-    {_, encoder_predict} = Axon.build(encoder_model)
-    {_, vae_predict} = Axon.build(vae_model)
-    {_, unet_predict} = Axon.build(unet_model)
+    {_, encoder_predict} = Axon.build(encoder.model)
+    {_, vae_predict} = Axon.build(vae.model)
+    {_, unet_predict} = Axon.build(unet.model)
 
     prompts = List.duplicate("", batch_size) ++ prompts
     inputs = Bumblebee.apply_tokenizer(tokenizer, prompts, length: length)
 
     latents_shape =
-      {batch_size * num_images_per_prompt, unet_spec.sample_size, unet_spec.sample_size,
-       unet_spec.in_channels}
+      {batch_size * num_images_per_prompt, unet.spec.sample_size, unet.spec.sample_size,
+       unet.spec.in_channels}
 
     scheduler_init = fn -> Bumblebee.scheduler_init(scheduler, num_steps, latents_shape) end
     scheduler_step = &Bumblebee.scheduler_step(scheduler, &1, &2, &3)
@@ -107,11 +102,11 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     images =
       Nx.Defn.jit(&text_to_image_impl/10, defn_options).(
         encoder_predict,
-        encoder_params,
+        encoder.params,
         unet_predict,
-        unet_params,
+        unet.params,
         vae_predict,
-        vae_params,
+        vae.params,
         scheduler_init,
         scheduler_step,
         inputs,
@@ -120,10 +115,9 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     is_unsafe =
       if safety_checker do
-        {model, params, _spec} = safety_checker
         inputs = Bumblebee.apply_featurizer(safety_checker_featurizer, images)
-        %{is_unsafe: is_unsafe} = Axon.predict(model, params, inputs, defn_options)
-        is_unsafe
+        outputs = Axon.predict(safety_checker.model, safety_checker.params, inputs, defn_options)
+        outputs.is_unsafe
       end
 
     for idx <- 0..(batch_size * num_images_per_prompt - 1) do

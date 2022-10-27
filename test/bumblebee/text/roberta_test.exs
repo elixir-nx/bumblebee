@@ -7,7 +7,7 @@ defmodule Bumblebee.Text.RobertaTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "roberta-base"}, architecture: :base)
 
       assert %Bumblebee.Text.Roberta{architecture: :base} = spec
@@ -30,7 +30,8 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "masked language modeling model" do
-      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "roberta-base"})
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "roberta-base"})
 
       assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = spec
 
@@ -52,7 +53,7 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "sequence classification" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "cardiffnlp/twitter-roberta-base-emotion"})
 
       assert %Bumblebee.Text.Roberta{architecture: :for_sequence_classification} = spec
@@ -73,7 +74,7 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "token classification model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "Jean-Baptiste/roberta-large-ner-english"})
 
       assert %Bumblebee.Text.Roberta{architecture: :for_token_classification} = spec
@@ -94,7 +95,7 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "question answering model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
 
       assert %Bumblebee.Text.Roberta{architecture: :for_question_answering} = spec
@@ -125,7 +126,8 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "multiple choice model" do
-      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "LIAMF-USP/aristo-roberta"})
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "LIAMF-USP/aristo-roberta"})
 
       assert %Bumblebee.Text.Roberta{architecture: :for_multiple_choice} = spec
 
@@ -150,7 +152,7 @@ defmodule Bumblebee.Text.RobertaTest do
     end
 
     test "casual language modeling model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "roberta-base"},
                  architecture: :for_causal_language_modeling
                )

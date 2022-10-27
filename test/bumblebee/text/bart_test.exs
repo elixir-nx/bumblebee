@@ -7,7 +7,7 @@ defmodule Bumblebee.Text.BartTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/bart-base"}, architecture: :base)
 
       assert %Bumblebee.Text.Bart{architecture: :base} = spec
@@ -32,7 +32,7 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     test "conditional generation model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/bart-base"},
                  architecture: :for_conditional_generation
                )
@@ -61,7 +61,8 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     test "sequence classification model" do
-      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "valhalla/bart-large-sst2"})
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "valhalla/bart-large-sst2"})
 
       assert %Bumblebee.Text.Bart{architecture: :for_sequence_classification} = spec
       input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -82,7 +83,7 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     test "question answering model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "valhalla/bart-large-finetuned-squadv1"})
 
       assert %Bumblebee.Text.Bart{architecture: :for_question_answering} = spec
@@ -112,7 +113,7 @@ defmodule Bumblebee.Text.BartTest do
     end
 
     test "causal language model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/bart-base"},
                  architecture: :for_causal_language_modeling
                )
@@ -142,10 +143,10 @@ defmodule Bumblebee.Text.BartTest do
   end
 
   test "conditional generation" do
-    {:ok, model, params, spec} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
+    {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})
 
-    assert %Bumblebee.Text.Bart{architecture: :for_conditional_generation} = spec
+    assert %Bumblebee.Text.Bart{architecture: :for_conditional_generation} = model_info.spec
 
     article = """
     PG&E stated it scheduled the blackouts in response to forecasts for high \
@@ -157,10 +158,7 @@ defmodule Bumblebee.Text.BartTest do
     inputs = Bumblebee.apply_tokenizer(tokenizer, article)
 
     token_ids =
-      Bumblebee.Text.Generation.generate(model, params, spec, inputs,
-        min_length: 0,
-        max_length: 8
-      )
+      Bumblebee.Text.Generation.generate(model_info, inputs, min_length: 0, max_length: 8)
 
     assert_equal(token_ids, Nx.tensor([[2, 0, 8332, 947, 717, 1768, 5, 2]]))
 

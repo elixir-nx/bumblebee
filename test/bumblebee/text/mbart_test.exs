@@ -7,7 +7,7 @@ defmodule Bumblebee.Text.MbartTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/mbart-large-cc25"},
                  architecture: :base
                )
@@ -34,7 +34,7 @@ defmodule Bumblebee.Text.MbartTest do
     end
 
     test "conditional generation model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/mbart-large-en-ro"},
                  architecture: :for_conditional_generation,
                  module: Bumblebee.Text.Mbart
@@ -62,7 +62,7 @@ defmodule Bumblebee.Text.MbartTest do
     end
 
     test "sequence classification model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-mbart"},
                  architecture: :for_sequence_classification,
                  module: Bumblebee.Text.Mbart
@@ -88,7 +88,7 @@ defmodule Bumblebee.Text.MbartTest do
     end
 
     test "question answering model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-mbart"},
                  architecture: :for_question_answering,
                  module: Bumblebee.Text.Mbart
@@ -121,7 +121,7 @@ defmodule Bumblebee.Text.MbartTest do
     end
 
     test "causal language model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/mbart-large-cc25"},
                  architecture: :for_causal_language_modeling,
                  module: Bumblebee.Text.Mbart
@@ -152,7 +152,7 @@ defmodule Bumblebee.Text.MbartTest do
   end
 
   test "conditional generation" do
-    {:ok, model, params, spec} =
+    {:ok, model_info} =
       Bumblebee.load_model({:hf, "facebook/mbart-large-en-ro"},
         architecture: :for_conditional_generation,
         module: Bumblebee.Text.Mbart
@@ -160,17 +160,14 @@ defmodule Bumblebee.Text.MbartTest do
 
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/mbart-large-en-ro"})
 
-    assert %Bumblebee.Text.Mbart{architecture: :for_conditional_generation} = spec
+    assert %Bumblebee.Text.Mbart{architecture: :for_conditional_generation} = model_info.spec
 
     english_phrase = "42 is the answer"
 
     inputs = Bumblebee.apply_tokenizer(tokenizer, english_phrase)
 
     token_ids =
-      Bumblebee.Text.Generation.generate(model, params, spec, inputs,
-        min_length: 0,
-        max_length: 6
-      )
+      Bumblebee.Text.Generation.generate(model_info, inputs, min_length: 0, max_length: 6)
 
     assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["42 este răspunsul"]
   end

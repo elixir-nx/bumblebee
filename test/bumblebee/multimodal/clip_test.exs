@@ -7,7 +7,7 @@ defmodule Bumblebee.Multimodal.ClipTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "openai/clip-vit-base-patch32"})
 
       assert %Bumblebee.Multimodal.Clip{architecture: :base} = spec

@@ -7,7 +7,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.SafetyCheckerTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model(
                  {:hf, "doohickey/trinart-waifu-diffusion-50-50", subdir: "safety_checker"}
                )

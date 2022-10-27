@@ -7,7 +7,7 @@ defmodule Bumblebee.Text.AlbertTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "albert-base-v2"}, architecture: :base)
 
       assert %Bumblebee.Text.Albert{architecture: :base} = spec
@@ -31,7 +31,8 @@ defmodule Bumblebee.Text.AlbertTest do
     end
 
     test "masked language modeling model" do
-      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "albert-base-v2"})
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "albert-base-v2"})
 
       assert %Bumblebee.Text.Albert{architecture: :for_masked_language_modeling} = spec
 
@@ -54,7 +55,7 @@ defmodule Bumblebee.Text.AlbertTest do
     end
 
     test "sequence classification model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "textattack/albert-base-v2-imdb"})
 
       assert %Bumblebee.Text.Albert{architecture: :for_sequence_classification} = spec
@@ -76,7 +77,7 @@ defmodule Bumblebee.Text.AlbertTest do
     end
 
     test "multiple choice model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "albert-base-v2"}, architecture: :for_multiple_choice)
 
       # The base is missing classifier params so we set
@@ -107,7 +108,8 @@ defmodule Bumblebee.Text.AlbertTest do
     end
 
     test "token classification model" do
-      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "vumichien/tiny-albert"})
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "vumichien/tiny-albert"})
 
       assert %Bumblebee.Text.Albert{architecture: :for_token_classification} = spec
 
@@ -127,7 +129,7 @@ defmodule Bumblebee.Text.AlbertTest do
     end
 
     test "question answering model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "twmkn9/albert-base-v2-squad2"})
 
       assert %Bumblebee.Text.Albert{architecture: :for_question_answering} = spec

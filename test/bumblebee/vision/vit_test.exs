@@ -7,7 +7,7 @@ defmodule Bumblebee.Vision.VitTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "google/vit-base-patch16-224"}, architecture: :base)
 
       assert %Bumblebee.Vision.Vit{architecture: :base} = spec
@@ -27,7 +27,7 @@ defmodule Bumblebee.Vision.VitTest do
     end
 
     test "image classification model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "google/vit-base-patch16-224"})
 
       assert %Bumblebee.Vision.Vit{architecture: :for_image_classification} = spec
@@ -45,7 +45,7 @@ defmodule Bumblebee.Vision.VitTest do
     end
 
     test "masked image modeling model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "google/vit-base-patch16-224-in21k"},
                  architecture: :for_masked_image_modeling
                )

@@ -7,13 +7,13 @@ defmodule Bumblebee.Text.TokenClassificationTest do
 
   describe "integration" do
     test "correctly extracts entities with :same aggregation" do
-      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
+      assert {:ok, model_info} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
 
       text = "I went with Jane Doe to Atlanta and we talked to John Smith about Microsoft"
 
       assert [[jane, atlanta, john, microsoft]] =
-               Bumblebee.Text.TokenClassification.extract(model, params, spec, tokenizer, text,
+               Bumblebee.Text.TokenClassification.extract(model_info, tokenizer, text,
                  aggregation: :same
                )
 
@@ -51,7 +51,7 @@ defmodule Bumblebee.Text.TokenClassificationTest do
     end
 
     test "correctly extracts entities with simple aggregation on batched input" do
-      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
+      assert {:ok, model_info} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
 
       inputs = [
@@ -60,7 +60,7 @@ defmodule Bumblebee.Text.TokenClassificationTest do
       ]
 
       assert [_first, [john, philadelphia]] =
-               Bumblebee.Text.TokenClassification.extract(model, params, spec, tokenizer, inputs,
+               Bumblebee.Text.TokenClassification.extract(model_info, tokenizer, inputs,
                  aggregation: :same
                )
 

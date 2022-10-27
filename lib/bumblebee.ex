@@ -44,6 +44,15 @@ defmodule Bumblebee do
   """
   @type repository :: {:hf, String.t()} | {:hf, String.t(), keyword()} | {:local, Path.t()}
 
+  @typedoc """
+  A model together with its state and metadata.
+  """
+  @type model_info :: %{
+          model: Axon.t(),
+          params: map(),
+          spec: Bumblebee.ModelSpec.t()
+        }
+
   @doc """
   Builds or updates a configuration object with the given options.
 
@@ -289,24 +298,23 @@ defmodule Bumblebee do
   By default the model type is inferred from configuration, so loading
   is as simple as:
 
-      {:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
+      {:ok, resnet} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
+      %{model: model, params: params, spec: spec} = resnet
 
   You can explicitly specify a different architecture, in which case
   matching parameters are still loaded:
 
-      {:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, architecture: :base)
+      {:ok, resnet} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, architecture: :base)
 
   To further customize the model, you can also pass the configuration:
 
       {:ok, spec} = Bumblebee.load_spec({:hf, "microsoft/resnet-50"})
       spec = Bumblebee.configure(spec, num_labels: 10)
-      {:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, spec: spec)
+      {:ok, resnet} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, spec: spec)
 
   """
   @doc type: :model
-  @spec load_model(repository(), keyword()) ::
-          {:ok, Axon.t(), params :: map(), spec :: Bumblebee.ModelSpec.t()}
-          | {:error, String.t()}
+  @spec load_model(repository(), keyword()) :: {:ok, model_info()} | {:error, String.t()}
   def load_model(repository, opts \\ []) do
     repository = normalize_repository!(repository)
 
@@ -329,7 +337,7 @@ defmodule Bumblebee do
              opts
              |> Keyword.take([:params_filename])
            ) do
-      {:ok, model, params, spec}
+      {:ok, %{model: model, params: params, spec: spec}}
     end
   end
 

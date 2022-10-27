@@ -7,7 +7,7 @@ defmodule Bumblebee.Vision.ConvNextTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/convnext-tiny-224"}, architecture: :base)
 
       assert %Bumblebee.Vision.ConvNext{architecture: :base} = spec
@@ -25,7 +25,7 @@ defmodule Bumblebee.Vision.ConvNextTest do
     end
 
     test "image classification model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/convnext-tiny-224"})
 
       assert %Bumblebee.Vision.ConvNext{architecture: :for_image_classification} = spec

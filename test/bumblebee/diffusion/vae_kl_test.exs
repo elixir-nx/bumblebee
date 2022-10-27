@@ -7,7 +7,7 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "fusing/autoencoder-kl-dummy"},
                  params_filename: "diffusion_pytorch_model.bin"
                )
@@ -60,7 +60,7 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
     end
 
     test "decoder model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "fusing/autoencoder-kl-dummy"},
                  architecture: :decoder,
                  params_filename: "diffusion_pytorch_model.bin"
@@ -90,7 +90,7 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
     end
 
     test "encoder model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "fusing/autoencoder-kl-dummy"},
                  architecture: :encoder,
                  params_filename: "diffusion_pytorch_model.bin"
