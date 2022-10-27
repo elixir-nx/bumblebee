@@ -138,8 +138,17 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     ddim_timesteps = SchedulerUtils.ddim_timesteps(num_train_steps, num_steps, offset)
 
     if reduce_warmup do
+      if num_steps < 2 do
+        raise ArgumentError,
+              "expected at least 2 steps when using :reduce_warmup, got: #{inspect(num_steps)}"
+      end
+
       just_plms_timesteps(ddim_timesteps, timestep_gap)
     else
+      if num_steps < 4 do
+        raise ArgumentError, "expected at least 4 steps, got: #{inspect(num_steps)}"
+      end
+
       prk_plms_timesteps(ddim_timesteps, timestep_gap)
     end
   end
