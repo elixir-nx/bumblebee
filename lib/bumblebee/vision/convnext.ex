@@ -106,7 +106,7 @@ defmodule Bumblebee.Vision.ConvNext do
     outputs = convnext(spec, name: "convnext")
 
     logits =
-      outputs.pooler_output
+      outputs.pooled_state
       |> Axon.dense(spec.num_labels,
         name: "classifier",
         kernel_initializer: kernel_initializer(spec)
@@ -136,7 +136,7 @@ defmodule Bumblebee.Vision.ConvNext do
 
     %{
       hidden_state: encoder_outputs.hidden_state,
-      pooler_output: pooled_output,
+      pooled_state: pooled_output,
       hidden_states: encoder_outputs.hidden_states
     }
   end

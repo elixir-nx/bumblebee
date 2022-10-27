@@ -32,7 +32,7 @@ defmodule Bumblebee.Vision.ClipVisionTest do
       )
 
       assert_all_close(
-        outputs.pooler_output[[0..-1//1, 1..3]],
+        outputs.pooled_state[[0..-1//1, 1..3]],
         Nx.tensor([[0.3602, 0.3658, -0.2337]]),
         atol: 1.0e-4
       )

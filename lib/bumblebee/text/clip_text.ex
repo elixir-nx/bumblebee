@@ -167,7 +167,7 @@ defmodule Bumblebee.Text.ClipText do
         name: join(name, "final_layer_norm")
       )
 
-    pooler_output =
+    pooled_state =
       Axon.layer(
         fn hidden_state, input_ids, _opts ->
           eos_idx = Nx.argmax(input_ids, axis: -1)
@@ -178,7 +178,7 @@ defmodule Bumblebee.Text.ClipText do
 
     %{
       hidden_state: hidden_state,
-      pooler_output: pooler_output,
+      pooled_state: pooled_state,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions
     }

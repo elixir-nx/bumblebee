@@ -120,12 +120,12 @@ defmodule Bumblebee.Multimodal.Clip do
 
     text_embeddings =
       text_model
-      |> Axon.nx(& &1.pooler_output)
+      |> Axon.nx(& &1.pooled_state)
       |> Axon.dense(spec.projection_size, use_bias: false, name: "text_projection")
 
     image_embeddings =
       vision_model
-      |> Axon.nx(& &1.pooler_output)
+      |> Axon.nx(& &1.pooled_state)
       |> Axon.dense(spec.projection_size, use_bias: false, name: "visual_projection")
 
     logits_per_text =

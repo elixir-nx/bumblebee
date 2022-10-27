@@ -95,7 +95,7 @@ defmodule Bumblebee.Vision.ResNet do
     outputs = resnet(spec, name: "resnet")
 
     logits =
-      outputs.pooler_output
+      outputs.pooled_state
       |> Axon.flatten(name: "classifier.0")
       |> Axon.dense(spec.num_labels, name: "classifier.1")
 
@@ -118,7 +118,7 @@ defmodule Bumblebee.Vision.ResNet do
 
     %{
       hidden_state: encoder_outputs.hidden_state,
-      pooler_output: pooled_output,
+      pooled_state: pooled_output,
       hidden_states: encoder_outputs.hidden_states
     }
   end

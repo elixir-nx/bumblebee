@@ -38,7 +38,7 @@ defmodule Bumblebee.Text.ClipTextTest do
       )
 
       assert_all_close(
-        outputs.pooler_output[[0..-1//1, 1..3]],
+        outputs.pooled_state[[0..-1//1, 1..3]],
         Nx.tensor([[0.1658, 0.8876, 10.6313], [0.0130, 0.1167, 0.0371]]),
         atol: 1.0e-4
       )

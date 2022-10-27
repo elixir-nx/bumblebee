@@ -79,7 +79,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.SafetyChecker do
 
     image_embeddings =
       vision_model
-      |> Axon.nx(& &1.pooler_output)
+      |> Axon.nx(& &1.pooled_state)
       |> Axon.dense(spec.clip_spec.projection_size, use_bias: false, name: "visual_projection")
 
     is_unsafe = unsafe_detection(image_embeddings, spec, name: "unsafe_detection")

@@ -208,7 +208,7 @@ defmodule Bumblebee.Vision.Vit do
 
     %{
       hidden_state: hidden_state,
-      pooler_output: pooled,
+      pooled_state: pooled,
       hidden_states: hidden_states,
       attentions: attentions
     }

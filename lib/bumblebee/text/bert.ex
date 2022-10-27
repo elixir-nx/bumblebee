@@ -225,7 +225,7 @@ defmodule Bumblebee.Text.Bert do
     outputs = inputs(spec) |> bert(spec, name: "bert")
 
     logits =
-      outputs.pooler_output
+      outputs.pooled_state
       |> Axon.dropout(rate: classifier_dropout_rate(spec), name: "dropout")
       |> Axon.dense(spec.num_labels,
         kernel_initializer: kernel_initializer(spec),
@@ -291,7 +291,7 @@ defmodule Bumblebee.Text.Bert do
     outputs = bert(flat_inputs, spec, name: "bert")
 
     logits =
-      outputs.pooler_output
+      outputs.pooled_state
       |> Axon.dropout(rate: classifier_dropout_rate(spec), name: "dropout")
       |> Axon.dense(1,
         kernel_initializer: kernel_initializer(spec),
@@ -320,7 +320,7 @@ defmodule Bumblebee.Text.Bert do
     outputs = inputs(spec) |> bert(spec, name: "bert")
 
     logits =
-      outputs.pooler_output
+      outputs.pooled_state
       |> Axon.dense(2,
         kernel_initializer: kernel_initializer(spec),
         name: "cls.seq_relationship"
@@ -339,7 +339,7 @@ defmodule Bumblebee.Text.Bert do
     prediction_logits = lm_prediction_head(outputs.hidden_state, spec, name: "cls.predictions")
 
     seq_relationship_logits =
-      Axon.dense(outputs.pooler_output, 2,
+      Axon.dense(outputs.pooled_state, 2,
         kernel_initializer: kernel_initializer(spec),
         name: "cls.seq_relationship"
       )
@@ -459,11 +459,11 @@ defmodule Bumblebee.Text.Bert do
         name: join(name, "encoder")
       )
 
-    pooler_output = pooler(encoder_outputs.hidden_state, spec, name: join(name, "pooler"))
+    pooled_state = pooler(encoder_outputs.hidden_state, spec, name: join(name, "pooler"))
 
     %{
       hidden_state: encoder_outputs.hidden_state,
-      pooler_output: pooler_output,
+      pooled_state: pooled_state,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions,
       cross_attentions: encoder_outputs.cross_attentions,

@@ -209,7 +209,7 @@ defmodule Bumblebee.Multimodal.LayoutLm do
     outputs = inputs(spec) |> layout_lm(spec, name: "layoutlm")
 
     logits =
-      outputs.pooler_output
+      outputs.pooled_state
       |> Axon.dropout(rate: classifier_dropout_rate(spec), name: "dropout")
       |> Axon.dense(spec.num_labels,
         kernel_initializer: kernel_initializer(spec),
@@ -364,11 +364,11 @@ defmodule Bumblebee.Multimodal.LayoutLm do
         name: join(name, "encoder")
       )
 
-    pooler_output = pooler(encoder_outputs.hidden_state, spec, name: join(name, "pooler"))
+    pooled_state = pooler(encoder_outputs.hidden_state, spec, name: join(name, "pooler"))
 
     %{
       hidden_state: encoder_outputs.hidden_state,
-      pooler_output: pooler_output,
+      pooled_state: pooled_state,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions,
       cross_attentions: encoder_outputs.cross_attentions,
