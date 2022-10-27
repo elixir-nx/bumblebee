@@ -83,14 +83,14 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
 
   """
 
-  import Nx.Defn
-
-  alias Bumblebee.Diffusion.SchedulerUtils
+  defstruct Bumblebee.Shared.option_defaults(options)
 
   @behaviour Bumblebee.Scheduler
   @behaviour Bumblebee.Configurable
 
-  defstruct Bumblebee.Shared.option_defaults(options)
+  import Nx.Defn
+
+  alias Bumblebee.Diffusion.SchedulerUtils
 
   @impl true
   def config(scheduler, opts) do

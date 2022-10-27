@@ -60,12 +60,12 @@ defmodule Bumblebee.Vision.ResNet do
 
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
+  @behaviour Bumblebee.ModelSpec
+  @behaviour Bumblebee.Configurable
+
   import Bumblebee.Utils.Model, only: [join: 2]
 
   alias Bumblebee.Layers
-
-  @behaviour Bumblebee.ModelSpec
-  @behaviour Bumblebee.Configurable
 
   @impl true
   def architectures(), do: [:base, :for_image_classification]

@@ -104,14 +104,14 @@ defmodule Bumblebee.Vision.Deit do
 
   """
 
-  import Bumblebee.Utils.Model, only: [join: 2]
-
-  alias Bumblebee.Layers
-
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
+
+  import Bumblebee.Utils.Model, only: [join: 2]
+
+  alias Bumblebee.Layers
 
   @impl true
   def architectures(),

@@ -96,16 +96,17 @@ defmodule Bumblebee.Vision.Vit do
   ## References
 
     * [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929)
+
   """
-
-  import Bumblebee.Utils.Model, only: [join: 2]
-
-  alias Bumblebee.Layers
 
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
+
+  import Bumblebee.Utils.Model, only: [join: 2]
+
+  alias Bumblebee.Layers
 
   @impl true
   def architectures(), do: [:base, :for_image_classification, :for_masked_image_modeling]

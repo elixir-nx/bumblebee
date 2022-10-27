@@ -52,12 +52,12 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
   #{Shared.options_doc(options)}
   """
 
-  alias Bumblebee.Utils.Image
+  defstruct Shared.option_defaults(options)
 
   @behaviour Bumblebee.Featurizer
   @behaviour Bumblebee.Configurable
 
-  defstruct Shared.option_defaults(options)
+  alias Bumblebee.Utils.Image
 
   @impl true
   def config(featurizer, opts \\ []) do

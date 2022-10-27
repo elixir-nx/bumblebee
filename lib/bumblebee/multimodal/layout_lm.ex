@@ -150,15 +150,15 @@ defmodule Bumblebee.Multimodal.LayoutLm do
     * [LayoutLM: LayoutLM: Pre-training of Text and Layout for Document Image Understanding](https://arxiv.org/abs/1912.13318)
   """
 
-  import Bumblebee.Utils.Model, only: [join: 2]
-
-  alias Bumblebee.Layers
-
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
   @behaviour Bumblebee.Text.Generation
+
+  import Bumblebee.Utils.Model, only: [join: 2]
+
+  alias Bumblebee.Layers
 
   @impl true
   def architectures(),

@@ -62,12 +62,12 @@ defmodule Bumblebee.Multimodal.Clip do
 
   """
 
-  alias Bumblebee.Layers
-
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
+
+  alias Bumblebee.Layers
 
   @impl true
   def architectures(), do: [:base]

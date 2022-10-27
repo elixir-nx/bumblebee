@@ -34,14 +34,14 @@ defmodule Bumblebee.Diffusion.StableDiffusion.SafetyChecker do
 
   """
 
-  import Nx.Defn
-
-  alias Bumblebee.Layers
-
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
+
+  import Nx.Defn
+
+  alias Bumblebee.Layers
 
   @impl true
   def architectures(), do: [:base]
