@@ -2,6 +2,14 @@ defmodule Bumblebee.Multimodal.Clip do
   alias Bumblebee.Shared
 
   options = [
+    text_spec: [
+      default: nil,
+      doc: "the specification of the text model. See `Bumblebee.Text.ClipText` for details"
+    ],
+    vision_spec: [
+      default: nil,
+      doc: "the specification of the vision model. See `Bumblebee.Vision.ClipVision` for details"
+    ],
     projection_size: [
       default: 512,
       doc: "the dimensionality of text and vision projection layers"
@@ -56,11 +64,7 @@ defmodule Bumblebee.Multimodal.Clip do
 
   alias Bumblebee.Layers
 
-  defstruct [
-              architecture: :base,
-              text_spec: nil,
-              vision_spec: nil
-            ] ++ Shared.option_defaults(options)
+  defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
@@ -101,7 +105,6 @@ defmodule Bumblebee.Multimodal.Clip do
     text_model =
       text_spec
       |> Bumblebee.build_model()
-      |> Bumblebee.Utils.Axon.prefix_names("text_model.")
       |> Bumblebee.Utils.Axon.plug_inputs(%{
         "input_ids" => inputs["input_ids"],
         "attention_mask" => inputs["attention_mask"],
@@ -110,8 +113,7 @@ defmodule Bumblebee.Multimodal.Clip do
 
     vision_model =
       vision_spec
-      |> Bumblebee.Vision.ClipVision.model()
-      |> Bumblebee.Utils.Axon.prefix_names("vision_model.")
+      |> Bumblebee.build_model()
       |> Bumblebee.Utils.Axon.plug_inputs(%{
         "pixel_values" => inputs["pixel_values"]
       })

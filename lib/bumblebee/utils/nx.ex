@@ -156,4 +156,23 @@ defmodule Bumblebee.Utils.Nx do
         |> Enum.zip_with(&Map.new/1)
     end
   end
+
+  @doc """
+  Computes cosine similarity between the given tensors.
+  """
+  defn cosine_similarity(x, y) do
+    x = normalize(x)
+    y = normalize(y)
+    Nx.dot(x, [-1], y, [-1])
+  end
+
+  defnp normalize(tensor) do
+    norm =
+      tensor
+      |> Nx.power(2)
+      |> Nx.sum(axes: [-1], keep_axes: true)
+      |> Nx.sqrt()
+
+    tensor / norm
+  end
 end

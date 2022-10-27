@@ -8,7 +8,18 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   @doc ~S"""
   Performs end-to-end image generation based on the given prompt.
 
+  You can specify `:safety_checker` model to automatically detect
+  when a generated image is offensive or harmful and filter it out.
+
   ## Options
+
+    * `:safety_checker` - a model info triplet with the safety checker.
+      When a safety checker is used, each output entry has an additional
+      `:is_safe` property and unsafe images are automatically zeroed.
+      Make sure to also set `:safety_checker_featurizer`
+
+    * `:safety_checker_featurizer` - the featurizer to use to preprocess
+      the safety checker input images
 
     * `:num_steps` - the number of denoising steps. More denoising
       steps usually lead to higher image quality at the expense of
@@ -42,11 +53,17 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
           Bumblebee.Scheduler.t(),
           String.t() | list(String.t()),
           keyword()
-        ) :: list(%{image: Nx.Tensor.t()})
+        ) ::
+          list(%{
+            :image => Nx.Tensor.t(),
+            optional(:is_safe) => boolean()
+          })
         when model_triplet: {model :: Axon.t(), params :: map(), spec :: Bumblebee.ModelSpec.t()}
   def text_to_image(encoder, vae, unet, tokenizer, scheduler, prompt, opts \\ []) do
     opts =
       Keyword.validate!(opts, [
+        :safety_checker,
+        :safety_checker_featurizer,
         :length,
         num_steps: 50,
         num_images_per_prompt: 1,
@@ -58,10 +75,16 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     prompts = List.wrap(prompt)
     batch_size = length(prompts)
 
+    safety_checker = opts[:safety_checker]
+    safety_checker_featurizer = opts[:safety_checker_featurizer]
     num_steps = opts[:num_steps]
     num_images_per_prompt = opts[:num_images_per_prompt]
     length = opts[:length]
     defn_options = opts[:defn_options]
+
+    if safety_checker != nil and safety_checker_featurizer == nil do
+      raise ArgumentError, "got :safety_checker but no :safety_checker_featurizer was specified"
+    end
 
     {encoder_model, encoder_params, _encoder_spec} = encoder
     {vae_model, vae_params, _vae_spec} = vae
@@ -95,8 +118,27 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
         opts ++ [latents_shape: latents_shape]
       )
 
-    for idx <- 0..(batch_size - 1) do
-      %{image: images[idx]}
+    is_unsafe =
+      if safety_checker do
+        {model, params, _spec} = safety_checker
+        inputs = Bumblebee.apply_featurizer(safety_checker_featurizer, images)
+        %{is_unsafe: is_unsafe} = Axon.predict(model, params, inputs, defn_options)
+        is_unsafe
+      end
+
+    for idx <- 0..(batch_size * num_images_per_prompt - 1) do
+      image = images[idx]
+
+      if safety_checker do
+        if Nx.to_number(is_unsafe[idx]) == 1 do
+          image = Nx.tensor(0, type: Nx.type(image)) |> Nx.broadcast(image)
+          %{image: image, is_safe: false}
+        else
+          %{image: image, is_safe: true}
+        end
+      else
+        %{image: image}
+      end
     end
   end
 

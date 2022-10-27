@@ -106,7 +106,7 @@ defmodule Bumblebee.Vision.ClipVision do
     inputs = inputs(spec)
 
     inputs
-    |> clip_vision(spec)
+    |> clip_vision(spec, name: "vision_model")
     |> Layers.output()
   end
 
@@ -118,7 +118,7 @@ defmodule Bumblebee.Vision.ClipVision do
     ])
   end
 
-  defp clip_vision(inputs, spec, opts \\ []) do
+  defp clip_vision(inputs, spec, opts) do
     name = opts[:name]
 
     embeddings =
