@@ -63,7 +63,7 @@ defmodule Bumblebee.Vision.VitFeaturizer do
 
         if featurizer.resize do
           size = Image.normalize_size(featurizer.size)
-          Image.resize(images, size: size, method: featurizer.resize_method)
+          Image.resize(images, size, method: featurizer.resize_method)
         else
           images
         end

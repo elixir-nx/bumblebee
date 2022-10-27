@@ -36,15 +36,13 @@ defmodule Bumblebee.Utils.Image do
 
   ## Options
 
-    * `:size` - the target image size specified as `{height, width}`
-
     * `:channels` - channels location, either `:first` or `:last`.
       Defaults to `:last`
 
   ## Examples
 
       iex> images = Nx.iota({1, 4, 4, 1})
-      iex> Bumblebee.Utils.Image.center_crop(images, size: {2, 2})
+      iex> Bumblebee.Utils.Image.center_crop(images, {2, 2})
       #Nx.Tensor<
         s64[1][2][2][1]
         [
@@ -62,7 +60,7 @@ defmodule Bumblebee.Utils.Image do
       >
 
       iex> images = Nx.iota({1, 2, 2, 1})
-      iex> Bumblebee.Utils.Image.center_crop(images, size: {1, 4})
+      iex> Bumblebee.Utils.Image.center_crop(images, {1, 4})
       #Nx.Tensor<
         s64[1][1][4][1]
         [
@@ -78,9 +76,12 @@ defmodule Bumblebee.Utils.Image do
       >
 
   """
-  defn center_crop(input, opts \\ []) do
-    opts = keyword!(opts, [:size, channels: :last])
+  deftransform center_crop(input, size, opts \\ []) when is_tuple(size) do
+    opts = Keyword.validate!(opts, channels: :last)
+    center_crop_n(input, [size: size] ++ opts)
+  end
 
+  defnp center_crop_n(input, opts) do
     pad_config =
       transform({input, opts}, fn {input, opts} ->
         for {axis, size, out_size} <- spatial_axes_with_sizes(input, opts),
@@ -119,7 +120,7 @@ defmodule Bumblebee.Utils.Image do
   ## Examples
 
       iex> images = Nx.iota({1, 2, 2, 1}, type: {:f, 32})
-      iex> Bumblebee.Utils.Image.resize(images, size: {3, 3}, method: :nearest)
+      iex> Bumblebee.Utils.Image.resize(images, {3, 3}, method: :nearest)
       #Nx.Tensor<
         f32[1][3][3][1]
         [
@@ -144,7 +145,7 @@ defmodule Bumblebee.Utils.Image do
       >
 
       iex> images = Nx.iota({1, 2, 2, 1}, type: {:f, 32})
-      iex> Bumblebee.Utils.Image.resize(images, size: {3, 3}, method: :bilinear)
+      iex> Bumblebee.Utils.Image.resize(images, {3, 3}, method: :bilinear)
       #Nx.Tensor<
         f32[1][3][3][1]
         [
@@ -169,9 +170,12 @@ defmodule Bumblebee.Utils.Image do
       >
 
   """
-  defn resize(input, opts \\ []) do
-    opts = keyword!(opts, [:size, channels: :last, method: :bilinear])
+  deftransform resize(input, size, opts \\ []) when is_tuple(size) do
+    opts = Keyword.validate!(opts, channels: :last, method: :bilinear)
+    resize_n(input, [size: size] ++ opts)
+  end
 
+  defnp resize_n(input, opts) do
     transform({input, opts}, fn {input, opts} ->
       {spatial_axes, out_shape} =
         input
@@ -329,17 +333,18 @@ defmodule Bumblebee.Utils.Image do
 
   ## Options
 
-    * `:size` - the target size of the short edge
-
     * `:method` - the resizing method to use, same as `resize/2`
 
     * `:channels` - channels location, either `:first` or `:last`.
       Defaults to `:last`
 
   """
-  defn resize_short(input, opts \\ []) do
-    opts = keyword!(opts, [:size, channels: :last, method: :bilinear])
+  deftransform resize_short(input, size, opts \\ []) when is_integer(size) do
+    opts = Keyword.validate!(opts, channels: :last, method: :bilinear)
+    resize_short_n(input, [size: size] ++ opts)
+  end
 
+  defnp resize_short_n(input, opts) do
     size = opts[:size]
     method = opts[:method]
     channels = opts[:channels]
@@ -347,7 +352,7 @@ defmodule Bumblebee.Utils.Image do
     {height, width} = size(input, channels: channels)
     {out_height, out_width} = transform({height, width, size}, &resize_short_size/1)
 
-    resize(input, size: {out_height, out_width}, method: method, channels: channels)
+    resize(input, {out_height, out_width}, method: method, channels: channels)
   end
 
   defp resize_short_size({height, width, size}) do
