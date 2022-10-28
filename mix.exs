@@ -26,7 +26,7 @@ defmodule Bumblebee.MixProject do
 
   defp deps do
     [
-      {:axon, "~> 0.2.0-dev", axon_opts()},
+      {:axon, "~> 0.3.0", axon_opts()},
       {:tokenizers, "~> 0.1.2"},
       {:nx, "~> 0.4.0"},
       {:exla, "~> 0.4.0", only: [:dev, :test]},
@@ -45,7 +45,7 @@ defmodule Bumblebee.MixProject do
     if path = System.get_env("AXON_PATH") do
       [path: path]
     else
-      [github: "elixir-nx/axon"]
+      []
     end
   end
 

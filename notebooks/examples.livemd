@@ -5,7 +5,7 @@ Mix.install([
   {:bumblebee, path: Path.expand("..", __DIR__)},
   {:nx, "~> 0.4.0"},
   {:exla, "~> 0.4.0"},
-  {:axon, github: "elixir-nx/axon", override: true},
+  {:axon, "~> 0.3.0"},
   {:stb_image, "~> 0.5.0"},
   {:req, "~> 0.3.0"},
   {:kino, "~> 0.7.0"}
