@@ -499,19 +499,7 @@ defmodule Bumblebee.Layers do
   end
 
   defnp cosine_similarity_impl(x, y, _opts \\ []) do
-    x = normalize(x)
-    y = normalize(y)
-    Nx.dot(x, [-1], y, [-1])
-  end
-
-  defnp normalize(tensor) do
-    norm =
-      tensor
-      |> Nx.power(2)
-      |> Nx.sum(axes: [-1], keep_axes: true)
-      |> Nx.sqrt()
-
-    tensor / norm
+    Bumblebee.Utils.Nx.cosine_similarity(x, y)
   end
 
   @doc """

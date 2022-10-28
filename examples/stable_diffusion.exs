@@ -1,7 +1,7 @@
 Mix.install([
   {:bumblebee, path: Path.expand("..", __DIR__)},
-  {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-  {:exla, github: "elixir-nx/nx", sparse: "exla"},
+  {:nx, "~> 0.4.0"},
+  {:exla, "~> 0.4.0"},
   {:stb_image, "~> 0.5.0"}
 ])
 
@@ -13,8 +13,7 @@ auth_token = System.fetch_env!("HF_TOKEN")
 
 {:ok, clip_model, clip_params, clip_spec} =
   Bumblebee.load_model(
-    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "text_encoder"},
-    architecture: :base
+    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "text_encoder"}
   )
 
 {:ok, vae_model, vae_params, vae_spec} =
@@ -35,6 +34,16 @@ auth_token = System.fetch_env!("HF_TOKEN")
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "scheduler"}
   )
 
+{:ok, featurizer} =
+  Bumblebee.load_featurizer(
+    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "feature_extractor"}
+  )
+
+{:ok, safety_checker_model, safety_checker_params, safety_checker_spec} =
+  Bumblebee.load_model(
+    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "safety_checker"}
+  )
+
 prompt = "numbat in forest, detailed, digital art"
 num_images_per_prompt = 2
 
@@ -47,7 +56,10 @@ entries =
     scheduler,
     prompt,
     num_steps: 20,
-    num_images_per_prompt: num_images_per_prompt
+    num_images_per_prompt: num_images_per_prompt,
+    safety_checker: {safety_checker_model, safety_checker_params, safety_checker_spec},
+    safety_checker_featurizer: featurizer,
+    defn_options: [compiler: EXLA]
   )
 
 for {entry, idx} <- Enum.with_index(entries) do

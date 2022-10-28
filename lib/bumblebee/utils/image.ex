@@ -225,8 +225,18 @@ defmodule Bumblebee.Utils.Image do
   end
 
   defnp cast_to(left, right) do
+    left_type = Nx.type(left)
+    right_type = Nx.type(right)
+
+    left =
+      if Nx.Type.float?(left_type) and Nx.Type.integer?(right_type) do
+        Nx.round(left)
+      else
+        left
+      end
+
     left
-    |> Nx.as_type(Nx.type(right))
+    |> Nx.as_type(right_type)
     |> Nx.reshape(left, names: Nx.names(right))
   end
 

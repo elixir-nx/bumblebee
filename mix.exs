@@ -28,9 +28,9 @@ defmodule Bumblebee.MixProject do
     [
       {:axon, "~> 0.2.0-dev", axon_opts()},
       {:tokenizers, "~> 0.1.2"},
-      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-      {:exla, github: "elixir-nx/nx", sparse: "exla", only: [:dev, :test]},
-      {:torchx, github: "elixir-nx/nx", sparse: "torchx", only: [:dev, :test]},
+      {:nx, "~> 0.4.0"},
+      {:exla, "~> 0.4.0", only: [:dev, :test]},
+      {:torchx, "~> 0.4.0", only: [:dev, :test]},
       {:stb_image, "~> 0.5.0", optional: true},
       {:unpickler, github: "dashbitco/unpickler"},
       {:castore, "~> 0.1.0"},
@@ -58,9 +58,11 @@ defmodule Bumblebee.MixProject do
       extra_section: "GUIDES",
       groups_for_modules: [
         Models: [
+          Bumblebee.Diffusion.StableDiffusion.SafetyChecker,
           Bumblebee.Diffusion.UNet2DConditional,
           Bumblebee.Diffusion.VaeKl,
           Bumblebee.Multimodal.Clip,
+          Bumblebee.Multimodal.LayoutLm,
           Bumblebee.Text.Albert,
           Bumblebee.Text.Bart,
           Bumblebee.Text.Bert,
@@ -80,6 +82,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.BertTokenizer,
           Bumblebee.Text.ClipTokenizer,
           Bumblebee.Text.Gpt2Tokenizer,
+          Bumblebee.Text.LayoutLmTokenizer,
           Bumblebee.Text.MbartTokenizer,
           Bumblebee.Text.RobertaTokenizer,
           Bumblebee.Vision.ClipFeaturizer,

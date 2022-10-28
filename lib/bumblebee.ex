@@ -235,6 +235,8 @@ defmodule Bumblebee do
     "AutoencoderKL" => {Bumblebee.Diffusion.VaeKl, :base},
     # UNet2DConditional
     "UNet2DConditionModel" => {Bumblebee.Diffusion.UNet2DConditional, :base},
+    # StableDiffusion.SafetyChecker
+    "StableDiffusionSafetyChecker" => {Bumblebee.Diffusion.StableDiffusion.SafetyChecker, :base},
     # LayoutLM
     "LayoutLMModel" => {Bumblebee.Multimodal.LayoutLm, :base},
     "LayoutLMForMaskedLanguageModeling" =>

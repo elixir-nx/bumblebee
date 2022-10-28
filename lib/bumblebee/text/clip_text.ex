@@ -118,7 +118,7 @@ defmodule Bumblebee.Text.ClipText do
     inputs = inputs()
 
     inputs
-    |> clip_text(spec)
+    |> clip_text(spec, name: "text_model")
     |> Layers.output()
   end
 
@@ -132,7 +132,7 @@ defmodule Bumblebee.Text.ClipText do
     ])
   end
 
-  defp clip_text(inputs, spec, opts \\ []) do
+  defp clip_text(inputs, spec, opts) do
     name = opts[:name]
 
     input_ids = inputs["input_ids"]
