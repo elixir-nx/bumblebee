@@ -10,13 +10,13 @@ defmodule Bumblebee do
 
   You can load one of the supported models by specifying the model repository:
 
-      {:ok, model, params, spec} = Bumblebee.load_model({:hf, "bert-base-uncased"})
+      {:ok, bert} = Bumblebee.load_model({:hf, "bert-base-uncased"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
 
   Then you are ready to make predictions:
 
       inputs = Bumblebee.apply_tokenizer(tokenizer, "Hello Bumblebee!")
-      output = Axon.predict(model, params, inputs)
+      outputs = Axon.predict(bert.model, bert.params, inputs)
 
   For complete examples see the [Examples](examples.livemd) notebook.
 
