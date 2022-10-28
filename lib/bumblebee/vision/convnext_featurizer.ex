@@ -47,12 +47,12 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
   #{Shared.options_doc(options)}
   """
 
-  alias Bumblebee.Utils.Image
+  defstruct Shared.option_defaults(options)
 
   @behaviour Bumblebee.Featurizer
   @behaviour Bumblebee.Configurable
 
-  defstruct Shared.option_defaults(options)
+  alias Bumblebee.Utils.Image
 
   @impl true
   def config(featurizer, opts \\ []) do
@@ -72,8 +72,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
             images
 
           featurizer.size >= 384 ->
-            Image.resize(images,
-              size: {featurizer.size, featurizer.size},
+            Image.resize(images, {featurizer.size, featurizer.size},
               method: featurizer.resize_method
             )
 
@@ -81,8 +80,8 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
             scale_size = floor(featurizer.size / featurizer.crop_percentage)
 
             images
-            |> Image.resize_short(size: scale_size, method: featurizer.resize_method)
-            |> Image.center_crop(size: {featurizer.size, featurizer.size})
+            |> Image.resize_short(scale_size, method: featurizer.resize_method)
+            |> Image.center_crop({featurizer.size, featurizer.size})
         end
       end
       |> Nx.concatenate()

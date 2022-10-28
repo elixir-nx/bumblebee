@@ -52,12 +52,12 @@ defmodule Bumblebee.Vision.ClipFeaturizer do
   #{Shared.options_doc(options)}
   """
 
-  alias Bumblebee.Utils.Image
+  defstruct Shared.option_defaults(options)
 
   @behaviour Bumblebee.Featurizer
   @behaviour Bumblebee.Configurable
 
-  defstruct Shared.option_defaults(options)
+  alias Bumblebee.Utils.Image
 
   @impl true
   def config(featurizer, opts \\ []) do
@@ -74,13 +74,13 @@ defmodule Bumblebee.Vision.ClipFeaturizer do
 
         images =
           if featurizer.resize do
-            Image.resize_short(images, size: featurizer.size, method: featurizer.resize_method)
+            Image.resize_short(images, featurizer.size, method: featurizer.resize_method)
           else
             images
           end
 
         if featurizer.center_crop do
-          Image.center_crop(images, size: {featurizer.crop_size, featurizer.crop_size})
+          Image.center_crop(images, {featurizer.crop_size, featurizer.crop_size})
         else
           images
         end

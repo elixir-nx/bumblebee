@@ -7,7 +7,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
                  module: Bumblebee.Multimodal.LayoutLm,
                  architecture: :base
@@ -39,7 +39,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
     end
 
     test "masked language modeling model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
                  module: Bumblebee.Multimodal.LayoutLm,
                  architecture: :for_masked_language_modeling
@@ -71,7 +71,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
     end
 
     test "sequence classification model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
                  module: Bumblebee.Multimodal.LayoutLm,
                  architecture: :for_sequence_classification
@@ -108,7 +108,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
     end
 
     test "token classification model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
                  module: Bumblebee.Multimodal.LayoutLm,
                  architecture: :for_token_classification
@@ -147,7 +147,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
     end
 
     test "question answering model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "impira/layoutlm-document-qa"},
                  module: Bumblebee.Multimodal.LayoutLm,
                  architecture: :for_question_answering

@@ -11,19 +11,19 @@ auth_token = System.fetch_env!("HF_TOKEN")
 
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
 
-{:ok, clip_model, clip_params, clip_spec} =
+{:ok, clip} =
   Bumblebee.load_model(
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "text_encoder"}
   )
 
-{:ok, vae_model, vae_params, vae_spec} =
+{:ok, vae} =
   Bumblebee.load_model(
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "vae"},
     architecture: :decoder,
     params_filename: "diffusion_pytorch_model.bin"
   )
 
-{:ok, unet_model, unet_params, unet_spec} =
+{:ok, unet} =
   Bumblebee.load_model(
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "unet"},
     params_filename: "diffusion_pytorch_model.bin"
@@ -39,7 +39,7 @@ auth_token = System.fetch_env!("HF_TOKEN")
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "feature_extractor"}
   )
 
-{:ok, safety_checker_model, safety_checker_params, safety_checker_spec} =
+{:ok, safety_checker} =
   Bumblebee.load_model(
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "safety_checker"}
   )
@@ -48,16 +48,10 @@ prompt = "numbat in forest, detailed, digital art"
 num_images_per_prompt = 2
 
 entries =
-  Bumblebee.Diffusion.StableDiffusion.text_to_image(
-    {clip_model, clip_params, clip_spec},
-    {vae_model, vae_params, vae_spec},
-    {unet_model, unet_params, unet_spec},
-    tokenizer,
-    scheduler,
-    prompt,
+  Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, vae, unet, tokenizer, scheduler, prompt,
     num_steps: 20,
     num_images_per_prompt: num_images_per_prompt,
-    safety_checker: {safety_checker_model, safety_checker_params, safety_checker_spec},
+    safety_checker: safety_checker,
     safety_checker_featurizer: featurizer,
     defn_options: [compiler: EXLA]
   )

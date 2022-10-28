@@ -60,8 +60,10 @@ defmodule Bumblebee.Text.Generation do
   The default option values are taken from the given model specification
   when available.
   """
-  @spec generate(Axon.t(), map(), Bumblebee.ModelSpec.t(), map(), keyword()) :: Nx.t()
-  def generate(model, params, spec, inputs, opts \\ []) do
+  @spec generate(Bumblebee.model_info(), map(), keyword()) :: Nx.t()
+  def generate(model_info, inputs, opts \\ []) do
+    %{model: model, params: params, spec: spec} = model_info
+
     opts =
       Keyword.validate!(opts,
         max_length: Map.get(spec, :max_length),

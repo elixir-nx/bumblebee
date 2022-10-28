@@ -2,10 +2,28 @@ defmodule Bumblebee do
   @moduledoc """
   Pre-trained `Axon` models for easy inference and boosted training.
 
-  Bumblebee provides ready-to-use, configurable `Axon` models. On top
-  of that, it streamlines the process of loading and using pre-trained
-  models by integrating with Hugging Face and
-  [huggingface/transformers](https://github.com/huggingface/transformers).
+  Bumblebee provides state-of-the-art, configurable `Axon` models. On
+  top of that, it streamlines the process of loading pre-trained models
+  by integrating with Hugging Face Hub and [🤗 Transformers](https://github.com/huggingface/transformers).
+
+  ## Usage
+
+  You can load one of the supported models by specifying the model repository:
+
+      {:ok, bert} = Bumblebee.load_model({:hf, "bert-base-uncased"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+
+  Then you are ready to make predictions:
+
+      inputs = Bumblebee.apply_tokenizer(tokenizer, "Hello Bumblebee!")
+      outputs = Axon.predict(bert.model, bert.params, inputs)
+
+  For complete examples see the [Examples](examples.livemd) notebook.
+
+  > #### Note {: .info}
+  >
+  > The models are generally large, so make sure to configure an efficient
+  > `Nx` backend, such as `EXLA` or `Torchx`.
   """
 
   alias Bumblebee.HuggingFace
@@ -15,6 +33,104 @@ defmodule Bumblebee do
   @tokenizer_filename "tokenizer.json"
   @scheduler_filename "scheduler_config.json"
   @params_filename %{pytorch: "pytorch_model.bin"}
+
+  @transformers_class_to_model %{
+    "AlbertForMaskedLM" => {Bumblebee.Text.Albert, :for_masked_language_modeling},
+    "AlbertForMultipleChoice" => {Bumblebee.Text.Albert, :for_multiple_choice},
+    "AlbertForPreTraining" => {Bumblebee.Text.Albert, :for_pre_training},
+    "AlbertForQuestionAnswering" => {Bumblebee.Text.Albert, :for_question_answering},
+    "AlbertForSequenceClassification" => {Bumblebee.Text.Albert, :for_sequence_classification},
+    "AlbertForTokenClassification" => {Bumblebee.Text.Albert, :for_token_classification},
+    "AlbertModel" => {Bumblebee.Text.Albert, :base},
+    "BartForCausalLM" => {Bumblebee.Text.Bart, :for_causal_language_modeling},
+    "BartForConditionalGeneration" => {Bumblebee.Text.Bart, :for_conditional_generation},
+    "BartForQuestionAnswering" => {Bumblebee.Text.Bart, :for_question_answering},
+    "BartForSequenceClassification" => {Bumblebee.Text.Bart, :for_sequence_classification},
+    "BartModel" => {Bumblebee.Text.Bart, :base},
+    "BertForMaskedLM" => {Bumblebee.Text.Bert, :for_masked_language_modeling},
+    "BertForMultipleChoice" => {Bumblebee.Text.Bert, :for_multiple_choice},
+    "BertForNextSentencePrediction" => {Bumblebee.Text.Bert, :for_next_sentence_prediction},
+    "BertForPreTraining" => {Bumblebee.Text.Bert, :for_pre_training},
+    "BertForQuestionAnswering" => {Bumblebee.Text.Bert, :for_question_answering},
+    "BertForSequenceClassification" => {Bumblebee.Text.Bert, :for_sequence_classification},
+    "BertForTokenClassification" => {Bumblebee.Text.Bert, :for_token_classification},
+    "BertLMHeadModel" => {Bumblebee.Text.Bert, :for_causal_language_modeling},
+    "BertModel" => {Bumblebee.Text.Bert, :base},
+    "CLIPModel" => {Bumblebee.Multimodal.Clip, :base},
+    "CLIPTextModel" => {Bumblebee.Text.ClipText, :base},
+    "CLIPVisionModel" => {Bumblebee.Vision.ClipVision, :base},
+    "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification},
+    "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
+    "DeiTForImageClassification" => {Bumblebee.Vision.Deit, :for_image_classification},
+    "DeiTForImageClassificationWithTeacher" =>
+      {Bumblebee.Vision.Deit, :for_image_classification_with_teacher},
+    "DeiTForMaskedImageModeling" => {Bumblebee.Vision.Deit, :for_masked_image_modeling},
+    "DeiTModel" => {Bumblebee.Vision.Deit, :base},
+    "GPT2ForSequenceClassification" => {Bumblebee.Text.Gpt2, :for_sequence_classification},
+    "GPT2ForTokenClassification" => {Bumblebee.Text.Gpt2, :for_token_classification},
+    "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling},
+    "GPT2Model" => {BumbleBee.Text.Gpt2, :base},
+    "LayoutLMForMaskedLanguageModeling" =>
+      {Bumblebee.Multimodal.LayoutLm, :for_masked_language_modeling},
+    "LayoutLMForQuestionAnswering" => {Bumblebee.Multimodal.LayoutLm, :for_question_answering},
+    "LayoutLMForSequenceClassification" =>
+      {Bumblebee.Multimodal.LayoutLm, :for_sequence_classification},
+    "LayoutLMForTokenClassification" =>
+      {Bumblebee.Multimodal.LayoutLm, :for_token_classification},
+    "LayoutLMModel" => {Bumblebee.Multimodal.LayoutLm, :base},
+    "MBartForCausalLM" => {Bumblebee.Text.Mbart, :for_causal_language_modeling},
+    "MBartForConditionalGeneration" => {Bumblebee.Text.Mbart, :for_conditional_generation},
+    "MBartForQuestionAnswering" => {Bumblebee.Text.Mbart, :for_question_answering},
+    "MBartForSequenceClassification" => {Bumblebee.Text.Mbart, :for_sequence_classification},
+    "MBartModel" => {Bumblebee.Text.Mbart, :base},
+    "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
+    "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
+    "RobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
+    "RobertaForMultipleChoice" => {Bumblebee.Text.Roberta, :for_multiple_choice},
+    "RobertaForPreTraining" => {Bumblebee.Text.Roberta, :for_pre_training},
+    "RobertaForQuestionAnswering" => {Bumblebee.Text.Roberta, :for_question_answering},
+    "RobertaForSequenceClassification" => {Bumblebee.Text.Roberta, :for_sequence_classification},
+    "RobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
+    "RobertaLMHeadModel" => {Bumblebee.Text.Roberta, :for_causal_language_modeling},
+    "RobertaModel" => {Bumblebee.Text.Roberta, :base},
+    "ViTForImageClassification" => {Bumblebee.Vision.Vit, :for_image_classification},
+    "ViTForMaskedImageModeling" => {Bumblebee.Vision.Vit, :for_masked_image_modeling},
+    "ViTModel" => {Bumblebee.Vision.Vit, :base},
+    # Diffusers
+    "AutoencoderKL" => {Bumblebee.Diffusion.VaeKl, :base},
+    "StableDiffusionSafetyChecker" => {Bumblebee.Diffusion.StableDiffusion.SafetyChecker, :base},
+    "UNet2DConditionModel" => {Bumblebee.Diffusion.UNet2DConditional, :base}
+  }
+
+  @transformers_class_to_featurizer %{
+    "CLIPFeatureExtractor" => Bumblebee.Vision.ClipFeaturizer,
+    "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer,
+    "DeiTFeatureExtractor" => Bumblebee.Vision.DeitFeaturizer,
+    "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer
+  }
+
+  @model_type_to_featurizer %{
+    "convnext" => Bumblebee.Vision.ConvNextFeaturizer,
+    "deit" => Bumblebee.Vision.DeitFeaturizer,
+    "resnet" => Bumblebee.Vision.ConvNextFeaturizer,
+    "vit" => Bumblebee.Vision.VitFeaturizer
+  }
+
+  @model_type_to_tokenizer %{
+    "albert" => Bumblebee.Text.AlbertTokenizer,
+    "bart" => Bumblebee.Text.BartTokenizer,
+    "bert" => Bumblebee.Text.BertTokenizer,
+    "clip" => Bumblebee.Text.ClipTokenizer,
+    "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
+    "layoutlm" => Bumblebee.Text.LayoutLmTokenizer,
+    "mbart" => Bumblebee.Text.MbartTokenizer,
+    "roberta" => Bumblebee.Text.RobertaTokenizer
+  }
+
+  @diffusers_class_to_scheduler %{
+    "DDIMScheduler" => Bumblebee.Diffusion.DdimScheduler,
+    "PNDMScheduler" => Bumblebee.Diffusion.PndmScheduler
+  }
 
   @typedoc """
   A location to fetch model files from.
@@ -43,6 +159,15 @@ defmodule Bumblebee do
 
   """
   @type repository :: {:hf, String.t()} | {:hf, String.t(), keyword()} | {:local, Path.t()}
+
+  @typedoc """
+  A model together with its state and metadata.
+  """
+  @type model_info :: %{
+          model: Axon.t(),
+          params: map(),
+          spec: Bumblebee.ModelSpec.t()
+        }
 
   @doc """
   Builds or updates a configuration object with the given options.
@@ -76,7 +201,7 @@ defmodule Bumblebee do
   end
 
   @doc """
-  Builds an `Axon` model according to the given configuration.
+  Builds an `Axon` model according to the given specification.
 
   ## Example
 
@@ -167,87 +292,6 @@ defmodule Bumblebee do
     end
   end
 
-  @transformers_class_to_model %{
-    # ResNet
-    "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
-    "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
-    # Albert
-    "AlbertModel" => {Bumblebee.Text.Albert, :base},
-    "AlbertForMaskedLM" => {Bumblebee.Text.Albert, :for_masked_language_modeling},
-    "AlbertForSequenceClassification" => {Bumblebee.Text.Albert, :for_sequence_classification},
-    "AlbertForTokenClassification" => {Bumblebee.Text.Albert, :for_token_classification},
-    "AlbertForQuestionAnswering" => {Bumblebee.Text.Albert, :for_question_answering},
-    "AlbertForMultipleChoice" => {Bumblebee.Text.Albert, :for_multiple_choice},
-    "AlbertForPreTraining" => {Bumblebee.Text.Albert, :for_pre_training},
-    # Bert
-    "BertModel" => {Bumblebee.Text.Bert, :base},
-    "BertForMaskedLM" => {Bumblebee.Text.Bert, :for_masked_language_modeling},
-    "BertLMHeadModel" => {Bumblebee.Text.Bert, :for_causal_language_modeling},
-    "BertForSequenceClassification" => {Bumblebee.Text.Bert, :for_sequence_classification},
-    "BertForTokenClassification" => {Bumblebee.Text.Bert, :for_token_classification},
-    "BertForQuestionAnswering" => {Bumblebee.Text.Bert, :for_question_answering},
-    "BertForMultipleChoice" => {Bumblebee.Text.Bert, :for_multiple_choice},
-    "BertForNextSentencePrediction" => {Bumblebee.Text.Bert, :for_next_sentence_prediction},
-    "BertForPreTraining" => {Bumblebee.Text.Bert, :for_pre_training},
-    # Roberta
-    "RobertaModel" => {Bumblebee.Text.Roberta, :base},
-    "RobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
-    "RobertaLMHeadModel" => {Bumblebee.Text.Roberta, :for_causal_language_modeling},
-    "RobertaForSequenceClassification" => {Bumblebee.Text.Roberta, :for_sequence_classification},
-    "RobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
-    "RobertaForQuestionAnswering" => {Bumblebee.Text.Roberta, :for_question_answering},
-    "RobertaForMultipleChoice" => {Bumblebee.Text.Roberta, :for_multiple_choice},
-    "RobertaForPreTraining" => {Bumblebee.Text.Roberta, :for_pre_training},
-    # ConvNext
-    "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
-    "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification},
-    # ViT
-    "ViTModel" => {Bumblebee.Vision.Vit, :base},
-    "ViTForImageClassification" => {Bumblebee.Vision.Vit, :for_image_classification},
-    "ViTForMaskedImageModeling" => {Bumblebee.Vision.Vit, :for_masked_image_modeling},
-    "DeiTModel" => {Bumblebee.Vision.Deit, :base},
-    "DeiTForImageClassification" => {Bumblebee.Vision.Deit, :for_image_classification},
-    "DeiTForImageClassificationWithTeacher" =>
-      {Bumblebee.Vision.Deit, :for_image_classification_with_teacher},
-    "DeiTForMaskedImageModeling" => {Bumblebee.Vision.Deit, :for_masked_image_modeling},
-    # Bart
-    "BartModel" => {Bumblebee.Text.Bart, :base},
-    "BartForCausalLM" => {Bumblebee.Text.Bart, :for_causal_language_modeling},
-    "BartForConditionalGeneration" => {Bumblebee.Text.Bart, :for_conditional_generation},
-    "BartForSequenceClassification" => {Bumblebee.Text.Bart, :for_sequence_classification},
-    "BartForQuestionAnswering" => {Bumblebee.Text.Bart, :for_question_answering},
-    # GPT2
-    "GPT2Model" => {BumbleBee.Text.Gpt2, :base},
-    "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling},
-    "GPT2ForTokenClassification" => {Bumblebee.Text.Gpt2, :for_token_classification},
-    "GPT2ForSequenceClassification" => {Bumblebee.Text.Gpt2, :for_sequence_classification},
-    # Mbart
-    "MBartModel" => {Bumblebee.Text.Mbart, :base},
-    "MBartForConditionalGeneration" => {Bumblebee.Text.Mbart, :for_conditional_generation},
-    "MBartForSequenceClassification" => {Bumblebee.Text.Mbart, :for_sequence_classification},
-    "MBartForQuestionAnswering" => {Bumblebee.Text.Mbart, :for_question_answering},
-    "MBartForCausalLM" => {Bumblebee.Text.Mbart, :for_causal_language_modeling},
-    # Clip
-    "CLIPModel" => {Bumblebee.Multimodal.Clip, :base},
-    "CLIPTextModel" => {Bumblebee.Text.ClipText, :base},
-    "CLIPVisionModel" => {Bumblebee.Vision.ClipVision, :base},
-    # VaeKl
-    "AutoencoderKL" => {Bumblebee.Diffusion.VaeKl, :base},
-    # UNet2DConditional
-    "UNet2DConditionModel" => {Bumblebee.Diffusion.UNet2DConditional, :base},
-    # StableDiffusion.SafetyChecker
-    "StableDiffusionSafetyChecker" => {Bumblebee.Diffusion.StableDiffusion.SafetyChecker, :base},
-    # LayoutLM
-    "LayoutLMModel" => {Bumblebee.Multimodal.LayoutLm, :base},
-    "LayoutLMForMaskedLanguageModeling" =>
-      {Bumblebee.Multimodal.LayoutLm, :for_masked_language_modeling},
-    "LayoutLMForSequenceClassification" =>
-      {Bumblebee.Multimodal.LayoutLm, :for_sequence_classification},
-    "LayoutLMForTokenClassification" =>
-      {Bumblebee.Multimodal.LayoutLm, :for_token_classification},
-    "LayoutLMForQuestionAnswering" => {Bumblebee.Multimodal.LayoutLm, :for_question_answering}
-  }
-
   defp infer_model_type(%{"architectures" => [class_name]}) do
     case @transformers_class_to_model[class_name] do
       nil ->
@@ -268,7 +312,7 @@ defmodule Bumblebee do
   end
 
   @doc """
-  Loads a pretrained model from a model repository.
+  Loads a pre-trained model from a model repository.
 
   ## Options
 
@@ -282,31 +326,30 @@ defmodule Bumblebee do
     * `:architecture` - the model architecture, must be supported by
       `:module`. By default it is inferred from the configuration file
 
-    * `:params_filename` - the file with the parameters to be loaded
+    * `:params_filename` - the file with the model parameters to be loaded
 
   ## Examples
 
   By default the model type is inferred from configuration, so loading
   is as simple as:
 
-      {:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
+      {:ok, resnet} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
+      %{model: model, params: params, spec: spec} = resnet
 
   You can explicitly specify a different architecture, in which case
   matching parameters are still loaded:
 
-      {:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, architecture: :base)
+      {:ok, resnet} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, architecture: :base)
 
-  To further customize the model, you can also pass the configuration:
+  To further customize the model, you can also pass the specification:
 
       {:ok, spec} = Bumblebee.load_spec({:hf, "microsoft/resnet-50"})
       spec = Bumblebee.configure(spec, num_labels: 10)
-      {:ok, model, params, spec} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, spec: spec)
+      {:ok, resnet} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, spec: spec)
 
   """
   @doc type: :model
-  @spec load_model(repository(), keyword()) ::
-          {:ok, Axon.t(), params :: map(), spec :: Bumblebee.ModelSpec.t()}
-          | {:error, String.t()}
+  @spec load_model(repository(), keyword()) :: {:ok, model_info()} | {:error, String.t()}
   def load_model(repository, opts \\ []) do
     repository = normalize_repository!(repository)
 
@@ -329,7 +372,7 @@ defmodule Bumblebee do
              opts
              |> Keyword.take([:params_filename])
            ) do
-      {:ok, model, params, spec}
+      {:ok, %{model: model, params: params, spec: spec}}
     end
   end
 
@@ -398,20 +441,6 @@ defmodule Bumblebee do
       {:ok, featurizer}
     end
   end
-
-  @transformers_class_to_featurizer %{
-    "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer,
-    "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer,
-    "DeiTFeatureExtractor" => Bumblebee.Vision.DeitFeaturizer,
-    "CLIPFeatureExtractor" => Bumblebee.Vision.ClipFeaturizer
-  }
-
-  @model_type_to_featurizer %{
-    "resnet" => Bumblebee.Vision.ConvNextFeaturizer,
-    "convnext" => Bumblebee.Vision.ConvNextFeaturizer,
-    "vit" => Bumblebee.Vision.VitFeaturizer,
-    "deit" => Bumblebee.Vision.DeitFeaturizer
-  }
 
   defp infer_featurizer_type(%{"feature_extractor_type" => class_name}, _repository) do
     case @transformers_class_to_featurizer[class_name] do
@@ -544,17 +573,6 @@ defmodule Bumblebee do
     end
   end
 
-  @model_type_to_tokenizer %{
-    "bert" => Bumblebee.Text.BertTokenizer,
-    "roberta" => Bumblebee.Text.RobertaTokenizer,
-    "albert" => Bumblebee.Text.AlbertTokenizer,
-    "bart" => Bumblebee.Text.BartTokenizer,
-    "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
-    "mbart" => Bumblebee.Text.MbartTokenizer,
-    "clip" => Bumblebee.Text.ClipTokenizer,
-    "layoutlm" => Bumblebee.Text.LayoutLmTokenizer
-  }
-
   defp infer_tokenizer_type(repository) do
     with {:ok, path} <- download(repository, @config_filename),
          {:ok, tokenizer_data} <- decode_config(path) do
@@ -660,11 +678,6 @@ defmodule Bumblebee do
       {:ok, scheduler}
     end
   end
-
-  @diffusers_class_to_scheduler %{
-    "DDIMScheduler" => Bumblebee.Diffusion.DdimScheduler,
-    "PNDMScheduler" => Bumblebee.Diffusion.PndmScheduler
-  }
 
   defp infer_scheduler_type(%{"_class_name" => class_name}) do
     case @diffusers_class_to_scheduler[class_name] do

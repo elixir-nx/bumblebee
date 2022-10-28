@@ -74,14 +74,14 @@ defmodule Bumblebee.Vision.ClipVision do
   #{Shared.options_doc(options)}
   """
 
-  import Bumblebee.Utils.Model, only: [join: 2]
-
-  alias Bumblebee.Layers
-
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
+
+  import Bumblebee.Utils.Model, only: [join: 2]
+
+  alias Bumblebee.Layers
 
   @impl true
   def architectures(), do: [:base]
@@ -131,14 +131,14 @@ defmodule Bumblebee.Vision.ClipVision do
     encoder_outputs =
       Bumblebee.Layers.Clip.encoder(embeddings, attention_mask, spec, name: join(name, "encoder"))
 
-    pooler_output =
+    pooled_state =
       encoder_outputs.hidden_state
       |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "post_layernorm"))
       |> Layers.take_token(index: 0, axis: 1, name: join(name, "head"))
 
     %{
       hidden_state: encoder_outputs.hidden_state,
-      pooler_output: pooler_output,
+      pooled_state: pooled_state,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions
     }

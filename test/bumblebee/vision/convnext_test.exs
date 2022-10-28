@@ -7,7 +7,7 @@ defmodule Bumblebee.Vision.ConvNextTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/convnext-tiny-224"}, architecture: :base)
 
       assert %Bumblebee.Vision.ConvNext{architecture: :base} = spec
@@ -15,17 +15,17 @@ defmodule Bumblebee.Vision.ConvNextTest do
       inputs = %{"pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})}
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.pooler_output) == {1, 768}
+      assert Nx.shape(outputs.pooled_state) == {1, 768}
 
       assert_all_close(
-        Nx.sum(outputs.pooler_output),
+        Nx.sum(outputs.pooled_state),
         Nx.tensor(-2.1095),
         atol: 1.0e-4
       )
     end
 
     test "image classification model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/convnext-tiny-224"})
 
       assert %Bumblebee.Vision.ConvNext{architecture: :for_image_classification} = spec

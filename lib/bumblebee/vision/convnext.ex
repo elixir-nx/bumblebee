@@ -69,14 +69,14 @@ defmodule Bumblebee.Vision.ConvNext do
 
   """
 
-  import Bumblebee.Utils.Model, only: [join: 2]
-
-  alias Bumblebee.Layers
-
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
+
+  import Bumblebee.Utils.Model, only: [join: 2]
+
+  alias Bumblebee.Layers
 
   @impl true
   def architectures(), do: [:base, :for_image_classification]
@@ -106,7 +106,7 @@ defmodule Bumblebee.Vision.ConvNext do
     outputs = convnext(spec, name: "convnext")
 
     logits =
-      outputs.pooler_output
+      outputs.pooled_state
       |> Axon.dense(spec.num_labels,
         name: "classifier",
         kernel_initializer: kernel_initializer(spec)
@@ -136,7 +136,7 @@ defmodule Bumblebee.Vision.ConvNext do
 
     %{
       hidden_state: encoder_outputs.hidden_state,
-      pooler_output: pooled_output,
+      pooled_state: pooled_output,
       hidden_states: encoder_outputs.hidden_states
     }
   end

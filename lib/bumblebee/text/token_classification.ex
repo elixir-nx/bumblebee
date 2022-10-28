@@ -53,17 +53,17 @@ defmodule Bumblebee.Text.TokenClassification do
 
   """
   @spec extract(
-          Axon.t(),
-          map(),
-          Bumblebee.ModelSpec.t(),
+          Bumblebee.model_info(),
           Bumblebee.Tokenizer.t(),
           String.t() | list(String.t()),
           keyword()
         ) :: list(list(entity()))
-  def extract(model, params, spec, tokenizer, text, opts \\ [])
+  def extract(model_info, tokenizer, text, opts \\ [])
 
-  def extract(model, params, spec, tokenizer, text, opts)
-      when spec.architecture == :for_token_classification do
+  def extract(model_info, tokenizer, text, opts)
+      when model_info.spec.architecture == :for_token_classification do
+    %{model: model, params: params, spec: spec} = model_info
+
     opts =
       Keyword.validate!(opts, [:aggregation, :length, ignored_labels: ["O"], defn_options: []])
 
@@ -93,7 +93,8 @@ defmodule Bumblebee.Text.TokenClassification do
     end)
   end
 
-  def extract(_model, _params, %{architecture: arch}, _tokenizer, _text, _opts) do
+  def extract(model_info, _tokenizer, _text, _opts) do
+    arch = model_info.spec.architecture
     raise ArgumentError, "expected a model for token classification, got #{inspect(arch)}"
   end
 

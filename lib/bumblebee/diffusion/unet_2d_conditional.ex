@@ -116,15 +116,15 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   #{Shared.options_doc(options)}
   """
 
-  import Bumblebee.Utils.Model, only: [join: 2]
-
-  alias Bumblebee.Layers
-  alias Bumblebee.Diffusion
-
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
+
+  import Bumblebee.Utils.Model, only: [join: 2]
+
+  alias Bumblebee.Layers
+  alias Bumblebee.Diffusion
 
   @impl true
   def architectures(), do: [:base]

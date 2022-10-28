@@ -151,15 +151,15 @@ defmodule Bumblebee.Text.Roberta do
   #{Shared.options_doc(options)}
   """
 
-  import Bumblebee.Utils.Model, only: [join: 2]
-
-  alias Bumblebee.Layers
-
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
   @behaviour Bumblebee.Text.Generation
+
+  import Bumblebee.Utils.Model, only: [join: 2]
+
+  alias Bumblebee.Layers
 
   @impl true
   def architectures(),
@@ -286,7 +286,7 @@ defmodule Bumblebee.Text.Roberta do
     outputs = roberta(flat_inputs, spec, name: "roberta")
 
     logits =
-      outputs.pooler_output
+      outputs.pooled_state
       |> Axon.dropout(rate: classifier_dropout_rate(spec), name: "dropout")
       |> Axon.dense(1,
         kernel_initializer: kernel_initializer(spec),
@@ -419,11 +419,11 @@ defmodule Bumblebee.Text.Roberta do
         name: join(name, "encoder")
       )
 
-    pooler_output = pooler(encoder_outputs.hidden_state, spec, name: join(name, "pooler"))
+    pooled_state = pooler(encoder_outputs.hidden_state, spec, name: join(name, "pooler"))
 
     %{
       hidden_state: encoder_outputs.hidden_state,
-      pooler_output: pooler_output,
+      pooled_state: pooled_state,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions,
       cross_attentions: encoder_outputs.cross_attentions,

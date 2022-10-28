@@ -7,7 +7,8 @@ defmodule Bumblebee.Text.Gpt2Test do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "gpt2"}, architecture: :base)
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "gpt2"}, architecture: :base)
 
       assert %Bumblebee.Text.Gpt2{architecture: :base} = spec
 
@@ -35,7 +36,8 @@ defmodule Bumblebee.Text.Gpt2Test do
     end
 
     test "causal language modeling" do
-      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "gpt2"})
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "gpt2"})
 
       assert %Bumblebee.Text.Gpt2{architecture: :for_causal_language_modeling} = spec
 
@@ -61,7 +63,7 @@ defmodule Bumblebee.Text.Gpt2Test do
     end
 
     test "token classification" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "brad1141/gpt2-finetuned-comp2"})
 
       assert %Bumblebee.Text.Gpt2{architecture: :for_token_classification} = spec
@@ -84,7 +86,7 @@ defmodule Bumblebee.Text.Gpt2Test do
     end
 
     test "sequence classification" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "microsoft/DialogRPT-updown"})
 
       assert %Bumblebee.Text.Gpt2{architecture: :for_sequence_classification} = spec

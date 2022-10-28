@@ -52,12 +52,12 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
   #{Shared.options_doc(options)}
   """
 
-  alias Bumblebee.Utils.Image
+  defstruct Shared.option_defaults(options)
 
   @behaviour Bumblebee.Featurizer
   @behaviour Bumblebee.Configurable
 
-  defstruct Shared.option_defaults(options)
+  alias Bumblebee.Utils.Image
 
   @impl true
   def config(featurizer, opts \\ []) do
@@ -74,7 +74,7 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
 
         if featurizer.resize do
           size = Image.normalize_size(featurizer.size)
-          Image.resize(images, size: size, method: featurizer.resize_method)
+          Image.resize(images, size, method: featurizer.resize_method)
         else
           images
         end
@@ -85,7 +85,7 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
 
     images =
       if featurizer.center_crop do
-        Image.center_crop(images, size: {featurizer.crop_size, featurizer.crop_size})
+        Image.center_crop(images, {featurizer.crop_size, featurizer.crop_size})
       else
         images
       end

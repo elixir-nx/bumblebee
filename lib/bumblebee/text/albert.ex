@@ -159,14 +159,14 @@ defmodule Bumblebee.Text.Albert do
 
   """
 
-  import Bumblebee.Utils.Model, only: [join: 2]
-
-  alias Bumblebee.Layers
-
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
+
+  import Bumblebee.Utils.Model, only: [join: 2]
+
+  alias Bumblebee.Layers
 
   @impl true
   def architectures(),
@@ -219,7 +219,7 @@ defmodule Bumblebee.Text.Albert do
     outputs = albert(inputs(), spec, name: "albert")
 
     logits =
-      outputs.pooler_output
+      outputs.pooled_state
       |> Axon.dropout(rate: classifier_dropout_rate(spec))
       |> Axon.dense(spec.num_labels,
         kernel_initializer: kernel_initializer(spec),
@@ -246,7 +246,7 @@ defmodule Bumblebee.Text.Albert do
     outputs = albert(flat_inputs, spec, name: "albert")
 
     logits =
-      outputs.pooler_output
+      outputs.pooled_state
       |> Axon.dropout(rate: classifier_dropout_rate(spec), name: "dropout")
       |> Axon.dense(1,
         kernel_initializer: kernel_initializer(spec),
@@ -344,11 +344,11 @@ defmodule Bumblebee.Text.Albert do
     {hidden_state, hidden_states, attentions} =
       encoder(hidden_state, attention_mask, spec, name: join(name, "encoder"))
 
-    pooler_output = pooler(hidden_state, spec, name: join(name, "pooler"))
+    pooled_state = pooler(hidden_state, spec, name: join(name, "pooler"))
 
     %{
       hidden_state: hidden_state,
-      pooler_output: pooler_output,
+      pooled_state: pooled_state,
       hidden_states: hidden_states,
       attentions: attentions
     }

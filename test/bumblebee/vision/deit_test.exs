@@ -7,7 +7,7 @@ defmodule Bumblebee.Vision.DeitTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/deit-base-distilled-patch16-224"},
                  architecture: :base
                )
@@ -29,7 +29,7 @@ defmodule Bumblebee.Vision.DeitTest do
     end
 
     test "image classification model with teacher" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/deit-base-distilled-patch16-224"})
 
       assert %Bumblebee.Vision.Deit{architecture: :for_image_classification_with_teacher} = spec
@@ -47,7 +47,7 @@ defmodule Bumblebee.Vision.DeitTest do
     end
 
     test "masked image modeling model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "facebook/deit-base-distilled-patch16-224"},
                  architecture: :for_masked_image_modeling
                )

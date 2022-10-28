@@ -7,7 +7,7 @@ defmodule Bumblebee.Text.BertTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "bert-base-uncased"}, architecture: :base)
 
       assert %Bumblebee.Text.Bert{architecture: :base} = spec
@@ -29,7 +29,8 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "masked language modeling model" do
-      assert {:ok, model, params, spec} = Bumblebee.load_model({:hf, "bert-base-uncased"})
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "bert-base-uncased"})
 
       assert %Bumblebee.Text.Bert{architecture: :for_masked_language_modeling} = spec
 
@@ -55,7 +56,7 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "sequence classification" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "textattack/bert-base-uncased-yelp-polarity"},
                  architecture: :for_sequence_classification
                )
@@ -79,7 +80,7 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "token classification" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "dbmdz/bert-large-cased-finetuned-conll03-english"})
 
       assert %Bumblebee.Text.Bert{architecture: :for_token_classification} = spec
@@ -105,7 +106,7 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "question answering" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "deepset/bert-base-cased-squad2"})
 
       assert %Bumblebee.Text.Bert{architecture: :for_question_answering} = spec
@@ -138,7 +139,7 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "multiple choice" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "nightingal3/bert-finetuned-wsc"})
 
       assert %Bumblebee.Text.Bert{architecture: :for_multiple_choice} = spec
@@ -179,7 +180,7 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "next sentence prediction" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "bert-base-uncased"},
                  architecture: :for_next_sentence_prediction
                )
@@ -208,7 +209,7 @@ defmodule Bumblebee.Text.BertTest do
     end
 
     test "causal language modeling" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "bert-base-uncased"},
                  architecture: :for_causal_language_modeling
                )

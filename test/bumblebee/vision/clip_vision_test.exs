@@ -7,7 +7,7 @@ defmodule Bumblebee.Vision.ClipVisionTest do
 
   describe "integration" do
     test "base model" do
-      assert {:ok, model, params, spec} =
+      assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "openai/clip-vit-base-patch32"},
                  module: Bumblebee.Vision.ClipVision,
                  architecture: :base
@@ -32,7 +32,7 @@ defmodule Bumblebee.Vision.ClipVisionTest do
       )
 
       assert_all_close(
-        outputs.pooler_output[[0..-1//1, 1..3]],
+        outputs.pooled_state[[0..-1//1, 1..3]],
         Nx.tensor([[0.3602, 0.3658, -0.2337]]),
         atol: 1.0e-4
       )
