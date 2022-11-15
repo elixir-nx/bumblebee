@@ -60,6 +60,7 @@ defmodule Bumblebee.Vision.DeitTest do
           # We use iota in the order of the pytorch kernel
           x
           |> Nx.transpose(axes: [3, 2, 1, 0])
+          |> Nx.shape()
           |> Nx.iota(type: :f32)
           |> Nx.divide(Nx.size(x))
           |> Nx.transpose(axes: [2, 3, 1, 0])
