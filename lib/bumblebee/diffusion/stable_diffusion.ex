@@ -192,7 +192,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     %{sample: images} = vae_predict.(vae_params, latents)
 
-    Bumblebee.Utils.Image.from_continuous(images, -1, 1)
+    NxImage.from_continuous(images, -1, 1)
   end
 
   defnp split_in_half(tensor) do

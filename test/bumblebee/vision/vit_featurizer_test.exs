@@ -7,7 +7,7 @@ defmodule Bumblebee.Vision.VitFeaturizerTest do
 
       assert %Bumblebee.Vision.VitFeaturizer{} = featurizer
 
-      image = Nx.tensor([[[50], [100]], [[150], [200]]])
+      image = Nx.tensor([[[50], [100]], [[150], [200]]]) |> Nx.broadcast({2, 2, 3})
 
       inputs = Bumblebee.apply_featurizer(featurizer, image)
 

@@ -31,6 +31,7 @@ defmodule Bumblebee.MixProject do
       {:nx, "~> 0.4.0"},
       {:exla, "~> 0.4.0", only: [:dev, :test]},
       {:torchx, "~> 0.4.0", only: [:dev, :test]},
+      {:nx_image, "~> 0.1.0", github: "elixir-nx/nx_image"},
       {:stb_image, "~> 0.5.0", optional: true},
       {:unpickler, github: "dashbitco/unpickler"},
       {:castore, "~> 0.1.0"},

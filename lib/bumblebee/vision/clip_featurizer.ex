@@ -74,24 +74,28 @@ defmodule Bumblebee.Vision.ClipFeaturizer do
 
         images =
           if featurizer.resize do
-            Image.resize_short(images, featurizer.size, method: featurizer.resize_method)
+            NxImage.resize_short(images, featurizer.size, method: featurizer.resize_method)
           else
             images
           end
 
         if featurizer.center_crop do
-          Image.center_crop(images, {featurizer.crop_size, featurizer.crop_size})
+          NxImage.center_crop(images, {featurizer.crop_size, featurizer.crop_size})
         else
           images
         end
       end
       |> Nx.concatenate()
 
-    images = Image.to_continuous(images, 0, 1)
+    images = NxImage.to_continuous(images, 0, 1)
 
     images =
       if featurizer.normalize do
-        Image.normalize(images, Nx.tensor(featurizer.image_mean), Nx.tensor(featurizer.image_std))
+        NxImage.normalize(
+          images,
+          Nx.tensor(featurizer.image_mean),
+          Nx.tensor(featurizer.image_std)
+        )
       else
         images
       end

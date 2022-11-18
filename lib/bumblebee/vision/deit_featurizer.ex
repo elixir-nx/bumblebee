@@ -74,25 +74,29 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
 
         if featurizer.resize do
           size = Image.normalize_size(featurizer.size)
-          Image.resize(images, size, method: featurizer.resize_method)
+          NxImage.resize(images, size, method: featurizer.resize_method)
         else
           images
         end
       end
       |> Nx.concatenate()
 
-    images = Image.to_continuous(images, 0, 1)
+    images = NxImage.to_continuous(images, 0, 1)
 
     images =
       if featurizer.center_crop do
-        Image.center_crop(images, {featurizer.crop_size, featurizer.crop_size})
+        NxImage.center_crop(images, {featurizer.crop_size, featurizer.crop_size})
       else
         images
       end
 
     images =
       if featurizer.normalize do
-        Image.normalize(images, Nx.tensor(featurizer.image_mean), Nx.tensor(featurizer.image_std))
+        NxImage.normalize(
+          images,
+          Nx.tensor(featurizer.image_mean),
+          Nx.tensor(featurizer.image_std)
+        )
       else
         images
       end

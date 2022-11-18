@@ -72,7 +72,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
             images
 
           featurizer.size >= 384 ->
-            Image.resize(images, {featurizer.size, featurizer.size},
+            NxImage.resize(images, {featurizer.size, featurizer.size},
               method: featurizer.resize_method
             )
 
@@ -80,17 +80,21 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
             scale_size = floor(featurizer.size / featurizer.crop_percentage)
 
             images
-            |> Image.resize_short(scale_size, method: featurizer.resize_method)
-            |> Image.center_crop({featurizer.size, featurizer.size})
+            |> NxImage.resize_short(scale_size, method: featurizer.resize_method)
+            |> NxImage.center_crop({featurizer.size, featurizer.size})
         end
       end
       |> Nx.concatenate()
 
-    images = Image.to_continuous(images, 0, 1)
+    images = NxImage.to_continuous(images, 0, 1)
 
     images =
       if featurizer.normalize do
-        Image.normalize(images, Nx.tensor(featurizer.image_mean), Nx.tensor(featurizer.image_std))
+        NxImage.normalize(
+          images,
+          Nx.tensor(featurizer.image_mean),
+          Nx.tensor(featurizer.image_std)
+        )
       else
         images
       end
