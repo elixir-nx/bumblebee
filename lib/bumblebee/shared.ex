@@ -203,7 +203,7 @@ defmodule Bumblebee.Shared do
   Wraps the given function to run with a fixed-size batch.
 
   The batch is padded to `batch_size` and the function result is then
-  sliced to match the initial batch.234
+  sliced to match the initial batch.
   """
   @spec with_optional_padding(Nx.Batch.t(), non_neg_integer() | nil, operation) :: operation
         when operation: (Nx.Batch.t() -> Nx.t() | Nx.Container.t())
