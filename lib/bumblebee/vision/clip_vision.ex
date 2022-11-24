@@ -97,7 +97,7 @@ defmodule Bumblebee.Vision.ClipVision do
   def input_template(spec) do
     %{
       "pixel_values" =>
-        Nx.template({1, spec.image_size, spec.image_size, spec.num_channels}, :s64)
+        Nx.template({1, spec.image_size, spec.image_size, spec.num_channels}, :f32)
     }
   end
 

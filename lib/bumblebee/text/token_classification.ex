@@ -1,99 +1,96 @@
 defmodule Bumblebee.Text.TokenClassification do
-  @moduledoc """
-  High-level functions implementing token classification.
-  """
+  @moduledoc false
 
   alias Bumblebee.Utils
+  alias Bumblebee.Shared
 
-  @type entity :: %{
-          start: non_neg_integer(),
-          end: non_neg_integer(),
-          score: float(),
-          label: String.t(),
-          phrase: String.t()
-        }
+  def token_classification(model_info, tokenizer, opts \\ [])
 
-  @doc """
-  Performs end-to-end token classification.
-
-  This function can be used for tasks such as named entity recognition
-  (NER) or part of speech tagging (POS).
-
-  The recognized entities can optionally be aggregated into groups
-  based on the given strategy.
-
-  ## Options
-
-    * `:aggregation` - an optional strategy for aggregating adjacent
-      tokens. Token classification models output probabilities for
-      each possible token class. The aggregation strategy takes scores
-      for each token (which possibly represents subwords) and groups
-      tokens into phrases which are readily interpretable as entities
-      of a certain class. Supported aggregation strategies:
-
-        * `nil` (default) - corresponds to no aggregation and returns
-          the most likely label for each input token
-
-        * `:same` - groups adjacent tokens with the same label. If
-          the labels use beginning-inside-outside (BIO) tagging, the
-          boundaries are respected and the prefix is omitted in the
-          output labels
-
-    * `:ignored_labels` - the labels to ignore in the final output.
-      The labels should be specified without BIO prefix. Defaults to
-      `["O"]`
-
-    * `:length` - the length to pad/truncate the prompts to. Fixing
-      the length to a certain value allows for caching model compilation
-      across different prompts. By default prompts are padded to
-      match the longest one
-
-    * `:defn_options` - the options for to JIT compilation. Defaults
-      to `[]`
-
-  """
-  @spec extract(
-          Bumblebee.model_info(),
-          Bumblebee.Tokenizer.t(),
-          String.t() | list(String.t()),
-          keyword()
-        ) :: list(list(entity()))
-  def extract(model_info, tokenizer, text, opts \\ [])
-
-  def extract(model_info, tokenizer, text, opts)
+  def token_classification(model_info, tokenizer, opts)
       when model_info.spec.architecture == :for_token_classification do
     %{model: model, params: params, spec: spec} = model_info
 
     opts =
-      Keyword.validate!(opts, [:aggregation, :length, ignored_labels: ["O"], defn_options: []])
+      Keyword.validate!(opts, [
+        :aggregation,
+        :compile,
+        ignored_labels: ["O"],
+        defn_options: []
+      ])
 
     aggregation = opts[:aggregation]
     ignored_labels = opts[:ignored_labels]
-    length = opts[:length]
+    compile = opts[:compile]
     defn_options = opts[:defn_options]
 
-    inputs =
-      Bumblebee.apply_tokenizer(tokenizer, text,
-        length: length,
-        return_special_tokens_mask: true,
-        return_offsets: true
-      )
+    batch_size = compile[:batch_size]
+    sequence_length = compile[:sequence_length]
+
+    if compile != nil and (batch_size == nil or sequence_length == nil) do
+      raise ArgumentError,
+            "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
+    end
 
     {_init_fun, predict_fun} = Axon.build(model, defn_options)
 
-    %{logits: logits} = predict_fun.(params, inputs)
-    scores = Axon.Activations.softmax(logits)
+    scores_fun = fn params, input ->
+      outputs = predict_fun.(params, input)
+      Axon.Activations.softmax(outputs.logits)
+    end
 
-    [List.wrap(text), Utils.Nx.to_batched(inputs, 1), Utils.Nx.to_batched(scores, 1)]
-    |> Enum.zip_with(fn [text, inputs, scores] ->
-      scores
-      |> gather_raw_entities(tokenizer, text, inputs)
-      |> aggregate(spec, tokenizer, aggregation)
-      |> filter_entities(ignored_labels)
+    Nx.Serving.new(
+      fn ->
+        scores_fun =
+          if compile do
+            input_template = %{
+              "input_ids" =>
+                Shared.input_template(spec, "input_ids", [batch_size, sequence_length]),
+              "attention_mask" =>
+                Shared.input_template(spec, "attention_mask", [batch_size, sequence_length])
+            }
+
+            template_args = Shared.templates([params, input_template])
+            Nx.Defn.compile(scores_fun, template_args, defn_options)
+          else
+            Nx.Defn.jit(scores_fun, defn_options)
+          end
+
+        &Shared.with_optional_padding(&1, batch_size, fn inputs ->
+          scores_fun.(params, inputs)
+        end)
+      end,
+      batch_size: batch_size
+    )
+    |> Nx.Serving.client_preprocessing(fn input ->
+      {texts, multi?} = Shared.validate_serving_input!(input, &is_binary/1, "a string")
+
+      all_inputs =
+        Bumblebee.apply_tokenizer(tokenizer, texts,
+          length: sequence_length,
+          return_special_tokens_mask: true,
+          return_offsets: true
+        )
+
+      inputs = Map.take(all_inputs, ["input_ids", "attention_mask"])
+
+      {Nx.Batch.concatenate([inputs]), {texts, all_inputs, multi?}}
+    end)
+    |> Nx.Serving.client_postprocessing(fn scores, _metadata, {texts, inputs, multi?} ->
+      [texts, Utils.Nx.to_batched(inputs, 1), Utils.Nx.to_batched(scores, 1)]
+      |> Enum.zip_with(fn [text, inputs, scores] ->
+        entities =
+          scores
+          |> gather_raw_entities(tokenizer, text, inputs)
+          |> aggregate(spec, tokenizer, aggregation)
+          |> filter_entities(ignored_labels)
+
+        %{entities: entities}
+      end)
+      |> Shared.normalize_output(multi?)
     end)
   end
 
-  def extract(model_info, _tokenizer, _text, _opts) do
+  def token_classification(model_info, _tokenizer, _opts) do
     arch = model_info.spec.architecture
     raise ArgumentError, "expected a model for token classification, got #{inspect(arch)}"
   end

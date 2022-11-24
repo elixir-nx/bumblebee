@@ -555,7 +555,7 @@ defmodule Bumblebee.Layers do
   ## Examples
 
       {hidden_state, cross_attention} =
-        Bumblebee.Layers.conditional_if encoder_hidden_state do
+        Bumblebee.Layers.if_present encoder_hidden_state do
           ...
           {hidden_state, cross_attention}
         else

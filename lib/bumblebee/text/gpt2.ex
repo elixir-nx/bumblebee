@@ -111,11 +111,6 @@ defmodule Bumblebee.Text.Gpt2 do
       padding tokens, which are added when processing a batch of sequences
       with different length.
 
-    * `"token_type_ids"` - `{batch_size, seq_length}`
-
-      Mask distinguishing groups in the input sequence. This is used
-      in when the input sequence is a semantically a pair of sequences.
-
     * `"position_ids"` - `{batch_size, seq_length}`
 
       Indices of positions of each input sequence tokens in the position

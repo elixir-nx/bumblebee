@@ -28,8 +28,9 @@ defmodule Bumblebee.MixProject do
     [
       {:axon, "~> 0.3.0", axon_opts()},
       {:tokenizers, "~> 0.1.2"},
-      {:nx, "~> 0.4.0"},
-      {:exla, "~> 0.4.0", only: [:dev, :test]},
+      {:nx, "~> 0.4.0", github: "elixir-nx/nx", sparse: "nx", override: true},
+      {:exla, "~> 0.4.0",
+       github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
       {:torchx, "~> 0.4.0", only: [:dev, :test]},
       {:nx_image, "~> 0.1.0", github: "elixir-nx/nx_image"},
       {:stb_image, "~> 0.5.0", optional: true},
@@ -55,9 +56,13 @@ defmodule Bumblebee.MixProject do
       main: "Bumblebee",
       source_url: "https://github.com/elixir-nx/bumblebee",
       source_ref: "v#{@version}",
-      extras: ["notebooks/examples.livemd"],
+      extras: ["notebooks/examples.livemd", "notebooks/stable_diffusion.livemd"],
       extra_section: "GUIDES",
       groups_for_modules: [
+        Tasks: [
+          Bumblebee.Text,
+          Bumblebee.Diffusion.StableDiffusion
+        ],
         Models: [
           Bumblebee.Diffusion.StableDiffusion.SafetyChecker,
           Bumblebee.Diffusion.UNet2DConditional,
@@ -100,7 +105,8 @@ defmodule Bumblebee.MixProject do
           Bumblebee.ModelSpec,
           Bumblebee.Featurizer,
           Bumblebee.Tokenizer,
-          Bumblebee.Scheduler
+          Bumblebee.Scheduler,
+          Bumblebee.Text.Generation
         ]
       ],
       groups_for_functions: [
