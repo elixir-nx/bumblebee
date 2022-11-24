@@ -72,16 +72,16 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
           {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "text_encoder"}
         )
 
+      {:ok, unet} =
+        Bumblebee.load_model(
+          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "unet"},
+          params_filename: "diffusion_pytorch_model.bin"
+        )
+
       {:ok, vae} =
         Bumblebee.load_model(
           {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "vae"},
           architecture: :decoder,
-          params_filename: "diffusion_pytorch_model.bin"
-        )
-
-      {:ok, unet} =
-        Bumblebee.load_model(
-          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "unet"},
           params_filename: "diffusion_pytorch_model.bin"
         )
 
@@ -101,7 +101,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
         )
 
       serving =
-        Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, vae, unet, tokenizer, scheduler,
+        Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, unet, vae, tokenizer, scheduler,
           num_steps: 20,
           num_images_per_prompt: 2,
           safety_checker: safety_checker,
@@ -140,7 +140,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
           Bumblebee.Scheduler.t(),
           keyword()
         ) :: Nx.Serving.t()
-  def text_to_image(encoder, vae, unet, tokenizer, scheduler, opts \\ []) do
+  def text_to_image(encoder, unet, vae, tokenizer, scheduler, opts \\ []) do
     opts =
       Keyword.validate!(opts, [
         :safety_checker,

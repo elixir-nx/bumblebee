@@ -34,16 +34,16 @@ auth_token = System.fetch_env!("LB_HF_TOKEN")
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "text_encoder"}
   )
 
+{:ok, unet} =
+  Bumblebee.load_model(
+    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "unet"},
+    params_filename: "diffusion_pytorch_model.bin"
+  )
+
 {:ok, vae} =
   Bumblebee.load_model(
     {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "vae"},
     architecture: :decoder,
-    params_filename: "diffusion_pytorch_model.bin"
-  )
-
-{:ok, unet} =
-  Bumblebee.load_model(
-    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "unet"},
     params_filename: "diffusion_pytorch_model.bin"
   )
 
@@ -69,7 +69,7 @@ With all the models loaded, we can now configure a serving implementation of the
 
 ```elixir
 serving =
-  Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, vae, unet, tokenizer, scheduler,
+  Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, unet, vae, tokenizer, scheduler,
     num_steps: 20,
     num_images_per_prompt: 2,
     safety_checker: safety_checker,
