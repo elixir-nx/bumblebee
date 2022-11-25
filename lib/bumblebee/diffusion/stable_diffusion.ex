@@ -223,9 +223,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     Nx.Serving.new(fn -> apply(&init/9, init_args) end, batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(&client_preprocessing(&1, tokenizer, sequence_length))
-    |> Nx.Serving.client_postprocessing(
-      &client_postprocessing(&1, &2, &3, num_images_per_prompt, safety_checker)
-    )
+    |> Nx.Serving.client_postprocessing(&client_postprocessing(&1, &2, &3, safety_checker))
   end
 
   defp init(
@@ -240,39 +238,28 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
          defn_options
        ) do
     images_fun =
-      if compile? do
-        text_inputs_template = %{
+      Shared.compile_or_jit(images_fun, defn_options, compile?, fn ->
+        text_inputs = %{
           "input_ids" => Nx.template({batch_size, sequence_length}, :s64)
         }
 
-        input_template = %{
-          "unconditional" => text_inputs_template,
-          "conditional" => text_inputs_template
-        }
+        inputs = %{"unconditional" => text_inputs, "conditional" => text_inputs}
 
-        template_args =
-          Shared.templates([encoder_params, unet_params, vae_params, input_template])
-
-        Nx.Defn.compile(images_fun, template_args, defn_options)
-      else
-        Nx.Defn.jit(images_fun, defn_options)
-      end
+        [encoder_params, unet_params, vae_params, inputs]
+      end)
 
     safety_checker_fun =
       safety_checker_fun &&
-        if compile? do
-          input_template = %{
+        Shared.compile_or_jit(images_fun, defn_options, compile?, fn ->
+          inputs = %{
             "pixel_values" =>
               Shared.input_template(safety_checker_spec, "pixel_values", [
                 batch_size * num_images_per_prompt
               ])
           }
 
-          template_args = [Nx.to_template(safety_checker_params), input_template]
-          Nx.Defn.compile(safety_checker_fun, template_args, defn_options)
-        else
-          Nx.Defn.jit(safety_checker_fun, defn_options)
-        end
+          [Nx.to_template(safety_checker_params), inputs]
+        end)
 
     fn inputs ->
       inputs = Shared.maybe_pad(inputs, batch_size)
@@ -312,23 +299,15 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     inputs = %{"unconditional" => unconditional, "conditional" => conditional}
 
-    {Nx.Batch.concatenate([inputs]), {num_prompts, multi?}}
+    {Nx.Batch.concatenate([inputs]), multi?}
   end
 
-  defp client_postprocessing(
-         outputs,
-         _metadata,
-         {num_prompts, multi?},
-         num_images_per_prompt,
-         safety_checker?
-       ) do
-    for idx <- 0..(num_prompts - 1) do
+  defp client_postprocessing(outputs, _metadata, multi?, safety_checker?) do
+    for outputs <- Bumblebee.Utils.Nx.batch_to_list(outputs) do
       results =
-        for result_idx <- 0..(num_images_per_prompt - 1) do
-          image = outputs.images[idx][result_idx]
-
+        for outputs = %{image: image} <- Bumblebee.Utils.Nx.batch_to_list(outputs) do
           if safety_checker? do
-            if Nx.to_number(outputs.is_unsafe[idx][result_idx]) == 1 do
+            if Nx.to_number(outputs.is_unsafe) == 1 do
               %{image: zeroed(image), is_safe: false}
             else
               %{image: image, is_safe: true}

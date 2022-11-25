@@ -61,6 +61,7 @@ defmodule Bumblebee.MixProject do
       groups_for_modules: [
         Tasks: [
           Bumblebee.Text,
+          Bumblebee.Vision,
           Bumblebee.Diffusion.StableDiffusion
         ],
         Models: [

@@ -45,17 +45,14 @@ defmodule Bumblebee.Text.Generation do
     Nx.Serving.new(
       fn ->
         generate_fun =
-          if compile do
-            input_template = %{
+          Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
+            inputs = %{
               "input_ids" => Nx.template({batch_size, sequence_length}, :s64),
               "attention_mask" => Nx.template({batch_size, sequence_length}, :s64)
             }
 
-            template_args = Shared.templates([params, input_template])
-            Nx.Defn.compile(generate_fun, template_args, defn_options)
-          else
-            Nx.Defn.jit(generate_fun, defn_options)
-          end
+            [params, inputs]
+          end)
 
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
