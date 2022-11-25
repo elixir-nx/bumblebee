@@ -157,8 +157,13 @@ defmodule Bumblebee.Text.BartTest do
 
     inputs = Bumblebee.apply_tokenizer(tokenizer, article)
 
-    token_ids =
-      Bumblebee.Text.Generation.generate(model_info, inputs, min_length: 0, max_length: 8)
+    generate =
+      Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec,
+        min_length: 0,
+        max_length: 8
+      )
+
+    token_ids = generate.(model_info.params, inputs)
 
     assert_equal(token_ids, Nx.tensor([[2, 0, 8332, 947, 717, 1768, 5, 2]]))
 

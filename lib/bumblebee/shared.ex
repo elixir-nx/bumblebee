@@ -164,4 +164,91 @@ defmodule Bumblebee.Shared do
 
     spec
   end
+
+  @doc """
+  Optionally unwraps a singular list.
+  """
+  @spec normalize_output(list(), boolean()) :: list(term()) | term()
+  def normalize_output(list, multi?)
+
+  def normalize_output([term], false), do: term
+  def normalize_output(list, true), do: list
+
+  @doc """
+  Validates and normalizes task input.
+  """
+  @spec validate_serving_input!(term(), (term() -> boolean()), String.t()) ::
+          {list(term()), multi? :: boolean()}
+  def validate_serving_input!(input, validator, description) do
+    cond do
+      validator.(input) ->
+        {[input], false}
+
+      is_list(input) ->
+        for item <- input do
+          unless validator.(item) do
+            raise ArgumentError,
+                  "expected each input in the input list to be #{description}, found: #{inspect(item)}"
+          end
+        end
+
+        {input, true}
+
+      true ->
+        raise ArgumentError, "expected the input to be #{description}, got: #{inspect(input)}"
+    end
+  end
+
+  @doc """
+  Pads a batch to the given size, if given.
+
+  When the batch exceeds `batch_size`, raises an error.
+  """
+  @spec maybe_pad(Nx.Batch.t(), non_neg_integer() | nil) :: Nx.Batch.t()
+  def maybe_pad(batch, batch_size)
+
+  def maybe_pad(batch, nil), do: batch
+
+  def maybe_pad(%{size: size}, batch_size) when size > batch_size do
+    raise ArgumentError,
+          "input batch size (#{size}) exceeds the maximum configured batch size (#{batch_size})"
+  end
+
+  def maybe_pad(%{size: size} = batch, batch_size) do
+    Nx.Batch.pad(batch, batch_size - size)
+  end
+
+  @doc """
+  Returns at template for the given model input.
+
+  Replaces leading axis sizes with `overrides`.
+  """
+  @spec input_template(
+          Bumblebee.ModelSpec.t(),
+          String.t(),
+          list(non_neg_integer())
+        ) :: Nx.Tensor.t()
+  def input_template(%module{} = spec, name, overrides) do
+    %{^name => template} = module.input_template(spec)
+
+    shape =
+      overrides
+      |> Enum.with_index()
+      |> Enum.reduce(Nx.shape(template), fn {size, idx}, shape ->
+        put_elem(shape, idx, size)
+      end)
+
+    Nx.template(shape, Nx.type(template))
+  end
+
+  @doc """
+  Converts tensors to templates.
+  """
+  @spec templates(list(Nx.Tensor.t())) :: list(Nx.Tensor.t())
+  def templates(list) do
+    Enum.map(list, fn
+      %Nx.Tensor{data: %Nx.TemplateBackend{}} = template -> template
+      other -> Nx.to_template(other)
+    end)
+  end
 end

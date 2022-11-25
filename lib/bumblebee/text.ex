@@ -1,0 +1,145 @@
+defmodule Bumblebee.Text do
+  @moduledoc """
+  High-level tasks related to text processing.
+  """
+
+  @type token_classification_input :: String.t()
+  @type token_classification_output :: %{entities: list(token_classification_entity())}
+
+  @type token_classification_entity :: %{
+          start: non_neg_integer(),
+          end: non_neg_integer(),
+          score: float(),
+          label: String.t(),
+          phrase: String.t()
+        }
+
+  @doc """
+  Builds serving for token classification.
+
+  The serving accepts `t:token_classification_input/0` and returns
+  `t:token_classification_output/0`. A list of inputs is also supported.
+
+  This function can be used for tasks such as named entity recognition
+  (NER) or part of speech tagging (POS).
+
+  The recognized entities can optionally be aggregated into groups
+  based on the given strategy.
+
+  ## Options
+
+    * `:aggregation` - an optional strategy for aggregating adjacent
+      tokens. Token classification models output probabilities for
+      each possible token class. The aggregation strategy takes scores
+      for each token (which possibly represents subwords) and groups
+      tokens into phrases which are readily interpretable as entities
+      of a certain class. Supported aggregation strategies:
+
+        * `nil` (default) - corresponds to no aggregation and returns
+          the most likely label for each input token
+
+        * `:same` - groups adjacent tokens with the same label. If
+          the labels use beginning-inside-outside (BIO) tagging, the
+          boundaries are respected and the prefix is omitted in the
+          output labels
+
+    * `:ignored_labels` - the labels to ignore in the final output.
+      The labels should be specified without BIO prefix. Defaults to
+      `["O"]`
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  ## Examples
+
+      {:ok, bert} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+
+      serving = Bumblebee.Text.token_classification(bert, tokenizer, aggregation: :same)
+
+      text = "Rachel Green works at Ralph Lauren in New York City in the sitcom Friends"
+      Nx.Serving.run(serving, text)
+      #=> %{
+      #=>  entities: [
+      #=>    %{end: 12, label: "PER", phrase: "Rachel Green", score: 0.9997024834156036, start: 0},
+      #=>    %{end: 34, label: "ORG", phrase: "Ralph Lauren", score: 0.9968731701374054, start: 22},
+      #=>    %{end: 51, label: "LOC", phrase: "New York City", score: 0.9995547334353129, start: 38},
+      #=>    %{end: 73, label: "MISC", phrase: "Friends", score: 0.6997143030166626, start: 66}
+      #=>  ]
+      #=>}
+
+  """
+  @spec token_classification(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) ::
+          Nx.Serving.t()
+  defdelegate token_classification(model_info, tokenizer, opts \\ []),
+    to: Bumblebee.Text.TokenClassification
+
+  @type generation_input :: String.t()
+  @type generation_output :: %{results: list(generation_result())}
+  @type generation_result :: %{text: String.t()}
+
+  @doc """
+  Builds serving for prompt-driven text generation.
+
+  The serving accepts `t:generation_input/0` and returns `t:generation_output/0`.
+  A list of inputs is also supported.
+
+  ## Options
+
+    * `:max_length` - the maximum number of tokens in the generated text
+
+    * `:min_length` - the minimum number of tokens in the generated text
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  Also accepts all the other options of `Bumblebee.Text.Generation.build_generate/3`.
+
+  ## Examples
+
+      {:ok, gpt2} = Bumblebee.load_model({:hf, "gpt2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+
+      serving = Bumblebee.Text.generation(gpt2, tokenizer, max_length: 20)
+
+      prompt = "Elixir is a functional"
+      Nx.Serving.run(serving, prompt)
+      #=> %{
+      #=>   results: [
+      #=>     %{
+      #=>       text: "Elixir is a functional programming language that is designed to be used in a variety of applications. It"
+      #=>     }
+      #=>   ]
+      #=> }
+
+
+  """
+  @spec generation(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
+  defdelegate generation(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.Generation
+end

@@ -525,16 +525,7 @@ defmodule Bumblebee do
         return_offsets: false
       )
 
-    module.apply(
-      tokenizer,
-      input,
-      add_special_tokens: opts[:add_special_tokens],
-      pad_direction: opts[:pad_direction],
-      truncate_direction: opts[:truncate_direction],
-      length: opts[:length],
-      return_special_tokens_mask: opts[:return_special_tokens_mask],
-      return_offsets: opts[:return_offsets]
-    )
+    module.apply(tokenizer, input, opts)
   end
 
   @doc """

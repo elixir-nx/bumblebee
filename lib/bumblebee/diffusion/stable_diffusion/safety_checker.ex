@@ -55,7 +55,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.SafetyChecker do
   def input_template(%{clip_spec: %{vision_spec: vision_spec}}) do
     vision_shape = {1, vision_spec.image_size, vision_spec.image_size, vision_spec.num_channels}
 
-    %{"pixel_values" => Nx.template(vision_shape, :s64)}
+    %{"pixel_values" => Nx.template(vision_shape, :f32)}
   end
 
   @impl true

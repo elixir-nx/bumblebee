@@ -1,12 +1,21 @@
 defmodule Bumblebee.Diffusion.StableDiffusion do
   @moduledoc """
-  High-level functions implementing tasks based on Stable Diffusion.
+  High-level tasks based on Stable Diffusion.
   """
 
   import Nx.Defn
 
+  alias Bumblebee.Shared
+
+  @type text_to_image_input :: String.t()
+  @type text_to_image_output :: %{results: list(text_to_image_result())}
+  @type text_to_image_result :: %{:image => Nx.Tensor.t(), optional(:is_safe) => boolean()}
+
   @doc ~S"""
-  Performs end-to-end image generation based on the given prompt.
+  Build serving for prompt-driven image generation.
+
+  The serving accepts `t:text_to_image_input/0` and returns `t:text_to_image_output/0`.
+  A list of inputs is also supported.
 
   You can specify `:safety_checker` model to automatically detect
   when a generated image is offensive or harmful and filter it out.
@@ -36,13 +45,91 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     * `:seed` - a seed for the random number generator. Defaults to `0`
 
-    * `:length` - the length to pad/truncate the prompts to. Fixing
-      the length to a certain value allows for caching model compilation
-      across different prompts. By default prompts are padded to
-      match the longest one
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
 
-    * `:defn_options` - the options for to JIT compilation. Defaults
-      to `[]`
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  ## Examples
+
+      auth_token = System.fetch_env!("HF_TOKEN")
+
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
+
+      {:ok, clip} =
+        Bumblebee.load_model(
+          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "text_encoder"}
+        )
+
+      {:ok, unet} =
+        Bumblebee.load_model(
+          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "unet"},
+          params_filename: "diffusion_pytorch_model.bin"
+        )
+
+      {:ok, vae} =
+        Bumblebee.load_model(
+          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "vae"},
+          architecture: :decoder,
+          params_filename: "diffusion_pytorch_model.bin"
+        )
+
+      {:ok, scheduler} =
+        Bumblebee.load_scheduler(
+          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "scheduler"}
+        )
+
+      {:ok, featurizer} =
+        Bumblebee.load_featurizer(
+          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "feature_extractor"}
+        )
+
+      {:ok, safety_checker} =
+        Bumblebee.load_model(
+          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "safety_checker"}
+        )
+
+      serving =
+        Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, unet, vae, tokenizer, scheduler,
+          num_steps: 20,
+          num_images_per_prompt: 2,
+          safety_checker: safety_checker,
+          safety_checker_featurizer: featurizer,
+          compile: [batch_size: 1, sequence_length: 60],
+          defn_options: [compiler: EXLA]
+        )
+
+      prompt = "numbat in forest, detailed, digital art"
+      Nx.Serving.run(serving, prompt)
+      #=> %{
+      #=>   results: [
+      #=>     %{
+      #=>       image: #Nx.Tensor<
+      #=>         u8[512][512][3]
+      #=>         ...
+      #=>       >,
+      #=>       is_safe: true
+      #=>     },
+      #=>     %{
+      #=>       image: #Nx.Tensor<
+      #=>         u8[512][512][3]
+      #=>         ...
+      #=>       >,
+      #=>       is_safe: true
+      #=>     }
+      #=>   ]
+      #=> }
 
   """
   @spec text_to_image(
@@ -51,19 +138,14 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
           Bumblebee.model_info(),
           Bumblebee.Tokenizer.t(),
           Bumblebee.Scheduler.t(),
-          String.t() | list(String.t()),
           keyword()
-        ) ::
-          list(%{
-            :image => Nx.Tensor.t(),
-            optional(:is_safe) => boolean()
-          })
-  def text_to_image(encoder, vae, unet, tokenizer, scheduler, prompt, opts \\ []) do
+        ) :: Nx.Serving.t()
+  def text_to_image(encoder, unet, vae, tokenizer, scheduler, opts \\ []) do
     opts =
       Keyword.validate!(opts, [
         :safety_checker,
         :safety_checker_featurizer,
-        :length,
+        :compile,
         num_steps: 50,
         num_images_per_prompt: 1,
         guidance_scale: 7.5,
@@ -71,69 +153,200 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
         defn_options: []
       ])
 
-    prompts = List.wrap(prompt)
-    batch_size = length(prompts)
-
     safety_checker = opts[:safety_checker]
     safety_checker_featurizer = opts[:safety_checker_featurizer]
     num_steps = opts[:num_steps]
     num_images_per_prompt = opts[:num_images_per_prompt]
-    length = opts[:length]
+    compile = opts[:compile]
     defn_options = opts[:defn_options]
 
     if safety_checker != nil and safety_checker_featurizer == nil do
       raise ArgumentError, "got :safety_checker but no :safety_checker_featurizer was specified"
     end
 
+    safety_checker? = safety_checker != nil
+
+    batch_size = compile[:batch_size]
+    sequence_length = compile[:sequence_length]
+
+    if compile != nil and (batch_size == nil or sequence_length == nil) do
+      raise ArgumentError,
+            "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
+    end
+
     {_, encoder_predict} = Axon.build(encoder.model)
     {_, vae_predict} = Axon.build(vae.model)
     {_, unet_predict} = Axon.build(unet.model)
 
-    prompts = List.duplicate("", batch_size) ++ prompts
-    inputs = Bumblebee.apply_tokenizer(tokenizer, prompts, length: length)
+    scheduler_init = fn latents_shape ->
+      Bumblebee.scheduler_init(scheduler, num_steps, latents_shape)
+    end
 
-    latents_shape =
-      {batch_size * num_images_per_prompt, unet.spec.sample_size, unet.spec.sample_size,
-       unet.spec.in_channels}
-
-    scheduler_init = fn -> Bumblebee.scheduler_init(scheduler, num_steps, latents_shape) end
     scheduler_step = &Bumblebee.scheduler_step(scheduler, &1, &2, &3)
 
-    images =
-      Nx.Defn.jit(&text_to_image_impl/10, defn_options).(
+    images_fun =
+      &text_to_image_impl(
         encoder_predict,
-        encoder.params,
+        &1,
         unet_predict,
-        unet.params,
+        &2,
         vae_predict,
-        vae.params,
+        &3,
         scheduler_init,
         scheduler_step,
-        inputs,
-        opts ++ [latents_shape: latents_shape]
+        &4,
+        num_images_per_prompt: opts[:num_images_per_prompt],
+        latents_sample_size: unet.spec.sample_size,
+        latents_channels: unet.spec.in_channels,
+        seed: opts[:seed],
+        guidance_scale: opts[:guidance_scale]
       )
 
-    is_unsafe =
+    safety_checker_fun =
       if safety_checker do
-        inputs = Bumblebee.apply_featurizer(safety_checker_featurizer, images)
-        outputs = Axon.predict(safety_checker.model, safety_checker.params, inputs, defn_options)
-        outputs.is_unsafe
+        {_, predict_fun} = Axon.build(safety_checker.model)
+        predict_fun
       end
 
-    for idx <- 0..(batch_size * num_images_per_prompt - 1) do
-      image = images[idx]
+    # Note that all of these are copied when using serving as a process
+    init_args = [
+      {images_fun, safety_checker_fun},
+      encoder.params,
+      unet.params,
+      vae.params,
+      {safety_checker?, safety_checker[:spec], safety_checker[:params]},
+      safety_checker_featurizer,
+      {compile != nil, batch_size, sequence_length},
+      num_images_per_prompt,
+      defn_options
+    ]
 
-      if safety_checker do
-        if Nx.to_number(is_unsafe[idx]) == 1 do
-          image = Nx.tensor(0, type: Nx.type(image)) |> Nx.broadcast(image)
-          %{image: image, is_safe: false}
-        else
-          %{image: image, is_safe: true}
-        end
+    Nx.Serving.new(fn -> apply(&init/9, init_args) end, batch_size: batch_size)
+    |> Nx.Serving.client_preprocessing(&client_preprocessing(&1, tokenizer, sequence_length))
+    |> Nx.Serving.client_postprocessing(
+      &client_postprocessing(&1, &2, &3, num_images_per_prompt, safety_checker)
+    )
+  end
+
+  defp init(
+         {images_fun, safety_checker_fun},
+         encoder_params,
+         unet_params,
+         vae_params,
+         {safety_checker?, safety_checker_spec, safety_checker_params},
+         safety_checker_featurizer,
+         {compile?, batch_size, sequence_length},
+         num_images_per_prompt,
+         defn_options
+       ) do
+    images_fun =
+      if compile? do
+        text_inputs_template = %{
+          "input_ids" => Nx.template({batch_size, sequence_length}, :s64)
+        }
+
+        input_template = %{
+          "unconditional" => text_inputs_template,
+          "conditional" => text_inputs_template
+        }
+
+        template_args =
+          Shared.templates([encoder_params, unet_params, vae_params, input_template])
+
+        Nx.Defn.compile(images_fun, template_args, defn_options)
       else
-        %{image: image}
+        Nx.Defn.jit(images_fun, defn_options)
       end
+
+    safety_checker_fun =
+      safety_checker_fun &&
+        if compile? do
+          input_template = %{
+            "pixel_values" =>
+              Shared.input_template(safety_checker_spec, "pixel_values", [
+                batch_size * num_images_per_prompt
+              ])
+          }
+
+          template_args = [Nx.to_template(safety_checker_params), input_template]
+          Nx.Defn.compile(safety_checker_fun, template_args, defn_options)
+        else
+          Nx.Defn.jit(safety_checker_fun, defn_options)
+        end
+
+    fn inputs ->
+      inputs = Shared.maybe_pad(inputs, batch_size)
+
+      images = images_fun.(encoder_params, unet_params, vae_params, inputs)
+
+      output =
+        if safety_checker? do
+          inputs = Bumblebee.apply_featurizer(safety_checker_featurizer, images)
+          outputs = safety_checker_fun.(safety_checker_params, inputs)
+          %{images: images, is_unsafe: outputs.is_unsafe}
+        else
+          %{images: images}
+        end
+
+      Bumblebee.Utils.Nx.composite_unflatten_batch(output, inputs.size)
     end
+  end
+
+  defp client_preprocessing(input, tokenizer, sequence_length) do
+    {prompts, multi?} = Shared.validate_serving_input!(input, &is_binary/1, "a string")
+    num_prompts = length(prompts)
+
+    conditional =
+      Bumblebee.apply_tokenizer(tokenizer, prompts,
+        length: sequence_length,
+        return_token_type_ids: false,
+        return_attention_mask: false
+      )
+
+    unconditional =
+      Bumblebee.apply_tokenizer(tokenizer, List.duplicate("", num_prompts),
+        length: Nx.axis_size(conditional["input_ids"], 1),
+        return_attention_mask: false,
+        return_token_type_ids: false
+      )
+
+    inputs = %{"unconditional" => unconditional, "conditional" => conditional}
+
+    {Nx.Batch.concatenate([inputs]), {num_prompts, multi?}}
+  end
+
+  defp client_postprocessing(
+         outputs,
+         _metadata,
+         {num_prompts, multi?},
+         num_images_per_prompt,
+         safety_checker?
+       ) do
+    for idx <- 0..(num_prompts - 1) do
+      results =
+        for result_idx <- 0..(num_images_per_prompt - 1) do
+          image = outputs.images[idx][result_idx]
+
+          if safety_checker? do
+            if Nx.to_number(outputs.is_unsafe[idx][result_idx]) == 1 do
+              %{image: zeroed(image), is_safe: false}
+            else
+              %{image: image, is_safe: true}
+            end
+          else
+            %{image: image}
+          end
+        end
+
+      %{results: results}
+    end
+    |> Shared.normalize_output(multi?)
+  end
+
+  defp zeroed(tensor) do
+    0
+    |> Nx.tensor(type: Nx.type(tensor))
+    |> Nx.broadcast(Nx.shape(tensor))
   end
 
   defnp text_to_image_impl(
@@ -149,13 +362,18 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
           opts \\ []
         ) do
     num_images_per_prompt = opts[:num_images_per_prompt]
-    latents_shape = opts[:latents_shape]
+    latents_sample_size = opts[:latents_sample_size]
+    latents_in_channels = opts[:latents_channels]
     seed = opts[:seed]
     guidance_scale = opts[:guidance_scale]
 
+    inputs =
+      Bumblebee.Utils.Nx.composite_concatenate(inputs["unconditional"], inputs["conditional"])
+
     %{hidden_state: text_embeddings} = encoder_predict.(encoder_params, inputs)
 
-    {_, seq_length, hidden_size} = Nx.shape(text_embeddings)
+    {twice_batch_size, seq_length, hidden_size} = Nx.shape(text_embeddings)
+    batch_size = div(twice_batch_size, 2)
 
     text_embeddings =
       text_embeddings
@@ -163,7 +381,11 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
       |> Nx.tile([1, num_images_per_prompt, 1, 1])
       |> Nx.reshape({:auto, seq_length, hidden_size})
 
-    {scheduler_state, timesteps} = scheduler_init.()
+    latents_shape =
+      {batch_size * num_images_per_prompt, latents_sample_size, latents_sample_size,
+       latents_in_channels}
+
+    {scheduler_state, timesteps} = scheduler_init.(latents_shape)
 
     key = Nx.Random.key(seed)
     {latents, _key} = Nx.Random.normal(key, shape: latents_shape)

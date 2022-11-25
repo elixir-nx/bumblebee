@@ -166,8 +166,13 @@ defmodule Bumblebee.Text.MbartTest do
 
     inputs = Bumblebee.apply_tokenizer(tokenizer, english_phrase)
 
-    token_ids =
-      Bumblebee.Text.Generation.generate(model_info, inputs, min_length: 0, max_length: 6)
+    generate =
+      Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec,
+        min_length: 0,
+        max_length: 6
+      )
+
+    token_ids = generate.(model_info.params, inputs)
 
     assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["42 este răspunsul"]
   end

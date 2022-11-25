@@ -12,10 +12,12 @@ defmodule Bumblebee.Text.TokenClassificationTest do
 
       text = "I went with Jane Doe to Atlanta and we talked to John Smith about Microsoft"
 
-      assert [[jane, atlanta, john, microsoft]] =
-               Bumblebee.Text.TokenClassification.extract(model_info, tokenizer, text,
-                 aggregation: :same
-               )
+      serving =
+        Bumblebee.Text.TokenClassification.token_classification(model_info, tokenizer,
+          aggregation: :same
+        )
+
+      assert %{entities: [jane, atlanta, john, microsoft]} = Nx.Serving.run(serving, text)
 
       assert %{
                label: "PER",
@@ -54,15 +56,17 @@ defmodule Bumblebee.Text.TokenClassificationTest do
       assert {:ok, model_info} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
 
-      inputs = [
+      texts = [
         "I went with Jane Doe to Atlanta and we talked to John Smith about Microsoft",
         "John went to Philadelphia"
       ]
 
-      assert [_first, [john, philadelphia]] =
-               Bumblebee.Text.TokenClassification.extract(model_info, tokenizer, inputs,
-                 aggregation: :same
-               )
+      serving =
+        Bumblebee.Text.TokenClassification.token_classification(model_info, tokenizer,
+          aggregation: :same
+        )
+
+      assert [_first, %{entities: [john, philadelphia]}] = Nx.Serving.run(serving, texts)
 
       assert %{label: "PER", phrase: "John"} = john
       assert %{label: "LOC", phrase: "Philadelphia"} = philadelphia

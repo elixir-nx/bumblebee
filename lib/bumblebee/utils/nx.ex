@@ -42,6 +42,93 @@ defmodule Bumblebee.Utils.Nx do
   end
 
   @doc """
+  Concatenates corresponding tensors in matching containers.
+
+  ## Options
+
+    * `:axis` - the axis to concatenate along. Defaults to `0`
+
+  ## Examples
+
+      iex> left = %{x: Nx.tensor([[0, 0], [1, 1]]), y: Nx.tensor([0, 1])}
+      iex> right = %{x: Nx.tensor([[2, 2], [3, 3]]), y: Nx.tensor([2, 3])}
+      iex> result = Bumblebee.Utils.Nx.composite_concatenate(left, right)
+      iex> result.x
+      #Nx.Tensor<
+        s64[4][2]
+        [
+          [0, 0],
+          [1, 1],
+          [2, 2],
+          [3, 3]
+        ]
+      >
+      iex> result.y
+      #Nx.Tensor<
+        s64[4]
+        [0, 1, 2, 3]
+      >
+
+  """
+  deftransform composite_concatenate(left, right, opts \\ []) do
+    opts = Keyword.validate!(opts, axis: 0)
+
+    axis = opts[:axis]
+
+    right_tensors =
+      right
+      |> Nx.Defn.Composite.reduce([], &[&1 | &2])
+      |> Enum.reverse()
+
+    {result, []} =
+      Nx.Defn.Composite.traverse(left, right_tensors, fn left, [right | right_tensors] ->
+        {Nx.concatenate([left, right], axis: axis), right_tensors}
+      end)
+
+    result
+  end
+
+  @doc """
+  Reshapes the tensor to have a new leading axis of the given size.
+
+  ## Examples
+
+      iex> output = %{x: Nx.tensor([[0, 0], [1, 1]]), y: Nx.tensor([0, 1])}
+      iex> result = Bumblebee.Utils.Nx.composite_unflatten_batch(output, 2)
+      iex> result.x
+      #Nx.Tensor<
+        s64[2][1][2]
+        [
+          [
+            [0, 0]
+          ],
+          [
+            [1, 1]
+          ]
+        ]
+      >
+      iex> result.y
+      #Nx.Tensor<
+        s64[2][1]
+        [
+          [0],
+          [1]
+        ]
+      >
+  """
+  deftransform composite_unflatten_batch(container, batch_size) do
+    map(container, fn tensor ->
+      shape =
+        tensor
+        |> Nx.shape()
+        |> Tuple.insert_at(0, batch_size)
+        |> put_elem(1, :auto)
+
+      Nx.reshape(tensor, shape)
+    end)
+  end
+
+  @doc """
   A version of `Nx.take/3` with a leading batch dimension.
 
   Conceptually, this function zips `tensor` with `indices` and then

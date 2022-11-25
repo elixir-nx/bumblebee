@@ -3,8 +3,8 @@
 ```elixir
 Mix.install([
   {:bumblebee, path: Path.expand("..", __DIR__)},
-  {:nx, "~> 0.4.0"},
-  {:exla, "~> 0.4.0"},
+  {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
+  {:exla, github: "elixir-nx/nx", sparse: "exla", override: true},
   {:axon, "~> 0.3.0"},
   {:stb_image, "~> 0.5.0"},
   {:req, "~> 0.3.0"},
@@ -143,28 +143,27 @@ bertweet.spec.id_to_label[id]
 
 ## Named-entity recognition
 
-Bumblebee also brings a couple modules for performing end-to-end tasks. In this section we look at token classification, more specifically named-entity recognition (NER), where the objective is to identify and categorize entities in text. We will once again use a fine-tuned [BERT](https://huggingface.co/dslim/bert-base-NER) model.
+Bumblebee also brings end-to-end implementations of common machine-learning tasks. In this section we look at token classification, more specifically named-entity recognition (NER), where the objective is to identify and categorize entities in text. We will once again use a fine-tuned [BERT](https://huggingface.co/dslim/bert-base-NER) model.
+
+Bumblebee implements end-to-end tasks using `Nx.Serving`. With serving we can choose to either do a one-off run, or to start a supervised process that automatically batches multiple inference requests. This abstraction strikes the balance between quick experimentation and using the model in production.
 
 ```elixir
 {:ok, bert} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
 
-:ok
-```
+serving = Bumblebee.Text.token_classification(bert, tokenizer, aggregation: :same)
 
-```elixir
 text_input =
   Kino.Input.text("Text",
     default: "Rachel Green works at Ralph Lauren in New York City in the sitcom Friends"
   )
 ```
 
-Having loaded the model and the tokenizer, all we need is a single function call!
+In this case we will do the one-off run for the entered input:
 
 ```elixir
 text = Kino.Input.read(text_input)
-
-Bumblebee.Text.TokenClassification.extract(bert, tokenizer, text, aggregation: :same)
+Nx.Serving.run(serving, text)
 ```
 
 <!-- livebook:{"branch_parent_index":0} -->
@@ -173,26 +172,20 @@ Bumblebee.Text.TokenClassification.extract(bert, tokenizer, text, aggregation: :
 
 Generation is where things get even more exciting. In this section w will use the extremely popular [GPT-2](https://huggingface.co/gpt2) model to generate text continuation.
 
+Generation generally is an iterative process, where the model predicts the sentence token by token, adhering to some constraints. Again, we will make use of a higher-level API based on `Nx.Serving`.
+
 ```elixir
 {:ok, gpt2} = Bumblebee.load_model({:hf, "gpt2"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
 
-:ok
-```
+serving = Bumblebee.Text.generation(gpt2, tokenizer, max_length: 20)
 
-```elixir
 text_input = Kino.Input.text("Text", default: "Yesterday, I was reading a book and")
 ```
 
-Bumblebee comes with a high-level function for text generation. It will iteratively call the model to generate the result token by token, adhering to the given length constraints.
-
 ```elixir
 text = Kino.Input.read(text_input)
-
-inputs = Bumblebee.apply_tokenizer(tokenizer, text)
-token_ids = Bumblebee.Text.Generation.generate(gpt2, inputs, max_length: 20)
-
-Bumblebee.Tokenizer.decode(tokenizer, token_ids)
+Nx.Serving.run(serving, text)
 ```
 
 There is also [gpt2-medium](https://huggingface.co/gpt2-medium) and [gpt2-large](https://huggingface.co/gpt2-large) - heavier versions of the model with much more parameters.
