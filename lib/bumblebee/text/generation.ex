@@ -38,7 +38,7 @@ defmodule Bumblebee.Text.Generation do
             "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
     end
 
-    %{params: params, spec: spec} = model_info
+    %{params: params} = model_info
 
     generate_fun = build_generate(model_info.model, model_info.spec, opts)
 
@@ -47,10 +47,8 @@ defmodule Bumblebee.Text.Generation do
         generate_fun =
           if compile do
             input_template = %{
-              "input_ids" =>
-                Shared.input_template(spec, "input_ids", [batch_size, sequence_length]),
-              "attention_mask" =>
-                Shared.input_template(spec, "attention_mask", [batch_size, sequence_length])
+              "input_ids" => Nx.template({batch_size, sequence_length}, :s64),
+              "attention_mask" => Nx.template({batch_size, sequence_length}, :s64)
             }
 
             template_args = Shared.templates([params, input_template])
@@ -59,9 +57,10 @@ defmodule Bumblebee.Text.Generation do
             Nx.Defn.jit(generate_fun, defn_options)
           end
 
-        &Shared.with_optional_padding(&1, batch_size, fn inputs ->
+        fn inputs ->
+          inputs = Shared.maybe_pad(inputs, batch_size)
           generate_fun.(params, inputs)
-        end)
+        end
       end,
       batch_size: batch_size
     )

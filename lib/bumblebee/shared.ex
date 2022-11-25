@@ -200,30 +200,22 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
-  Wraps the given function to run with a fixed-size batch.
+  Pads a batch to the given size, if given.
 
-  The batch is padded to `batch_size` and the function result is then
-  sliced to match the initial batch.
+  When the batch exceeds `batch_size`, raises an error.
   """
-  @spec with_optional_padding(Nx.Batch.t(), non_neg_integer() | nil, operation) :: operation
-        when operation: (Nx.Batch.t() -> Nx.t() | Nx.Container.t())
-  def with_optional_padding(batch, batch_size, fun)
+  @spec maybe_pad(Nx.Batch.t(), non_neg_integer() | nil) :: Nx.Batch.t()
+  def maybe_pad(batch, batch_size)
 
-  def with_optional_padding(batch, nil, fun), do: fun.(batch)
+  def maybe_pad(batch, nil), do: batch
 
-  def with_optional_padding(%{size: size}, batch_size, _fun) when size > batch_size do
+  def maybe_pad(%{size: size}, batch_size) when size > batch_size do
     raise ArgumentError,
           "input batch size (#{size}) exceeds the maximum configured batch size (#{batch_size})"
   end
 
-  def with_optional_padding(%{size: size} = batch, batch_size, fun) do
-    batch = Nx.Batch.pad(batch, batch_size - size)
-
-    outputs = fun.(batch)
-
-    Bumblebee.Utils.Nx.map(outputs, fn tensor ->
-      Nx.slice_along_axis(tensor, 0, size, axis: 0)
-    end)
+  def maybe_pad(%{size: size} = batch, batch_size) do
+    Nx.Batch.pad(batch, batch_size - size)
   end
 
   @doc """

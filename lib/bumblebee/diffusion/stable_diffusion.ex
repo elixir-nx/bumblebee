@@ -211,7 +211,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     # Note that all of these are copied when using serving as a process
     init_args = [
       {images_fun, safety_checker_fun},
-      {encoder.params, encoder.spec},
+      encoder.params,
       unet.params,
       vae.params,
       {safety_checker?, safety_checker[:spec], safety_checker[:params]},
@@ -230,7 +230,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
   defp init(
          {images_fun, safety_checker_fun},
-         {encoder_params, encoder_spec},
+         encoder_params,
          unet_params,
          vae_params,
          {safety_checker?, safety_checker_spec, safety_checker_params},
@@ -242,11 +242,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     images_fun =
       if compile? do
         text_inputs_template = %{
-          "input_ids" =>
-            Shared.input_template(encoder_spec, "input_ids", [
-              batch_size,
-              sequence_length
-            ])
+          "input_ids" => Nx.template({batch_size, sequence_length}, :s64)
         }
 
         input_template = %{
@@ -278,7 +274,9 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
           Nx.Defn.jit(safety_checker_fun, defn_options)
         end
 
-    &Shared.with_optional_padding(&1, batch_size, fn inputs ->
+    fn inputs ->
+      inputs = Shared.maybe_pad(inputs, batch_size)
+
       images = images_fun.(encoder_params, unet_params, vae_params, inputs)
 
       output =
@@ -291,7 +289,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
         end
 
       Bumblebee.Utils.Nx.composite_unflatten_batch(output, inputs.size)
-    end)
+    end
   end
 
   defp client_preprocessing(input, tokenizer, sequence_length) do
