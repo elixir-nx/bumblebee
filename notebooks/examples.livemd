@@ -87,33 +87,15 @@ Now time for some text processing. Specifically, we want to fill in the missing 
 {:ok, bert} = Bumblebee.load_model({:hf, "bert-base-uncased"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
 
-:ok
-```
+serving = Bumblebee.Text.fill_mask(bert, tokenizer)
 
-For the masked word we need to use:
-
-```elixir
-mask_token_id = Bumblebee.Tokenizer.special_token_id(tokenizer, :mask)
-Bumblebee.Tokenizer.id_to_token(tokenizer, mask_token_id)
-```
-
-```elixir
 text_input = Kino.Input.text("Sentence with mask", default: "The capital of [MASK] is Paris.")
 ```
 
 ```elixir
 text = Kino.Input.read(text_input)
 
-inputs = Bumblebee.apply_tokenizer(tokenizer, text)
-outputs = Axon.predict(bert.model, bert.params, inputs)
-
-# Find the location of the mask token in the input sequence
-mask_token_id = Bumblebee.Tokenizer.special_token_id(tokenizer, :mask)
-mask_idx = inputs["input_ids"] |> Nx.equal(mask_token_id) |> Nx.argmax()
-
-# Get the most probable token for that location
-id = outputs.logits[[0, mask_idx]] |> Nx.argmax() |> Nx.to_number()
-Bumblebee.Tokenizer.id_to_token(tokenizer, id)
+Nx.Serving.run(serving, text)
 ```
 
 Again, you can try other models, such as [**albert-base-v2**](https://huggingface.co/albert-base-v2) or [**roberta-base**](https://huggingface.co/roberta-base).
