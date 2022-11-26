@@ -29,7 +29,7 @@ defmodule Bumblebee.Vision do
 
     * `:top_k` - the number of top labels to include in the output. If
       the configured value is higher than the number of labels, all
-      labels are returned. Defaults to`5`
+      labels are returned. Defaults to `5`
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
