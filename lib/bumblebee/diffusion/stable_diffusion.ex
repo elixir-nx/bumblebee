@@ -184,7 +184,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     scheduler_step = &Bumblebee.scheduler_step(scheduler, &1, &2, &3)
 
-    images_fun =
+    image_fun =
       &text_to_image_impl(
         encoder_predict,
         &1,
@@ -210,7 +210,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     # Note that all of these are copied when using serving as a process
     init_args = [
-      {images_fun, safety_checker_fun},
+      {image_fun, safety_checker_fun},
       encoder.params,
       unet.params,
       vae.params,
@@ -227,7 +227,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   end
 
   defp init(
-         {images_fun, safety_checker_fun},
+         {image_fun, safety_checker_fun},
          encoder_params,
          unet_params,
          vae_params,
@@ -237,8 +237,8 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
          num_images_per_prompt,
          defn_options
        ) do
-    images_fun =
-      Shared.compile_or_jit(images_fun, defn_options, compile?, fn ->
+    image_fun =
+      Shared.compile_or_jit(image_fun, defn_options, compile?, fn ->
         text_inputs = %{
           "input_ids" => Nx.template({batch_size, sequence_length}, :s64)
         }
@@ -250,7 +250,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     safety_checker_fun =
       safety_checker_fun &&
-        Shared.compile_or_jit(images_fun, defn_options, compile?, fn ->
+        Shared.compile_or_jit(safety_checker_fun, defn_options, compile?, fn ->
           inputs = %{
             "pixel_values" =>
               Shared.input_template(safety_checker_spec, "pixel_values", [
@@ -258,21 +258,21 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
               ])
           }
 
-          [Nx.to_template(safety_checker_params), inputs]
+          [safety_checker_params, inputs]
         end)
 
     fn inputs ->
       inputs = Shared.maybe_pad(inputs, batch_size)
 
-      images = images_fun.(encoder_params, unet_params, vae_params, inputs)
+      image = image_fun.(encoder_params, unet_params, vae_params, inputs)
 
       output =
         if safety_checker? do
-          inputs = Bumblebee.apply_featurizer(safety_checker_featurizer, images)
+          inputs = Bumblebee.apply_featurizer(safety_checker_featurizer, image)
           outputs = safety_checker_fun.(safety_checker_params, inputs)
-          %{images: images, is_unsafe: outputs.is_unsafe}
+          %{image: image, is_unsafe: outputs.is_unsafe}
         else
-          %{images: images}
+          %{image: image}
         end
 
       Bumblebee.Utils.Nx.composite_unflatten_batch(output, inputs.size)
@@ -391,9 +391,9 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     latents = latents * (1 / 0.18215)
 
-    %{sample: images} = vae_predict.(vae_params, latents)
+    %{sample: image} = vae_predict.(vae_params, latents)
 
-    NxImage.from_continuous(images, -1, 1)
+    NxImage.from_continuous(image, -1, 1)
   end
 
   defnp split_in_half(tensor) do
