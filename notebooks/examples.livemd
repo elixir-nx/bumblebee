@@ -8,7 +8,7 @@ Mix.install([
   {:axon, "~> 0.3.0"},
   {:stb_image, "~> 0.5.0"},
   {:req, "~> 0.3.0"},
-  {:kino, "~> 0.7.0"}
+  {:kino, github: "livebook-dev/kino", override: true}
 ])
 
 Nx.global_default_backend(EXLA.Backend)
@@ -31,25 +31,35 @@ Let's start with image classification. First, we load a pre-trained [ResNet-50](
 :ok
 ```
 
-Next, we need an image to classify.
+Next, we use the high-level API to build an end-to-end task definition on top of the model we just loaded. We will also need an image to work with, so let's show an image input.
 
 ```elixir
-url_input =
-  Kino.Input.url("Image URL",
-    default:
-      "https://images.unsplash.com/photo-1462888210965-cdf193fb74de?ixlib=rb-1.2.1&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=1074&q=80"
-  )
+serving = Bumblebee.Vision.image_classification(resnet, featurizer)
+
+image_input = Kino.Input.image("Image", size: {224, 224})
 ```
+
+Bumblebee implements end-to-end tasks using `Nx.Serving`. With serving we can choose to either do a one-off run, or to start a supervised process that automatically batches multiple inference requests. Thanks to this abstraction we can do quick experimentation and then plug the task into a production app with minimal effort.
+
+In this case we will do the one-off run for the selected image:
 
 ```elixir
-url = Kino.Input.read(url_input)
+image = Kino.Input.read(image_input)
 
-image = Req.get!(url).body |> StbImage.read_binary!()
+# Build a tensor from the raw pixel data
+image =
+  image.data
+  |> Nx.from_binary(:u8)
+  |> Nx.reshape({image.height, image.width, 3})
 
-image |> StbImage.to_binary(:jpg) |> Kino.Image.new(:jpeg)
+Nx.Serving.run(serving, image)
 ```
 
-With both the model and image at hand, we are ready to do the classification! We pass the image through our featurizer to get normalized model inputs, then we run the model and extract the most probable label.
+### Manual inference
+
+<!-- livebook:{"break_markdown":true} -->
+
+Note that we are dealing with regular `Axon` models and the high-level API is just a convenience. If you need full control over the inference flow, you can do it manually. In this case, we would pass the image through the featurizer to get normalized model inputs, then we would run the model and finally extract the most probable label.
 
 ```elixir
 inputs = Bumblebee.apply_featurizer(featurizer, image)
@@ -120,32 +130,23 @@ We will use the [BERTweet](https://huggingface.co/finiteautomata/bertweet-base-s
 {:ok, bertweet} = Bumblebee.load_model({:hf, "finiteautomata/bertweet-base-sentiment-analysis"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "vinai/bertweet-base"})
 
-:ok
+serving = Bumblebee.Text.text_classification(bertweet, tokenizer)
+
+text_input = Kino.Input.text("Text", default: "This cat is so cute.")
 ```
 
 *Note: this time we need to load a matching tokenizer from a different repository.*
 
 ```elixir
-text_input = Kino.Input.text("Text", default: "I love my friends.")
-```
-
-```elixir
 text = Kino.Input.read(text_input)
-
-inputs = Bumblebee.apply_tokenizer(tokenizer, text)
-outputs = Axon.predict(bertweet.model, bertweet.params, inputs)
-
-id = outputs.logits |> Nx.argmax() |> Nx.to_number()
-bertweet.spec.id_to_label[id]
+Nx.Serving.run(serving, text)
 ```
 
 <!-- livebook:{"branch_parent_index":0} -->
 
 ## Named-entity recognition
 
-Bumblebee also brings end-to-end implementations of common machine-learning tasks. In this section we look at token classification, more specifically named-entity recognition (NER), where the objective is to identify and categorize entities in text. We will once again use a fine-tuned [BERT](https://huggingface.co/dslim/bert-base-NER) model.
-
-Bumblebee implements end-to-end tasks using `Nx.Serving`. With serving we can choose to either do a one-off run, or to start a supervised process that automatically batches multiple inference requests. This abstraction strikes the balance between quick experimentation and using the model in production.
+In this section we look at token classification, more specifically named-entity recognition (NER), where the objective is to identify and categorize entities in text. We will once again use a fine-tuned [BERT](https://huggingface.co/dslim/bert-base-NER) model.
 
 ```elixir
 {:ok, bert} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
@@ -158,8 +159,6 @@ text_input =
     default: "Rachel Green works at Ralph Lauren in New York City in the sitcom Friends"
   )
 ```
-
-In this case we will do the one-off run for the entered input:
 
 ```elixir
 text = Kino.Input.read(text_input)

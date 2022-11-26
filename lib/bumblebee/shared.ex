@@ -199,6 +199,27 @@ defmodule Bumblebee.Shared do
     end
   end
 
+  def validate_architecture!(spec, architecture) do
+    unless spec.architecture == architecture do
+      raise ArgumentError,
+            "expected a model with architecture #{inspect(architecture)}, got #{inspect(spec.architecture)}"
+    end
+  end
+
+  @doc """
+  Checks if the given term is an image.
+  """
+  @spec image?(term()) :: boolean()
+  def image?(image)
+
+  def image?(image) when is_struct(image, StbImage), do: true
+
+  def image?(%Nx.Tensor{} = tensor) do
+    Nx.rank(tensor) == 3
+  end
+
+  def image?(_other), do: false
+
   @doc """
   Pads a batch to the given size, if given.
 
@@ -216,6 +237,29 @@ defmodule Bumblebee.Shared do
 
   def maybe_pad(%{size: size} = batch, batch_size) do
     Nx.Batch.pad(batch, batch_size - size)
+  end
+
+  @doc """
+  Compiles or wraps the function with just-in-time compilation.
+
+  When `compile?` is `true`, runs `template_fun` to get template args
+  and calls compiles the function upfront. The template function may
+  return a mix of tensors and templates, all arguments are automatically
+  converter to templates.
+  """
+  @spec compile_or_jit(
+          function(),
+          keyword(),
+          boolean(),
+          (() -> list(Nx.Tensor.t()))
+        ) :: function()
+  def compile_or_jit(fun, defn_options, compile?, template_fun) do
+    if compile? do
+      template_args = template_fun.() |> templates()
+      Nx.Defn.compile(fun, template_args, defn_options)
+    else
+      Nx.Defn.jit(fun, defn_options)
+    end
   end
 
   @doc """

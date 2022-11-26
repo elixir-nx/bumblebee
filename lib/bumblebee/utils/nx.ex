@@ -42,6 +42,51 @@ defmodule Bumblebee.Utils.Nx do
   end
 
   @doc """
+  Splits tensor or container along the first axis.
+
+  Note: this function traverses the container N times, where N is the
+  batch size. Don't use it for containers with a lot of tensors.
+
+  ## Examples
+
+      iex> outputs = %{x: Nx.tensor([[0, 0], [1, 1]]), y: Nx.tensor([0, 1])}
+      iex> [first, second] = Bumblebee.Utils.Nx.batch_to_list(outputs)
+      iex> first.x
+      #Nx.Tensor<
+        s64[2]
+        [0, 0]
+      >
+      iex> second.x
+      #Nx.Tensor<
+        s64[2]
+        [1, 1]
+      >
+      iex> first.y
+      #Nx.Tensor<
+        s64
+        0
+      >
+      iex> second.y
+      #Nx.Tensor<
+        s64
+        1
+      >
+
+  """
+  @spec batch_to_list(Nx.Tensor.t() | Nx.Container.t()) :: list(Nx.Tensor.t() | Nx.Container.t())
+  def batch_to_list(tensor_or_container) do
+    batch_size =
+      Nx.Defn.Composite.reduce(tensor_or_container, nil, fn
+        tensor, nil -> Nx.axis_size(tensor, 0)
+        tensor, size -> ^size = Nx.axis_size(tensor, 0)
+      end)
+
+    for idx <- 0..(batch_size - 1)//1 do
+      Nx.Defn.Composite.traverse(tensor_or_container, fn tensor -> tensor[idx] end)
+    end
+  end
+
+  @doc """
   Concatenates corresponding tensors in matching containers.
 
   ## Options
@@ -227,24 +272,6 @@ defmodule Bumblebee.Utils.Nx do
   end
 
   @doc """
-  A variant of `Nx.to_batched/2` which also works on maps.
-  """
-  def to_batched(tensor_or_container, batch_size) do
-    case tensor_or_container do
-      %Nx.Tensor{} = tensor ->
-        Nx.to_batched(tensor, batch_size)
-
-      container ->
-        container
-        |> Enum.map(fn {key, batch} ->
-          list_of_tensors = batch |> Nx.to_batched(1) |> Enum.to_list()
-          Enum.map(list_of_tensors, fn tensor -> {key, tensor} end)
-        end)
-        |> Enum.zip_with(&Map.new/1)
-    end
-  end
-
-  @doc """
   Computes cosine similarity between the given tensors.
   """
   defn cosine_similarity(x, y) do
@@ -261,5 +288,29 @@ defmodule Bumblebee.Utils.Nx do
       |> Nx.sqrt()
 
     tensor / norm
+  end
+
+  @doc """
+  Returns top-k largest values and their indices.
+
+  ## Options
+
+    * `:axis` - the axis to compare elements along. Defaults to `0`
+
+    * `:k` - the number of largest values to return. Defaults to `1`
+
+  """
+  defn top_k(tensor, opts \\ []) do
+    opts = keyword!(opts, axis: 0, k: 1)
+    k = opts[:k]
+    axis = opts[:axis]
+
+    indices =
+      tensor
+      |> Nx.argsort(axis: axis, direction: :desc)
+      |> Nx.slice_along_axis(0, k, axis: axis)
+
+    values = Nx.take_along_axis(tensor, indices, axis: axis)
+    {values, indices}
   end
 end

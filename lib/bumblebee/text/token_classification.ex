@@ -4,11 +4,9 @@ defmodule Bumblebee.Text.TokenClassification do
   alias Bumblebee.Utils
   alias Bumblebee.Shared
 
-  def token_classification(model_info, tokenizer, opts \\ [])
-
-  def token_classification(model_info, tokenizer, opts)
-      when model_info.spec.architecture == :for_token_classification do
+  def token_classification(model_info, tokenizer, opts \\ []) do
     %{model: model, params: params, spec: spec} = model_info
+    Shared.validate_architecture!(spec, :for_token_classification)
 
     opts =
       Keyword.validate!(opts, [
@@ -31,7 +29,7 @@ defmodule Bumblebee.Text.TokenClassification do
             "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
     end
 
-    {_init_fun, predict_fun} = Axon.build(model, defn_options)
+    {_init_fun, predict_fun} = Axon.build(model)
 
     scores_fun = fn params, input ->
       outputs = predict_fun.(params, input)
@@ -41,17 +39,14 @@ defmodule Bumblebee.Text.TokenClassification do
     Nx.Serving.new(
       fn ->
         scores_fun =
-          if compile do
-            input_template = %{
+          Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
+            inputs = %{
               "input_ids" => Nx.template({batch_size, sequence_length}, :s64),
               "attention_mask" => Nx.template({batch_size, sequence_length}, :s64)
             }
 
-            template_args = Shared.templates([params, input_template])
-            Nx.Defn.compile(scores_fun, template_args, defn_options)
-          else
-            Nx.Defn.jit(scores_fun, defn_options)
-          end
+            [params, inputs]
+          end)
 
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
@@ -75,7 +70,7 @@ defmodule Bumblebee.Text.TokenClassification do
       {Nx.Batch.concatenate([inputs]), {texts, all_inputs, multi?}}
     end)
     |> Nx.Serving.client_postprocessing(fn scores, _metadata, {texts, inputs, multi?} ->
-      [texts, Utils.Nx.to_batched(inputs, 1), Utils.Nx.to_batched(scores, 1)]
+      [texts, Utils.Nx.batch_to_list(inputs), Utils.Nx.batch_to_list(scores)]
       |> Enum.zip_with(fn [text, inputs, scores] ->
         entities =
           scores
@@ -89,13 +84,8 @@ defmodule Bumblebee.Text.TokenClassification do
     end)
   end
 
-  def token_classification(model_info, _tokenizer, _opts) do
-    arch = model_info.spec.architecture
-    raise ArgumentError, "expected a model for token classification, got #{inspect(arch)}"
-  end
-
   defp gather_raw_entities(scores, tokenizer, text, inputs) do
-    {1, sequence_length, _} = Nx.shape(scores)
+    {sequence_length, _} = Nx.shape(scores)
     flat_special_tokens_mask = Nx.to_flat_list(inputs["special_tokens_mask"])
     flat_input_ids = Nx.to_flat_list(inputs["input_ids"])
     flat_start_offsets = Nx.to_flat_list(inputs["start_offsets"])
@@ -116,7 +106,7 @@ defmodule Bumblebee.Text.TokenClassification do
       token = Bumblebee.Tokenizer.id_to_token(tokenizer, token_id)
       token_ref = String.slice(text, start_idx, end_idx - start_idx)
 
-      token_scores = scores[[0, token_idx]]
+      token_scores = scores[token_idx]
 
       %{
         token: token,

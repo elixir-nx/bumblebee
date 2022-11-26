@@ -82,8 +82,11 @@ defmodule Bumblebee.Text do
       #=>}
 
   """
-  @spec token_classification(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) ::
-          Nx.Serving.t()
+  @spec token_classification(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          keyword()
+        ) :: Nx.Serving.t()
   defdelegate token_classification(model_info, tokenizer, opts \\ []),
     to: Bumblebee.Text.TokenClassification
 
@@ -142,4 +145,62 @@ defmodule Bumblebee.Text do
   """
   @spec generation(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
   defdelegate generation(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.Generation
+
+  @type text_classification_input :: String.t()
+  @type text_classification_output :: %{predictions: list(text_classification_prediction())}
+  @type text_classification_prediction :: %{score: number(), label: String.t()}
+
+  @doc """
+  Builds serving for text classification.
+
+  The serving accepts `t:text_classification_input/0` and returns
+  `t:text_classification_output/0`. A list of inputs is also supported.
+
+  ## Options
+
+    * `:top_k` - the number of top labels to include in the output. If
+      the configured value is higher than the number of labels, all
+      labels are returned. Defaults to `5`
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  ## Examples
+
+      {:ok, bertweet} = Bumblebee.load_model({:hf, "finiteautomata/bertweet-base-sentiment-analysis"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "vinai/bertweet-base"})
+
+      serving = Bumblebee.Text.text_classification(bertweet, tokenizer)
+
+      text = "Cats are cute."
+      Nx.Serving.run(serving, text)
+      #=> %{
+      #=>   predictions: [
+      #=>     %{label: "POS", score: 0.9876555800437927},
+      #=>     %{label: "NEU", score: 0.010068908333778381},
+      #=>     %{label: "NEG", score: 0.002275536535307765}
+      #=>   ]
+      #=> }
+
+  """
+  @spec text_classification(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate text_classification(model_info, tokenizer, opts \\ []),
+    to: Bumblebee.Text.TextClassification
 end
