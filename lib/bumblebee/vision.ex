@@ -27,7 +27,7 @@ defmodule Bumblebee.Vision do
 
   ## Options
 
-    * `:top_k` - the number of top labels to include in the output. If
+    * `:top_k` - the number of top predictions to include in the output. If
       the configured value is higher than the number of labels, all
       labels are returned. Defaults to `5`
 

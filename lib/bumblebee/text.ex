@@ -158,7 +158,7 @@ defmodule Bumblebee.Text do
 
   ## Options
 
-    * `:top_k` - the number of top labels to include in the output. If
+    * `:top_k` - the number of top predictions to include in the output. If
       the configured value is higher than the number of labels, all
       labels are returned. Defaults to `5`
 
@@ -203,4 +203,63 @@ defmodule Bumblebee.Text do
         ) :: Nx.Serving.t()
   defdelegate text_classification(model_info, tokenizer, opts \\ []),
     to: Bumblebee.Text.TextClassification
+
+  @type fill_mask_input :: String.t()
+  @type fill_mask_output :: %{predictions: list(fill_mask_prediction())}
+  @type fill_mask_prediction :: %{score: number(), token: String.t()}
+
+  @doc """
+  Builds serving for the fill-mask task.
+
+  The serving accepts `t:fill_mask_input/0` and returns `t:fill_mask_output/0`.
+  A list of inputs is also supported.
+
+  In the fill-mask task, the objective is to predict a masked word in
+  the text. The serving expects the input to have exactly on such word,
+  denoted as `[MASK]`.
+
+  ## Options
+
+    * `:top_k` - the number of top predictions to include in the output.
+      If the configured value is higher than the number of labels, all
+      labels are returned. Defaults to `5`
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  ## Examples
+
+      {:ok, bert} = Bumblebee.load_model({:hf, "bert-base-uncased"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+
+      serving = Bumblebee.Text.fill_mask(bert, tokenizer)
+
+      text = "The capital of [MASK] is Paris."
+      Nx.Serving.run(serving, text)
+      #=> %{
+      #=>   predictions: [
+      #=>     %{score: 0.9279842972755432, token: "france"},
+      #=>     %{score: 0.008412551134824753, token: "brittany"},
+      #=>     %{score: 0.007433671969920397, token: "algeria"},
+      #=>     %{score: 0.004957548808306456, token: "department"},
+      #=>     %{score: 0.004369721747934818, token: "reunion"}
+      #=>   ]
+      #=> }
+
+  """
+  @spec fill_mask(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
+  defdelegate fill_mask(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.FillMask
 end
