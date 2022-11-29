@@ -6,7 +6,12 @@ defmodule Bumblebee.Vision.ImageClassification do
 
   def image_classification(model_info, featurizer, opts \\ []) do
     %{model: model, params: params, spec: spec} = model_info
-    Shared.validate_architecture!(spec, :for_image_classification)
+
+    Shared.validate_architecture!(spec, [
+      :for_image_classification,
+      :for_image_classification_with_teacher
+    ])
+
     opts = Keyword.validate!(opts, [:compile, top_k: 5, defn_options: []])
 
     top_k = opts[:top_k]

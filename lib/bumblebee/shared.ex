@@ -199,6 +199,19 @@ defmodule Bumblebee.Shared do
     end
   end
 
+  @doc """
+  Asserts that the model architecture matches one of the expected
+  architectures.
+  """
+  def validate_architecture!(spec, architecture)
+
+  def validate_architecture!(spec, architectures) when is_list(architectures) do
+    unless spec.architecture in architectures do
+      raise ArgumentError,
+            "expected a model architecture to be either of #{inspect(architectures)}, got #{inspect(spec.architecture)}"
+    end
+  end
+
   def validate_architecture!(spec, architecture) do
     unless spec.architecture == architecture do
       raise ArgumentError,
