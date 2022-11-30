@@ -207,8 +207,8 @@ defmodule Bumblebee.Vision.Deit do
       outputs.hidden_state
       |> Axon.nx(fn x ->
         x = x[[0..-1//1, 1..-2//1]]
-        {batch_size, seq_length, channels} = Nx.shape(x)
-        height = width = seq_length |> :math.sqrt() |> floor()
+        {batch_size, sequence_length, channels} = Nx.shape(x)
+        height = width = sequence_length |> :math.sqrt() |> floor()
         Nx.reshape(x, {batch_size, height, width, channels})
       end)
       # Upsample to the original spatial resolution

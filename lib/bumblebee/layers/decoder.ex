@@ -80,9 +80,9 @@ defmodule Bumblebee.Layers.Decoder do
     %{blocks: blocks, offset: offset, attention_mask: attention_mask}
   end
 
-  defp attention_cache(batch_size, seq_length, hidden_size, num_heads) do
+  defp attention_cache(batch_size, sequence_length, hidden_size, num_heads) do
     head_size = div(hidden_size, num_heads)
-    shape = {batch_size, seq_length, num_heads, head_size}
+    shape = {batch_size, sequence_length, num_heads, head_size}
     zeros = Nx.broadcast(0.0, shape)
     %{key: zeros, value: zeros}
   end
@@ -208,8 +208,8 @@ defmodule Bumblebee.Layers.Decoder do
   def update_cache_offset(cache, input_embeddings) do
     Axon.layer(
       fn cache, input_embeddings, _ ->
-        seq_length = Nx.axis_size(input_embeddings, 1)
-        update_in(cache.offset, &Nx.add(&1, seq_length))
+        sequence_length = Nx.axis_size(input_embeddings, 1)
+        update_in(cache.offset, &Nx.add(&1, sequence_length))
       end,
       [cache, input_embeddings]
     )
@@ -227,11 +227,11 @@ defmodule Bumblebee.Layers.Decoder do
   def apply_causal_mask(attention_mask, query, offset) do
     Axon.layer(
       fn attention_mask, query, offset, _opts ->
-        seq_length = Nx.axis_size(attention_mask, -1)
+        sequence_length = Nx.axis_size(attention_mask, -1)
 
         # We generate a full causal mask, then slice it in case of
         # iterative decoding
-        causal_mask = build_causal_mask(Nx.broadcast(1, {1, seq_length}))
+        causal_mask = build_causal_mask(Nx.broadcast(1, {1, sequence_length}))
 
         causal_mask =
           case offset do

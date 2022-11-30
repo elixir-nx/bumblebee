@@ -35,7 +35,7 @@ defmodule Bumblebee.Text.FillMask do
         |> Nx.equal(mask_token_id)
         |> Nx.argmax(axis: 1)
 
-      {batch_size, _seq_length, num_tokens} = Nx.shape(scores)
+      {batch_size, _sequence_length, num_tokens} = Nx.shape(scores)
 
       mask_idx =
         mask_idx

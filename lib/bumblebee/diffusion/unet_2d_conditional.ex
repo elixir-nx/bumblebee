@@ -107,7 +107,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       The timestep used to parameterize model behaviour in a multi-step
       process, such as diffusion.
 
-    * `"encoder_hidden_state"` - `{batch_size, seq_length, hidden_size}`
+    * `"encoder_hidden_state"` - `{batch_size, sequence_length, hidden_size}`
 
       The conditional state (context) to use with cross-attention.
 

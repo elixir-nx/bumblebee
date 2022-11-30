@@ -101,17 +101,17 @@ defmodule Bumblebee.Text.Gpt2 do
 
   ## Inputs
 
-    * `"input_ids"` - `{batch_size, seq_length}`
+    * `"input_ids"` - `{batch_size, sequence_length}`
 
       Indices of input sequence tokens in the vocabulary.
 
-    * `"attention_mask"` - `{batch_size, seq_length}`
+    * `"attention_mask"` - `{batch_size, sequence_length}`
 
       Mask indicating which tokens to attend to. This is used to ignore
       padding tokens, which are added when processing a batch of sequences
       with different length.
 
-    * `"position_ids"` - `{batch_size, seq_length}`
+    * `"position_ids"` - `{batch_size, sequence_length}`
 
       Indices of positions of each input sequence tokens in the position
       embeddings.
@@ -121,21 +121,21 @@ defmodule Bumblebee.Text.Gpt2 do
       Mask to nullify selected heads of the self-attention blocks in
       the encoder.
 
-    * `"input_embeddings"` - `{batch_size, seq_length, hidden_size}`
+    * `"input_embeddings"` - `{batch_size, sequence_length, hidden_size}`
 
       Embedded representation of `"input_ids"`, which can be specified
       for more control over how `"input_ids"` are embedded than the
       model's internal embedding lookup. If `"input_embeddings"` are present,
       then `"input_ids"` will be ignored.
 
-    * `"encoder_hidden_state"` - `{batch_size, encoder_seq_length, hidden_size}`
+    * `"encoder_hidden_state"` - `{batch_size, encoder_sequence_length, hidden_size}`
 
       Last hidden state output from the encoder. This hidden state is
       used in cross-attention blocks in the decoder. If specified, the
       model will skip the encoding process and use this value directly
       for cross-attentions in the decoder.
 
-    * `"encoder_attention_mask"` - `{batch_size, encoder_seq_length}`
+    * `"encoder_attention_mask"` - `{batch_size, encoder_sequence_length}`
 
       Mask indicating which tokens to attend to. This is used to ignore
       padding tokens, which are added when processing a batch of sequences

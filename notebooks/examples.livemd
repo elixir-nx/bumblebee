@@ -159,7 +159,7 @@ Generation generally is an iterative process, where the model predicts the sente
 {:ok, gpt2} = Bumblebee.load_model({:hf, "gpt2"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
 
-serving = Bumblebee.Text.generation(gpt2, tokenizer, max_length: 20)
+serving = Bumblebee.Text.generation(gpt2, tokenizer, max_new_tokens: 10)
 
 text_input = Kino.Input.text("Text", default: "Yesterday, I was reading a book and")
 ```

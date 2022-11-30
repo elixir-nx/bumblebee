@@ -351,14 +351,14 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     %{hidden_state: text_embeddings} = encoder_predict.(encoder_params, inputs)
 
-    {twice_batch_size, seq_length, hidden_size} = Nx.shape(text_embeddings)
+    {twice_batch_size, sequence_length, hidden_size} = Nx.shape(text_embeddings)
     batch_size = div(twice_batch_size, 2)
 
     text_embeddings =
       text_embeddings
       |> Nx.new_axis(1)
       |> Nx.tile([1, num_images_per_prompt, 1, 1])
-      |> Nx.reshape({:auto, seq_length, hidden_size})
+      |> Nx.reshape({:auto, sequence_length, hidden_size})
 
     latents_shape =
       {batch_size * num_images_per_prompt, latents_sample_size, latents_sample_size,

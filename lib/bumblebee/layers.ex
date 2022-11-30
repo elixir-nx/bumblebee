@@ -45,7 +45,7 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Expands an attention mask of shape `{batch_size, seq_length}` to
+  Expands an attention mask of shape `{batch_size, sequence_length}` to
   a full mask.
   """
   def expand_attention_mask(attention_mask) do
@@ -360,9 +360,14 @@ defmodule Bumblebee.Layers do
         fn embeddings, patch_mask, mask_tokens, _opts ->
           hidden_size = Nx.axis_size(embeddings, 2)
           batch_size = Nx.axis_size(embeddings, 0)
-          seq_len = Nx.axis_size(embeddings, 1)
-          mask_tokens = Nx.broadcast(mask_tokens, {batch_size, seq_len, hidden_size})
-          mask = patch_mask |> Nx.new_axis(-1) |> Nx.broadcast({batch_size, seq_len, hidden_size})
+          sequence_length = Nx.axis_size(embeddings, 1)
+          mask_tokens = Nx.broadcast(mask_tokens, {batch_size, sequence_length, hidden_size})
+
+          mask =
+            patch_mask
+            |> Nx.new_axis(-1)
+            |> Nx.broadcast({batch_size, sequence_length, hidden_size})
+
           Nx.select(mask, mask_tokens, embeddings)
         end,
         [embeddings, patch_mask, mask_token],
@@ -377,21 +382,21 @@ defmodule Bumblebee.Layers do
   @doc """
   Splits the hidden dimension into the given number of attention heads.
 
-  In other words, the input with shape `{batch_size, seq_length, hidden_size}`
-  is reshaped to `{batch_size, seq_length, num_heads, *}`.
+  In other words, the input with shape `{batch_size, sequence_length, hidden_size}`
+  is reshaped to `{batch_size, sequence_length, num_heads, *}`.
   """
   def split_heads(states, num_heads) do
     Axon.nx(states, fn states ->
       batch_size = Nx.axis_size(states, 0)
-      seq_length = Nx.axis_size(states, 1)
-      new_shape = {batch_size, seq_length, num_heads, :auto}
+      sequence_length = Nx.axis_size(states, 1)
+      new_shape = {batch_size, sequence_length, num_heads, :auto}
       Nx.reshape(states, new_shape)
     end)
   end
 
   @doc """
-  Splits the input node with shape `{bach_size, seq_length, 2}` into
-  two nodes with shape `{batch_size, seq_length}`.
+  Splits the input node with shape `{bach_size, sequence_length, 2}` into
+  two nodes with shape `{batch_size, sequence_length}`.
   """
   def split_pair(%Axon{} = x) do
     left = Axon.nx(x, & &1[[0..-1//1, 0..-1//1, 0]])
@@ -645,8 +650,8 @@ defmodule Bumblebee.Layers do
   def default_attention_mask(%Axon{} = input) do
     Axon.nx(input, fn input ->
       batch_size = Nx.axis_size(input, 0)
-      seq_length = Nx.axis_size(input, 1)
-      Nx.broadcast(1, {batch_size, seq_length})
+      sequence_length = Nx.axis_size(input, 1)
+      Nx.broadcast(1, {batch_size, sequence_length})
     end)
   end
 
@@ -665,8 +670,8 @@ defmodule Bumblebee.Layers do
 
     Axon.nx(input, fn input ->
       batch_size = Nx.axis_size(input, 0)
-      seq_length = Nx.axis_size(input, 1)
-      Nx.iota({batch_size, seq_length}, axis: -1) |> Nx.add(offset)
+      sequence_length = Nx.axis_size(input, 1)
+      Nx.iota({batch_size, sequence_length}, axis: -1) |> Nx.add(offset)
     end)
   end
 
@@ -677,8 +682,8 @@ defmodule Bumblebee.Layers do
   def default_token_type_ids(%Axon{} = input) do
     Axon.nx(input, fn input ->
       batch_size = Nx.axis_size(input, 0)
-      seq_length = Nx.axis_size(input, 1)
-      Nx.broadcast(0, {batch_size, seq_length})
+      sequence_length = Nx.axis_size(input, 1)
+      Nx.broadcast(0, {batch_size, sequence_length})
     end)
   end
 
@@ -688,8 +693,8 @@ defmodule Bumblebee.Layers do
   def default_bounding_box(%Axon{} = input) do
     Axon.nx(input, fn input ->
       batch_size = Nx.axis_size(input, 0)
-      seq_length = Nx.axis_size(input, 1)
-      Nx.broadcast(0, {batch_size, seq_length, 4})
+      sequence_length = Nx.axis_size(input, 1)
+      Nx.broadcast(0, {batch_size, sequence_length, 4})
     end)
   end
 
@@ -702,10 +707,10 @@ defmodule Bumblebee.Layers do
   def shift_tokens_right(%Axon{} = input_ids, decoder_start_token_id) do
     Axon.nx(input_ids, fn input_ids ->
       batch_size = Nx.axis_size(input_ids, 0)
-      seq_length = Nx.axis_size(input_ids, 1)
+      sequence_length = Nx.axis_size(input_ids, 1)
       start_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
 
-      if seq_length == 1 do
+      if sequence_length == 1 do
         start_ids
       else
         Nx.concatenate([start_ids, input_ids[[0..-1//1, 0..-2//1]]], axis: 1)

@@ -110,22 +110,22 @@ defmodule Bumblebee.Multimodal.LayoutLm do
 
   ## Inputs
 
-    * `"input_ids"` - `{batch_size, seq_length}`
+    * `"input_ids"` - `{batch_size, sequence_length}`
 
       Indices of input sequence tokens in the vocabulary.
 
-    * `"attention_mask"` - `{batch_size, seq_length}`
+    * `"attention_mask"` - `{batch_size, sequence_length}`
 
       Mask indicating which tokens to attend to. This is used to ignore
       padding tokens, which are added when processing a batch of sequences
       with different length.
 
-    * `"token_type_ids"` - `{batch_size, seq_length}`
+    * `"token_type_ids"` - `{batch_size, sequence_length}`
 
       Mask distinguishing groups in the input sequence. This is used
       in when the input sequence is a semantically a pair of sequences.
 
-    * `"position_ids"` - `{batch_size, seq_length}`
+    * `"position_ids"` - `{batch_size, sequence_length}`
 
       Indices of positions of each input sequence tokens in the position
       embeddings.
@@ -135,7 +135,7 @@ defmodule Bumblebee.Multimodal.LayoutLm do
       Mask to nullify selected heads of the self-attention blocks in
       the encoder.
 
-    * `"bounding_box"` - `{batch_size, seq_length, 4}`
+    * `"bounding_box"` - `{batch_size, sequence_length, 4}`
 
     Bounding boxes of each input sequence token. Each bounding box is
     `{x0, y0, x1, y1}` where `{x0, y0}` is the upper left corner and

@@ -118,22 +118,22 @@ defmodule Bumblebee.Text.Bert do
 
   ## Inputs
 
-    * `"input_ids"` - `{batch_size, seq_length}`
+    * `"input_ids"` - `{batch_size, sequence_length}`
 
       Indices of input sequence tokens in the vocabulary.
 
-    * `"attention_mask"` - `{batch_size, seq_length}`
+    * `"attention_mask"` - `{batch_size, sequence_length}`
 
       Mask indicating which tokens to attend to. This is used to ignore
       padding tokens, which are added when processing a batch of sequences
       with different length.
 
-    * `"token_type_ids"` - `{batch_size, seq_length}`
+    * `"token_type_ids"` - `{batch_size, sequence_length}`
 
       Mask distinguishing groups in the input sequence. This is used
       in when the input sequence is a semantically a pair of sequences.
 
-    * `"position_ids"` - `{batch_size, seq_length}`
+    * `"position_ids"` - `{batch_size, sequence_length}`
 
       Indices of positions of each input sequence tokens in the position
       embeddings.
@@ -146,7 +146,7 @@ defmodule Bumblebee.Text.Bert do
   ### Exceptions
 
   The `:for_multiple_choice` model accepts groups of sequences, so the
-  expected sequence shape is `{batch_size, num_choices, seq_length}`.
+  expected sequence shape is `{batch_size, num_choices, sequence_length}`.
 
   The `:for_causal_language_modeling` model is a decoder and accepts
   the following additional inputs: `"encoder_hidden_state"`,

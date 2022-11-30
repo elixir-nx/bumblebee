@@ -29,18 +29,18 @@ defmodule Bumblebee.Multimodal.Clip do
 
   ## Inputs
 
-    * `"input_ids"` - `{batch_size, seq_length}`
+    * `"input_ids"` - `{batch_size, sequence_length}`
 
       Indices of input sequence tokens in the vocabulary.
 
-    * `"attention_mask"` - `{batch_size, seq_length}`
+    * `"attention_mask"` - `{batch_size, sequence_length}`
 
       Mask indicating which tokens to attend to. This is used to ignore
       padding tokens, which are added when processing a batch of sequences
       with different length.
 
 
-    * `"position_ids"` - `{batch_size, seq_length}`
+    * `"position_ids"` - `{batch_size, sequence_length}`
 
       Indices of positions of each input sequence tokens in the position
       embeddings.
