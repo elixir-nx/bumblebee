@@ -67,6 +67,7 @@ defmodule Bumblebee.Text.Generation do
       inputs =
         Bumblebee.apply_tokenizer(tokenizer, texts,
           length: sequence_length,
+          pad_direction: :left,
           return_token_type_ids: false
         )
 
