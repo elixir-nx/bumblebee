@@ -100,11 +100,15 @@ defmodule Bumblebee.Text do
   The serving accepts `t:generation_input/0` and returns `t:generation_output/0`.
   A list of inputs is also supported.
 
+  Note that either `:max_new_tokens` or `:max_length` must be specified.
+
   ## Options
 
-    * `:max_length` - the maximum number of tokens in the generated text
+    * `:max_new_tokens` - the maximum number of tokens to be generated,
+      ignoring the number of tokens in the prompt
 
-    * `:min_length` - the minimum number of tokens in the generated text
+    * `:min_new_tokens` - the minimum number of tokens to be generated,
+      ignoring the number of tokens in the prompt
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
@@ -129,7 +133,7 @@ defmodule Bumblebee.Text do
       {:ok, gpt2} = Bumblebee.load_model({:hf, "gpt2"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
 
-      serving = Bumblebee.Text.generation(gpt2, tokenizer, max_length: 20)
+      serving = Bumblebee.Text.generation(gpt2, tokenizer, max_new_tokens: 15)
 
       prompt = "Elixir is a functional"
       Nx.Serving.run(serving, prompt)
@@ -140,7 +144,6 @@ defmodule Bumblebee.Text do
       #=>     }
       #=>   ]
       #=> }
-
 
   """
   @spec generation(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()

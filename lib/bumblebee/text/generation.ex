@@ -67,6 +67,7 @@ defmodule Bumblebee.Text.Generation do
       inputs =
         Bumblebee.apply_tokenizer(tokenizer, texts,
           length: sequence_length,
+          pad_direction: :left,
           return_token_type_ids: false
         )
 
@@ -95,11 +96,25 @@ defmodule Bumblebee.Text.Generation do
   The length of the generated sequence is not fixed, however it can be
   controlled via several options.
 
+  Note that either `:max_new_tokens` or `:max_length` must be specified.
+
   ## Options
 
-    * `:max_length` - the maximum length of the sequence to be generated
+    * `:max_new_tokens` - the maximum number of tokens to be generated,
+      ignoring the number of tokens in the prompt
 
-    * `:min_length` - the minimum length of the sequence to be generated
+    * `:min_new_tokens` - the minimum number of tokens to be generated,
+      ignoring the number of tokens in the prompt
+
+    * `:max_length` - the maximum length of the sequence to be generated.
+      Note that this length includes the length of the input prompt
+      (including padding). In general, prefer `:max_new_tokens`, which
+      ignores the number of tokens in the prompt
+
+    * `:min_length` - the minimum length of the sequence to be generated.
+      Note that this length includes the length of the input prompt
+      (including padding). In general, prefer `:min_new_tokens`, which
+      ignores the number of tokens in the prompt
 
     * `:decoder_start_token_id` - the id of the initial token when
       generating from scratch, in case of encoder-decoder models
@@ -116,7 +131,7 @@ defmodule Bumblebee.Text.Generation do
     * `:forced_eos_token_id` - the id of the token to force as the last
       generated token when `:max_length` is reached
 
-  The default option values are taken from the given model specification
+  The default token option values are taken from the given model specification
   when available.
   """
   @spec build_generate(Axon.t(), Bumblebee.ModelSpec.t(), keyword()) ::
@@ -124,8 +139,10 @@ defmodule Bumblebee.Text.Generation do
   def build_generate(model, spec, opts \\ []) do
     opts =
       Keyword.validate!(opts,
-        max_length: Map.get(spec, :max_length),
-        min_length: Map.get(spec, :min_length),
+        max_new_tokens: nil,
+        min_new_tokens: nil,
+        max_length: nil,
+        min_length: nil,
         decoder_start_token_id: Map.get(spec, :decoder_start_token_id),
         bos_token_id: Map.get(spec, :bos_token_id),
         eos_token_id: Map.get(spec, :eos_token_id),
@@ -134,27 +151,21 @@ defmodule Bumblebee.Text.Generation do
         forced_eos_token_id: Map.get(spec, :forced_eos_token_id)
       )
 
-    max_length = opts[:max_length]
-    min_length = opts[:min_length]
     decoder_start_token_id = opts[:decoder_start_token_id] || opts[:bos_token_id]
     eos_token_id = opts[:eos_token_id]
     pad_token_id = opts[:pad_token_id]
     forced_bos_token_id = opts[:forced_bos_token_id]
     forced_eos_token_id = opts[:forced_eos_token_id]
 
+    {max_length_fun, min_length_fun} = lazy_lengths_from_opts(opts)
+
     {prepare_inputs_fun, update_inputs_fun} =
-      input_callbacks(model, spec, max_length, decoder_start_token_id)
+      input_callbacks(model, spec, max_length_fun, decoder_start_token_id)
 
     {_init_fun, predict_fun} = Axon.build(model)
 
     logits_processor_fun =
-      get_logits_processor(
-        min_length,
-        max_length,
-        eos_token_id,
-        forced_bos_token_id,
-        forced_eos_token_id
-      )
+      get_logits_processor(min_length_fun, eos_token_id, forced_bos_token_id, forced_eos_token_id)
 
     &generate_impl(
       &2,
@@ -163,10 +174,46 @@ defmodule Bumblebee.Text.Generation do
       logits_processor_fun,
       prepare_inputs_fun,
       update_inputs_fun,
-      max_length: max_length,
       pad_token_id: pad_token_id,
       eos_token_id: eos_token_id
     )
+  end
+
+  defp lazy_lengths_from_opts(opts) do
+    max_length_fun =
+      case {opts[:max_new_tokens], opts[:max_length]} do
+        {nil, nil} ->
+          raise ArgumentError,
+                "expected either :max_new_tokens or :max_length option, but neither was given"
+
+        {max_new_tokens, nil} ->
+          fn input_length -> input_length + max_new_tokens end
+
+        {nil, max_length} ->
+          fn _ -> max_length end
+
+        _ ->
+          raise ArgumentError,
+                "only one of :max_new_tokens or :max_length options must be given, but got both"
+      end
+
+    min_length_fun =
+      case {opts[:min_new_tokens], opts[:min_length]} do
+        {nil, nil} ->
+          nil
+
+        {min_new_tokens, nil} ->
+          fn input_length -> input_length + min_new_tokens end
+
+        {nil, min_length} ->
+          fn _ -> min_length end
+
+        _ ->
+          raise ArgumentError,
+                "only one of :min_new_tokens or :min_length options must be given, but got both"
+      end
+
+    {max_length_fun, min_length_fun}
   end
 
   defp encoder_from_encoder_decoder(model) do
@@ -194,7 +241,7 @@ defmodule Bumblebee.Text.Generation do
     end)
   end
 
-  defp input_callbacks(model, spec, max_length, decoder_start_token_id) do
+  defp input_callbacks(model, spec, max_length_fun, decoder_start_token_id) do
     if encoder_decoder?(model) do
       encoder = encoder_from_encoder_decoder(model)
       {_encoder_init_fun, encoder_predict_fun} = Axon.build(encoder)
@@ -211,8 +258,9 @@ defmodule Bumblebee.Text.Generation do
             "decoder_input_ids" => decoder_input_ids
           })
 
+        max_length = max_length_fun.(1)
         inputs = prepare_decoder_inputs(inputs, "decoder_", spec, max_length)
-        {inputs, inputs["decoder_input_ids"]}
+        {inputs, inputs["decoder_input_ids"], max_length}
       end
 
       update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "decoder_")
@@ -220,8 +268,10 @@ defmodule Bumblebee.Text.Generation do
       {prepare_inputs_fun, update_inputs_fun}
     else
       prepare_inputs_fun = fn inputs, _params ->
+        sequence_length = Nx.axis_size(inputs["input_ids"], 1)
+        max_length = max_length_fun.(sequence_length)
         inputs = prepare_decoder_inputs(inputs, "", spec, max_length)
-        {inputs, inputs["input_ids"]}
+        {inputs, inputs["input_ids"], max_length}
       end
 
       update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "")
@@ -267,47 +317,43 @@ defmodule Bumblebee.Text.Generation do
   end
 
   defp get_logits_processor(
-         min_length,
-         max_length,
+         min_length_fun,
          eos_token_id,
          forced_bos_token_id,
          forced_eos_token_id
        ) do
     processors = [
-      if min_length && min_length > 0 && eos_token_id do
-        &min_length_logits_processor(&1, &2, &3,
-          min_length: min_length,
+      if min_length_fun && eos_token_id do
+        &min_length_logits_processor(&1, &2,
+          min_length_fun: min_length_fun,
           eos_token_id: eos_token_id
         )
       end,
       if forced_bos_token_id do
-        &bos_token_logits_processor(&1, &2, &3, bos_token_id: forced_bos_token_id)
+        &bos_token_logits_processor(&1, &2, bos_token_id: forced_bos_token_id)
       end,
       if forced_eos_token_id do
-        &eos_token_logits_processor(&1, &2, &3,
-          max_length: max_length,
-          eos_token_id: forced_eos_token_id
-        )
+        &eos_token_logits_processor(&1, &2, eos_token_id: forced_eos_token_id)
       end
     ]
 
-    fn logits, sequences, length ->
+    fn logits, context ->
       for processor <- processors, processor, reduce: logits do
-        logits -> processor.(logits, sequences, length)
+        logits -> processor.(logits, context)
       end
     end
   end
 
-  defnp generate_impl(
-          inputs,
-          predict_fun,
-          params,
-          logits_processor_fun,
-          prepare_inputs_fun,
-          update_inputs_fun,
-          opts \\ []
-        ) do
-    {decoder_inputs, decoder_input_ids} = prepare_inputs_fun.(inputs, params)
+  deftransformp generate_impl(
+                  inputs,
+                  predict_fun,
+                  params,
+                  logits_processor_fun,
+                  prepare_inputs_fun,
+                  update_inputs_fun,
+                  opts \\ []
+                ) do
+    {decoder_inputs, decoder_input_ids, max_length} = prepare_inputs_fun.(inputs, params)
 
     greedy(
       decoder_inputs,
@@ -316,7 +362,7 @@ defmodule Bumblebee.Text.Generation do
       params,
       logits_processor_fun,
       update_inputs_fun,
-      opts
+      [max_length: max_length] ++ opts
     )
   end
 
@@ -335,10 +381,16 @@ defmodule Bumblebee.Text.Generation do
 
     {batch_size, length} = Nx.shape(decoder_input_ids)
 
+    if length > max_length do
+      raise ArgumentError, "expected the input to be at most #{max_length} tokens, got: #{length}"
+    end
+
     sequences = Nx.broadcast(pad_token_id, {batch_size, max_length})
     sequences = Nx.put_slice(sequences, [0, 0], decoder_input_ids)
 
     finished? = Nx.broadcast(Nx.tensor(0, type: :u8), {batch_size})
+
+    input_length = length
 
     # The loop works with inputs of length 1, so if the initial input
     # is longer, we make the initial pass outside
@@ -349,6 +401,7 @@ defmodule Bumblebee.Text.Generation do
           length,
           finished?,
           inputs,
+          input_length,
           predict_fun,
           params,
           logits_processor_fun,
@@ -369,6 +422,7 @@ defmodule Bumblebee.Text.Generation do
             length,
             finished?,
             inputs,
+            input_length,
             predict_fun,
             params,
             logits_processor_fun,
@@ -392,6 +446,7 @@ defmodule Bumblebee.Text.Generation do
           length,
           finished?,
           inputs,
+          input_length,
           predict_fun,
           params,
           logits_processor_fun,
@@ -404,7 +459,13 @@ defmodule Bumblebee.Text.Generation do
     outputs = predict_fun.(params, inputs)
 
     logits = outputs.logits[[0..-1//1, -1]]
-    logits = logits_processor_fun.(logits, sequences, length)
+
+    logits =
+      logits_processor_fun.(logits, %{
+        sequences: sequences,
+        length: length,
+        input_length: input_length
+      })
 
     token_id = Nx.argmax(logits, axis: -1)
 
@@ -427,55 +488,58 @@ defmodule Bumblebee.Text.Generation do
 
   # Logit processors
 
-  defnp bos_token_logits_processor(logits, sequences, length, opts \\ []) do
+  defnp bos_token_logits_processor(logits, context, opts \\ []) do
     opts = keyword!(opts, [:bos_token_id])
     bos_token_id = opts[:bos_token_id]
 
-    if length == 1 do
-      force_token_id(logits, sequences, token_id: bos_token_id)
+    if context.length == 1 do
+      force_token_id(logits, token_id: bos_token_id)
     else
       logits
     end
   end
 
-  defnp eos_token_logits_processor(logits, sequences, length, opts \\ []) do
-    opts = keyword!(opts, [:eos_token_id, :max_length])
+  defnp eos_token_logits_processor(logits, context, opts \\ []) do
+    opts = keyword!(opts, [:eos_token_id])
     eos_token_id = opts[:eos_token_id]
-    max_length = opts[:max_length]
 
-    if length == max_length - 1 do
-      force_token_id(logits, sequences, token_id: eos_token_id)
+    max_length = Nx.axis_size(context.sequences, 1)
+
+    if context.length == max_length - 1 do
+      force_token_id(logits, token_id: eos_token_id)
     else
       logits
     end
   end
 
-  defnp min_length_logits_processor(logits, sequences, length, opts \\ []) do
-    opts = keyword!(opts, [:eos_token_id, :min_length])
+  defnp min_length_logits_processor(logits, context, opts \\ []) do
+    opts = keyword!(opts, [:eos_token_id, :min_length_fun])
     eos_token_id = opts[:eos_token_id]
-    min_length = opts[:min_length]
+    min_length_fun = opts[:min_length_fun]
 
-    if length < min_length do
-      ignore_token_id(logits, sequences, token_id: eos_token_id)
+    min_length = min_length_fun.(context.input_length)
+
+    if context.length < min_length do
+      ignore_token_id(logits, token_id: eos_token_id)
     else
       logits
     end
   end
 
-  defnp force_token_id(logits, sequences, opts \\ []) do
+  defnp force_token_id(logits, opts \\ []) do
     token_id = opts[:token_id]
 
-    batch_size = Nx.axis_size(sequences, 0)
+    batch_size = Nx.axis_size(logits, 0)
 
     Nx.Constants.neg_infinity()
     |> Nx.broadcast(logits)
     |> Nx.put_slice([0, token_id], Nx.broadcast(0, {batch_size, 1}))
   end
 
-  defnp ignore_token_id(logits, sequences, opts \\ []) do
+  defnp ignore_token_id(logits, opts \\ []) do
     token_id = opts[:token_id]
 
-    batch_size = Nx.axis_size(sequences, 0)
+    batch_size = Nx.axis_size(logits, 0)
 
     Nx.put_slice(
       logits,
