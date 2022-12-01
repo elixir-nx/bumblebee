@@ -47,7 +47,7 @@ repository_id = "CompVis/stable-diffusion-v1-4"
 :ok
 ```
 
-> Note: some checkpoints, such as [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5), require alicense agreement. In those cases, sign up on Hugging Face, accept the license on the repository page, generate an access token in [the settings](https://huggingface.co/settings/tokens) and add it to the repository specification via `:auth_token`. You can use Livebook secrets to pass the token securely.
+> Note: some checkpoints, such as [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5), require a license agreement. In those cases, sign up on Hugging Face, accept the license on the repository page, generate an access token in [the settings](https://huggingface.co/settings/tokens) and add it to the repository specification via `:auth_token`. You can use Livebook secrets to pass the token securely.
 
 <!-- livebook:{"break_markdown":true} -->
 
