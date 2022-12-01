@@ -63,42 +63,26 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
   ## Examples
 
-      auth_token = System.fetch_env!("HF_TOKEN")
+      repository_id = "CompVis/stable-diffusion-v1-4"
 
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
 
-      {:ok, clip} =
-        Bumblebee.load_model(
-          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "text_encoder"}
-        )
+      {:ok, clip} = Bumblebee.load_model({:hf, repository_id, subdir: "text_encoder"})
 
       {:ok, unet} =
-        Bumblebee.load_model(
-          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "unet"},
+        Bumblebee.load_model({:hf, repository_id, subdir: "unet"},
           params_filename: "diffusion_pytorch_model.bin"
         )
 
       {:ok, vae} =
-        Bumblebee.load_model(
-          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "vae"},
+        Bumblebee.load_model({:hf, repository_id, subdir: "vae"},
           architecture: :decoder,
           params_filename: "diffusion_pytorch_model.bin"
         )
 
-      {:ok, scheduler} =
-        Bumblebee.load_scheduler(
-          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "scheduler"}
-        )
-
-      {:ok, featurizer} =
-        Bumblebee.load_featurizer(
-          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "feature_extractor"}
-        )
-
-      {:ok, safety_checker} =
-        Bumblebee.load_model(
-          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "safety_checker"}
-        )
+      {:ok, scheduler} = Bumblebee.load_scheduler({:hf, repository_id, subdir: "scheduler"})
+      {:ok, featurizer} = Bumblebee.load_featurizer({:hf, repository_id, subdir: "feature_extractor"})
+      {:ok, safety_checker} = Bumblebee.load_model({:hf, repository_id, subdir: "safety_checker"})
 
       serving =
         Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, unet, vae, tokenizer, scheduler,

@@ -22,48 +22,34 @@ Stable Diffusion is a latent text-to-image diffusion model, primarily used to ge
 
 Stable Diffusion is composed of several separate models and preprocessors, so we will load all of them.
 
-In order to download the models, you need to sign up on Hugging Face, accept the license agreement at [CompVis/stable-diffusion-v1-4](https://huggingface.co/CompVis/stable-diffusion-v1-4), generate an access token in [the settings](https://huggingface.co/settings/tokens) and put it in `HF_TOKEN` Livebook secret.
-
 ```elixir
-auth_token = System.fetch_env!("LB_HF_TOKEN")
+repository_id = "CompVis/stable-diffusion-v1-4"
 
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
 
-{:ok, clip} =
-  Bumblebee.load_model(
-    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "text_encoder"}
-  )
+{:ok, clip} = Bumblebee.load_model({:hf, repository_id, subdir: "text_encoder"})
 
 {:ok, unet} =
-  Bumblebee.load_model(
-    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "unet"},
+  Bumblebee.load_model({:hf, repository_id, subdir: "unet"},
     params_filename: "diffusion_pytorch_model.bin"
   )
 
 {:ok, vae} =
-  Bumblebee.load_model(
-    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "vae"},
+  Bumblebee.load_model({:hf, repository_id, subdir: "vae"},
     architecture: :decoder,
     params_filename: "diffusion_pytorch_model.bin"
   )
 
-{:ok, scheduler} =
-  Bumblebee.load_scheduler(
-    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "scheduler"}
-  )
-
-{:ok, featurizer} =
-  Bumblebee.load_featurizer(
-    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "feature_extractor"}
-  )
-
-{:ok, safety_checker} =
-  Bumblebee.load_model(
-    {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "safety_checker"}
-  )
+{:ok, scheduler} = Bumblebee.load_scheduler({:hf, repository_id, subdir: "scheduler"})
+{:ok, featurizer} = Bumblebee.load_featurizer({:hf, repository_id, subdir: "feature_extractor"})
+{:ok, safety_checker} = Bumblebee.load_model({:hf, repository_id, subdir: "safety_checker"})
 
 :ok
 ```
+
+> Note: some checkpoints, such as [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5), require a license agreement. In those cases, sign up on Hugging Face, accept the license on the repository page, generate an access token in [the settings](https://huggingface.co/settings/tokens) and add it to the repository specification via `:auth_token`. You can use Livebook secrets to pass the token securely.
+
+<!-- livebook:{"break_markdown":true} -->
 
 With all the models loaded, we can now configure a serving implementation of the text-to-image task.
 
@@ -82,7 +68,7 @@ text_input =
   Kino.Input.text("Prompt", default: "numbat, forest, high quality, detailed, digital art")
 ```
 
-Now we are ready to generate the images!
+We are ready to generate images!
 
 ```elixir
 prompt = Kino.Input.read(text_input)

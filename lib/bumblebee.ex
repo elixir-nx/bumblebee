@@ -642,9 +642,7 @@ defmodule Bumblebee do
   ## Examples
 
       {:ok, scheduler} =
-        Bumblebee.load_scheduler(
-          {:hf, "CompVis/stable-diffusion-v1-4", auth_token: auth_token, subdir: "scheduler"}
-        )
+        Bumblebee.load_scheduler({:hf, "CompVis/stable-diffusion-v1-4", subdir: "scheduler"})
 
   """
   @doc type: :scheduler
