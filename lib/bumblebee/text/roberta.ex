@@ -816,7 +816,7 @@ defmodule Bumblebee.Text.Roberta do
           activation: {"hidden_act", atom()},
           dropout_rate: {"hidden_dropout_prob", number()},
           attention_dropout_rate: {"attention_probs_dropout_prob", number()},
-          classifier_dropout_rate: {"classifier_dropout", number()},
+          classifier_dropout_rate: {"classifier_dropout", optional(number())},
           layer_norm_epsilon: {"layer_norm_eps", number()},
           initializer_range: {"initializer_range", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
