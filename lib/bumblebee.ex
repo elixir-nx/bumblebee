@@ -328,6 +328,9 @@ defmodule Bumblebee do
 
     * `:params_filename` - the file with the model parameters to be loaded
 
+    * `:log_params_diff` - whether to log missing, mismatched and unused
+      parameters. Defaults to `true`
+
   ## Examples
 
   By default the model type is inferred from configuration, so loading
@@ -353,7 +356,14 @@ defmodule Bumblebee do
   def load_model(repository, opts \\ []) do
     repository = normalize_repository!(repository)
 
-    opts = Keyword.validate!(opts, [:spec, :module, :architecture, :params_filename])
+    opts =
+      Keyword.validate!(opts, [
+        :spec,
+        :module,
+        :architecture,
+        :params_filename,
+        log_params_diff: true
+      ])
 
     spec_response =
       if spec = opts[:spec] do
@@ -370,7 +380,7 @@ defmodule Bumblebee do
              model,
              repository,
              opts
-             |> Keyword.take([:params_filename])
+             |> Keyword.take([:params_filename, :log_params_diff])
            ) do
       {:ok, %{model: model, params: params, spec: spec}}
     end
@@ -380,11 +390,16 @@ defmodule Bumblebee do
     # TODO: support format: :auto | :axon | :pytorch
     format = :pytorch
     filename = opts[:params_filename] || @params_filename[format]
+    log_params_diff = opts[:log_params_diff]
 
     input_template = module.input_template(spec)
 
     with {:ok, path} <- download(repository, filename) do
-      params = Bumblebee.Conversion.PyTorch.load_params!(model, input_template, path)
+      params =
+        Bumblebee.Conversion.PyTorch.load_params!(model, input_template, path,
+          log_params_diff: log_params_diff
+        )
+
       {:ok, params}
     end
   end
