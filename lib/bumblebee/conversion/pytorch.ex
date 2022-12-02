@@ -10,9 +10,17 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   This function expects files created with `torch.save(model.state_dict(), path)`,
   as described in [the documentation](https://pytorch.org/tutorials/beginner/saving_loading_models.html).
+
+  # Options
+
+    * `:log_params_diff` - whether to log missing, mismatched and unused
+      parameters. Defaults to `true`
+
   """
-  @spec load_params!(Axon.t(), map(), Path.t()) :: map()
-  def load_params!(model, input_template, path) do
+  @spec load_params!(Axon.t(), map(), Path.t(), keyword()) :: map()
+  def load_params!(model, input_template, path, opts \\ []) do
+    opts = Keyword.validate!(opts, log_params_diff: true)
+
     pytorch_state = Bumblebee.Conversion.PyTorch.Loader.load!(path)
 
     unless state_dict?(pytorch_state) do
@@ -31,7 +39,9 @@ defmodule Bumblebee.Conversion.PyTorch do
         init_fun.(input_template, params)
       end
 
-    log_model_diff(diff)
+    if opts[:log_params_diff] do
+      log_params_diff(diff)
+    end
 
     params
   end
@@ -165,7 +175,7 @@ defmodule Bumblebee.Conversion.PyTorch do
     end
   end
 
-  defp log_model_diff(%{missing: missing, mismatched: mismatched, unused_keys: unused_keys}) do
+  defp log_params_diff(%{missing: missing, mismatched: mismatched, unused_keys: unused_keys}) do
     if missing != [] do
       missing_keys =
         Enum.map(missing, fn {layer_name, param} -> layer_name <> "." <> param.name end)
