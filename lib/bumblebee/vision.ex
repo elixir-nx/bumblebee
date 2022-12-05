@@ -9,7 +9,7 @@ defmodule Bumblebee.Vision do
   Either `Nx.Tensor` in HWC order or a struct implementing `Nx.Container`
   and resolving to such tensor.
   """
-  @type image :: Nx.Tensor.t() | Nx.Container.t()
+  @type image :: Nx.Container.t()
 
   @type image_classification_input :: image()
   @type image_classification_output :: %{predictions: list(image_classification_prediction())}
