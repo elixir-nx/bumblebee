@@ -217,13 +217,19 @@ defmodule Bumblebee.Shared do
   @spec image?(term()) :: boolean()
   def image?(image)
 
-  def image?(image) when is_struct(image, StbImage), do: true
-
   def image?(%Nx.Tensor{} = tensor) do
     Nx.rank(tensor) == 3
   end
 
-  def image?(_other), do: false
+  def image?(other) do
+    if Nx.Container.impl_for(other) != nil do
+      other
+      |> Nx.to_template()
+      |> image?()
+    else
+      false
+    end
+  end
 
   @doc """
   Pads a batch to the given size, if given.

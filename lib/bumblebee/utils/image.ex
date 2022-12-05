@@ -1,8 +1,6 @@
 defmodule Bumblebee.Utils.Image do
   @moduledoc false
 
-  @compile {:no_warn_undefined, StbImage}
-
   @doc """
   Converts the given term to a batch of images.
   """
@@ -20,10 +18,9 @@ defmodule Bumblebee.Utils.Image do
     end
   end
 
-  def to_batched_tensor(image) when is_struct(image, StbImage) do
-    image
-    |> StbImage.to_nx()
-    |> Nx.new_axis(0, :batch)
+  def to_batched_tensor(term) do
+    tensor = Nx.Defn.jit_apply(&Function.identity/1, [term], compiler: Nx.Defn.Evaluator)
+    to_batched_tensor(tensor)
   end
 
   @doc """
