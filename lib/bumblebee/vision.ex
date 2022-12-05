@@ -6,14 +6,10 @@ defmodule Bumblebee.Vision do
   @typedoc """
   A term representing an image.
 
-  Either of:
-
-    * `Nx.Tensor` in HWC order
-
-    * `StbImage`
-
+  Either `Nx.Tensor` in HWC order or a struct implementing `Nx.Container`
+  and resolving to such tensor.
   """
-  @type image :: Nx.Tensor.t() | struct()
+  @type image :: Nx.Container.t()
 
   @type image_classification_input :: image()
   @type image_classification_output :: %{predictions: list(image_classification_prediction())}

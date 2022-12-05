@@ -33,11 +33,11 @@ defmodule Bumblebee.MixProject do
        github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
       {:torchx, "~> 0.4.0", only: [:dev, :test]},
       {:nx_image, "~> 0.1.0", github: "elixir-nx/nx_image"},
-      {:stb_image, "~> 0.5.0", optional: true},
       {:unpickler, github: "dashbitco/unpickler"},
       {:castore, "~> 0.1.0"},
       {:jason, "~> 1.4.0"},
       {:progress_bar, "~> 2.0"},
+      {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false}
     ]

@@ -215,15 +215,16 @@ defmodule Bumblebee.Shared do
   Checks if the given term is an image.
   """
   @spec image?(term()) :: boolean()
-  def image?(image)
-
-  def image?(image) when is_struct(image, StbImage), do: true
-
-  def image?(%Nx.Tensor{} = tensor) do
-    Nx.rank(tensor) == 3
+  def image?(image) do
+    try do
+      Nx.to_template(image)
+    rescue
+      Protocol.UndefinedError -> false
+    else
+      %Nx.Tensor{shape: {_, _, channels}} when channels in 1..4 -> true
+      _ -> false
+    end
   end
-
-  def image?(_other), do: false
 
   @doc """
   Pads a batch to the given size, if given.

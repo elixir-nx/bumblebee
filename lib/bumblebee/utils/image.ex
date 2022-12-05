@@ -1,12 +1,12 @@
 defmodule Bumblebee.Utils.Image do
   @moduledoc false
 
-  @compile {:no_warn_undefined, StbImage}
+  import Nx.Defn
 
   @doc """
   Converts the given term to a batch of images.
   """
-  def to_batched_tensor(%Nx.Tensor{} = image) do
+  defn to_batched_tensor(image) do
     case Nx.rank(image) do
       3 ->
         Nx.new_axis(image, 0, :batch)
@@ -18,12 +18,6 @@ defmodule Bumblebee.Utils.Image do
         raise ArgumentError,
               "expected image to be a rank-3 image or a rank-4 batch, got rank: #{rank}"
     end
-  end
-
-  def to_batched_tensor(image) when is_struct(image, StbImage) do
-    image
-    |> StbImage.to_nx()
-    |> Nx.new_axis(0, :batch)
   end
 
   @doc """
