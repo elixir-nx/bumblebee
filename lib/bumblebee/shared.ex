@@ -215,19 +215,14 @@ defmodule Bumblebee.Shared do
   Checks if the given term is an image.
   """
   @spec image?(term()) :: boolean()
-  def image?(image)
-
-  def image?(%Nx.Tensor{} = tensor) do
-    Nx.rank(tensor) == 3
-  end
-
-  def image?(other) do
-    if Nx.Container.impl_for(other) != nil do
-      other
-      |> Nx.to_template()
-      |> image?()
+  def image?(image) do
+    try do
+      Nx.to_template(image)
+    rescue
+      Protocol.UndefinedError -> false
     else
-      false
+      %Nx.Tensor{shape: {_, _, channels}} when channels in 1..4 -> true
+      _ -> false
     end
   end
 
