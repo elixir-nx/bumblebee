@@ -2,7 +2,7 @@
 
 Bumblebee provides pre-trained and transformer Neural Network models on top of Axon. It includes integration with [🤗 Models](https://huggingface.co/models), allowing anyone to download and perform Machine Learning tasks with few lines of code.
 
-![Numbat and Bumblebees](bg.jpg)
+![Numbat and Bumblebees](.github/images/background.jpg)
 
 ## Usage
 
