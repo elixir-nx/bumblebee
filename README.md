@@ -2,7 +2,7 @@
 
 Bumblebee provides pre-trained and transformer Neural Network models on top of Axon. It includes integration with [🤗 Models](https://huggingface.co/models), allowing anyone to download and perform Machine Learning tasks with few lines of code.
 
-![Numbat and Bumblebees](bg.jpg)
+![Numbat and Bumblebees](.github/images/background.jpg)
 
 ## Usage
 
@@ -16,6 +16,16 @@ def deps do
   ]
 end
 ```
+
+## Examples
+
+To explore Bumblebee:
+
+  * See [examples/phoenix](examples/phoenix) for single-file examples of running Neural Networks inside your Phoenix (+ LiveView) apps
+
+  * Use Bumblebee's integration with Livebook v0.8 (or later) to automatically generate "Neural Networks tasks" from the "+ Smart" cell menu (thanks to [`:kino_bumblebee`](https://github.com/livebook-dev/kino_bumblebee))
+
+  * For a more hands on approach, read our example [notebooks](notebooks)
 
 ## License
 
