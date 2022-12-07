@@ -22,14 +22,9 @@ Integrating a Bumblebee task is straightforward and boils down to two steps:
 
 ### Deployment considerations
 
-The examples in this directory download the model data directly from HuggingFace
-the first time the application starts. In practice, you'd either version those files
-alongside your repository (perhaps using [Git LFS](https://git-lfs.github.com/))
-and clone those repositories into a local directory as part of deployment.
+The examples in this directory download the model data directly from HuggingFace the first time the application starts. In practice, you'd either version those files alongside your repository (perhaps using [Git LFS](https://git-lfs.github.com/)) and clone those repositories into a local directory as part of deployment.
 
-Once that is done, you can change the calls from
-`Bumblebee.load_xyz({:hf, "microsoft/resnet"})` to
-`Bumblebee.load_xyz({:local, "/path/to/model"})` and so on.
+Once that is done, you can change the calls from `Bumblebee.load_xyz({:hf, "microsoft/resnet"})` to `Bumblebee.load_xyz({:local, "/path/to/model"})` and so on.
 
 ### User images
 

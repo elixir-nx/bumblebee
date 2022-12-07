@@ -17,6 +17,16 @@ def deps do
 end
 ```
 
+## Examples
+
+To explore Bumblebee:
+
+  * See [examples/phoenix](examples/phoenix) for single-file examples of running Neural Networks inside your Phoenix (+ LiveView) apps
+
+  * Use Bumblebee's integration with Livebook v0.8 (or later) to automatically generate "Neural Networks tasks" from the "+ Smart" cell menu (thanks to [`:kino_bumblebee`](https://github.com/livebook-dev/kino_bumblebee))
+
+  * For a more hands on approach, read our example [notebooks](notebooks)
+
 ## License
 
     Copyright (c) 2022 Dashbit
