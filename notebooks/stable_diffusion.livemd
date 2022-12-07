@@ -2,11 +2,10 @@
 
 ```elixir
 Mix.install([
-  {:bumblebee, path: Path.expand("..", __DIR__)},
-  {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-  {:exla, github: "elixir-nx/nx", sparse: "exla", override: true},
-  {:stb_image, "~> 0.5.0"},
-  {:kino, "~> 0.7.0"}
+  {:bumblebee, "~> 0.1.0"},
+  {:nx, "~> 0.4.1"},
+  {:exla, "~> 0.4.1"},
+  {:kino, "~> 0.8.0"}
 ])
 
 Nx.global_default_backend(EXLA.Backend)

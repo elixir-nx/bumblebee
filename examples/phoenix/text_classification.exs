@@ -11,10 +11,9 @@ Mix.install([
   {:phoenix, "~> 1.7.0-rc.0", override: true},
   {:phoenix_live_view, "~> 0.18.3"},
   # Bumblebee and friends
-  # TODO: update before release
-  {:bumblebee, path: "~/git/bumblebee"},
-  {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-  {:exla, github: "elixir-nx/nx", sparse: "exla", override: true}
+  {:bumblebee, "~> 0.1.0"},
+  {:nx, "~> 0.4.1"},
+  {:exla, "~> 0.4.1"}
 ])
 
 Application.put_env(:nx, :default_backend, EXLA.Backend)
