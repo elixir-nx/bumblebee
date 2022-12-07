@@ -2,16 +2,20 @@ defmodule Bumblebee.MixProject do
   use Mix.Project
 
   @version "0.1.0"
+  @description "Pre-trained and transformer Neural Network models in Axon"
 
   def project do
     [
       app: :bumblebee,
       version: @version,
+      description: @description,
+      name: "Bumblebee",
       elixir: "~> 1.13",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      docs: docs()
+      docs: docs(),
+      package: package()
     ]
   end
 
@@ -26,14 +30,13 @@ defmodule Bumblebee.MixProject do
 
   defp deps do
     [
-      {:axon, "~> 0.3.0", axon_opts()},
-      {:tokenizers, "~> 0.1.2"},
-      {:nx, "~> 0.4.0", github: "elixir-nx/nx", sparse: "nx", override: true},
-      {:exla, "~> 0.4.0",
-       github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
-      {:torchx, "~> 0.4.0", only: [:dev, :test]},
-      {:nx_image, "~> 0.1.0", github: "elixir-nx/nx_image"},
-      {:unpickler, github: "dashbitco/unpickler"},
+      {:axon, "~> 0.3.1", axon_opts()},
+      {:tokenizers, "~> 0.2.0"},
+      {:nx, "~> 0.4.1"},
+      {:exla, "~> 0.4.1", only: [:dev, :test]},
+      {:torchx, "~> 0.4.1", only: [:dev, :test]},
+      {:nx_image, "~> 0.1.0"},
+      {:unpickler, "~> 0.1.0"},
       {:castore, "~> 0.1.0"},
       {:jason, "~> 1.4.0"},
       {:progress_bar, "~> 2.0"},
@@ -118,6 +121,15 @@ defmodule Bumblebee.MixProject do
         Schedulers: &(&1[:type] == :scheduler)
       ],
       before_closing_body_tag: &before_closing_body_tag/1
+    ]
+  end
+
+  def package do
+    [
+      licenses: ["Apache-2.0"],
+      links: %{
+        "GitHub" => "https://github.com/elixir-nx/bumblebee"
+      }
     ]
   end
 

@@ -147,8 +147,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.SafetyChecker do
     unsafe_concept_thresholds = Nx.new_axis(unsafe_concept_thresholds, 0)
 
     sensitive_concept_scores = sensitive_concept_distances - sensitive_concept_thresholds
-    # TODO: use `keep_axes: true` on EXLA v0.4.1
-    sensitive? = Nx.any(sensitive_concept_scores > 0, axes: [1]) |> Nx.new_axis(-1)
+    sensitive? = Nx.any(sensitive_concept_scores > 0, axes: [1], keep_axes: true)
 
     # Use a lower threshold if an image has any sensitive concept
     unsafe_threshold_adjustment = Nx.select(sensitive?, 0.01, 0.0)
