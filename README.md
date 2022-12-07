@@ -1,6 +1,6 @@
 # Bumblebee
 
-Bumblebee provides pre-trained and transformer Neural Network models on top of Axon. It includes integration with [🤗 Models](https://huggingface.co/models), allowing anyone to download and perform Machine Learning tasks with few lines of code.
+Bumblebee provides pre-trained and transformer Neural Network models on top of [Axon](https://github.com/elixir-nx/axon). It includes integration with [🤗 Models](https://huggingface.co/models), allowing anyone to download and perform Machine Learning tasks with few lines of code.
 
 ![Numbat and Bumblebees](.github/images/background.jpg)
 
@@ -17,7 +17,26 @@ def deps do
 end
 ```
 
+Then configure `Nx` to use EXLA backend by default in your `config/config.exs` file:
+
+```elixir
+import Config
+config :nx, default_backend: EXLA.Backend
+```
+
 To use GPUs, you must [set the `XLA_TARGET` environment variable accordingly](https://github.com/elixir-nx/xla#usage).
+
+In notebooks and scripts, use the following `Mix.install/2` call to both install and configure dependencies:
+
+```elixir
+Mix.install(
+  [
+    {:bumblebee, "~> 0.1.0"},
+    {:exla, ">= 0.0.0"}
+  ],
+  config: [nx: [default_backend: EXLA.Backend]]
+)
+```
 
 ## Examples
 
