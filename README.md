@@ -17,6 +17,8 @@ def deps do
 end
 ```
 
+To use GPUs, you must [set the `XLA_TARGET` environment variable accordingly](https://github.com/elixir-nx/xla#usage).
+
 ## Examples
 
 To explore Bumblebee:
