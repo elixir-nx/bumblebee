@@ -274,12 +274,7 @@ defmodule PhoenixDemo.SampleLive do
       |> case do
         [binary] ->
           image = decode_as_tensor(binary)
-
-          task =
-            Task.Supervisor.async_nolink(PhoenixDemo.TaskSupervisor, fn ->
-              Nx.Serving.batched_run(PhoenixDemo.Serving, image)
-            end)
-
+          task = Task.async(fn -> Nx.Serving.batched_run(PhoenixDemo.Serving, image) end)
           {:noreply, assign(socket, running: true, task_ref: task.ref)}
 
         [] ->
@@ -304,12 +299,9 @@ defmodule PhoenixDemo.SampleLive do
 
   @impl true
   def handle_info({ref, result}, %{assigns: %{task_ref: ref}} = socket) do
+    Process.demonitor(ref, [:flush])
     %{predictions: [%{label: label}]} = result
     {:noreply, assign(socket, label: label, running: false)}
-  end
-
-  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{assigns: %{task_ref: ref}} = socket) do
-    {:noreply, assign(socket, task_ref: nil)}
   end
 end
 
@@ -353,7 +345,6 @@ serving =
     [
       {Phoenix.PubSub, name: PhoenixDemo.PubSub},
       PhoenixDemo.Endpoint,
-      {Task.Supervisor, name: PhoenixDemo.TaskSupervisor},
       {Nx.Serving, serving: serving, name: PhoenixDemo.Serving, batch_timeout: 100}
     ],
     strategy: :one_for_one
