@@ -75,10 +75,7 @@ prompt = Kino.Input.read(text_input)
 output = Nx.Serving.run(serving, prompt)
 
 for result <- output.results do
-  result.image
-  |> StbImage.from_nx()
-  |> StbImage.to_binary(:png)
-  |> Kino.Image.new(:png)
+  Kino.Image.new(result.image)
 end
 |> Kino.Layout.grid(columns: 2)
 ```
