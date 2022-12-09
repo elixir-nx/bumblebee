@@ -86,7 +86,7 @@ defmodule Bumblebee.Utils.Tokenizers do
 
   defp maybe_put_offsets(encoded, encodings, return_offsets) do
     if return_offsets do
-      {batch_start_offets, batch_end_offsets} =
+      {batch_start_offsets, batch_end_offsets} =
         encodings
         |> Enum.map(fn seq ->
           seq |> Encoding.get_offsets() |> Enum.unzip()
@@ -94,7 +94,7 @@ defmodule Bumblebee.Utils.Tokenizers do
         |> Enum.unzip()
 
       encoded
-      |> Map.put("start_offsets", Nx.tensor(batch_start_offets))
+      |> Map.put("start_offsets", Nx.tensor(batch_start_offsets))
       |> Map.put("end_offsets", Nx.tensor(batch_end_offsets))
     else
       encoded
