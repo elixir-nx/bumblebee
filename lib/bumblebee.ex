@@ -607,7 +607,7 @@ defmodule Bumblebee do
   of subsequent timesteps for model forward pass.
 
   Note that the number of `timesteps` may not match `num_steps` exactly.
-  `num_steps` parameterizes sampling points, however depending on the
+  `num_steps` parametrizes sampling points, however depending on the
   method, sampling certain points may require multiple forward passes
   of the model and each element in `timesteps` corresponds to a single
   forward pass.
