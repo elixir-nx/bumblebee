@@ -60,7 +60,12 @@ defmodule Bumblebee.HuggingFace.Hub do
 
           case HTTP.download(download_url, tmp_path, headers: headers) |> finish_request() do
             :ok ->
-              File.rename!(tmp_path, entry_path)
+              # If we can't rename it (for example, different mount points), we copy it
+              case File.rename(tmp_path, entry_path) do
+                :ok -> :ok
+                {:error, _} -> File.cp!(tmp_path, entry_path)
+              end
+
               :ok = store_json(metadata_path, %{"etag" => etag, "url" => url})
               {:ok, entry_path}
 
