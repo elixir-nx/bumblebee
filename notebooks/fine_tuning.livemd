@@ -1,0 +1,102 @@
+# Fine-tuning with Bumblebee and Axon
+
+```elixir
+Mix.install(
+  [
+    {:bumblebee, "~> 0.1"},
+    {:axon, path: "~/projects/axon", override: true},
+    {:nx, "~> 0.4.0", override: true},
+    {:exla, "~> 0.4"},
+    {:explorer, "~> 0.3"}
+  ],
+  system_env: [
+    XLA_TARGET: "cuda118"
+  ],
+  config: [
+    nx: [
+      default_backend: EXLA.Backend,
+      default_defn_options: [compiler: EXLA, client: :cuda]
+    ]
+  ]
+)
+```
+
+## Load a model
+
+```elixir
+{:ok, spec} =
+  Bumblebee.load_spec({:hf, "bert-base-cased"},
+    architecture: :for_sequence_classification
+  )
+
+spec = Bumblebee.configure(spec, num_labels: 5)
+
+{:ok, model} = Bumblebee.load_model({:hf, "bert-base-cased"}, spec: spec)
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+```
+
+## Prepare a dataset
+
+```elixir
+defmodule Yelp do
+  def load(path, tokenizer, opts \\ []) do
+    path
+    |> Explorer.DataFrame.from_csv!(header: false)
+    |> Explorer.DataFrame.rename(["label", "text"])
+    |> stream()
+    |> tokenize_and_batch(tokenizer, opts[:batch_size], opts[:sequence_length])
+  end
+
+  def stream(df) do
+    xs = df["text"]
+    ys = df["label"]
+
+    xs
+    |> Explorer.Series.to_enum()
+    |> Stream.zip(Explorer.Series.to_enum(ys))
+  end
+
+  def tokenize_and_batch(stream, tokenizer, batch_size, sequence_length) do
+    stream
+    |> Stream.chunk_every(batch_size)
+    |> Stream.map(fn batch ->
+      {text, labels} = Enum.unzip(batch)
+      tokenized = Bumblebee.apply_tokenizer(tokenizer, text, length: sequence_length)
+      {tokenized, Nx.stack(labels)}
+    end)
+  end
+end
+```
+
+```elixir
+train_data =
+  Yelp.load("~/yelp_review_full_csv/train.csv", tokenizer,
+    batch_size: 4,
+    sequence_length: 64
+  )
+```
+
+```elixir
+Enum.take(train_data, 1)
+```
+
+## Train the model
+
+```elixir
+%{model: model, params: params} = model
+
+logits_model = Axon.nx(model, & &1.logits)
+
+loss =
+  &Axon.Losses.categorical_cross_entropy(&1, &2,
+    reduction: :mean,
+    from_logits: true,
+    sparse: true
+  )
+
+optimizer = Axon.Optimizers.adam(5.0e-5)
+
+logits_model
+|> Axon.Loop.trainer(loss, optimizer, :identity, log: 1)
+|> Axon.Loop.run(train_data, params, epochs: 3)
+```
