@@ -16,15 +16,23 @@ Integrating a Bumblebee task is straightforward and boils down to two steps:
 
   1. On application startup we load the necessary models and preprocessors, build an instance of `Nx.Serving` and start it under the application supervision tree.
 
-  2. Whenever we want to make a prediction for a user input, we use `Nx.Serving.batched_run/2` with said input, usually in a `Task` to avoid blocking other interactions. Most importantly, `Nx.Serving` automatically batches requests from concurrent users and distributes the results back to them transparently.
+  2. Whenever we want to make a prediction for a user input, we use `Nx.Serving.batched_run/2` with said input, usually in a `Task` to avoid blocking other interactions. It is important to use `Nx.Serving.batched_run/2` as it automatically batches requests from concurrent users and distributes the results back to them transparently.
 
 ## Tips
 
 ### Deployment considerations
 
-The examples in this directory download the model data directly from HuggingFace the first time the application starts. In practice you'd version those files alongside your repository (perhaps using [Git LFS](https://git-lfs.github.com/)) or use an object storage service. Then, you'd fetch those files into a local directory as part of deployment.
+The examples in this directory download the model data directly from HuggingFace the first time the application starts. To avoid downloading the model data during deployments, you have two options.
 
-Once that is done, you can change the calls from `Bumblebee.load_xyz({:hf, "microsoft/resnet"})` to `Bumblebee.load_xyz({:local, "/path/to/model"})` and so on.
+#### 1. Explicit local versioning
+
+One option is to version those files alongside your repository (perhaps using [Git LFS](https://git-lfs.github.com/)) or use an object storage service. Then, you'd fetch those files into a local directory as part of development/deployment.
+
+In such scenarios, you must change the calls from `Bumblebee.load_xyz({:hf, "microsoft/resnet"})` to `Bumblebee.load_xyz({:local, "/path/to/model"})` and so on.
+
+#### 2. Cached from Hugging Face
+
+Bumblebee can download and cache data from both public and private Hugging Face repositories. You can control the cache directory by setting `BUMBLEBEE_CACHE_DIR`. Therefore, one option during deployment is to set the `BUMBLEBEE_CACHE_DIR` to a directory within your application. If using Docker, you must then include said directory in your application and make sure that `BUMBLEBEE_CACHE_DIR` points to it.
 
 ### User images
 
