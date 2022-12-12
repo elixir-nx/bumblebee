@@ -56,21 +56,14 @@ defmodule Bumblebee.HuggingFace.Hub do
           {:ok, entry_path}
 
         _ ->
-          tmp_path = get_tmp_path()
-
-          case HTTP.download(download_url, tmp_path, headers: headers) |> finish_request() do
+          case HTTP.download(download_url, entry_path, headers: headers) |> finish_request() do
             :ok ->
-              # If we can't rename it (for example, different mount points), we copy it
-              case File.rename(tmp_path, entry_path) do
-                :ok -> :ok
-                {:error, _} -> File.cp!(tmp_path, entry_path)
-              end
-
               :ok = store_json(metadata_path, %{"etag" => etag, "url" => url})
               {:ok, entry_path}
 
             error ->
-              File.rm_rf!(tmp_path)
+              File.rm_rf!(metadata_path)
+              File.rm_rf!(entry_path)
               error
           end
       end
@@ -131,11 +124,6 @@ defmodule Bumblebee.HuggingFace.Hub do
 
   defp encode_etag(etag) do
     Base.encode32(etag, case: :lower, padding: false)
-  end
-
-  defp get_tmp_path() do
-    random_id = :crypto.strong_rand_bytes(20) |> Base.encode32(case: :lower)
-    Path.join(System.tmp_dir!(), "bumblebee_" <> random_id)
   end
 
   defp load_json(path) do
