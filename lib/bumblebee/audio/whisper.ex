@@ -16,6 +16,25 @@ defmodule Bumblebee.Audio.Whisper do
         the number of mel features used per input features
         """
       ],
+      encoder_max_positions: [
+        default: 1500,
+        doc: """
+        the vocabulary size of the encoder position embedding. This corresponds to the maximum
+        sequence length of log-mel filter-bank features that the model can process
+        """
+      ],
+      decoder_max_positions: [
+        default: 448,
+        doc: """
+        the vocabulary size of the decoder position embedding. This corresponds to the maximum
+        sequence length that this model can generate. Typically this is set to a large value just
+        in case, such as 512, 1024 or 2048
+        """
+      ],
+      hidden_size: [
+        default: 1024,
+        doc: "the dimensionality of hidden layers"
+      ],
       encoder_num_blocks: [
         default: 12,
         doc: "the number of Transformer blocks in the encoder"
@@ -42,25 +61,9 @@ defmodule Bumblebee.Audio.Whisper do
         docs:
           "the dimensionality of the intermediate (often named feed-forward) layer in the decoder"
       ],
-      hidden_size: [
-        default: 1024,
-        doc: "the dimensionality of hidden layers"
-      ],
       activation: [
         default: :gelu,
         doc: "the activation function"
-      ],
-      max_source_positions: [
-        default: 1500,
-        doc: "maximum sequence length of log-mel filter-bank features"
-      ],
-      max_target_positions: [
-        default: 448,
-        doc: "maximum sequence length of decoder outputs"
-      ],
-      scale_embedding: [
-        default: false,
-        doc: "whether to scale embeddings by dividing by the square root of `:hidden_size`"
       ],
       dropout_rate: [
         default: 0.1,
@@ -73,10 +76,6 @@ defmodule Bumblebee.Audio.Whisper do
       activation_dropout_rate: [
         default: 0.0,
         doc: "the dropout rate for activations inside fully connected layers"
-      ],
-      classifier_dropout_rate: [
-        default: 0.0,
-        doc: "the dropout rate for the classification head"
       ],
       initializer_scale: [
         default: 0.02,
@@ -169,8 +168,8 @@ defmodule Bumblebee.Audio.Whisper do
   end
 
   defp inputs(spec) do
-    input_features_shape = {nil, spec.num_mel_bins, nil}
-    target_features_shape = {nil, nil}
+    encoder_input_shape = {nil, spec.num_mel_bins, nil}
+    decoder_input_shape = {nil, nil}
 
     encoder_attention_head_mask_shape =
       {spec.encoder_num_blocks, spec.encoder_num_attention_heads}
@@ -181,11 +180,11 @@ defmodule Bumblebee.Audio.Whisper do
     hidden_shape = {nil, nil, spec.hidden_size}
 
     Bumblebee.Utils.Model.inputs_to_map([
-      Axon.input("input_features", shape: input_features_shape),
+      Axon.input("input_features", shape: encoder_input_shape),
       Axon.input("attention_head_mask", optional: true, shape: encoder_attention_head_mask_shape),
       Axon.input("input_embeddings", optional: true, shape: hidden_shape),
-      Axon.input("decoder_input_ids", optional: true, shape: target_features_shape),
-      Axon.input("decoder_attention_mask", optional: true, shape: target_features_shape),
+      Axon.input("decoder_input_ids", optional: true, shape: decoder_input_shape),
+      Axon.input("decoder_attention_mask", optional: true, shape: decoder_input_shape),
       Axon.input("decoder_attention_head_mask",
         optional: true,
         shape: decoder_attention_head_mask_shape
@@ -325,7 +324,7 @@ defmodule Bumblebee.Audio.Whisper do
     # weight as the position embedding
     kernel =
       Axon.param("weight", fn ->
-        Axon.Shape.embedding_kernel({}, spec.max_source_positions, spec.hidden_size)
+        Axon.Shape.embedding_kernel({}, spec.encoder_max_positions, spec.hidden_size)
       end)
 
     Axon.layer(fn kernel, _opts -> kernel end, [kernel], name: name)
@@ -347,9 +346,7 @@ defmodule Bumblebee.Audio.Whisper do
         # TODO: wrap encoder block in a layer_drop combinator
 
         {hidden_state, attention} =
-          encoder_block(state.hidden_state, block_attention_head_mask, spec,
-            name: join(name, idx)
-          )
+          encoder_block(state.hidden_state, block_attention_head_mask, spec, name: join(name, idx))
 
         %{
           hidden_state: hidden_state,
@@ -452,7 +449,7 @@ defmodule Bumblebee.Audio.Whisper do
     # offset this by cache size
     kernel =
       Axon.param("weight", fn _ ->
-        Axon.Shape.embedding_kernel({}, spec.max_target_positions, spec.hidden_size)
+        Axon.Shape.embedding_kernel({}, spec.decoder_max_positions, spec.hidden_size)
       end)
 
     # TODO: slice by cache size
@@ -703,18 +700,19 @@ defmodule Bumblebee.Audio.Whisper do
         convert!(data,
           vocab_size: {"vocab_size", number()},
           hidden_size: {"d_model", number()},
+          num_mel_bins: {"num_mel_bins", number()},
+          encoder_max_positions: {"max_source_positions", number()},
+          decoder_max_positions: {"max_target_positions", number()},
           encoder_num_blocks: {"encoder_layers", number()},
           decoder_num_blocks: {"decoder_layers", number()},
           encoder_num_attention_heads: {"encoder_attention_heads", number()},
           decoder_num_attention_heads: {"decoder_attention_heads", number()},
           encoder_intermediate_size: {"encoder_ffn_dim", number()},
           decoder_intermediate_size: {"decoder_ffn_dim", number()},
-          scale_embedding: {"scale_embedding", boolean()},
           activation: {"activation_function", atom()},
           dropout_rate: {"dropout", number()},
           attention_dropout_rate: {"attention_dropout", number()},
           activation_dropout_rate: {"activation_dropout", number()},
-          classifier_dropout_rate: {"classifier_dropout", number()},
           initializer_scale: {"init_std", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
