@@ -99,7 +99,7 @@ spec = Bumblebee.configure(spec, num_labels: 5)
 
 With the models downloaded and ready to go, you need to prepare the dataset. The downloaded dataset is a CSV. You can use the `Explorer` library to quickly load the CSV into a DataFrame.
 
-Once the data is loaded, you need to convert raw text to tokens and the raw labels to tensors. Additionally, you need to convert the DataFrame to a Stream consisting of tuples: `{tokenized, labels}`---that is the form expected by Axon's training API.
+Once the data is loaded, you need to convert raw text to tokens and the raw labels to tensors. Additionally, you need to convert the DataFrame to a Stream consisting of tuples: `{tokenized, labels}` - that is the form expected by Axon's training API.
 
 ```elixir
 defmodule Yelp do
