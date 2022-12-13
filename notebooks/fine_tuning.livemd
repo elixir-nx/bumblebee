@@ -32,9 +32,7 @@ Fine-tuning is the process of specializing the parameters in a pre-trained model
 
 This example demonstrates how to use Bumblebee and Axon to fine-tune a pre-trained Bert model to classify Yelp reviews into classes of 1-5 stars. This example is based on [Fine-tune a pretrained model](https://huggingface.co/docs/transformers/training) from Huggingface.
 
-You'll need to first download the Yelp Reviews dataset from the following URL:
-
-`https://s3.amazonaws.com/fast-ai-nlp/yelp_review_full_csv.tgz`
+You'll need to first download the Yelp Reviews dataset ([download](https://s3.amazonaws.com/fast-ai-nlp/yelp_review_full_csv.tgz)).
 
 Once downloaded, extract it to a directory of your choosing and you're ready to go!
 
