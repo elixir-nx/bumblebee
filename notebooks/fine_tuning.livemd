@@ -2541,7 +2541,7 @@ loop = Axon.Loop.checkpoint(loop, event: :epoch_completed)
 >
 ```
 
-To run the loop, you just need to call `Axon.Loop.run/4`. `Axon.Loop.run/4` takes a loop, input data, and any initial state (in this case initial parameters). You can kind of think of `Axon.Loop.run/4` as an `Enum.reduce/3`. It takes data, an accumulator, and a function---which map to `Loop.run/4` input data, initial state, and the actual loop data structure.
+To run the loop, you just need to call `Axon.Loop.run/4`. `Axon.Loop.run/4` takes a loop, input data, and any initial state (in this case initial parameters). You can kind of think of `Axon.Loop.run/4` as an `Enum.reduce/3`. It takes data, an accumulator, and a function - which map to `Loop.run/4` input data, initial state, and the actual loop data structure.
 
 You'll commonly see loops written out in long chains using Elixir's `|>` operator, like this:
 
