@@ -94,7 +94,7 @@ defmodule Bumblebee.Text.FillMask do
               token =
                 tokenizer
                 |> Bumblebee.Tokenizer.decode([token_id])
-                |> String.trim()
+                |> String.trim_leading()
 
               %{score: score, token: token}
             end
