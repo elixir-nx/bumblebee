@@ -89,7 +89,13 @@ defmodule Bumblebee.Text.FillMask do
             Nx.to_flat_list(top_scores),
             Nx.to_flat_list(top_indices),
             fn score, token_id ->
-              token = Bumblebee.Tokenizer.id_to_token(tokenizer, token_id)
+              # Certain tokenizers distinguish tokens with a leading space,
+              # so we normalize the result to a consistent string
+              token =
+                tokenizer
+                |> Bumblebee.Tokenizer.decode([token_id])
+                |> String.trim_leading()
+
               %{score: score, token: token}
             end
           )
