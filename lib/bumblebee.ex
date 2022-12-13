@@ -113,6 +113,8 @@ defmodule Bumblebee do
       {Bumblebee.Text.Roberta, :for_sequence_classification},
     "XLMRobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
     "XLMRobertaModel" => {Bumblebee.Text.Roberta, :base},
+    "WhisperModel" => {Bumblebee.Audio.Whisper, :base},
+    "WhisperForConditionalGeneration" => {Bumblebee.Audio.Whisper, :for_conditional_generation},
     # Diffusers
     "AutoencoderKL" => {Bumblebee.Diffusion.VaeKl, :base},
     "StableDiffusionSafetyChecker" => {Bumblebee.Diffusion.StableDiffusion.SafetyChecker, :base},

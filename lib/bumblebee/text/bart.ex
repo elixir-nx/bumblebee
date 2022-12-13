@@ -326,7 +326,10 @@ defmodule Bumblebee.Text.Bart do
         Axon.input("input_ids", optional: true, shape: shape),
         Axon.input("attention_mask", optional: true, shape: shape),
         Axon.input("position_ids", optional: true, shape: shape),
-        Axon.input("attention_head_mask", optional: true, shape: decoder_attention_head_mask_shape),
+        Axon.input("attention_head_mask",
+          optional: true,
+          shape: decoder_attention_head_mask_shape
+        ),
         Axon.input("input_embeddings", optional: true, shape: hidden_shape),
         Axon.input("encoder_hidden_state", optional: true, shape: hidden_shape),
         Axon.input("encoder_attention_mask", optional: true, shape: shape),
