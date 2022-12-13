@@ -1693,6 +1693,8 @@ Now we can go about training the model! First, we need to extract the Axon model
 
 ```elixir
 %{model: model, params: params} = model
+
+model
 ```
 
 <!-- livebook:{"output":true} -->
