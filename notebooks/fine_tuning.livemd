@@ -2552,6 +2552,8 @@ trained_model_state =
   |> Axon.Loop.metric(accuracy, "accuracy")
   |> Axon.Loop.checkpoint(event: :epoch_completed)
   |> Axon.Loop.run(train_data, params, epochs: 3)
+
+:ok
 ```
 
 <!-- livebook:{"output":true} -->
