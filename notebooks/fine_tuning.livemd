@@ -11,10 +11,6 @@ Mix.install(
     {:exla, "~> 0.4"},
     {:explorer, "~> 0.3"}
   ],
-  system_env: [
-    # or cuda, tpu, rocm, etc.
-    XLA_TARGET: "cpu"
-  ],
   config: [
     nx: [
       default_backend: EXLA.Backend,
