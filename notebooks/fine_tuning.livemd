@@ -212,6 +212,7 @@ The dataset is rather large for CPU training, so we'll just train a small subset
 ```elixir
 train_data = Enum.take(train_data, 250)
 test_data = Enum.take(test_data, 50)
+:ok
 ```
 
 <!-- livebook:{"output":true} -->
