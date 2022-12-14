@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:bumblebee, "~> 0.1.0"},
+  {:bumblebee, github: "elixir-nx/bumblebee"},
   {:nx, "~> 0.4.1"},
   {:exla, "~> 0.4.1"},
   {:kino, "~> 0.8.0"}
@@ -67,12 +67,17 @@ text_input =
   Kino.Input.text("Prompt", default: "numbat, forest, high quality, detailed, digital art")
 ```
 
+```elixir
+negative_input = Kino.Input.text("Negative Prompt", default: "darkness, rainy, foggy")
+```
+
 We are ready to generate images!
 
 ```elixir
 prompt = Kino.Input.read(text_input)
+negative_prompt = Kino.Input.read(negative_input)
 
-output = Nx.Serving.run(serving, prompt)
+output = Nx.Serving.run(serving, %{prompt: prompt, negative_prompt: negative_prompt})
 
 for result <- output.results do
   Kino.Image.new(result.image)
