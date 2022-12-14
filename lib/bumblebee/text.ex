@@ -6,6 +6,12 @@ defmodule Bumblebee.Text do
   @type token_classification_input :: String.t()
   @type token_classification_output :: %{entities: list(token_classification_entity())}
 
+  @typedoc """
+  A single entity label.
+
+  Note that `start` and `end` indices are expressed in terms of UTF-8
+  bytes.
+  """
   @type token_classification_entity :: %{
           start: non_neg_integer(),
           end: non_neg_integer(),
