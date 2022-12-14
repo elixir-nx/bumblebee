@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:bumblebee, github: "elixir-nx/bumblebee"},
+  {:bumblebee, "~> 0.1.1"},
   {:nx, "~> 0.4.1"},
   {:exla, "~> 0.4.1"},
   {:kino, "~> 0.8.0"}
