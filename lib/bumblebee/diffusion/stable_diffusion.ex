@@ -398,9 +398,6 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
   defp get_tokens(%{prompt: prompt, negative_prompt: negative}), do: [{prompt, negative}]
 
-  defp get_tokens(prompts) when is_list(prompts),
-    do: Enum.flat_map(prompts, &get_tokens/1)
-
   defp get_tokens(%{prompt: prompt}), do: [{prompt, ""}]
 
   defp get_tokens(prompt) when is_binary(prompt), do: [{prompt, ""}]
