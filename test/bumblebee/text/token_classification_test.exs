@@ -50,6 +50,14 @@ defmodule Bumblebee.Text.TokenClassificationTest do
                start: 66,
                end: 75
              } = microsoft
+
+      # Offsets should be expressed in terms of bytes (note that é is 2 bytes)
+
+      text = "Jane é John"
+
+      assert %{
+               entities: [%{start: 0, end: 4}, %{start: 8, end: 12}]
+             } = Nx.Serving.run(serving, text)
     end
 
     test "correctly extracts entities with simple aggregation on batched input" do

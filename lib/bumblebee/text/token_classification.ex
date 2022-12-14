@@ -67,24 +67,27 @@ defmodule Bumblebee.Text.TokenClassification do
 
       inputs = Map.take(all_inputs, ["input_ids", "attention_mask"])
 
-      {Nx.Batch.concatenate([inputs]), {texts, all_inputs, multi?}}
+      {Nx.Batch.concatenate([inputs]), {all_inputs, multi?}}
     end)
-    |> Nx.Serving.client_postprocessing(fn scores, _metadata, {texts, inputs, multi?} ->
-      [texts, Utils.Nx.batch_to_list(inputs), Utils.Nx.batch_to_list(scores)]
-      |> Enum.zip_with(fn [text, inputs, scores] ->
-        entities =
-          scores
-          |> gather_raw_entities(tokenizer, text, inputs)
-          |> aggregate(spec, tokenizer, aggregation)
-          |> filter_entities(ignored_labels)
+    |> Nx.Serving.client_postprocessing(fn scores, _metadata, {inputs, multi?} ->
+      Enum.zip_with(
+        Utils.Nx.batch_to_list(inputs),
+        Utils.Nx.batch_to_list(scores),
+        fn inputs, scores ->
+          entities =
+            scores
+            |> gather_raw_entities(tokenizer, inputs)
+            |> aggregate(spec, tokenizer, aggregation)
+            |> filter_entities(ignored_labels)
 
-        %{entities: entities}
-      end)
+          %{entities: entities}
+        end
+      )
       |> Shared.normalize_output(multi?)
     end)
   end
 
-  defp gather_raw_entities(scores, tokenizer, text, inputs) do
+  defp gather_raw_entities(scores, tokenizer, inputs) do
     {sequence_length, _} = Nx.shape(scores)
     flat_special_tokens_mask = Nx.to_flat_list(inputs["special_tokens_mask"])
     flat_input_ids = Nx.to_flat_list(inputs["input_ids"])
@@ -104,7 +107,8 @@ defmodule Bumblebee.Text.TokenClassification do
 
     for {token_idx, token_id, start_idx, end_idx, _special? = 0} <- token_infos do
       token = Bumblebee.Tokenizer.id_to_token(tokenizer, token_id)
-      token_ref = String.slice(text, start_idx, end_idx - start_idx)
+      # Indices are expressed in terms of utf8 bytes
+      token_reference_length = end_idx - start_idx
 
       token_scores = scores[token_idx]
 
@@ -115,7 +119,9 @@ defmodule Bumblebee.Text.TokenClassification do
         start: start_idx,
         end: end_idx,
         index: token_idx,
-        is_subword: String.length(token) != String.length(token_ref)
+        # Subword tokens usually have the ## prefix, so they are longer
+        # than the actual word piece
+        is_subword: byte_size(token) != token_reference_length
       }
     end
   end
