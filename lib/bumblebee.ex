@@ -56,6 +56,13 @@ defmodule Bumblebee do
     "BertForTokenClassification" => {Bumblebee.Text.Bert, :for_token_classification},
     "BertLMHeadModel" => {Bumblebee.Text.Bert, :for_causal_language_modeling},
     "BertModel" => {Bumblebee.Text.Bert, :base},
+    # these models are just Roberta models, but the config will list them as camembert
+    "CamembertModel" => {Bumblebee.Text.Roberta, :base},
+    "CamembertForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
+    "CamembertForSequenceClassification" => {Bumblebee.Text.Roberta, :for_sequence_classification},
+    "CamembertForMultipleChoice" => {Bumblebee.Text.Roberta, :for_multiple_choice},
+    "CamembertForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
+    "CamembertForQuestionAnswering" => {Bumblebee.Text.Roberta, :for_question_answering},
     "CLIPModel" => {Bumblebee.Multimodal.Clip, :base},
     "CLIPTextModel" => {Bumblebee.Text.ClipText, :base},
     "CLIPVisionModel" => {Bumblebee.Vision.ClipVision, :base},
