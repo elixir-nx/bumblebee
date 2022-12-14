@@ -265,7 +265,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   end
 
   defp client_preprocessing(input, tokenizer, sequence_length) do
-    {prompts, multi?} =
+    {[prompts], multi?} =
       Shared.validate_serving_input!(
         input,
         &validate_input/1,
