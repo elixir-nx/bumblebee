@@ -59,7 +59,8 @@ defmodule Bumblebee do
     # these models are just Roberta models, but the config will list them as camembert
     "CamembertModel" => {Bumblebee.Text.Roberta, :base},
     "CamembertForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
-    "CamembertForSequenceClassification" => {Bumblebee.Text.Roberta, :for_sequence_classification},
+    "CamembertForSequenceClassification" =>
+      {Bumblebee.Text.Roberta, :for_sequence_classification},
     "CamembertForMultipleChoice" => {Bumblebee.Text.Roberta, :for_multiple_choice},
     "CamembertForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
     "CamembertForQuestionAnswering" => {Bumblebee.Text.Roberta, :for_question_answering},
