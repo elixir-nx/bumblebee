@@ -402,6 +402,8 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
   defp get_tokens(prompt) when is_binary(prompt), do: [{prompt, ""}]
 
+  defp get_tokens(prompts) when is_list(prompts), do: Enum.flat_map(prompts, &get_tokens/1)
+
   defp validate_input(input) when is_binary(input), do: true
 
   defp validate_input(%{prompt: input, negative: negative})
