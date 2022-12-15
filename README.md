@@ -1,5 +1,8 @@
 # Bumblebee
 
+[![Docs](https://img.shields.io/badge/hex.pm-docs-8e7ce6.svg)](https://hexdocs.pm/bumblebee)
+[![Actions Status](https://github.com/livebook-dev/kino_bumblebee/workflows/Test/badge.svg)](https://github.com/elixir-nx/bumblebee/actions)
+
 Bumblebee provides pre-trained and transformer Neural Network models on top of [Axon](https://github.com/elixir-nx/axon). It includes integration with [🤗 Models](https://huggingface.co/models), allowing anyone to download and perform Machine Learning tasks with few lines of code.
 
 To see all supported architectures, [check out our documentation sidebar](https://hexdocs.pm/bumblebee).
