@@ -12,7 +12,7 @@ Mix.install([
   {:phoenix, "~> 1.7.0-rc.0", override: true},
   {:phoenix_live_view, "~> 0.18.3"},
   # Bumblebee and friends
-  {:bumblebee, "~> 0.1.1"},
+  {:bumblebee, "~> 0.1.2"},
   {:nx, "~> 0.4.1"},
   {:exla, "~> 0.4.1"}
 ])
