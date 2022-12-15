@@ -8,8 +8,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
   describe "integration" do
     test "base model" do
       assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model(
-                 {:hf, "hakurei/waifu-diffusion", subdir: "unet"},
+               Bumblebee.load_model({:hf, "CompVis/stable-diffusion-v1-4", subdir: "unet"},
                  params_filename: "diffusion_pytorch_model.bin"
                )
 
@@ -29,18 +28,14 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
         to_channels_first(outputs.sample)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
         Nx.tensor([
           [
+            [[0.0283, -0.0525, 0.0433], [-0.1055, -0.1024, -0.0299], [-0.0498, -0.0391, 0.0032]],
+            [[-0.2615, 0.1989, 0.1763], [-0.1742, 0.2385, 0.2464], [-0.2188, 0.1589, 0.1809]],
             [
-              [-0.0990, -0.1132, -0.0237],
-              [-0.1776, -0.1141, -0.0475],
-              [-0.1518, -0.0989, -0.0500]
+              [-0.5708, -0.3721, -0.2976],
+              [-0.2256, -0.0616, -0.0092],
+              [-0.2484, -0.1358, -0.0635]
             ],
-            [[-0.3094, 0.1087, 0.1059], [-0.1391, 0.2548, 0.2616], [-0.1631, 0.1674, 0.1968]],
-            [
-              [-0.6858, -0.4824, -0.3525],
-              [-0.3155, -0.1462, -0.0410],
-              [-0.3399, -0.2399, -0.0982]
-            ],
-            [[-0.0407, 0.0768, 0.1296], [-0.0119, 0.1665, 0.2012], [0.0084, 0.2265, 0.2371]]
+            [[0.0672, 0.2093, 0.2373], [0.0086, 0.1947, 0.2024], [0.0041, 0.1981, 0.2100]]
           ]
         ]),
         atol: 1.0e-4
