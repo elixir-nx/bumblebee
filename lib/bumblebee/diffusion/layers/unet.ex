@@ -83,6 +83,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     norm_epsilon = opts[:norm_epsilon] || 1.0e-6
     norm_num_groups = opts[:norm_num_groups] || 32
     num_attention_heads = opts[:num_attention_heads] || 1
+    use_linear_projection = Keyword.get(opts, :use_linear_projection, false)
     output_scale_factor = opts[:output_scale_factor] || 1.0
     downsample_padding = opts[:downsample_padding] || [{1, 1}, {1, 1}]
     add_downsample = Keyword.get(opts, :add_downsample, true)
@@ -114,6 +115,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
               spatial_transformer(hidden_state, encoder_hidden_state,
                 hidden_size: out_channels,
                 num_heads: num_attention_heads,
+                use_linear_projection: use_linear_projection,
                 depth: 1,
                 name: join(name, "attentions.#{idx}")
               )
@@ -157,6 +159,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     norm_epsilon = opts[:norm_epsilon] || 1.0e-6
     norm_num_groups = opts[:norm_num_groups] || 32
     num_attention_heads = opts[:num_attention_heads] || 1
+    use_linear_projection = Keyword.get(opts, :use_linear_projection, false)
     output_scale_factor = opts[:output_scale_factor] || 1.0
     add_upsample = Keyword.get(opts, :add_upsample, true)
     name = opts[:name]
@@ -187,6 +190,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
             spatial_transformer(hidden_state, encoder_hidden_state,
               hidden_size: out_channels,
               num_heads: num_attention_heads,
+              use_linear_projection: use_linear_projection,
               depth: 1,
               name: join(name, "attentions.#{idx}")
             )
@@ -218,6 +222,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     activation = opts[:activation] || :swish
     norm_num_groups = opts[:norm_num_groups] || 32
     num_attention_heads = opts[:num_attention_heads] || 1
+    use_linear_projection = Keyword.get(opts, :use_linear_projection, false)
     output_scale_factor = opts[:output_scale_factor] || 1.0
     name = opts[:name]
 
@@ -245,6 +250,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
           encoder_hidden_state,
           hidden_size: channels,
           num_heads: num_attention_heads,
+          use_linear_projection: use_linear_projection,
           depth: 1,
           name: join(name, "attentions.#{idx}")
         )
@@ -260,21 +266,14 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
   defp spatial_transformer(hidden_state, cross_hidden_state, opts) do
     hidden_size = opts[:hidden_size]
     num_heads = opts[:num_heads]
+    use_linear_projection = opts[:use_linear_projection]
     depth = opts[:depth] || 1
     dropout = opts[:dropout] || 0.0
     name = opts[:name]
 
     residual = hidden_state
 
-    hidden_state
-    |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "norm"))
-    |> Axon.conv(hidden_size,
-      kernel_size: 1,
-      strides: 1,
-      padding: :valid,
-      name: join(name, "proj_in")
-    )
-    |> then(
+    flatten_spatial =
       &Axon.layer(
         fn hidden_state, residual, _opts ->
           {b, h, w, c} = Nx.shape(residual)
@@ -282,7 +281,33 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
         end,
         [&1, residual]
       )
-    )
+
+    unflatten_spatial =
+      &Axon.layer(
+        fn hidden_state, residual, _opts ->
+          Nx.reshape(hidden_state, Nx.shape(residual))
+        end,
+        [&1, residual]
+      )
+
+    hidden_state
+    |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "norm"))
+    |> then(fn hidden_state ->
+      if use_linear_projection do
+        hidden_state
+        |> flatten_spatial.()
+        |> Axon.dense(hidden_size, name: join(name, "proj_in"))
+      else
+        hidden_state
+        |> Axon.conv(hidden_size,
+          kernel_size: 1,
+          strides: 1,
+          padding: :valid,
+          name: join(name, "proj_in")
+        )
+        |> flatten_spatial.()
+      end
+    end)
     |> spatial_transformer_blocks(cross_hidden_state,
       hidden_size: hidden_size,
       num_heads: num_heads,
@@ -290,20 +315,22 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
       depth: depth,
       name: name
     )
-    |> then(
-      &Axon.layer(
-        fn hidden_state, residual, _opts ->
-          Nx.reshape(hidden_state, Nx.shape(residual))
-        end,
-        [&1, residual]
-      )
-    )
-    |> Axon.conv(hidden_size,
-      kernel_size: 1,
-      strides: 1,
-      padding: :valid,
-      name: join(name, "proj_out")
-    )
+    |> then(fn hidden_state ->
+      if use_linear_projection do
+        hidden_state
+        |> Axon.dense(hidden_size, name: join(name, "proj_out"))
+        |> unflatten_spatial.()
+      else
+        hidden_state
+        |> unflatten_spatial.()
+        |> Axon.conv(hidden_size,
+          kernel_size: 1,
+          strides: 1,
+          padding: :valid,
+          name: join(name, "proj_out")
+        )
+      end
+    end)
     |> Axon.add(residual)
   end
 

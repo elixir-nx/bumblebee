@@ -625,10 +625,10 @@ defmodule Bumblebee do
   @doc """
   Predicts sample at the previous timestep using the given scheduler.
 
-  Takes the current `sample` and the `noise` predicted by the model at
-  the current timestep. Returns `{state, prev_sample}`, where `state`
-  is the updated scheduler loop state and `prev_sample` is the predicted
-  sample at the previous timestep.
+  Takes the current `sample` and `prediction` (usually noise) returned
+  by the model at the current timestep. Returns `{state, prev_sample}`,
+  where `state` is the updated scheduler loop state and `prev_sample`
+  is the predicted sample at the previous timestep.
 
   Note that some schedulers require several forward passes of the model
   (and a couple calls to this function) to make an actual prediction for
@@ -641,8 +641,8 @@ defmodule Bumblebee do
           Nx.Tensor.t(),
           Nx.Tensor.t()
         ) :: {Bumblebee.Scheduler.state(), Nx.Tensor.t()}
-  def scheduler_step(%module{} = scheduler, state, sample, noise) do
-    module.step(scheduler, state, sample, noise)
+  def scheduler_step(%module{} = scheduler, state, sample, prediction) do
+    module.step(scheduler, state, sample, prediction)
   end
 
   @doc """

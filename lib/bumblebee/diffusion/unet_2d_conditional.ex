@@ -69,11 +69,17 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     ],
     num_attention_heads: [
       default: 8,
-      doc: "the number of attention heads for each attention layer"
+      doc:
+        "the number of attention heads for each attention layer. Optionally can be a list with one number per block"
     ],
     cross_attention_size: [
       default: 1280,
       doc: "the dimensionality of the cross attention features"
+    ],
+    use_linear_projection: [
+      default: false,
+      doc:
+        "whether the input/output projection of the transformer block should be linear or convolutional"
     ],
     activation: [
       default: :silu,
@@ -228,7 +234,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
   defp down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, opts) do
     name = opts[:name]
-    blocks = Enum.zip(spec.hidden_sizes, spec.down_block_types)
+
+    blocks =
+      Enum.zip([spec.hidden_sizes, spec.down_block_types, num_attention_heads_per_block(spec)])
 
     in_channels = hd(spec.hidden_sizes)
     down_block_residuals = [{sample, in_channels}]
@@ -236,7 +244,8 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     state = {sample, down_block_residuals, in_channels}
 
     {sample, down_block_residuals, _} =
-      for {{out_channels, block_type}, idx} <- Enum.with_index(blocks), reduce: state do
+      for {{out_channels, block_type, num_attention_heads}, idx} <- Enum.with_index(blocks),
+          reduce: state do
         {sample, down_block_residuals, in_channels} ->
           last_block? = idx == length(spec.hidden_sizes) - 1
 
@@ -254,7 +263,8 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
               activation: spec.activation,
               norm_epsilon: spec.group_norm_epsilon,
               norm_num_groups: spec.group_norm_num_groups,
-              num_attention_heads: spec.num_attention_heads,
+              num_attention_heads: num_attention_heads,
+              use_linear_projection: spec.use_linear_projection,
               name: join(name, idx)
             )
 
@@ -274,7 +284,8 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       norm_epsilon: spec.group_norm_epsilon,
       norm_num_groups: spec.group_norm_num_groups,
       output_scale_factor: spec.mid_block_scale_factor,
-      num_attention_heads: spec.num_attention_heads,
+      num_attention_heads: spec |> num_attention_heads_per_block() |> List.last(),
+      use_linear_projection: spec.use_linear_projection,
       name: opts[:name]
     )
   end
@@ -298,13 +309,23 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     reversed_hidden_sizes = Enum.reverse(spec.hidden_sizes)
     in_channels = hd(reversed_hidden_sizes)
 
+    num_attention_heads_per_block =
+      spec
+      |> num_attention_heads_per_block()
+      |> Enum.reverse()
+
     blocks_and_chunks =
-      [reversed_hidden_sizes, spec.up_block_types, down_block_residuals]
+      [
+        reversed_hidden_sizes,
+        spec.up_block_types,
+        num_attention_heads_per_block,
+        down_block_residuals
+      ]
       |> Enum.zip()
       |> Enum.with_index()
 
     {sample, _} =
-      for {{out_channels, block_type, residuals}, idx} <- blocks_and_chunks,
+      for {{out_channels, block_type, num_attention_heads, residuals}, idx} <- blocks_and_chunks,
           reduce: {sample, in_channels} do
         {sample, in_channels} ->
           last_block? = idx == length(spec.hidden_sizes) - 1
@@ -323,7 +344,8 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
               norm_epsilon: spec.group_norm_epsilon,
               norm_num_groups: spec.group_norm_num_groups,
               activation: spec.activation,
-              num_attention_heads: spec.num_attention_heads,
+              num_attention_heads: num_attention_heads,
+              use_linear_projection: spec.use_linear_projection,
               name: join(name, idx)
             )
 
@@ -331,6 +353,15 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       end
 
     sample
+  end
+
+  defp num_attention_heads_per_block(spec) when is_list(spec.num_attention_heads) do
+    spec.num_attention_heads
+  end
+
+  defp num_attention_heads_per_block(spec) when is_integer(spec.num_attention_heads) do
+    num_blocks = length(spec.down_block_types)
+    List.duplicate(spec.num_attention_heads, num_blocks)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
@@ -367,8 +398,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
           },
           downsample_padding: {"downsample_padding", padding(2)},
           mid_block_scale_factor: {"mid_block_scale_factor", number()},
-          num_attention_heads: {"attention_head_dim", number()},
+          num_attention_heads: {"attention_head_dim", one_of([number(), list(number())])},
           cross_attention_size: {"cross_attention_dim", number()},
+          use_linear_projection: {"use_linear_projection", boolean()},
           activation: {"act_fn", atom()},
           group_norm_num_groups: {"norm_num_groups", number()},
           group_norm_epsilon: {"norm_eps", number()}
