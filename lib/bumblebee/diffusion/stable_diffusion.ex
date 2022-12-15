@@ -265,7 +265,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   end
 
   defp client_preprocessing(input, tokenizer, sequence_length) do
-    {[prompts], multi?} =
+    {prompts, multi?} =
       Shared.validate_serving_input!(
         input,
         &validate_input/1,
@@ -401,6 +401,8 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   defp get_tokens(%{prompt: prompt}), do: [{prompt, ""}]
 
   defp get_tokens(prompt) when is_binary(prompt), do: [{prompt, ""}]
+
+  defp get_tokens(prompts) when is_list(prompts), do: Enum.flat_map(prompts, &get_tokens/1)
 
   defp validate_input(input) when is_binary(input), do: true
 
