@@ -183,8 +183,8 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
   end
 
   @impl true
-  def step(scheduler, state, sample, noise) do
-    do_step(scheduler, state, sample, noise)
+  def step(scheduler, state, sample, prediction) do
+    do_step(scheduler, state, sample, prediction)
   end
 
   defnp do_step(scheduler \\ [], state, sample, noise) do

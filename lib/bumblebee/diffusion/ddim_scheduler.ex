@@ -19,6 +19,20 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
       default: 0.02,
       doc: "the end value for the beta schedule"
     ],
+    prediction_type: [
+      default: :noise,
+      doc: """
+      prediction type of the denoising model. Either of:
+
+        * `:noise` (default) - the model predicts the noise of the diffusion process
+
+        * `:angular_velocity` - the model predicts velocity in angular parameterization.
+          See Section 2.4 in [Imagen Video: High Definition Video Generation with Diffusion Models](https://imagen.research.google/video/paper.pdf),
+          then Section 4 in [Progressive Distillation for Fast Sampling of Diffusion Models](https://arxiv.org/pdf/2202.00512.pdf)
+          and Appendix D
+
+      """
+    ],
     alpha_clip_strategy: [
       default: :one,
       doc: ~S"""
@@ -138,11 +152,11 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
   end
 
   @impl true
-  def step(scheduler, state, sample, noise) do
-    do_step(scheduler, state, sample, noise)
+  def step(scheduler, state, sample, prediction) do
+    do_step(scheduler, state, sample, prediction)
   end
 
-  defnp do_step(scheduler \\ [], state, sample, noise) do
+  defnp do_step(scheduler \\ [], state, sample, prediction) do
     # See Equation (12)
 
     # Note that in the paper alpha_t represents a cumulative product,
@@ -164,7 +178,21 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
         end
       end
 
-    pred_denoised_sample = (sample - Nx.sqrt(1 - alpha_bar_t) * noise) / Nx.sqrt(alpha_bar_t)
+    {pred_denoised_sample, noise} =
+      case scheduler.prediction_type do
+        :noise ->
+          pred_denoised_sample =
+            (sample - Nx.sqrt(1 - alpha_bar_t) * prediction) / Nx.sqrt(alpha_bar_t)
+
+          {pred_denoised_sample, prediction}
+
+        :angular_velocity ->
+          pred_denoised_sample =
+            Nx.sqrt(alpha_bar_t) * sample - Nx.sqrt(1 - alpha_bar_t) * prediction
+
+          noise = Nx.sqrt(alpha_bar_t) * prediction + Nx.sqrt(1 - alpha_bar_t) * sample
+          {pred_denoised_sample, noise}
+      end
 
     pred_denoised_sample =
       if scheduler.clip_denoised_sample do
@@ -219,6 +247,9 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
           },
           beta_start: {"beta_start", number()},
           beta_end: {"beta_end", number()},
+          prediction_type:
+            {"prediction_type",
+             mapping(%{"epsilon" => :noise, "v_prediction" => :angular_velocity})},
           alpha_clip_strategy: {
             "set_alpha_to_one",
             mapping(%{true => :one, false => :alpha_zero})
