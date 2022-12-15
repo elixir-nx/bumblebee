@@ -8,11 +8,13 @@ defmodule Bumblebee.Diffusion.StableDiffusion.SafetyCheckerTest do
   describe "integration" do
     test "base model" do
       assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "hakurei/waifu-diffusion", subdir: "safety_checker"})
+               Bumblebee.load_model(
+                 {:hf, "CompVis/stable-diffusion-v1-4", subdir: "safety_checker"}
+               )
 
       assert {:ok, featurizer} =
                Bumblebee.load_featurizer(
-                 {:hf, "hakurei/waifu-diffusion", subdir: "feature_extractor"}
+                 {:hf, "CompVis/stable-diffusion-v1-4", subdir: "feature_extractor"}
                )
 
       assert %Bumblebee.Diffusion.StableDiffusion.SafetyChecker{architecture: :base} = spec
