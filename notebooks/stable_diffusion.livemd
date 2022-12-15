@@ -17,6 +17,14 @@ Stable Diffusion is a latent text-to-image diffusion model, primarily used to ge
 
 <!-- livebook:{"branch_parent_index":0} -->
 
+## Warning
+
+*Note: Stable Diffusion is a very involved model, so the generation can take a long time if you run it on a CPU.*
+
+If you have a GPU available, feel free to increase the number of steps and images to achieve a better quality.
+
+For stable diffusion to run on the GPU, it requires at least 10 gigabytes of VRAM
+
 ## Text to image
 
 Stable Diffusion is composed of several separate models and preprocessors, so we will load all of them.
@@ -84,7 +92,3 @@ for result <- output.results do
 end
 |> Kino.Layout.grid(columns: 2)
 ```
-
-*Note: Stable Diffusion is a very involved model, so the generation can take a long time if you run it on a CPU.*
-
-If you have a GPU available, feel free to increase the number of steps and images to achieve a better quality.
