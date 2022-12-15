@@ -15,6 +15,10 @@ Nx.global_default_backend(EXLA.Backend)
 
 Stable Diffusion is a latent text-to-image diffusion model, primarily used to generate images based on a text prompt. Ever since it [became open-source](https://stability.ai/blog/stable-diffusion-public-release), the research, applications and tooling around it exploded. You can find a ton of resources and examples online, meanwhile let's see how to run Stable Diffusion using Bumblebee!
 
+<!-- livebook:{"break_markdown":true} -->
+
+> **Note:** Stable Diffusion is a very involved model, so the generation can take a long time if you run it on a CPU. Also, running on the GPU currently requires at least 10 GB of VRAM.
+
 <!-- livebook:{"branch_parent_index":0} -->
 
 ## Text to image
@@ -46,7 +50,7 @@ repository_id = "CompVis/stable-diffusion-v1-4"
 :ok
 ```
 
-> Note: some checkpoints, such as [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5), require a license agreement. In those cases, sign up on Hugging Face, accept the license on the repository page, generate an access token in [the settings](https://huggingface.co/settings/tokens) and add it to the repository specification via `:auth_token`. You can use Livebook secrets to pass the token securely.
+> **Note:** some checkpoints, such as [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5), require a license agreement. In those cases, sign up on Hugging Face, accept the license on the repository page, generate an access token in [the settings](https://huggingface.co/settings/tokens) and add it to the repository specification via `:auth_token`. You can use Livebook secrets to pass the token securely.
 
 <!-- livebook:{"break_markdown":true} -->
 
@@ -63,19 +67,19 @@ serving =
     defn_options: [compiler: EXLA]
   )
 
-text_input =
+prompt_input =
   Kino.Input.text("Prompt", default: "numbat, forest, high quality, detailed, digital art")
-```
 
-```elixir
-negative_input = Kino.Input.text("Negative Prompt", default: "darkness, rainy, foggy")
+negative_prompt_input = Kino.Input.text("Negative Prompt", default: "darkness, rainy, foggy")
+
+Kino.Layout.grid([prompt_input, negative_prompt_input])
 ```
 
 We are ready to generate images!
 
 ```elixir
-prompt = Kino.Input.read(text_input)
-negative_prompt = Kino.Input.read(negative_input)
+prompt = Kino.Input.read(prompt_input)
+negative_prompt = Kino.Input.read(negative_prompt_input)
 
 output = Nx.Serving.run(serving, %{prompt: prompt, negative_prompt: negative_prompt})
 
@@ -85,6 +89,4 @@ end
 |> Kino.Layout.grid(columns: 2)
 ```
 
-*Note: Stable Diffusion is a very involved model, so the generation can take a long time if you run it on a CPU.*
-
-If you have a GPU available, feel free to increase the number of steps and images to achieve a better quality.
+To achieve a better quality you can increase the number of steps and images.
