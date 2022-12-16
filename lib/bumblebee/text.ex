@@ -271,4 +271,39 @@ defmodule Bumblebee.Text do
   """
   @spec fill_mask(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
   defdelegate fill_mask(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.FillMask
+
+  @doc """
+  Builds serving for the zero-shot classification task.
+
+  The serving accepts `t:zero_shot_input/0` and returns `t:zero_shot_output/0`.
+
+  The zero-shot task predicts zero-shot labels for a given sequence by
+  proposing each label as a premise-hypothesis pairing.
+
+  ## Options
+
+    * `:hypothesis_template` - an arity-1 function which accepts a label
+      and returns a hypothesis. The default hypothesis format is: "This example
+      is #\{label\}".
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+  """
+  @spec zero_shot_classification(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) ::
+          Nx.Serving.t()
+  defdelegate zero_shot_classification(model_info, tokenizer, opts \\ []),
+    to: Bumblebee.Text.ZeroShotClassification
 end

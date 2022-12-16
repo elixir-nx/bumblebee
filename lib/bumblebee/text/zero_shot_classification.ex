@@ -1,24 +1,26 @@
 defmodule Bumblebee.Text.ZeroShotClassification do
   @moduledoc false
 
-  alias Bumblebee.Utils
   alias Bumblebee.Shared
 
-  def zero_shot_classification(model_info, tokenizer, opts \\ []) do
+  def zero_shot_classification(model_info, tokenizer, labels, opts \\ []) do
     %{model: model, params: params, spec: spec} = model_info
     Shared.validate_architecture!(spec, :for_sequence_classification)
 
     opts =
       Keyword.validate!(opts, [
-        :aggregation,
         :compile,
-        ignored_labels: ["O"],
+        hypothesis_template: &default_hypothesis_template/1,
         defn_options: []
       ])
 
     compile = opts[:compile]
     defn_options = opts[:defn_options]
     hypothesis_template = opts[:hypothesis_template] || (&default_hypothesis_template/1)
+
+    hypotheses = Enum.map(labels, hypothesis_template)
+
+    sequences_per_batch = length(labels)
 
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
@@ -41,8 +43,10 @@ defmodule Bumblebee.Text.ZeroShotClassification do
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
-              "input_ids" => Nx.template({batch_size, sequence_length}, :s64),
-              "attention_mask" => Nx.template({batch_size, sequence_length}, :s64)
+              "input_ids" =>
+                Nx.template({batch_size * sequences_per_batch, sequence_length}, :s64),
+              "attention_mask" =>
+                Nx.template({batch_size * sequences_per_batch, sequence_length}, :s64)
             }
 
             [params, inputs]
@@ -59,19 +63,14 @@ defmodule Bumblebee.Text.ZeroShotClassification do
       {texts, multi?} =
         Shared.validate_serving_input!(
           input,
-          &validate_input/1,
-          "a map of %{prompt: prompt, labels: labels}"
+          &is_binary/1,
+          "a binary"
         )
 
-      {[prompt | _] = prompts, labels_and_hypothesis} =
-        texts
-        |> get_inputs(hypothesis_template)
-        |> Enum.unzip()
-
-      {labels, hypothesis} = Enum.unzip(labels_and_hypothesis)
+      pairs = Enum.flat_map(texts, fn text -> Enum.map(hypotheses, fn hyp -> {text, hyp} end) end)
 
       all_inputs =
-        Bumblebee.apply_tokenizer(tokenizer, Enum.zip(prompts, hypothesis),
+        Bumblebee.apply_tokenizer(tokenizer, pairs,
           length: sequence_length,
           return_special_tokens_mask: true,
           return_offsets: true
@@ -79,29 +78,19 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
       inputs = Map.take(all_inputs, ["input_ids", "attention_mask"])
 
-      {Nx.Batch.concatenate([inputs]), {[prompt], labels, multi?}}
+      {Nx.Batch.concatenate([inputs]), multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn scores, _metadata, {[prompt], labels, multi?} ->
-      # TODO: Handle the case where scores comes from multiple prompts
-      scores = Nx.to_flat_list(scores[[0..-1//1, 1]])
-
-      [%{scores: scores, labels: labels, prompt: prompt}]
+    |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
+      scores
+      |> Nx.to_batched(sequences_per_batch)
+      |> Enum.map(fn scores_for_batch ->
+        scores_for_batch[[0..-1//1, 1]]
+        |> Nx.to_flat_list()
+        |> Enum.zip_with(labels, fn score, label -> %{score: score, label: label} end)
+      end)
       |> Shared.normalize_output(multi?)
     end)
   end
 
   defp default_hypothesis_template(label), do: "This example is #{label}"
-
-  defp validate_input(%{prompt: prompt, labels: labels})
-       when is_binary(prompt) and is_list(labels) do
-    Enum.all?(labels, &is_binary/1)
-  end
-
-  defp get_inputs(%{prompt: prompt, labels: labels}, hypothesis_template)
-       when is_binary(prompt) and is_list(labels) do
-    Enum.map(labels, fn lab -> {prompt, {lab, hypothesis_template.(lab)}} end)
-  end
-
-  defp get_inputs(inputs, hypothesis_template) when is_list(inputs),
-    do: Enum.flat_map(inputs, &get_inputs(&1, hypothesis_template))
 end
