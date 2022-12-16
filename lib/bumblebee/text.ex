@@ -302,8 +302,13 @@ defmodule Bumblebee.Text do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
   """
-  @spec zero_shot_classification(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) ::
+  @spec zero_shot_classification(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          list(),
+          keyword()
+        ) ::
           Nx.Serving.t()
-  defdelegate zero_shot_classification(model_info, tokenizer, opts \\ []),
+  defdelegate zero_shot_classification(model_info, tokenizer, labels, opts \\ []),
     to: Bumblebee.Text.ZeroShotClassification
 end

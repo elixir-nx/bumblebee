@@ -22,7 +22,13 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
     sequences_per_batch = length(labels)
 
-    batch_size = compile[:batch_size]
+    batch_size =
+      if batch_size = compile[:batch_size] do
+        batch_size * sequences_per_batch
+      else
+        nil
+      end
+
     sequence_length = compile[:sequence_length]
 
     if compile != nil and (batch_size == nil or sequence_length == nil) do
@@ -43,10 +49,8 @@ defmodule Bumblebee.Text.ZeroShotClassification do
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
-              "input_ids" =>
-                Nx.template({batch_size * sequences_per_batch, sequence_length}, :s64),
-              "attention_mask" =>
-                Nx.template({batch_size * sequences_per_batch, sequence_length}, :s64)
+              "input_ids" => Nx.template({batch_size, sequence_length}, :s64),
+              "attention_mask" => Nx.template({batch_size, sequence_length}, :s64)
             }
 
             [params, inputs]
