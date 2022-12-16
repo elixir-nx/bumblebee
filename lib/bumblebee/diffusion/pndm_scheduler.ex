@@ -184,10 +184,12 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
   @impl true
   def step(scheduler, state, sample, prediction) do
-    do_step(scheduler, state, sample, prediction)
+    do_step(state, sample, prediction, scheduler: scheduler)
   end
 
-  defnp do_step(scheduler \\ [], state, sample, noise) do
+  defnp do_step(state, sample, noise, opts) do
+    scheduler = opts[:scheduler]
+
     {state, prev} =
       if scheduler.reduce_warmup do
         step_just_plms(scheduler, state, sample, noise)

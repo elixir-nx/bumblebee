@@ -153,10 +153,12 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
 
   @impl true
   def step(scheduler, state, sample, prediction) do
-    do_step(scheduler, state, sample, prediction)
+    do_step(state, sample, prediction, scheduler: scheduler)
   end
 
-  defnp do_step(scheduler \\ [], state, sample, prediction) do
+  defnp do_step(state, sample, prediction, opts) do
+    scheduler = opts[:scheduler]
+
     # See Equation (12)
 
     # Note that in the paper alpha_t represents a cumulative product,
