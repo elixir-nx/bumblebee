@@ -18,7 +18,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
     compile = opts[:compile]
     defn_options = opts[:defn_options]
-    hypothesis_template = opts[:hypothesis_template] || &default_hypothesis_template/1
+    hypothesis_template = opts[:hypothesis_template] || (&default_hypothesis_template/1)
 
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
@@ -56,7 +56,12 @@ defmodule Bumblebee.Text.ZeroShotClassification do
       batch_size: batch_size
     )
     |> Nx.Serving.client_preprocessing(fn input ->
-      {texts, multi?} = Shared.validate_serving_input!(input, &validate_input/1, "a map of %{prompt: prompt, labels: labels}")
+      {texts, multi?} =
+        Shared.validate_serving_input!(
+          input,
+          &validate_input/1,
+          "a map of %{prompt: prompt, labels: labels}"
+        )
 
       {[prompt | _] = prompts, labels_and_hypothesis} =
         texts
@@ -87,13 +92,16 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
   defp default_hypothesis_template(label), do: "This example is #{label}"
 
-  defp validate_input(%{prompt: prompt, labels: labels}) when is_binary(prompt) and is_list(labels) do
+  defp validate_input(%{prompt: prompt, labels: labels})
+       when is_binary(prompt) and is_list(labels) do
     Enum.all?(labels, &is_binary/1)
   end
 
-  defp get_inputs(%{prompt: prompt, labels: labels}, hypothesis_template) when is_binary(prompt) and is_list(labels) do
+  defp get_inputs(%{prompt: prompt, labels: labels}, hypothesis_template)
+       when is_binary(prompt) and is_list(labels) do
     Enum.map(labels, fn lab -> {prompt, {lab, hypothesis_template.(lab)}} end)
   end
 
-  defp get_inputs(inputs, hypothesis_template) when is_list(inputs), do: Enum.flat_map(inputs, &get_inputs(&1, hypothesis_template))
+  defp get_inputs(inputs, hypothesis_template) when is_list(inputs),
+    do: Enum.flat_map(inputs, &get_inputs(&1, hypothesis_template))
 end
