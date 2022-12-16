@@ -56,7 +56,7 @@ defmodule Bumblebee.Text.TokenClassification do
       batch_size: batch_size
     )
     |> Nx.Serving.client_preprocessing(fn input ->
-      {texts, multi?} = Shared.validate_serving_input!(input, &is_binary/1, "a string")
+      {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
       all_inputs =
         Bumblebee.apply_tokenizer(tokenizer, texts,

@@ -61,8 +61,8 @@ defmodule Bumblebee.Text.Generation do
       end,
       batch_size: batch_size
     )
-    |> Nx.Serving.client_preprocessing(fn text ->
-      {texts, multi?} = Shared.validate_serving_input!(text, &is_binary/1, "a string")
+    |> Nx.Serving.client_preprocessing(fn input ->
+      {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
       inputs =
         Bumblebee.apply_tokenizer(tokenizer, texts,

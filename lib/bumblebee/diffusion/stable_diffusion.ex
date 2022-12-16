@@ -265,27 +265,20 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   end
 
   defp client_preprocessing(input, tokenizer, sequence_length) do
-    {prompts, multi?} =
-      Shared.validate_serving_input!(
-        input,
-        &validate_input/1,
-        "a string or a map of %{prompt: string, negative_prompt: string}"
-      )
+    {inputs, multi?} = Shared.validate_serving_input!(input, &validate_input/1)
 
-    {cond_tokens, uncond_tokens} =
-      prompts
-      |> get_tokens()
-      |> Enum.unzip()
+    prompts = Enum.map(inputs, & &1.prompt)
+    negative_prompts = Enum.map(inputs, & &1.negative_prompt)
 
     conditional =
-      Bumblebee.apply_tokenizer(tokenizer, cond_tokens,
+      Bumblebee.apply_tokenizer(tokenizer, prompts,
         length: sequence_length,
         return_token_type_ids: false,
         return_attention_mask: false
       )
 
     unconditional =
-      Bumblebee.apply_tokenizer(tokenizer, uncond_tokens,
+      Bumblebee.apply_tokenizer(tokenizer, negative_prompts,
         length: Nx.axis_size(conditional["input_ids"], 1),
         return_attention_mask: false,
         return_token_type_ids: false
@@ -396,20 +389,17 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     {tensor[0..(half_size - 1)//1], tensor[half_size..-1//1]}
   end
 
-  defp get_tokens(%{prompt: prompt, negative_prompt: negative}), do: [{prompt, negative}]
+  defp validate_input(prompt) when is_binary(prompt), do: validate_input(%{prompt: prompt})
 
-  defp get_tokens(%{prompt: prompt}), do: [{prompt, ""}]
+  defp validate_input(%{prompt: prompt} = input) do
+    {:ok, %{prompt: prompt, negative_prompt: input[:negative_prompt] || ""}}
+  end
 
-  defp get_tokens(prompt) when is_binary(prompt), do: [{prompt, ""}]
+  defp validate_input(%{} = input) do
+    {:error, "expected the input map to have :prompt key, got: #{inspect(input)}"}
+  end
 
-  defp get_tokens(prompts) when is_list(prompts), do: Enum.flat_map(prompts, &get_tokens/1)
-
-  defp validate_input(input) when is_binary(input), do: true
-
-  defp validate_input(%{prompt: input, negative: negative})
-       when is_binary(input) and is_binary(negative),
-       do: true
-
-  defp validate_input(%{prompt: input}) when is_binary(input), do: true
-  defp validate_input(_), do: false
+  defp validate_input(input) do
+    {:error, "expected either a string or a map, got: #{inspect(input)}"}
+  end
 end

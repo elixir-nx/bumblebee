@@ -169,25 +169,44 @@ defmodule Bumblebee.Shared do
   @doc """
   Validates and normalizes task input.
   """
-  @spec validate_serving_input!(term(), (term() -> boolean()), String.t()) ::
-          {list(term()), multi? :: boolean()}
-  def validate_serving_input!(input, validator, description) do
-    cond do
-      validator.(input) ->
-        {[input], false}
+  @spec validate_serving_input!(
+          term(),
+          (term() -> {:ok, term()} | {:error, String.t()})
+        ) :: {list(term()), multi? :: boolean()}
+  def validate_serving_input!(input, validator)
 
-      is_list(input) ->
-        for item <- input do
-          unless validator.(item) do
-            raise ArgumentError,
-                  "expected each input in the input list to be #{description}, found: #{inspect(item)}"
-          end
+  def validate_serving_input!(input, validator) when is_list(input) do
+    input =
+      for item <- input do
+        case validator.(item) do
+          {:ok, normalized} -> normalized
+          {:error, message} -> raise ArgumentError, "invalid input in the batch, #{message}"
         end
+      end
 
-        {input, true}
+    {input, true}
+  end
 
-      true ->
-        raise ArgumentError, "expected the input to be #{description}, got: #{inspect(input)}"
+  def validate_serving_input!(input, validator) do
+    case validator.(input) do
+      {:ok, normalized} -> {[normalized], false}
+      {:error, message} -> raise ArgumentError, "invalid input, #{message}"
+    end
+  end
+
+  def validate_image(input) do
+    if image?(input) do
+      {:ok, input}
+    else
+      {:error, "expected an image, got: #{inspect(input)}"}
+    end
+  end
+
+  def validate_string(input) do
+    if is_binary(input) do
+      {:ok, input}
+    else
+      {:error, "expected a string, got: #{inspect(input)}"}
     end
   end
 
