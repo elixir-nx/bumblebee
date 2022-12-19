@@ -96,5 +96,5 @@ defmodule Bumblebee.Text.ZeroShotClassification do
     end)
   end
 
-  defp default_hypothesis_template(label), do: "This example is #{label}"
+  defp default_hypothesis_template(label), do: "This example is #{label}."
 end
