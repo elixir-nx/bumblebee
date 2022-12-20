@@ -125,14 +125,16 @@ defmodule Bumblebee do
     "CLIPFeatureExtractor" => Bumblebee.Vision.ClipFeaturizer,
     "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer,
     "DeiTFeatureExtractor" => Bumblebee.Vision.DeitFeaturizer,
-    "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer
+    "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer,
+    "WhisperFeatureExtractor" => Bumblebee.Audio.WhisperFeaturizer
   }
 
   @model_type_to_featurizer %{
     "convnext" => Bumblebee.Vision.ConvNextFeaturizer,
     "deit" => Bumblebee.Vision.DeitFeaturizer,
     "resnet" => Bumblebee.Vision.ConvNextFeaturizer,
-    "vit" => Bumblebee.Vision.VitFeaturizer
+    "vit" => Bumblebee.Vision.VitFeaturizer,
+    "whisper" => Bumblebee.Audio.WhisperFeaturizer
   }
 
   @model_type_to_tokenizer %{
