@@ -128,6 +128,7 @@ defmodule Bumblebee do
     "albert" => Bumblebee.Text.AlbertTokenizer,
     "bart" => Bumblebee.Text.BartTokenizer,
     "bert" => Bumblebee.Text.BertTokenizer,
+    "camembert" => Bumblebee.Text.CamembertTokenizer,
     "clip" => Bumblebee.Text.ClipTokenizer,
     "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
     "layoutlm" => Bumblebee.Text.LayoutLmTokenizer,
