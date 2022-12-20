@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.TokenClassificationTest do
+defmodule Bumblebee.Text.ZeroShotClassificationTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
