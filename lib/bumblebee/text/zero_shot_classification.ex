@@ -67,8 +67,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
       {texts, multi?} =
         Shared.validate_serving_input!(
           input,
-          &is_binary/1,
-          "a binary"
+          &Shared.validate_string/1
         )
 
       pairs = Enum.flat_map(texts, fn text -> Enum.map(hypotheses, fn hyp -> {text, hyp} end) end)
