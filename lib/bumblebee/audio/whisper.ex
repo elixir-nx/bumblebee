@@ -136,7 +136,7 @@ defmodule Bumblebee.Audio.Whisper do
       outputs.hidden_state
       |> Layers.dense_transposed(spec.vocab_size,
         kernel_initializer: kernel_initializer(spec),
-        name: "model.proj_out"
+        name: "model.decoder.embed_tokens"
       )
 
     Layers.output(%{
