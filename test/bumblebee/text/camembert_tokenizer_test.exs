@@ -24,7 +24,7 @@ defmodule Bumblebee.Text.CamembertTokenizerTest do
       assert_equal(
         inputs["attention_mask"],
         Nx.tensor([
-          [1, 1, 1, 1, 1, 1, 1, 1],
+          [1, 1, 1, 1, 1, 1, 1, 1]
         ])
       )
     end
