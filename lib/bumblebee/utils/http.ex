@@ -32,7 +32,21 @@ defmodule Bumblebee.Utils.HTTP do
         try do
           request = {url, headers}
           http_opts = [ssl: http_ssl_opts()]
-          opts = [stream: :self, sync: false]
+
+          caller = self()
+
+          receiver = fn reply_info ->
+            request_id = elem(reply_info, 0)
+
+            # Cancel the request if the caller terminates
+            if Process.alive?(caller) do
+              send(caller, {:http, reply_info})
+            else
+              :httpc.cancel_request(request_id)
+            end
+          end
+
+          opts = [stream: :self, sync: false, receiver: receiver]
 
           {:ok, request_id} = :httpc.request(:get, request, http_opts, opts)
           download_loop(%{request_id: request_id, file: file, total_size: nil, size: nil})
