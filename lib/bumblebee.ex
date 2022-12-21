@@ -56,7 +56,7 @@ defmodule Bumblebee do
     "BertForTokenClassification" => {Bumblebee.Text.Bert, :for_token_classification},
     "BertLMHeadModel" => {Bumblebee.Text.Bert, :for_causal_language_modeling},
     "BertModel" => {Bumblebee.Text.Bert, :base},
-    # these models are just Roberta models, but the config will list them as camembert
+    # These models are just RoBERTa models, but the config will list them as CamemBERT
     "CamembertModel" => {Bumblebee.Text.Roberta, :base},
     "CamembertForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
     "CamembertForSequenceClassification" =>
@@ -99,11 +99,20 @@ defmodule Bumblebee do
     "RobertaForQuestionAnswering" => {Bumblebee.Text.Roberta, :for_question_answering},
     "RobertaForSequenceClassification" => {Bumblebee.Text.Roberta, :for_sequence_classification},
     "RobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
-    "RobertaLMHeadModel" => {Bumblebee.Text.Roberta, :for_causal_language_modeling},
+    "RobertaForCausalLM" => {Bumblebee.Text.Roberta, :for_causal_language_modeling},
     "RobertaModel" => {Bumblebee.Text.Roberta, :base},
     "ViTForImageClassification" => {Bumblebee.Vision.Vit, :for_image_classification},
     "ViTForMaskedImageModeling" => {Bumblebee.Vision.Vit, :for_masked_image_modeling},
     "ViTModel" => {Bumblebee.Vision.Vit, :base},
+    # These models are just RoBERTa models, but the config will list them as XLM-RoBERTa
+    "XLMRobertaForCausalLM" => {Bumblebee.Text.Roberta, :for_causal_language_modeling},
+    "XLMRobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
+    "XLMRobertaForMultipleChoice" => {Bumblebee.Text.Roberta, :for_multiple_choice},
+    "XLMRobertaForQuestionAnswering" => {Bumblebee.Text.Roberta, :for_question_answering},
+    "XLMRobertaForSequenceClassification" =>
+      {Bumblebee.Text.Roberta, :for_sequence_classification},
+    "XLMRobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
+    "XLMRobertaModel" => {Bumblebee.Text.Roberta, :base},
     # Diffusers
     "AutoencoderKL" => {Bumblebee.Diffusion.VaeKl, :base},
     "StableDiffusionSafetyChecker" => {Bumblebee.Diffusion.StableDiffusion.SafetyChecker, :base},
@@ -133,7 +142,8 @@ defmodule Bumblebee do
     "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
     "layoutlm" => Bumblebee.Text.LayoutLmTokenizer,
     "mbart" => Bumblebee.Text.MbartTokenizer,
-    "roberta" => Bumblebee.Text.RobertaTokenizer
+    "roberta" => Bumblebee.Text.RobertaTokenizer,
+    "xlm-roberta" => Bumblebee.Text.XlmRobertaTokenizer
   }
 
   @diffusers_class_to_scheduler %{
