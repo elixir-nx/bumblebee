@@ -13,12 +13,18 @@ defmodule Bumblebee.Text.ZeroShotClassificationTest do
 
       zero_shot_serving = Bumblebee.Text.zero_shot_classification(model, tokenizer, labels)
 
-      assert results = Nx.Serving.run(zero_shot_serving, "one day I will see the world")
+      output = Nx.Serving.run(zero_shot_serving, "one day I will see the world")
 
-      assert %{label: "traveling", score: _score} =
-               Enum.max_by(results, fn %{score: score} -> score end)
+      assert %{
+               predictions: [
+                 %{label: "cooking", score: _},
+                 %{label: "traveling", score: _},
+                 %{label: "dancing", score: _}
+               ]
+             } = output
 
-      # assert_all_close(score, 0.9210067987442017)
+      assert %{label: "traveling", score: score} = Enum.max_by(output.predictions, & &1.score)
+      assert_all_close(score, 0.9874)
     end
 
     test "correctly classifies labels with 2 sequences" do
@@ -28,21 +34,17 @@ defmodule Bumblebee.Text.ZeroShotClassificationTest do
 
       zero_shot_serving = Bumblebee.Text.zero_shot_classification(model, tokenizer, labels)
 
-      assert [results1, results2] =
+      assert [output1, output2] =
                Nx.Serving.run(zero_shot_serving, [
                  "one day I will see the world",
                  "one day I will learn to salsa"
                ])
 
-      assert %{label: "traveling", score: _score1} =
-               Enum.max_by(results1, fn %{score: score} -> score end)
+      assert %{label: "traveling", score: score1} = Enum.max_by(output1.predictions, & &1.score)
+      assert_all_close(score1, 0.9874)
 
-      assert %{label: "dancing", score: _score2} =
-               Enum.max_by(results2, fn %{score: score} -> score end)
-
-      # assert_all_close(score1, 0.9210067987442017)
-      # TODO: This one is off by a pretty large factor? 0.82 vs 0.86
-      # assert_all_close(score2, 0.8600915670394897)
+      assert %{label: "dancing", score: score2} = Enum.max_by(output2.predictions, & &1.score)
+      assert_all_close(score2, 0.9585)
     end
 
     test "correctly classifies batch with compilation set to true" do
@@ -56,21 +58,17 @@ defmodule Bumblebee.Text.ZeroShotClassificationTest do
           defn_options: [compiler: EXLA]
         )
 
-      assert [results1, results2] =
+      assert [output1, output2] =
                Nx.Serving.run(zero_shot_serving, [
                  "one day I will see the world",
                  "one day I will learn to salsa"
                ])
 
-      assert %{label: "traveling", score: _score1} =
-               Enum.max_by(results1, fn %{score: score} -> score end)
+      assert %{label: "traveling", score: score1} = Enum.max_by(output1.predictions, & &1.score)
+      assert_all_close(score1, 0.9874)
 
-      assert %{label: "dancing", score: _score2} =
-               Enum.max_by(results2, fn %{score: score} -> score end)
-
-      # assert_all_close(score1, 0.9210067987442017)
-      # TODO: This one is off by a pretty large factor? 0.82 vs 0.86
-      # assert_all_close(score2, 0.8600915670394897)
+      assert %{label: "dancing", score: score2} = Enum.max_by(output2.predictions, & &1.score)
+      assert_all_close(score2, 0.9585)
     end
   end
 end

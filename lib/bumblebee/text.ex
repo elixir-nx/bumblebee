@@ -272,10 +272,17 @@ defmodule Bumblebee.Text do
   @spec fill_mask(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
   defdelegate fill_mask(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.FillMask
 
+  @type zero_shot_classification_input :: String.t()
+  @type zero_shot_classification_output :: %{
+          predictions: list(zero_shot_classification_prediction())
+        }
+  @type zero_shot_classification_prediction :: %{score: number(), label: String.t()}
+
   @doc """
   Builds serving for the zero-shot classification task.
 
-  The serving accepts `t:zero_shot_input/0` and returns `t:zero_shot_output/0`.
+  The serving accepts `t:zero_shot_classification_input/0` and returns
+  `t:zero_shot_classification_output/0`.
 
   The zero-shot task predicts zero-shot labels for a given sequence by
   proposing each label as a premise-hypothesis pairing.

@@ -16,7 +16,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
     compile = opts[:compile]
     defn_options = opts[:defn_options]
-    hypothesis_template = opts[:hypothesis_template] || (&default_hypothesis_template/1)
+    hypothesis_template = opts[:hypothesis_template]
 
     hypotheses = Enum.map(labels, hypothesis_template)
 
@@ -25,8 +25,6 @@ defmodule Bumblebee.Text.ZeroShotClassification do
     batch_size =
       if batch_size = compile[:batch_size] do
         batch_size * sequences_per_batch
-      else
-        nil
       end
 
     sequence_length = compile[:sequence_length]
@@ -36,12 +34,21 @@ defmodule Bumblebee.Text.ZeroShotClassification do
             "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
     end
 
+    entailment_id =
+      Enum.find_value(spec.id_to_label, fn {id, label} ->
+        label == "entailment" && id
+      end)
+
+    unless entailment_id do
+      raise ArgumentError,
+            ~s/expected model specification to include "entailment" label in :id_to_label/
+    end
+
     {_init_fun, predict_fun} = Axon.build(model)
 
     scores_fun = fn params, input ->
       %{logits: logits} = predict_fun.(params, input)
-      logits = Nx.take(logits, Nx.tensor([0, 2]), axis: 1)
-      Axon.Activations.softmax(logits)
+      logits
     end
 
     Nx.Serving.new(
@@ -64,33 +71,29 @@ defmodule Bumblebee.Text.ZeroShotClassification do
       batch_size: batch_size
     )
     |> Nx.Serving.client_preprocessing(fn input ->
-      {texts, multi?} =
-        Shared.validate_serving_input!(
-          input,
-          &Shared.validate_string/1
-        )
+      {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
-      pairs = Enum.flat_map(texts, fn text -> Enum.map(hypotheses, fn hyp -> {text, hyp} end) end)
+      pairs = for text <- texts, hypothesis <- hypotheses, do: {text, hypothesis}
 
-      all_inputs =
+      inputs =
         Bumblebee.apply_tokenizer(tokenizer, pairs,
           length: sequence_length,
-          return_special_tokens_mask: true,
-          return_offsets: true
+          return_token_type_ids: false
         )
-
-      inputs = Map.take(all_inputs, ["input_ids", "attention_mask"])
 
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
     |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
-      scores
-      |> Nx.to_batched(sequences_per_batch)
-      |> Enum.map(fn scores_for_batch ->
-        scores_for_batch[[0..-1//1, 1]]
-        |> Nx.to_flat_list()
-        |> Enum.zip_with(labels, fn score, label -> %{score: score, label: label} end)
-      end)
+      for scores_for_batch <- Nx.to_batched(scores, sequences_per_batch) do
+        scores = Axon.Layers.softmax(scores_for_batch[[0..-1//1, entailment_id]])
+
+        predictions =
+          scores
+          |> Nx.to_flat_list()
+          |> Enum.zip_with(labels, fn score, label -> %{score: score, label: label} end)
+
+        %{predictions: predictions}
+      end
       |> Shared.normalize_output(multi?)
     end)
   end
