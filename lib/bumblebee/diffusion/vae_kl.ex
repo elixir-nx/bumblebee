@@ -411,9 +411,9 @@ defmodule Bumblebee.Diffusion.VaeKl do
   defp sample(posterior) do
     z = Axon.nx(posterior.mean, &Nx.random_normal(Nx.shape(&1)))
 
-    posterior.mean
-    |> Axon.add(posterior.std)
-    |> Axon.multiply(z)
+    z
+    |> Axon.multiply(posterior.std)
+    |> Axon.add(posterior.mean)
   end
 
   defp mode(%{mean: mean}) do
