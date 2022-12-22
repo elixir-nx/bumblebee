@@ -32,7 +32,7 @@ defmodule Bumblebee.Conversion.PyTorch do
     {params, diff} = init_params(model, params_expr, pytorch_state)
 
     params =
-      if diff.missing == [] do
+      if diff.missing == [] and diff.mismatched == [] do
         params
       else
         {init_fun, _} = Axon.build(model)
