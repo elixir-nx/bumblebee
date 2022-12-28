@@ -16,35 +16,43 @@ defmodule Bumblebee.Conversion.PyTorch do
     * `:log_params_diff` - whether to log missing, mismatched and unused
       parameters. Defaults to `true`
 
+    * `:backend` - the backend to allocate the tensors on. It is either
+      an atom or a tuple in the shape `{backend, options}`
+
   """
   @spec load_params!(Axon.t(), map(), Path.t(), keyword()) :: map()
   def load_params!(model, input_template, path, opts \\ []) do
-    opts = Keyword.validate!(opts, log_params_diff: true)
+    opts = Keyword.validate!(opts, log_params_diff: true, backend: nil)
 
-    pytorch_state = Bumblebee.Conversion.PyTorch.Loader.load!(path)
+    with_default_backend(opts[:backend], fn ->
+      pytorch_state = Bumblebee.Conversion.PyTorch.Loader.load!(path)
 
-    unless state_dict?(pytorch_state) do
-      raise "expected a serialized model state dictionary at #{path}, but got: #{inspect(pytorch_state)}"
-    end
-
-    params_expr = Axon.trace_init(model, input_template)
-
-    {params, diff} = init_params(model, params_expr, pytorch_state)
-
-    params =
-      if diff.missing == [] and diff.mismatched == [] do
-        params
-      else
-        {init_fun, _} = Axon.build(model)
-        init_fun.(input_template, params)
+      unless state_dict?(pytorch_state) do
+        raise "expected a serialized model state dictionary at #{path}, but got: #{inspect(pytorch_state)}"
       end
 
-    if opts[:log_params_diff] do
-      log_params_diff(diff)
-    end
+      params_expr = Axon.trace_init(model, input_template)
 
-    params
+      {params, diff} = init_params(model, params_expr, pytorch_state)
+
+      params =
+        if diff.missing == [] and diff.mismatched == [] do
+          params
+        else
+          {init_fun, _} = Axon.build(model, compiler: Nx.Defn.Evaluator)
+          init_fun.(input_template, params)
+        end
+
+      if opts[:log_params_diff] do
+        log_params_diff(diff)
+      end
+
+      params
+    end)
   end
+
+  defp with_default_backend(nil, fun), do: fun.()
+  defp with_default_backend(backend, fun), do: Nx.with_default_backend(backend, fun)
 
   defp state_dict?(%{} = dict) when not is_struct(dict) do
     Enum.all?(dict, fn {key, value} -> is_binary(key) and is_struct(value, Nx.Tensor) end)

@@ -350,6 +350,9 @@ defmodule Bumblebee do
     * `:log_params_diff` - whether to log missing, mismatched and unused
       parameters. Defaults to `true`
 
+    * `:backend` - the backend to allocate the tensors on. It is either
+      an atom or a tuple in the shape `{backend, options}`
+
   ## Examples
 
   By default the model type is inferred from configuration, so loading
@@ -381,6 +384,7 @@ defmodule Bumblebee do
         :module,
         :architecture,
         :params_filename,
+        :backend,
         log_params_diff: true
       ])
 
@@ -399,7 +403,7 @@ defmodule Bumblebee do
              model,
              repository,
              opts
-             |> Keyword.take([:params_filename, :log_params_diff])
+             |> Keyword.take([:params_filename, :log_params_diff, :backend])
            ) do
       {:ok, %{model: model, params: params, spec: spec}}
     end
@@ -410,13 +414,15 @@ defmodule Bumblebee do
     format = :pytorch
     filename = opts[:params_filename] || @params_filename[format]
     log_params_diff = opts[:log_params_diff]
+    backend = opts[:backend]
 
     input_template = module.input_template(spec)
 
     with {:ok, path} <- download(repository, filename) do
       params =
         Bumblebee.Conversion.PyTorch.load_params!(model, input_template, path,
-          log_params_diff: log_params_diff
+          log_params_diff: log_params_diff,
+          backend: backend
         )
 
       {:ok, params}
