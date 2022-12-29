@@ -320,4 +320,21 @@ defmodule Bumblebee.Shared do
       other -> Nx.to_template(other)
     end)
   end
+
+  @doc """
+  Updates each of the special token with the value in `data`.
+  """
+  @spec load_special_tokens(map(), map()) :: map()
+  def load_special_tokens(special_tokens, data) do
+    for {key, default_token} <- special_tokens, into: %{} do
+      token =
+        case data["#{key}_token"] do
+          nil -> default_token
+          %{"content" => token} when is_binary(token) -> token
+          token when is_binary(token) -> token
+        end
+
+      {key, token}
+    end
+  end
 end

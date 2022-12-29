@@ -3,13 +3,16 @@ defmodule Bumblebee.Text.BertTokenizer do
   BERT tokenizer.
   """
 
-  defstruct [:tokenizer]
+  defstruct [
+    :tokenizer,
+    special_tokens: %{unk: "[UNK]", sep: "[SEP]", pad: "[PAD]", cls: "[CLS]", mask: "[MASK]"}
+  ]
 
   @behaviour Bumblebee.Tokenizer
 
   @impl true
-  def apply(%{tokenizer: tokenizer}, input, opts \\ []) do
-    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, "[PAD]", opts)
+  def apply(%{tokenizer: tokenizer, special_tokens: %{pad: pad_token}}, input, opts \\ []) do
+    Bumblebee.Utils.Tokenizers.apply(tokenizer, input, pad_token, opts)
   end
 
   @impl true
@@ -28,14 +31,18 @@ defmodule Bumblebee.Text.BertTokenizer do
   end
 
   @impl true
-  def special_tokens(_tokenizer) do
-    %{unk: "[UNK]", sep: "[SEP]", pad: "[PAD]", cls: "[CLS]", mask: "[MASK]"}
+  def special_tokens(tokenizer) do
+    tokenizer.special_tokens
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    def load(tokenizer, %{"tokenizer_file" => path}) do
+    def load(tokenizer, %{"tokenizer_file" => path, "special_tokens_map" => special_tokens_map}) do
       native_tokenizer = Bumblebee.Utils.Tokenizers.load!(path)
-      %{tokenizer | tokenizer: native_tokenizer}
+
+      special_tokens =
+        Bumblebee.Shared.load_special_tokens(tokenizer.special_tokens, special_tokens_map)
+
+      %{tokenizer | tokenizer: native_tokenizer, special_tokens: special_tokens}
     end
   end
 end
