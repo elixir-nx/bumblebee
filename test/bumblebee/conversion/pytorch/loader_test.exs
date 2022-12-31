@@ -75,6 +75,28 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
     end
   end
 
+  # Note that this test depends on generating a large 2GB binary to test zip64
+  # compatibility
+  test "big_model zip64 format" do
+    path = Path.join(@dir, "big_model_zip64.zip.pt")
+
+    if File.exists?(path) do
+      assert match?(
+               %{
+                 "bias" => %Nx.Tensor{
+                   shape: {3200},
+                   type: {:f, 32}
+                 },
+                 "weight" => %Nx.Tensor{
+                   shape: {3200, 20_000, 3, 3},
+                   type: {:f, 32}
+                 }
+               },
+               Loader.load!(path)
+             )
+    end
+  end
+
   test "legacy format storage view" do
     # Note that storage views have been removed in PyTorch v0.4.0,
     # this test is based on https://github.com/pytorch/pytorch/blob/v1.11.0/test/test_serialization.py#L554-L575

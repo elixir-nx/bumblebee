@@ -24,3 +24,6 @@ bumblebee-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Large (>2GB) test fixture
+/bumblebee/test/fixtures/pytorch/big_model_zip64.zip.pt
