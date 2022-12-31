@@ -72,9 +72,6 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
         assert Loader.load!(path) ==
                  Nx.tensor([[1, 4], [2, 5], [3, 6]], type: :s64)
       end
-
-      if format == "zip" do
-      end
     end
   end
 
