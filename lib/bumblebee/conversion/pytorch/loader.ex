@@ -32,7 +32,7 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
     contents =
       unzip
       |> Unzip.list_entries()
-      |> Map.new( fn %Unzip.Entry{file_name: file_name} ->
+      |> Map.new(fn %Unzip.Entry{file_name: file_name} ->
         content =
           unzip
           |> Unzip.file_stream!(file_name)
