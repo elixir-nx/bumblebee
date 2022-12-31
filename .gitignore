@@ -26,4 +26,4 @@ bumblebee-*.tar
 /tmp/
 
 # Large (>2GB) test fixture
-/bumblebee/test/fixtures/pytorch/big_model_zip64.zip.pt
+/test/fixtures/pytorch/big_model_zip64.zip.pt

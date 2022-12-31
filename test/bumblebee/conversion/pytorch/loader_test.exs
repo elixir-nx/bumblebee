@@ -72,28 +72,33 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
         assert Loader.load!(path) ==
                  Nx.tensor([[1, 4], [2, 5], [3, 6]], type: :s64)
       end
+
+      if format == "zip" do
+      end
     end
   end
 
-  # Note that this test depends on generating a large 2GB binary to test zip64
-  # compatibility
-  test "big_model zip64 format" do
-    path = Path.join(@dir, "big_model_zip64.zip.pt")
+  describe "zip64 format" do
+    test "big_model" do
+      path = Path.join(@dir, "big_model_zip64.zip.pt")
 
-    if File.exists?(path) do
-      assert match?(
-               %{
-                 "bias" => %Nx.Tensor{
-                   shape: {3200},
-                   type: {:f, 32}
+      # Note that this test depends on generating a large 2GB binary to test zip64
+      # compatibility
+      if File.exists?(path) do
+        assert match?(
+                 %{
+                   "bias" => %Nx.Tensor{
+                     shape: {3200},
+                     type: {:f, 32}
+                   },
+                   "weight" => %Nx.Tensor{
+                     shape: {3200, 20_000, 3, 3},
+                     type: {:f, 32}
+                   }
                  },
-                 "weight" => %Nx.Tensor{
-                   shape: {3200, 20_000, 3, 3},
-                   type: {:f, 32}
-                 }
-               },
-               Loader.load!(path)
-             )
+                 Loader.load!(path)
+               )
+      end
     end
   end
 
