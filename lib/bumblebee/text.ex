@@ -298,7 +298,12 @@ defmodule Bumblebee.Text do
       following keys:
 
         * `:batch_size` - the maximum batch size of the input. Inputs
-          are optionally padded to always match this batch size
+          are optionally padded to always match this batch size. The batch
+          size refers to the number of prompts to classify given to the
+          serving on any given run. Note that the compiled batch size is
+          a product of the number of prompts as well as the number of labels
+          given to the serving. A `batch_size: 8` and `labels: ["foo", "bar", "baz"]`
+          will result in a compiled batch size of 24.
 
         * `:sequence_length` - the maximum input sequence length. Input
           sequences are always padded/truncated to match that length
