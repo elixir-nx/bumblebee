@@ -1,6 +1,7 @@
 defmodule Bumblebee.Text.ZeroShotClassification do
   @moduledoc false
 
+  alias Bumblebee.Utils
   alias Bumblebee.Shared
 
   def zero_shot_classification(model_info, tokenizer, labels, opts \\ []) do
@@ -11,12 +12,14 @@ defmodule Bumblebee.Text.ZeroShotClassification do
       Keyword.validate!(opts, [
         :compile,
         hypothesis_template: &default_hypothesis_template/1,
+        top_k: 5,
         defn_options: []
       ])
 
+    hypothesis_template = opts[:hypothesis_template]
+    top_k = opts[:top_k]
     compile = opts[:compile]
     defn_options = opts[:defn_options]
-    hypothesis_template = opts[:hypothesis_template]
 
     hypotheses = Enum.map(labels, hypothesis_template)
 
@@ -43,7 +46,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
     {_init_fun, predict_fun} = Axon.build(model)
 
     scores_fun = fn params, input ->
-      input = Bumblebee.Utils.Nx.composite_flatten_batch(input)
+      input = Utils.Nx.composite_flatten_batch(input)
       %{logits: logits} = predict_fun.(params, input)
       logits
     end
@@ -65,7 +68,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
           scores = scores_fun.(params, inputs)
-          Bumblebee.Utils.Nx.composite_unflatten_batch(scores, inputs.size)
+          Utils.Nx.composite_unflatten_batch(scores, inputs.size)
         end
       end,
       batch_size: batch_size
@@ -81,18 +84,26 @@ defmodule Bumblebee.Text.ZeroShotClassification do
           return_token_type_ids: false
         )
 
-      inputs = Bumblebee.Utils.Nx.composite_unflatten_batch(inputs, length(texts))
+      inputs = Utils.Nx.composite_unflatten_batch(inputs, length(texts))
 
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
     |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
-      for scores <- Bumblebee.Utils.Nx.batch_to_list(scores) do
+      for scores <- Utils.Nx.batch_to_list(scores) do
         scores = Axon.Layers.softmax(scores[[0..-1//1, entailment_id]])
 
+        k = min(top_k, Nx.size(scores))
+        {top_scores, top_indices} = Utils.Nx.top_k(scores, k: k)
+
         predictions =
-          scores
-          |> Nx.to_flat_list()
-          |> Enum.zip_with(labels, fn score, label -> %{score: score, label: label} end)
+          Enum.zip_with(
+            Nx.to_flat_list(top_scores),
+            Nx.to_flat_list(top_indices),
+            fn score, idx ->
+              label = Enum.at(labels, idx)
+              %{score: score, label: label}
+            end
+          )
 
         %{predictions: predictions}
       end

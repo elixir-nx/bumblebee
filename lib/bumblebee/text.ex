@@ -289,6 +289,10 @@ defmodule Bumblebee.Text do
 
   ## Options
 
+    * `:top_k` - the number of top predictions to include in the output. If
+      the configured value is higher than the number of labels, all
+      labels are returned. Defaults to `5`
+
     * `:hypothesis_template` - an arity-1 function which accepts a label
       and returns a hypothesis. The default hypothesis format is: "This example
       is #\{label\}".
