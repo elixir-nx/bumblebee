@@ -333,10 +333,9 @@ defmodule Bumblebee.Text do
   @spec zero_shot_classification(
           Bumblebee.model_info(),
           Bumblebee.Tokenizer.t(),
-          list(),
+          list(String.t()),
           keyword()
-        ) ::
-          Nx.Serving.t()
+        ) :: Nx.Serving.t()
   defdelegate zero_shot_classification(model_info, tokenizer, labels, opts \\ []),
     to: Bumblebee.Text.ZeroShotClassification
 end
