@@ -57,8 +57,10 @@ defmodule Bumblebee.Text.ZeroShotClassification do
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
-              "input_ids" => Nx.template({batch_size, sequences_per_batch, sequence_length}, :s64),
-              "attention_mask" => Nx.template({batch_size, sequences_per_batch, sequence_length}, :s64)
+              "input_ids" =>
+                Nx.template({batch_size, sequences_per_batch, sequence_length}, :s64),
+              "attention_mask" =>
+                Nx.template({batch_size, sequences_per_batch, sequence_length}, :s64)
             }
 
             [params, inputs]
@@ -66,7 +68,8 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
-          scores_fun.(params, inputs)
+          scores = scores_fun.(params, inputs)
+          Bumblebee.Utils.Nx.composite_unflatten_batch(scores, inputs.size)
         end
       end,
       batch_size: batch_size
@@ -87,17 +90,23 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
       inputs =
         inputs
-        |> Map.update!("attention_mask", &Nx.reshape(&1, {new_batch_size, sequences_per_batch, actual_sequence_length}))
-        |> Map.update!("input_ids", &Nx.reshape(&1, {new_batch_size, sequences_per_batch, actual_sequence_length}))
+        |> Map.update!(
+          "attention_mask",
+          &Nx.reshape(&1, {new_batch_size, sequences_per_batch, actual_sequence_length})
+        )
+        |> Map.update!(
+          "input_ids",
+          &Nx.reshape(&1, {new_batch_size, sequences_per_batch, actual_sequence_length})
+        )
 
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
     |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
-      for scores_for_batch <- Nx.to_batched(scores, sequences_per_batch) do
-        scores = Axon.Layers.softmax(scores_for_batch[[0..-1//1, entailment_id]])
+      for score <- Bumblebee.Utils.Nx.batch_to_list(scores) do
+        score = Axon.Layers.softmax(score[[0..-1//1, entailment_id]])
 
         predictions =
-          scores
+          score
           |> Nx.to_flat_list()
           |> Enum.zip_with(labels, fn score, label -> %{score: score, label: label} end)
 
