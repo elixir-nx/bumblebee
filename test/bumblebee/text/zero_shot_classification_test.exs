@@ -17,9 +17,9 @@ defmodule Bumblebee.Text.ZeroShotClassificationTest do
 
       assert %{
                predictions: [
-                 %{label: "cooking", score: _},
                  %{label: "traveling", score: _},
-                 %{label: "dancing", score: _}
+                 %{label: "dancing", score: _},
+                 %{label: "cooking", score: _}
                ]
              } = output
 
