@@ -22,12 +22,8 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
     sequences_per_batch = length(labels)
 
-    batch_size =
-      if batch_size = compile[:batch_size] do
-        batch_size * sequences_per_batch
-      end
-
     sequence_length = compile[:sequence_length]
+    batch_size = compile[:batch_size]
 
     if compile != nil and (batch_size == nil or sequence_length == nil) do
       raise ArgumentError,
@@ -47,6 +43,11 @@ defmodule Bumblebee.Text.ZeroShotClassification do
     {_init_fun, predict_fun} = Axon.build(model)
 
     scores_fun = fn params, input ->
+      input =
+        input
+        |> Map.update!("attention_mask", &Nx.reshape(&1, {:auto, elem(Nx.shape(&1), 2)}))
+        |> Map.update!("input_ids", &Nx.reshape(&1, {:auto, elem(Nx.shape(&1), 2)}))
+
       %{logits: logits} = predict_fun.(params, input)
       logits
     end
@@ -56,8 +57,8 @@ defmodule Bumblebee.Text.ZeroShotClassification do
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
-              "input_ids" => Nx.template({batch_size, sequence_length}, :s64),
-              "attention_mask" => Nx.template({batch_size, sequence_length}, :s64)
+              "input_ids" => Nx.template({batch_size, sequences_per_batch, sequence_length}, :s64),
+              "attention_mask" => Nx.template({batch_size, sequences_per_batch, sequence_length}, :s64)
             }
 
             [params, inputs]
@@ -80,6 +81,14 @@ defmodule Bumblebee.Text.ZeroShotClassification do
           length: sequence_length,
           return_token_type_ids: false
         )
+
+      {actual_batch_size, actual_sequence_length} = Nx.shape(inputs["input_ids"])
+      new_batch_size = div(actual_batch_size, sequences_per_batch)
+
+      inputs =
+        inputs
+        |> Map.update!("attention_mask", &Nx.reshape(&1, {new_batch_size, sequences_per_batch, actual_sequence_length}))
+        |> Map.update!("input_ids", &Nx.reshape(&1, {new_batch_size, sequences_per_batch, actual_sequence_length}))
 
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
