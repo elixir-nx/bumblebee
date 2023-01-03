@@ -298,12 +298,10 @@ defmodule Bumblebee.Text do
       following keys:
 
         * `:batch_size` - the maximum batch size of the input. Inputs
-          are optionally padded to always match this batch size. The batch
-          size refers to the number of prompts to classify given to the
-          serving on any given run. Note that the compiled batch size is
-          a product of the number of prompts as well as the number of labels
-          given to the serving. A `batch_size: 8` and `labels: ["foo", "bar", "baz"]`
-          will result in a compiled batch size of 24.
+          are optionally padded to always match this batch size. Note
+          that the batch size refers to the number of prompts to classify,
+          while the model prediction is made for every combination of
+          prompt and label
 
         * `:sequence_length` - the maximum input sequence length. Input
           sequences are always padded/truncated to match that length
@@ -313,6 +311,24 @@ defmodule Bumblebee.Text do
       time.
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  ## Examples
+
+      {:ok, model} = Bumblebee.load_model({:hf, "facebook/bart-large-mnli"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-mnli"})
+
+      labels = ["cooking", "traveling", "dancing"]
+      zero_shot_serving = Bumblebee.Text.zero_shot_classification(model, tokenizer, labels)
+
+      output = Nx.Serving.run(zero_shot_serving, "One day I will see the world")
+      #=> %{
+      #=>   predictions: [
+      #=>     %{label: "cooking", score: 0.0070497458800673485},
+      #=>     %{label: "traveling", score: 0.985000491142273},
+      #=>     %{label: "dancing", score: 0.007949736900627613}
+      #=>   ]
+      #=> }
+
   """
   @spec zero_shot_classification(
           Bumblebee.model_info(),
