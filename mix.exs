@@ -39,7 +39,7 @@ defmodule Bumblebee.MixProject do
       {:unpickler, "~> 0.1.0"},
       {:castore, "~> 0.1.0"},
       {:jason, "~> 1.4.0"},
-      {:unzip, "0.7.2"},
+      {:unzip, "0.8.0"},
       {:progress_bar, "~> 2.0"},
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},

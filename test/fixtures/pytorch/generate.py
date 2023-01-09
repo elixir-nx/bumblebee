@@ -71,8 +71,3 @@ save("state_dict_full", "zip", OrderedDict([
     # Extra
     ("extra.weight", torch.ones(1))
 ]))
-
-# Zip64
-# Source: https://github.com/pytorch/pytorch/blob/master/test/test_serialization.py#L907
-big_model = torch.nn.Conv2d(20000, 3200, kernel_size=3)
-save("big_model_zip64", "zip", big_model.state_dict())

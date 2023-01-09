@@ -32,6 +32,6 @@
   "tokenizers": {:hex, :tokenizers, "0.2.0", "3aa9811396680f849803f6a3978a310a653059613592710ce5f883d67ff17a33", [:mix], [{:castore, "~> 0.1", [hex: :castore, repo: "hexpm", optional: false]}, {:rustler, ">= 0.0.0", [hex: :rustler, repo: "hexpm", optional: true]}, {:rustler_precompiled, "~> 0.5", [hex: :rustler_precompiled, repo: "hexpm", optional: false]}], "hexpm", "2496fd44cf96bcefc70e75cf7e34126de8b63ccb9ad35967d6d5d8661cbdb6b7"},
   "torchx": {:git, "https://github.com/elixir-nx/nx.git", "757518f395d5986031f5e26bfa00a74a53394684", [sparse: "torchx"]},
   "unpickler": {:hex, :unpickler, "0.1.0", "c2262c0819e6985b761e7107546cef96a485f401816be5304a65fdd200d5bd6a", [:mix], [], "hexpm", "e2b3f61e62406187ac52afead8a63bfb4e49394028993f3c4c42712743cab79e"},
-  "unzip": {:hex, :unzip, "0.7.2", "6fb021462bfef6cd89280c24886710e9b90dd661563c43c90b85b06cd8ef12a4", [:mix], [], "hexpm", "7be02debf6ef1af031f7ee929b3a066288f4c9c1259cda8027b9e3b376c7bedf"},
+  "unzip": {:hex, :unzip, "0.8.0", "ee21d87c21b01567317387dab4228ac570ca15b41cfc221a067354cbf8e68c4d", [:mix], [], "hexpm", "ffa67a483efcedcb5876971a50947222e104d5f8fea2c4a0441e6f7967854827"},
   "xla": {:hex, :xla, "0.4.3", "cf6201aaa44d990298996156a83a16b9a87c5fbb257758dbf4c3e83c5e1c4b96", [:make, :mix], [{:elixir_make, "~> 0.4", [hex: :elixir_make, repo: "hexpm", optional: false]}], "hexpm", "caae164b56dcaec6fbcabcd7dea14303afde07623b0cfa4a3cd2576b923105f5"},
 }
