@@ -1,6 +1,6 @@
 <!-- livebook:{"persist_outputs":true} -->
 
-# Fine-tuning with Bumblebee and Axon
+# Fine-tuning
 
 ```elixir
 Mix.install([
