@@ -218,12 +218,6 @@ IO.inspect(Enum.take(train_data, 1))
 ]
 ```
 
-<!-- livebook:{"output":true} -->
-
-```
-:ok
-```
-
 The dataset is rather large for CPU training, so we'll just train a small subset (250 training batches and 50 testing batches):
 
 ```elixir
