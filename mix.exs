@@ -60,7 +60,11 @@ defmodule Bumblebee.MixProject do
       main: "Bumblebee",
       source_url: "https://github.com/elixir-nx/bumblebee",
       source_ref: "v#{@version}",
-      extras: ["notebooks/examples.livemd", "notebooks/stable_diffusion.livemd"],
+      extras: [
+        "notebooks/examples.livemd",
+        "notebooks/stable_diffusion.livemd",
+        "notebooks/fine_tuning.livemd"
+      ],
       extra_section: "GUIDES",
       groups_for_modules: [
         Tasks: [
