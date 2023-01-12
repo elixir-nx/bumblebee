@@ -176,8 +176,7 @@ test_data =
 You can see what a single batch looks like by grabbing 1 from the stream:
 
 ```elixir
-IO.inspect(Enum.take(train_data, 1))
-:ok
+Enum.take(train_data, 1)
 ```
 
 <!-- livebook:{"output":true} -->
