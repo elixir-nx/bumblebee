@@ -98,7 +98,8 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
       NxSignal.stft(waveform, window,
         fs: opts[:sampling_rate],
         nfft: opts[:nfft],
-        overlap_size: opts[:nfft] - opts[:hop_length]
+        overlap_size: opts[:nfft] - opts[:hop_length],
+        window_padding: :reflect
       )
 
     NxSignal.stft_to_mel(stft,

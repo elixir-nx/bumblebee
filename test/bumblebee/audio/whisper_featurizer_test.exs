@@ -18,7 +18,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizerTest do
 
       IEx.pry()
 
-      assert_all_close(actual, expected[[0..-1//1, 1..-2//1]])
+      assert_all_close(actual[[0, 0..-1//1, 0..-2//1]][0], expected)
     end
   end
 end

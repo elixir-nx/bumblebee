@@ -44,7 +44,7 @@ defmodule Bumblebee.MixProject do
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
-      {:nx_signal, path: "~/projects/nx-signal"}
+      {:nx_signal, path: "~/coding/nx-signal"}
     ]
   end
 
