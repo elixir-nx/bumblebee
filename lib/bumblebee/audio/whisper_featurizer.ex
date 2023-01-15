@@ -110,7 +110,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
     # we want frequencies x frames, so we need to transpose the result
     stft
     |> NxSignal.stft_to_mel(
-      fs: opts[:sampling_rate],
+      opts[:sampling_rate],
       nfft: opts[:nfft],
       nmels: opts[:nmels],
       max_mel: max_mel,
