@@ -79,7 +79,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
           extract_fbank_features(Nx.squeeze(waveform),
             nfft: featurizer.n_fft,
             sampling_rate: featurizer.sampling_rate,
-            n_mels: featurizer.feature_size,
+            nmels: featurizer.feature_size,
             hop_length: featurizer.hop_length
           )
         end)
@@ -90,7 +90,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
   end
 
   defnp extract_fbank_features(waveform, opts \\ []) do
-    opts = keyword!(opts, [:nfft, :sampling_rate, :n_mels, :hop_length])
+    opts = keyword!(opts, [:nfft, :sampling_rate, :nmels, :hop_length])
 
     window = NxSignal.Windows.hann(n: opts[:nfft], is_periodic: true)
 
@@ -102,11 +102,21 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
         window_padding: :reflect
       )
 
-    NxSignal.stft_to_mel(stft,
+    # magic numbers taken from the reference implementation. This yields max_mel ~ 3016
+    f_sp = 200.0 / 3
+    max_mel = f_sp * 45.245640471924965
+
+    # stft and stft_to_mel output frames x frequencies and
+    # we want frequencies x frames, so we need to transpose the result
+    stft
+    |> NxSignal.stft_to_mel(
       fs: opts[:sampling_rate],
       nfft: opts[:nfft],
-      n_mels: opts[:n_mels]
+      nmels: opts[:nmels],
+      max_mel: max_mel,
+      mel_frequency_spacing: f_sp
     )
+    |> Nx.transpose()
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
