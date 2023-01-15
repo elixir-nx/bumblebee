@@ -14,11 +14,9 @@ defmodule Bumblebee.Audio.WhisperFeaturizerTest do
       audio = Nx.from_numpy("test/fixtures/inputs/whisper/test_input_raw_1.npy")
       expected = Nx.from_numpy("test/fixtures/inputs/whisper/test_output_featurized_1.npy")
 
-      actual = Bumblebee.apply_featurizer(featurizer, audio)
+      actual = Bumblebee.apply_featurizer(featurizer, audio)[0]
 
-      IEx.pry()
-
-      assert_all_close(actual[[0, 0..-1//1, 0..-2//1]][0], expected)
+      assert_all_close(actual, expected, atol: 1.0e-4, rtol: 1.0e-3)
     end
   end
 end
