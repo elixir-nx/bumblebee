@@ -17,12 +17,20 @@ defmodule Bumblebee.Conversion.PyTorchTest do
       Axon.input("input", shape: {nil, 4, 4, 3})
       |> Axon.conv(2, kernel_size: 2, name: "base.conv")
       |> Axon.flatten()
-      |> Axon.dense(2, name: "classifier.layers.0")
-      |> Axon.dense(1, name: "classifier.layers.1")
+      |> Axon.dense(2, name: "classifier.intermediate")
+      |> Axon.dense(1, name: "classifier.output")
     end
 
     defp input_template() do
       Nx.broadcast(1, {1, 4, 4, 3})
+    end
+
+    defp params_mapping() do
+      %{
+        "base.conv" => "base.conv",
+        "classifier.intermediate" => "classifier.layers.0",
+        "classifier.output" => "classifier.layers.1"
+      }
     end
 
     test "silently loads parameters if all match" do
@@ -31,7 +39,8 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params = PyTorch.load_params!(model, input_template(), path)
+          params =
+            PyTorch.load_params!(model, input_template(), path, params_mapping: params_mapping())
 
           assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 2, 3, 2}))
           assert_equal(params["conv"]["bias"], Nx.broadcast(0.0, {2}))
@@ -46,14 +55,14 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          PyTorch.load_params!(model, input_template(), path)
+          PyTorch.load_params!(model, input_template(), path, params_mapping: params_mapping())
         end)
 
       assert log =~ """
              the following parameters were missing:
 
-               * classifier.layers.1.kernel
-               * classifier.layers.1.bias
+               * classifier.output.kernel
+               * classifier.output.bias
              """
 
       assert log =~ """
@@ -65,8 +74,8 @@ defmodule Bumblebee.Conversion.PyTorchTest do
       assert log =~ """
              the following parameters were ignored, because of non-matching shape:
 
-               * classifier.layers.0.kernel (expected {18, 2}, got: {1, 1})
-               * classifier.layers.0.bias (expected {2}, got: {1})
+               * classifier.intermediate.kernel (expected {18, 2}, got: {1, 1})
+               * classifier.intermediate.bias (expected {2}, got: {1})
              """
     end
 
@@ -76,7 +85,8 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params = PyTorch.load_params!(model, input_template(), path)
+          params =
+            PyTorch.load_params!(model, input_template(), path, params_mapping: params_mapping())
 
           assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 2, 3, 2}))
           assert_equal(params["conv"]["bias"], Nx.broadcast(0.0, {2}))
@@ -91,7 +101,8 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params = PyTorch.load_params!(model, input_template(), path)
+          params =
+            PyTorch.load_params!(model, input_template(), path, params_mapping: params_mapping())
 
           assert_equal(params["base.conv"]["kernel"], Nx.broadcast(1.0, {2, 2, 3, 2}))
           assert_equal(params["base.conv"]["bias"], Nx.broadcast(0.0, {2}))

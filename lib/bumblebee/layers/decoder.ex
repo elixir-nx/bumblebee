@@ -114,38 +114,45 @@ defmodule Bumblebee.Layers.Decoder do
   The function returns the full key and value state and the updated
   cache.
   """
-  def cached_attention_key_values(key, value, attention_cache, offset, opts \\ []) do
-    opts = Keyword.validate!(opts, cross_attention?: false)
-
-    update_fun =
-      if opts[:cross_attention?],
-        do: &update_cross_attention_cache/5,
-        else: &update_self_attention_cache/5
-
+  def cached_attention_key_values(key, value, attention_cache, offset) do
     Layers.if_present attention_cache do
-      Axon.layer(update_fun, [key, value, attention_cache, offset])
+      Axon.layer(&update_attention_cache/5, [key, value, attention_cache, offset])
       |> Layers.unwrap_tuple(3)
     else
       {key, value, attention_cache}
     end
   end
 
-  defnp update_self_attention_cache(key, value, attention_cache, offset, _opts \\ []) do
-    %{key: cached_key, value: cached_value} = attention_cache
-    indices = [0, Nx.as_type(offset, {:s, 64}), 0, 0]
-    key = Nx.put_slice(cached_key, indices, key)
-    value = Nx.put_slice(cached_value, indices, value)
-    updated_cache = %{key: key, value: value}
-    {key, value, updated_cache}
+  deftransformp update_attention_cache(key, value, attention_cache, offset, _opts \\ []) do
+    if Nx.shape(key) == Nx.shape(attention_cache.key) and
+         Nx.shape(value) == Nx.shape(attention_cache.value) do
+      # If the shapes are the same, it means the keys and values would
+      # be the same on every iteration, so we take cache all of them at
+      # at once (as in cross-attention)
+      replace_attention_cache(key, value, attention_cache, offset)
+    else
+      # Otherwise we compute keys and values incrementally, so we append
+      # to the cache (as in self-attention)
+      append_attention_cache(key, value, attention_cache, offset)
+    end
   end
 
-  defnp update_cross_attention_cache(key, value, attention_cache, offset, _opts \\ []) do
+  defnp replace_attention_cache(key, value, attention_cache, offset, _opts \\ []) do
     if offset == 0 do
       attention_cache = %{attention_cache | key: key, value: value}
       {key, value, attention_cache}
     else
       {attention_cache.key, attention_cache.value, attention_cache}
     end
+  end
+
+  defnp append_attention_cache(key, value, attention_cache, offset, _opts \\ []) do
+    %{key: cached_key, value: cached_value} = attention_cache
+    indices = [0, Nx.as_type(offset, {:s, 64}), 0, 0]
+    key = Nx.put_slice(cached_key, indices, key)
+    value = Nx.put_slice(cached_value, indices, value)
+    updated_cache = %{key: key, value: value}
+    {key, value, updated_cache}
   end
 
   @doc """
@@ -226,27 +233,35 @@ defmodule Bumblebee.Layers.Decoder do
   """
   def apply_causal_mask(attention_mask, query, offset) do
     Axon.layer(
-      fn attention_mask, query, offset, _opts ->
-        sequence_length = Nx.axis_size(attention_mask, -1)
+      fn
+        %Axon.None{}, query, %Axon.None{}, _opts ->
+          # The default attention mask would be all ones (matching
+          # the batch size and sequence length in query), so we can
+          # skip it altogether
+          sequence_length = Nx.axis_size(query, 1)
+          build_causal_mask(Nx.broadcast(1, {1, sequence_length}))
 
-        # We generate a full causal mask, then slice it in case of
-        # iterative decoding
-        causal_mask = build_causal_mask(Nx.broadcast(1, {1, sequence_length}))
+        attention_mask, query, offset, _opts ->
+          sequence_length = Nx.axis_size(attention_mask, -1)
 
-        causal_mask =
-          case offset do
-            %Axon.None{} ->
-              causal_mask
+          # We generate a full causal mask, then slice it in case of
+          # iterative decoding
+          causal_mask = build_causal_mask(Nx.broadcast(1, {1, sequence_length}))
 
-            offset ->
-              mask_shift = Nx.as_type(offset, {:s, 64})
-              query_length = Nx.axis_size(query, 1)
-              Nx.slice_along_axis(causal_mask, mask_shift, query_length, axis: 2)
-          end
+          causal_mask =
+            case offset do
+              %Axon.None{} ->
+                causal_mask
 
-        Nx.logical_and(attention_mask, causal_mask)
+              offset ->
+                mask_shift = Nx.as_type(offset, {:s, 64})
+                query_length = Nx.axis_size(query, 1)
+                Nx.slice_along_axis(causal_mask, mask_shift, query_length, axis: 2)
+            end
+
+          Nx.logical_and(attention_mask, causal_mask)
       end,
-      [attention_mask, query, Axon.optional(offset)]
+      [Axon.optional(attention_mask), query, Axon.optional(offset)]
     )
   end
 

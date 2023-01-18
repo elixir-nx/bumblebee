@@ -11,7 +11,7 @@ defmodule Bumblebee.Conversion.PyTorch do
   This function expects files created with `torch.save(model.state_dict(), path)`,
   as described in [the documentation](https://pytorch.org/tutorials/beginner/saving_loading_models.html).
 
-  # Options
+  ## Options
 
     * `:log_params_diff` - whether to log missing, mismatched and unused
       parameters. Defaults to `true`
@@ -19,10 +19,14 @@ defmodule Bumblebee.Conversion.PyTorch do
     * `:backend` - the backend to allocate the tensors on. It is either
       an atom or a tuple in the shape `{backend, options}`
 
+    * `:params_mapping` - a map describing layers and params relationship
+      between the Axon model and the PyTorch state. For more details see
+      `Bumblebee.HuggingFace.Transformers.Model.params_mapping/1`
+
   """
   @spec load_params!(Axon.t(), map(), Path.t(), keyword()) :: map()
   def load_params!(model, input_template, path, opts \\ []) do
-    opts = Keyword.validate!(opts, log_params_diff: true, backend: nil)
+    opts = Keyword.validate!(opts, log_params_diff: true, backend: nil, params_mapping: %{})
 
     with_default_backend(opts[:backend], fn ->
       pytorch_state = Bumblebee.Conversion.PyTorch.Loader.load!(path)
@@ -33,7 +37,7 @@ defmodule Bumblebee.Conversion.PyTorch do
 
       params_expr = Axon.trace_init(model, input_template)
 
-      {params, diff} = init_params(model, params_expr, pytorch_state)
+      {params, diff} = init_params(model, params_expr, pytorch_state, opts[:params_mapping])
 
       params =
         if diff.missing == [] and diff.mismatched == [] do
@@ -60,13 +64,13 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp state_dict?(_other), do: false
 
-  defp init_params(model, params_expr, pytorch_state) do
+  defp init_params(model, params_expr, pytorch_state, params_mapping) do
     layers =
       model
       |> Utils.Axon.nodes_with_names()
       |> Enum.filter(fn {layer, _name} -> layer.parameters != [] end)
 
-    prefixes = infer_prefixes(layers, pytorch_state)
+    prefixes = infer_prefixes(layers, pytorch_state, params_mapping)
 
     diff = %{missing: [], mismatched: [], used_keys: []}
 
@@ -74,33 +78,51 @@ defmodule Bumblebee.Conversion.PyTorch do
       layers
       |> Enum.filter(fn {_layer, layer_name} -> params_expr[layer_name] end)
       |> Enum.map_reduce(diff, fn {layer, layer_name}, diff ->
-        source_layer_name = source_layer_name(layer_name, prefixes)
+        params_source = params_source(layer_name, prefixes, params_mapping)
 
         {params, diff} =
           Enum.reduce(layer.parameters, {[], diff}, fn param, {params, diff} ->
             param_expr = params_expr[layer_name][param.name]
 
-            {value, diff} =
-              case param_from_pytorch(
-                     layer.op_name,
-                     layer.opts,
-                     param.name,
-                     pytorch_state,
-                     source_layer_name
-                   ) do
-                {:ok, value, keys} ->
-                  diff = prepend(diff, :used_keys, keys)
-
-                  case verify_param_shape(param_expr, value) do
-                    :ok ->
-                      {value, diff}
-
-                    {:error, expected, actual} ->
-                      {nil, prepend(diff, :mismatched, [{layer_name, param, expected, actual}])}
+            {sources, source_fun} =
+              case params_source do
+                %{} = layer_params_mapping ->
+                  if info = layer_params_mapping[param.name] do
+                    info
+                  else
+                    raise "no matching mapping found for parameter #{inspect(param.name)} in #{inspect(layer_params_mapping)}"
                   end
 
-                :error ->
-                  {nil, prepend(diff, :missing, [{layer_name, param}])}
+                source_layer_name when is_binary(source_layer_name) ->
+                  default_layer_param_source(layer, param.name, source_layer_name)
+              end
+
+            {all_sources_found?, source_values, source_keys} =
+              for {source_layer_name, source_param_name} <- sources, reduce: {true, [], []} do
+                {all_found?, values, keys} ->
+                  source_param_names = List.wrap(source_param_name)
+
+                  case lookup_param(pytorch_state, source_layer_name, source_param_names) do
+                    {:ok, value, key} -> {all_found?, [value | values], [key | keys]}
+                    :error -> {false, values, keys}
+                  end
+              end
+
+            diff = prepend(diff, :used_keys, source_keys)
+
+            {value, diff} =
+              if all_sources_found? do
+                value = source_fun.(Enum.reverse(source_values))
+
+                case verify_param_shape(param_expr, value) do
+                  :ok ->
+                    {value, diff}
+
+                  {:error, expected, actual} ->
+                    {nil, prepend(diff, :mismatched, [{layer_name, param, expected, actual}])}
+                end
+              else
+                {nil, prepend(diff, :missing, [{layer_name, param}])}
               end
 
             if value do
@@ -110,8 +132,6 @@ defmodule Bumblebee.Conversion.PyTorch do
             end
           end)
 
-        ignored_keys = ignored_params(pytorch_state, source_layer_name)
-        diff = prepend(diff, :used_keys, ignored_keys)
         {{layer_name, Map.new(params)}, diff}
       end)
 
@@ -128,7 +148,10 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp prepend(diff, key, values), do: Map.update!(diff, key, &(values ++ &1))
 
-  defp infer_prefixes(layers, pytorch_state) do
+  defp infer_prefixes(layers, pytorch_state, params_mapping) do
+    # Note: target refers to the parameters we are initializing, while
+    # source refers to the state we are loading from
+
     target_names = for {_, name} <- layers, do: name
 
     source_names =
@@ -137,16 +160,36 @@ defmodule Bumblebee.Conversion.PyTorch do
         key |> String.split(".") |> Enum.drop(-1) |> Enum.join(".")
       end
 
-    source_prefix = maybe_prefix(target_names, source_names)
-    target_prefix = maybe_prefix(source_names, target_names)
+    target_templates = Map.keys(params_mapping)
 
-    %{target: target_prefix, source: source_prefix}
+    source_templates =
+      Enum.flat_map(params_mapping, fn
+        {_target_template, %{} = params_source} ->
+          for {_target_param_name, {sources, _source_fun}} <- params_source,
+              {source_template, _source_param_name} <- sources,
+              do: source_template
+
+        {_target_template, source_template} when is_binary(source_template) ->
+          [source_template]
+      end)
+
+    target_template_prefix = maybe_prefix(target_names, target_templates)
+    target_name_prefix = maybe_prefix(target_templates, target_names)
+    source_template_prefix = maybe_prefix(source_names, source_templates)
+    source_name_prefix = maybe_prefix(source_templates, source_names)
+
+    %{
+      target_template: target_template_prefix,
+      target_name: target_name_prefix,
+      source_template: source_template_prefix,
+      source_name: source_name_prefix
+    }
   end
 
   # If a subset of `names` is present in `prefixed_names` under the
   # same prefix, finds that prefix.
   defp maybe_prefix(names, prefixed_names) do
-    names
+    (names -- prefixed_names)
     |> Enum.map(fn name ->
       suffix = "." <> name
 
@@ -170,17 +213,80 @@ defmodule Bumblebee.Conversion.PyTorch do
     end
   end
 
-  defp source_layer_name(target_layer_name, prefixes) do
-    case prefixes do
-      %{target: prefix, source: prefix} ->
-        target_layer_name
+  defp params_source(target_layer_name, prefixes, params_mapping) do
+    layer_name = change_prefix(target_layer_name, prefixes.target_name, prefixes.target_template)
 
-      %{target: nil, source: source_prefix} ->
-        source_prefix <> "." <> target_layer_name
+    params_source =
+      case params_mapping do
+        %{^layer_name => params_source} ->
+          params_source
 
-      %{target: target_prefix, source: nil} ->
-        String.replace_prefix(target_layer_name, target_prefix <> ".", "")
+        mapping ->
+          params_source =
+            Enum.find_value(mapping, fn {target_template, params_source} ->
+              if substitutes = match_template(layer_name, target_template) do
+                Bumblebee.HuggingFace.Transformers.Utils.map_params_source_layer_names(
+                  params_source,
+                  &fill_template(&1, substitutes)
+                )
+              end
+            end)
+
+          unless params_source do
+            raise "no matching mapping found for layer #{inspect(layer_name)} in #{inspect(mapping)}"
+          end
+
+          params_source
+      end
+
+    Bumblebee.HuggingFace.Transformers.Utils.map_params_source_layer_names(
+      params_source,
+      &change_prefix(&1, prefixes.source_template, prefixes.source_name)
+    )
+  end
+
+  defp change_prefix(layer_name, current_prefix, new_prefix) do
+    layer_name =
+      if current_prefix do
+        String.replace_prefix(layer_name, current_prefix <> ".", "")
+      else
+        layer_name
+      end
+
+    if new_prefix do
+      new_prefix <> "." <> layer_name
+    else
+      layer_name
     end
+  end
+
+  defp match_template(name, template), do: match_template(name, template, %{})
+
+  defp match_template(<<_, _::binary>> = name, <<"{", template::binary>>, substitutes) do
+    [value, name] = String.split(name, ".", parts: 2)
+    [key, template] = String.split(template, "}.", parts: 2)
+    match_template(name, template, put_in(substitutes[key], value))
+  end
+
+  defp match_template(<<h, name::binary>>, <<h, template::binary>>, substitutes) do
+    match_template(name, template, substitutes)
+  end
+
+  defp match_template(<<>>, <<>>, substitutes), do: substitutes
+  defp match_template(_name, _template, _substitutes), do: nil
+
+  defp fill_template(template, substitutes), do: fill_template(template, substitutes, <<>>)
+
+  defp fill_template(<<>>, _substitutes, name), do: name
+
+  defp fill_template(<<"{", template::binary>>, substitutes, name) do
+    [key, template] = String.split(template, "}", parts: 2)
+    value = Map.fetch!(substitutes, key)
+    fill_template(template, substitutes, <<name::binary, value::binary>>)
+  end
+
+  defp fill_template(<<h, template::binary>>, substitutes, name) do
+    fill_template(template, substitutes, <<name::binary, h>>)
   end
 
   defp log_params_diff(%{missing: missing, mismatched: mismatched, unused_keys: unused_keys}) do
@@ -211,94 +317,90 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp format_list(items), do: Enum.map_join(items, "\n", &("  * " <> &1))
 
-  defp param_from_pytorch(:dense, _, "kernel", pytorch_state, layer_name) do
-    with {:ok, kernel, key} <- lookup_param(pytorch_state, layer_name, ["weight"]) do
-      [out_features, in_features] = Nx.axes(kernel)
-      kernel = Nx.transpose(kernel, axes: [in_features, out_features])
-      {:ok, kernel, [key]}
-    end
+  defp default_layer_param_source(%{op_name: :dense}, "kernel", layer_name) do
+    {[{layer_name, "weight"}],
+     fn [kernel] ->
+       [out_features, in_features] = Nx.axes(kernel)
+       Nx.transpose(kernel, axes: [in_features, out_features])
+     end}
   end
 
-  defp param_from_pytorch(op, opts, "kernel", pytorch_state, layer_name)
-       when op in [:conv, :depthwise_conv] do
-    with {:ok, kernel, key} <- lookup_param(pytorch_state, layer_name, ["weight"]) do
-      [out_channels, in_channels | kernel_spatials] = Nx.axes(kernel)
+  defp default_layer_param_source(layer, "kernel", layer_name)
+       when layer.op_name in [:conv, :depthwise_conv] do
+    {[{layer_name, "weight"}],
+     fn [kernel] ->
+       [out_channels, in_channels | kernel_spatials] = Nx.axes(kernel)
 
-      kernel =
-        case opts[:channels] do
-          :first -> kernel
-          :last -> Nx.transpose(kernel, axes: kernel_spatials ++ [in_channels, out_channels])
-        end
-
-      {:ok, kernel, [key]}
-    end
+       case layer.opts[:channels] do
+         :first -> kernel
+         :last -> Nx.transpose(kernel, axes: kernel_spatials ++ [in_channels, out_channels])
+       end
+     end}
   end
 
-  defp param_from_pytorch(:conv_transpose, opts, "kernel", pytorch_state, layer_name) do
-    with {:ok, kernel, key} <- lookup_param(pytorch_state, layer_name, ["weight"]) do
-      [in_channels, out_channels | kernel_spatials] = Nx.axes(kernel)
+  defp default_layer_param_source(%{op_name: :conv_transpose} = layer, "kernel", layer_name) do
+    {[{layer_name, "weight"}],
+     fn [kernel] ->
+       [in_channels, out_channels | kernel_spatials] = Nx.axes(kernel)
 
-      kernel =
-        case opts[:channels] do
-          :first -> Nx.transpose(kernel, axes: [out_channels, in_channels | kernel_spatials])
-          :last -> Nx.transpose(kernel, axes: kernel_spatials ++ [in_channels, out_channels])
-        end
-
-      {:ok, kernel, [key]}
-    end
+       case layer.opts[:channels] do
+         :first -> Nx.transpose(kernel, axes: [out_channels, in_channels | kernel_spatials])
+         :last -> Nx.transpose(kernel, axes: kernel_spatials ++ [in_channels, out_channels])
+       end
+     end}
   end
 
-  defp param_from_pytorch(:lstm, _, "bias", pytorch_state, layer_name) do
-    with {:ok, bias_hh, key1} <- lookup_param(pytorch_state, layer_name, ["bias_hh"]),
-         {:ok, bias_ih, key2} <- lookup_param(pytorch_state, layer_name, ["bias_ih"]) do
-      bias = Nx.add(bias_ih, bias_hh)
-      bias = Nx.reshape(bias, {4, :auto})
-      {:ok, {bias[0], bias[1], bias[2], bias[3]}, [key1, key2]}
-    end
+  defp default_layer_param_source(%{op_name: :lstm}, "bias", layer_name) do
+    {[{layer_name, "bias_hh"}, {layer_name, "bias_ih"}],
+     fn [bias_hh, bias_ih] ->
+       bias = Nx.add(bias_ih, bias_hh)
+       bias = Nx.reshape(bias, {4, :auto})
+       {bias[0], bias[1], bias[2], bias[3]}
+     end}
   end
 
-  defp param_from_pytorch(:lstm, _, "input_kernel", pytorch_state, layer_name) do
-    with {:ok, weight_ih, key} <- lookup_param(pytorch_state, layer_name, ["weight_ih"]) do
-      weight_ih = weight_ih |> unflatten_leading(4) |> Nx.transpose(axes: [0, 2, 1])
-      {:ok, {weight_ih[0], weight_ih[1], weight_ih[2], weight_ih[3]}, [key]}
-    end
+  defp default_layer_param_source(%{op_name: :lstm}, "input_kernel", layer_name) do
+    {[{layer_name, "weight_ih"}],
+     fn [weight_ih] ->
+       weight_ih = weight_ih |> unflatten_leading(4) |> Nx.transpose(axes: [0, 2, 1])
+       {weight_ih[0], weight_ih[1], weight_ih[2], weight_ih[3]}
+     end}
   end
 
-  defp param_from_pytorch(:lstm, _, "hidden_kernel", pytorch_state, layer_name) do
-    with {:ok, weight_hh, key} <- lookup_param(pytorch_state, layer_name, ["weight_hh"]) do
-      weight_hh = weight_hh |> unflatten_leading(4) |> Nx.transpose(axes: [0, 2, 1])
-      {:ok, {weight_hh[0], weight_hh[1], weight_hh[2], weight_hh[3]}, [key]}
-    end
+  defp default_layer_param_source(%{op_name: :lstm}, "hidden_kernel", layer_name) do
+    {[{layer_name, "weight_hh"}],
+     fn [weight_hh] ->
+       weight_hh = weight_hh |> unflatten_leading(4) |> Nx.transpose(axes: [0, 2, 1])
+       {weight_hh[0], weight_hh[1], weight_hh[2], weight_hh[3]}
+     end}
   end
 
-  defp param_from_pytorch(:gru, _, "bias", pytorch_state, layer_name) do
-    with {:ok, bias_hh, key1} <- lookup_param(pytorch_state, layer_name, ["bias_hh"]),
-         {:ok, bias_ih, key2} <- lookup_param(pytorch_state, layer_name, ["bias_ih"]) do
-      bias_hh = unflatten_leading(bias_hh, 3)
-      bias_ih = unflatten_leading(bias_ih, 3)
-
-      bias =
-        {Nx.add(bias_ih[0], bias_hh[0]), Nx.add(bias_ih[1], bias_hh[1]), bias_ih[2], bias_hh[2]}
-
-      {:ok, bias, [key1, key2]}
-    end
+  defp default_layer_param_source(%{op_name: :gru}, "bias", layer_name) do
+    {[{layer_name, "bias_hh"}, {layer_name, "bias_ih"}],
+     fn [bias_hh, bias_ih] ->
+       bias_hh = unflatten_leading(bias_hh, 3)
+       bias_ih = unflatten_leading(bias_ih, 3)
+       {Nx.add(bias_ih[0], bias_hh[0]), Nx.add(bias_ih[1], bias_hh[1]), bias_ih[2], bias_hh[2]}
+     end}
   end
 
-  defp param_from_pytorch(:gru, _, "input_kernel", pytorch_state, layer_name) do
-    with {:ok, weight_ih, key} <- lookup_param(pytorch_state, layer_name, ["weight_ih"]) do
-      weight_ih = weight_ih |> unflatten_leading(3) |> Nx.transpose(axes: [0, 2, 1])
-      {:ok, {weight_ih[0], weight_ih[1], weight_ih[2]}, [key]}
-    end
+  defp default_layer_param_source(%{op_name: :gru}, "input_kernel", layer_name) do
+    {[{layer_name, "weight_ih"}],
+     fn [weight_ih] ->
+       weight_ih = weight_ih |> unflatten_leading(4) |> Nx.transpose(axes: [0, 2, 1])
+       {weight_ih[0], weight_ih[1], weight_ih[2]}
+     end}
   end
 
-  defp param_from_pytorch(:gru, _, "hidden_kernel", pytorch_state, layer_name) do
-    with {:ok, weight_hh, key} <- lookup_param(pytorch_state, layer_name, ["weight_hh"]) do
-      weight_hh = weight_hh |> unflatten_leading(3) |> Nx.transpose(axes: [0, 2, 1])
-      {:ok, {weight_hh[0], weight_hh[1], weight_hh[2]}, [key]}
-    end
+  defp default_layer_param_source(%{op_name: :gru}, "hidden_kernel", layer_name) do
+    {[{layer_name, "weight_hh"}],
+     fn [weight_hh] ->
+       weight_hh = weight_hh |> unflatten_leading(3) |> Nx.transpose(axes: [0, 2, 1])
+       {weight_hh[0], weight_hh[1], weight_hh[2]}
+     end}
   end
 
-  defp param_from_pytorch(_op, _, param_name, pytorch_state, layer_name) do
+  defp default_layer_param_source(_layer, param_name, layer_name) do
     pytorch_names =
       case param_name do
         # PyTorch uses "weight" instead of "kernel" everywhere
@@ -316,8 +418,7 @@ defmodule Bumblebee.Conversion.PyTorch do
         name -> [name]
       end
 
-    with {:ok, value, key} <- lookup_param(pytorch_state, layer_name, pytorch_names),
-         do: {:ok, value, [key]}
+    {[{layer_name, pytorch_names}], fn [value] -> value end}
   end
 
   defp lookup_param(pytorch_state, layer_name, pytorch_names) do
@@ -342,15 +443,6 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp expr_shape(expr) do
     Utils.Nx.map(expr, &Nx.shape/1)
-  end
-
-  defp ignored_params(pytorch_state, layer_name) do
-    ignored = ["num_batches_tracked"]
-
-    for name <- ignored,
-        key = layer_name <> "." <> name,
-        Map.has_key?(pytorch_state, key),
-        do: key
   end
 
   defp unflatten_leading(tensor, axis_size) do

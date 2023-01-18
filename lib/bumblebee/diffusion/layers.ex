@@ -92,29 +92,27 @@ defmodule Bumblebee.Diffusion.Layers do
     norm_epsilon = opts[:norm_epsilon] || 1.0e-6
     activation = opts[:activation] || :swish
     output_scale_factor = opts[:output_scale_factor] || 1.0
-    use_shortcut = Keyword.get(opts, :use_shortcut, in_channels != out_channels)
+    project_shortcut? = Keyword.get(opts, :project_shortcut?, in_channels != out_channels)
     name = opts[:name]
 
     h = x
 
     h =
       h
-      |> Axon.group_norm(norm_num_groups, epsilon: norm_epsilon, name: join(name, "norm1"))
-      |> Axon.activation(activation, name: join(name, "act1"))
-
-    h =
-      Axon.conv(h, out_channels,
+      |> Axon.group_norm(norm_num_groups, epsilon: norm_epsilon, name: join(name, "norm_1"))
+      |> Axon.activation(activation)
+      |> Axon.conv(out_channels,
         kernel_size: 3,
         strides: 1,
         padding: [{1, 1}, {1, 1}],
-        name: join(name, "conv1")
+        name: join(name, "conv_1")
       )
 
     h =
       if timestep_embedding do
         timestep_embedding
-        |> Axon.activation(activation, name: join(name, "timestep.act1"))
-        |> Axon.dense(out_channels, name: join(name, "time_emb_proj"))
+        |> Axon.activation(activation)
+        |> Axon.dense(out_channels, name: join(name, "timestep_projection"))
         |> Axon.nx(&Nx.new_axis(Nx.new_axis(&1, 1), 1))
         |> Axon.add(h)
       else
@@ -123,23 +121,23 @@ defmodule Bumblebee.Diffusion.Layers do
 
     h =
       h
-      |> Axon.group_norm(norm_num_groups_out, epsilon: norm_epsilon, name: join(name, "norm2"))
-      |> Axon.activation(activation, name: join(name, "act2"))
-      |> Axon.dropout(rate: dropout, name: join(name, "dropout"))
+      |> Axon.group_norm(norm_num_groups_out, epsilon: norm_epsilon, name: join(name, "norm_2"))
+      |> Axon.activation(activation)
+      |> Axon.dropout(rate: dropout)
       |> Axon.conv(out_channels,
         kernel_size: 3,
         strides: 1,
         padding: [{1, 1}, {1, 1}],
-        name: join(name, "conv2")
+        name: join(name, "conv_2")
       )
 
     x =
-      if use_shortcut do
+      if project_shortcut? do
         Axon.conv(x, out_channels,
           kernel_size: 1,
           strides: 1,
           padding: :valid,
-          name: join(name, "conv_shortcut")
+          name: join(name, "shortcut.projection")
         )
       else
         x

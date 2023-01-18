@@ -101,19 +101,19 @@ defmodule Bumblebee.Diffusion.VaeKl do
   @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
     inputs = inputs(spec)
-    sample = vae_kl(inputs, spec)
+    sample = core(inputs, spec)
     Layers.output(%{sample: sample})
   end
 
   def model(%__MODULE__{architecture: :encoder} = spec) do
     inputs = inputs(spec)
-    posterior = encoder(inputs["sample"], spec)
+    posterior = encoder(inputs["sample"], spec, name: "encoder")
     Layers.output(%{latent_dist: Axon.container(posterior)})
   end
 
   def model(%__MODULE__{architecture: :decoder} = spec) do
     inputs = inputs(spec)
-    sample = decoder(inputs["sample"], spec)
+    sample = decoder(inputs["sample"], spec, name: "decoder")
     Layers.output(%{sample: sample})
   end
 
@@ -140,9 +140,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
     {nil, spec.sample_size, spec.sample_size, spec.in_channels}
   end
 
-  defp vae_kl(inputs, spec, opts \\ []) do
-    name = opts[:name]
-
+  defp core(inputs, spec) do
     x = inputs["sample"]
 
     sample_posterior =
@@ -150,7 +148,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
         Axon.constant(Nx.tensor(0, type: {:u, 8}))
       end
 
-    posterior = encoder(x, spec, name: name)
+    posterior = encoder(x, spec, name: "encoder")
 
     z =
       Axon.cond(
@@ -160,27 +158,10 @@ defmodule Bumblebee.Diffusion.VaeKl do
         mode(posterior)
       )
 
-    decoder(z, spec, name: name)
+    decoder(z, spec, name: "decoder")
   end
 
-  defp encoder(x, spec, opts \\ []) do
-    name = opts[:name]
-
-    x
-    |> encoder_blocks(spec, name: join(name, "encoder"))
-    |> Axon.conv(2 * spec.latent_channels, kernel_size: 1, name: join(name, "quant_conv"))
-    |> diagonal_gaussian_distribution()
-  end
-
-  defp decoder(z, spec, opts \\ []) do
-    name = opts[:name]
-
-    z
-    |> Axon.conv(spec.latent_channels, kernel_size: 1, name: join(name, "post_quant_conv"))
-    |> decoder_blocks(spec, name: join(name, "decoder"))
-  end
-
-  defp encoder_blocks(x, spec, opts) do
+  defp encoder(x, spec, opts) do
     name = opts[:name]
 
     x
@@ -188,37 +169,49 @@ defmodule Bumblebee.Diffusion.VaeKl do
       kernel_size: 3,
       strides: 1,
       padding: [{1, 1}, {1, 1}],
-      name: join(name, "conv_in")
+      name: join(name, "input_conv")
     )
     |> down_blocks(spec, name: join(name, "down_blocks"))
     |> mid_block(spec, name: join(name, "mid_block"))
-    |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "conv_norm_out"))
-    |> Axon.activation(:silu, name: join(name, "activation"))
+    |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "output_norm"))
+    |> Axon.activation(:silu)
     |> Axon.conv(2 * spec.latent_channels,
       kernel_size: 3,
       padding: [{1, 1}, {1, 1}],
-      name: join(name, "conv_out")
+      name: join(name, "output_conv")
     )
+    # Note: plain VAE doesn't employ vector quantization (VQ), however
+    # the reference implementation uses the pre and post quantization
+    # convolutions as in VQ-VAE, so we reflect this naming here too
+    |> Axon.conv(2 * spec.latent_channels,
+      kernel_size: 1,
+      name: join(name, "pre_quantization_conv")
+    )
+    |> diagonal_gaussian_distribution()
   end
 
-  defp decoder_blocks(z, spec, opts) do
+  defp decoder(z, spec, opts) do
     name = opts[:name]
 
     z
+    |> Axon.conv(spec.latent_channels,
+      kernel_size: 1,
+      name: join(name, "post_quantization_conv")
+    )
     |> Axon.conv(List.last(spec.hidden_sizes),
       kernel_size: 3,
       strides: 1,
       padding: [{1, 1}, {1, 1}],
-      name: join(name, "conv_in")
+      name: join(name, "input_conv")
     )
     |> mid_block(spec, name: join(name, "mid_block"))
     |> up_blocks(spec, name: join(name, "up_blocks"))
-    |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "conv_norm_out"))
-    |> Axon.activation(:silu, name: join(name, "activation"))
+    |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "output_norm"))
+    |> Axon.activation(:silu)
     |> Axon.conv(spec.out_channels,
       kernel_size: 3,
       padding: [{1, 1}, {1, 1}],
-      name: join(name, "conv_out")
+      name: join(name, "output_conv")
     )
   end
 
@@ -266,14 +259,14 @@ defmodule Bumblebee.Diffusion.VaeKl do
 
           Diffusion.Layers.residual_block(hidden_state, in_channels, out_channels,
             activation: activation,
-            name: join(name, "resnets.#{idx}")
+            name: name |> join("residual_blocks") |> join(idx)
           )
       end
 
     if add_downsample do
       Diffusion.Layers.downsample_2d(hidden_state, out_channels,
         padding: 0,
-        name: join(name, "downsamplers.0")
+        name: join(name, "downsamples.0")
       )
     else
       hidden_state
@@ -325,12 +318,12 @@ defmodule Bumblebee.Diffusion.VaeKl do
 
           Diffusion.Layers.residual_block(hidden_state, in_channels, out_channels,
             activation: activation,
-            name: join(name, "resnets.#{idx}")
+            name: name |> join("residual_blocks") |> join(idx)
           )
       end
 
     if add_upsample do
-      Diffusion.Layers.upsample_2d(hidden_state, out_channels, name: join(name, "upsamplers.0"))
+      Diffusion.Layers.upsample_2d(hidden_state, out_channels, name: join(name, "upsamples.0"))
     else
       hidden_state
     end
@@ -344,60 +337,42 @@ defmodule Bumblebee.Diffusion.VaeKl do
     hidden_state
     |> Diffusion.Layers.residual_block(in_channels, in_channels,
       activation: spec.activation,
-      name: join(name, "resnets.0")
+      name: join(name, "residual_blocks.0")
     )
-    |> visual_attention(in_channels, num_heads: 1, name: join(name, "attentions.0"))
+    |> attention_block(in_channels, num_heads: 1, name: join(name, "attentions.0"))
     |> Diffusion.Layers.residual_block(in_channels, in_channels,
       activation: spec.activation,
-      name: join(name, "resnets.1")
+      name: join(name, "residual_blocks.1")
     )
   end
 
-  defp visual_attention(hidden_state, channels, opts) do
+  defp attention_block(hidden_state, channels, opts) do
     num_heads = opts[:num_heads]
     name = opts[:name]
 
-    residual = hidden_state
+    shortcut = hidden_state
 
     hidden_state =
       hidden_state
-      |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "group_norm"))
+      |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "norm"))
       |> Axon.reshape({:batch, :auto, channels})
 
-    query =
-      hidden_state
-      |> Axon.dense(channels, name: join(name, "query"))
-      |> Layers.split_heads(num_heads)
-
-    key =
-      hidden_state
-      |> Axon.dense(channels, name: join(name, "key"))
-      |> Layers.split_heads(num_heads)
-
-    value =
-      hidden_state
-      |> Axon.dense(channels, name: join(name, "value"))
-      |> Layers.split_heads(num_heads)
-
-    attention_weights = Layers.attention_weights(query, key, Axon.constant(Nx.tensor(0)))
-
-    attention_output =
-      attention_weights
-      |> Layers.attention_output(value)
-      |> Layers.flatten_trailing()
-
-    attention_output
-    |> Axon.reshape({:batch, :auto, channels})
-    |> Axon.dense(channels, name: join(name, "proj_attn"))
-    |> then(
-      &Axon.layer(
-        fn state, residual, _opts ->
-          Nx.reshape(state, Nx.shape(residual))
-        end,
-        [&1, residual]
+    {hidden_state, _attention, _self_attention_cache} =
+      Layers.Transformer.multi_head_attention(hidden_state, hidden_state, hidden_state,
+        num_heads: num_heads,
+        hidden_size: channels,
+        name: name
       )
-    )
-    |> Axon.add(residual)
+
+    hidden_state =
+      Axon.layer(
+        fn hidden_state, shortcut, _opts ->
+          Nx.reshape(hidden_state, Nx.shape(shortcut))
+        end,
+        [hidden_state, shortcut]
+      )
+
+    Axon.add(hidden_state, shortcut)
   end
 
   defp diagonal_gaussian_distribution(x) do
@@ -432,18 +407,55 @@ defmodule Bumblebee.Diffusion.VaeKl do
           latent_channels: {"latent_channels", number()},
           hidden_sizes: {"block_out_channels", list(number())},
           depth: {"layers_per_block", number()},
-          down_block_types: {
-            "down_block_types",
-            list(mapping(%{"DownEncoderBlock2D" => :down_block}))
-          },
-          up_block_types: {
-            "up_block_types",
-            list(mapping(%{"UpDecoderBlock2D" => :up_block}))
-          },
+          down_block_types:
+            {"down_block_types", list(mapping(%{"DownEncoderBlock2D" => :down_block}))},
+          up_block_types: {"up_block_types", list(mapping(%{"UpDecoderBlock2D" => :up_block}))},
           activation: {"act_fn", atom()}
         )
 
       @for.config(spec, opts)
+    end
+  end
+
+  defimpl Bumblebee.HuggingFace.Transformers.Model do
+    def params_mapping(_spec) do
+      block_mapping = %{
+        "attentions.{m}.norm" => "attentions.{m}.group_norm",
+        "attentions.{m}.query" => "attentions.{m}.query",
+        "attentions.{m}.key" => "attentions.{m}.key",
+        "attentions.{m}.value" => "attentions.{m}.value",
+        "attentions.{m}.output" => "attentions.{m}.proj_attn",
+        "residual_blocks.{m}.norm_1" => "resnets.{m}.norm1",
+        "residual_blocks.{m}.conv_1" => "resnets.{m}.conv1",
+        "residual_blocks.{m}.norm_2" => "resnets.{m}.norm2",
+        "residual_blocks.{m}.conv_2" => "resnets.{m}.conv2",
+        "residual_blocks.{m}.shortcut.projection" => "resnets.{m}.conv_shortcut",
+        "downsamples.{m}.conv" => "downsamplers.{m}.conv",
+        "upsamples.{m}.conv" => "upsamplers.{m}.conv"
+      }
+
+      blocks_mapping =
+        for {target, source} <- block_mapping,
+            prefix <- [
+              "encoder.down_blocks.{n}",
+              "encoder.mid_block",
+              "decoder.mid_block",
+              "decoder.up_blocks.{n}"
+            ],
+            do: {prefix <> "." <> target, prefix <> "." <> source},
+            into: %{}
+
+      %{
+        "encoder.input_conv" => "encoder.conv_in",
+        "encoder.output_norm" => "encoder.conv_norm_out",
+        "encoder.output_conv" => "encoder.conv_out",
+        "encoder.pre_quantization_conv" => "quant_conv",
+        "decoder.post_quantization_conv" => "post_quant_conv",
+        "decoder.input_conv" => "decoder.conv_in",
+        "decoder.output_norm" => "decoder.conv_norm_out",
+        "decoder.output_conv" => "decoder.conv_out"
+      }
+      |> Map.merge(blocks_mapping)
     end
   end
 end

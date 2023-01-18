@@ -30,7 +30,7 @@ defmodule Bumblebee.Vision.ClipVision do
       intermediate_size: [
         default: 3072,
         docs:
-          "the dimensionality of the intermediate (often named feed-forward) layer in the encoder"
+          "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
       activation: [
         default: :quick_gelu,
@@ -106,7 +106,7 @@ defmodule Bumblebee.Vision.ClipVision do
     inputs = inputs(spec)
 
     inputs
-    |> clip_vision(spec, name: "vision_model")
+    |> core(spec)
     |> Layers.output()
   end
 
@@ -118,23 +118,18 @@ defmodule Bumblebee.Vision.ClipVision do
     ])
   end
 
-  defp clip_vision(inputs, spec, opts) do
-    name = opts[:name]
-
-    embeddings =
-      inputs
-      |> embeddings(spec, name: join(name, "embeddings"))
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "pre_layrnorm"))
-
-    attention_mask = Layers.default_attention_mask(embeddings)
+  defp core(inputs, spec) do
+    embeddings = embedder(inputs["pixel_values"], spec, name: "embedder")
 
     encoder_outputs =
-      Bumblebee.Layers.Clip.encoder(embeddings, attention_mask, spec, name: join(name, "encoder"))
+      embeddings
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: "pre_norm")
+      |> encoder(spec, name: "encoder")
 
     pooled_state =
       encoder_outputs.hidden_state
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "post_layernorm"))
-      |> Layers.take_token(index: 0, axis: 1, name: join(name, "head"))
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: "post_norm")
+      |> Layers.take_token(index: 0, axis: 1)
 
     %{
       hidden_state: encoder_outputs.hidden_state,
@@ -144,43 +139,27 @@ defmodule Bumblebee.Vision.ClipVision do
     }
   end
 
-  defp embeddings(inputs, spec, opts) do
+  defp embedder(pixel_values, spec, opts) do
     name = opts[:name]
-
-    pixel_values = inputs["pixel_values"]
 
     patch_embeddings = patch_embeddings(pixel_values, spec, name: join(name, "patch_embedding"))
 
-    num_patches = div(spec.image_size, spec.patch_size) ** 2
-
-    class_embeddings =
-      Axon.param("class_embedding", fn _, _ -> {spec.hidden_size} end,
+    input_embeddings =
+      Layers.prepend_embedding(patch_embeddings,
+        name: join(name, "class_embedding"),
         initializer: Axon.Initializers.normal()
       )
 
+    num_patches = div(spec.image_size, spec.patch_size) ** 2
     num_positions = num_patches + 1
     position_ids = position_ids(num_positions)
 
     position_embeddings =
-      Axon.embedding(position_ids, num_positions, spec.hidden_size,
+      Axon.embedding(position_ids, num_patches + 1, spec.hidden_size,
         name: join(name, "position_embedding")
       )
 
-    Axon.layer(
-      fn patch_embeddings, class_embeddings, position_embeddings, _opts ->
-        batch_size = Nx.axis_size(patch_embeddings, 0)
-
-        class_embeddings =
-          class_embeddings
-          |> Nx.reshape({1, 1, :auto})
-          |> Nx.broadcast({batch_size, 1, spec.hidden_size})
-
-        Nx.concatenate([class_embeddings, patch_embeddings], axis: 1)
-        |> Nx.add(position_embeddings)
-      end,
-      [patch_embeddings, class_embeddings, position_embeddings],
-      name: name
-    )
+    Axon.add(input_embeddings, position_embeddings)
   end
 
   defp patch_embeddings(pixel_values, spec, opts) do
@@ -203,6 +182,28 @@ defmodule Bumblebee.Vision.ClipVision do
       fn _opts -> Nx.iota({1, num_position_ids}) end,
       [],
       op_name: :position_ids
+    )
+  end
+
+  defp encoder(embeddings, spec, opts) do
+    name = opts[:name]
+
+    Layers.Transformer.blocks(embeddings,
+      num_blocks: spec.num_blocks,
+      num_attention_heads: spec.num_attention_heads,
+      hidden_size: spec.hidden_size,
+      kernel_initializer: Axon.Initializers.normal(scale: 0.01),
+      dropout_rate: 0.0,
+      attention_dropout_rate: spec.attention_dropout_rate,
+      layer_norm_epsilon: spec.layer_norm_epsilon,
+      norm_placement: :first,
+      ffn: [
+        intermediate_size: spec.intermediate_size,
+        activation: spec.activation
+      ],
+      output_hidden_states: spec.output_hidden_states,
+      output_attentions: spec.output_attentions,
+      name: join(name, "blocks")
     )
   end
 
@@ -230,6 +231,35 @@ defmodule Bumblebee.Vision.ClipVision do
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
+    end
+  end
+
+  defimpl Bumblebee.HuggingFace.Transformers.Model do
+    def params_mapping(_spec) do
+      %{
+        "embedder.patch_embedding" => "vision_model.embeddings.patch_embedding",
+        "embedder.class_embedding" => %{
+          "embedding" => {
+            [{"vision_model.embeddings", "class_embedding"}],
+            fn [value] -> value end
+          }
+        },
+        "embedder.position_embedding" => "vision_model.embeddings.position_embedding",
+        "encoder.blocks.{n}.self_attention_norm" => "vision_model.encoder.layers.{n}.layer_norm1",
+        "encoder.blocks.{n}.self_attention.query" =>
+          "vision_model.encoder.layers.{n}.self_attn.q_proj",
+        "encoder.blocks.{n}.self_attention.key" =>
+          "vision_model.encoder.layers.{n}.self_attn.k_proj",
+        "encoder.blocks.{n}.self_attention.value" =>
+          "vision_model.encoder.layers.{n}.self_attn.v_proj",
+        "encoder.blocks.{n}.self_attention.output" =>
+          "vision_model.encoder.layers.{n}.self_attn.out_proj",
+        "encoder.blocks.{n}.ffn.intermediate" => "vision_model.encoder.layers.{n}.mlp.fc1",
+        "encoder.blocks.{n}.ffn.output" => "vision_model.encoder.layers.{n}.mlp.fc2",
+        "encoder.blocks.{n}.output_norm" => "vision_model.encoder.layers.{n}.layer_norm2",
+        "pre_norm" => "vision_model.pre_layrnorm",
+        "post_norm" => "vision_model.post_layernorm"
+      }
     end
   end
 end
