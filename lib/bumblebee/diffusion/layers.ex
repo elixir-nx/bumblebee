@@ -84,7 +84,7 @@ defmodule Bumblebee.Diffusion.Layers do
   @doc """
   Adds a residual block to the network.
   """
-  def residual_block(x, in_channels, out_channels, opts \\ []) do
+  def residual_block(hidden_state, in_channels, out_channels, opts \\ []) do
     timestep_embedding = opts[:timestep_embedding]
     dropout = opts[:dropout] || 0.0
     norm_num_groups = opts[:norm_num_groups] || 32
@@ -95,10 +95,20 @@ defmodule Bumblebee.Diffusion.Layers do
     project_shortcut? = Keyword.get(opts, :project_shortcut?, in_channels != out_channels)
     name = opts[:name]
 
-    h = x
+    shortcut =
+      if project_shortcut? do
+        Axon.conv(hidden_state, out_channels,
+          kernel_size: 1,
+          strides: 1,
+          padding: :valid,
+          name: join(name, "shortcut.projection")
+        )
+      else
+        hidden_state
+      end
 
-    h =
-      h
+    hidden_state =
+      hidden_state
       |> Axon.group_norm(norm_num_groups, epsilon: norm_epsilon, name: join(name, "norm_1"))
       |> Axon.activation(activation)
       |> Axon.conv(out_channels,
@@ -108,19 +118,19 @@ defmodule Bumblebee.Diffusion.Layers do
         name: join(name, "conv_1")
       )
 
-    h =
+    hidden_state =
       if timestep_embedding do
         timestep_embedding
         |> Axon.activation(activation)
         |> Axon.dense(out_channels, name: join(name, "timestep_projection"))
         |> Axon.nx(&Nx.new_axis(Nx.new_axis(&1, 1), 1))
-        |> Axon.add(h)
+        |> Axon.add(hidden_state)
       else
-        h
+        hidden_state
       end
 
-    h =
-      h
+    hidden_state =
+      hidden_state
       |> Axon.group_norm(norm_num_groups_out, epsilon: norm_epsilon, name: join(name, "norm_2"))
       |> Axon.activation(activation)
       |> Axon.dropout(rate: dropout)
@@ -131,21 +141,9 @@ defmodule Bumblebee.Diffusion.Layers do
         name: join(name, "conv_2")
       )
 
-    x =
-      if project_shortcut? do
-        Axon.conv(x, out_channels,
-          kernel_size: 1,
-          strides: 1,
-          padding: :valid,
-          name: join(name, "shortcut.projection")
-        )
-      else
-        x
-      end
-
-    h
-    |> Axon.add(x)
-    |> Axon.nx(fn x -> Nx.divide(x, output_scale_factor) end)
+    hidden_state
+    |> Axon.add(shortcut)
+    |> Axon.nx(&Nx.divide(&1, output_scale_factor))
   end
 
   @doc """
