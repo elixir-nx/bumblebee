@@ -436,6 +436,12 @@ defmodule Bumblebee do
   @doc """
   Featurizes `input` with the given featurizer.
 
+  ## Options
+
+    * `:defn_options` - the options for JIT compilation. Note that
+      this is only relevant for featurizers implemented with Nx.
+      Defaults to `[]`
+
   ## Examples
 
       featurizer = Bumblebee.configure(Bumblebee.Vision.ConvNextFeaturizer)
@@ -444,9 +450,10 @@ defmodule Bumblebee do
 
   """
   @doc type: :featurizer
-  @spec apply_featurizer(Bumblebee.Featurizer.t(), any()) :: any()
-  def apply_featurizer(%module{} = featurizer, input) do
-    module.apply(featurizer, input)
+  @spec apply_featurizer(Bumblebee.Featurizer.t(), any(), keyword()) :: any()
+  def apply_featurizer(%module{} = featurizer, input, opts \\ []) do
+    opts = Keyword.validate!(opts, defn_options: [])
+    module.apply(featurizer, input, opts[:defn_options])
   end
 
   @doc """

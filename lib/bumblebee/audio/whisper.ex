@@ -89,8 +89,8 @@ defmodule Bumblebee.Audio.Whisper do
       ]) ++
       Shared.token_options(
         pad_token_id: 50256,
-        bos_token_id: 50256,
-        eos_token_id: 50257,
+        bos_token_id: 50257,
+        eos_token_id: 50256,
         decoder_start_token_id: 50257
       ) ++ Shared.generation_options(forced_bos_token_id: 0, forced_eos_token_id: 2)
 
@@ -412,7 +412,7 @@ defmodule Bumblebee.Audio.Whisper do
     name = opts[:name]
 
     position_embeddings =
-      token_position_embedding(decoder_input_ids, spec, name: join(name, "embed_positions"))
+      token_position_embedding(decoder_input_ids, cache, spec, name: join(name, "embed_positions"))
 
     {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
 
@@ -442,23 +442,30 @@ defmodule Bumblebee.Audio.Whisper do
     update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, input_embeddings))
   end
 
-  defp token_position_embedding(input_ids, spec, opts) do
+  defp token_position_embedding(input_ids, cache, spec, opts) do
     name = opts[:name]
 
     # Again this is just an embedding weight, but they
     # offset this by cache size
     kernel =
-      Axon.param("weight", fn _ ->
+      Axon.param("weight", fn _, _ ->
         Axon.Shape.embedding_kernel({}, spec.decoder_max_positions, spec.hidden_size)
       end)
 
-    # TODO: slice by cache size
+    offset = Layers.Decoder.get_cache_offset(cache)
+
     Axon.layer(
-      fn input_ids, kernel, _opts ->
+      fn input_ids, kernel, offset, _opts ->
+        offset =
+          case offset do
+            %Axon.None{} -> 0
+            offset -> Nx.as_type(offset, {:s, 64})
+          end
+
         input_sequence_length = elem(Nx.shape(input_ids), 1)
-        kernel[[0..(input_sequence_length - 1)]]
+        Nx.slice_along_axis(kernel, offset, input_sequence_length)
       end,
-      [input_ids, kernel],
+      [input_ids, kernel, Axon.optional(offset)],
       name: name
     )
   end
