@@ -52,7 +52,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
   end
 
   @impl true
-  def apply(featurizer, raw_samples) do
+  def apply(featurizer, raw_samples, defn_options) do
     raw_samples =
       for sample <- List.wrap(raw_samples) do
         if Nx.rank(sample) != 2 do
@@ -76,7 +76,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
         |> Nx.transpose()
         |> Nx.to_batched(1)
         |> Enum.map(fn waveform ->
-          extract_fbank_features(Nx.squeeze(waveform),
+          Nx.Defn.jit(&extract_fbank_features/2, defn_options).(Nx.squeeze(waveform),
             nfft: featurizer.n_fft,
             sampling_rate: featurizer.sampling_rate,
             nmels: featurizer.feature_size,
