@@ -19,11 +19,11 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
     chunk_length: [
       default: 30,
       doc: """
-      the maximum number of chunks of `sampling_rate` samples used to trim and pad longer or shorter
+      the maximum number of chunks of `:sampling_rate` samples used to trim and pad longer or shorter
       audio sequences
       """
     ],
-    n_fft: [
+    fft_length: [
       default: 400,
       doc: "size of the fourier transform"
     ],
@@ -77,7 +77,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
         |> Nx.to_batched(1)
         |> Enum.map(fn waveform ->
           Nx.Defn.jit(&extract_fbank_features/2, defn_options).(Nx.squeeze(waveform),
-            fft_length: featurizer.n_fft,
+            fft_length: featurizer.fft_length,
             sampling_rate: featurizer.sampling_rate,
             mel_bins: featurizer.feature_size,
             hop_length: featurizer.hop_length
@@ -129,7 +129,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
           sampling_rate: {"sampling_rate", number()},
           hop_length: {"hop_length", number()},
           chunk_length: {"chunk_length", number()},
-          n_fft: {"n_fft", number()},
+          fft_length: {"n_fft", number()},
           padding_value: {"padding_value", number()}
         )
 
