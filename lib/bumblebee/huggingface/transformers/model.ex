@@ -53,7 +53,7 @@ defprotocol Bumblebee.HuggingFace.Transformers.Model do
   automatically.
 
   In some cases, particularly with model-specific layers/parameters,
-  we may need more control over param mapping. In such case, instead
+  we may need more control over the parameter mapping. In such cases, instead
   of source layer name, a map with parameter-level transformations
   may be specified:
 
