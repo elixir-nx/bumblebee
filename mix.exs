@@ -44,8 +44,7 @@ defmodule Bumblebee.MixProject do
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
-      # {:nx_signal, path: "../nx-signal"}
-      {:nx_signal, github: "polvalente/nx-signal", branch: "pv-feat/stft-to-mel"}
+      {:nx_signal, github: "polvalente/nx-signal", branch: "main"}
     ]
   end
 

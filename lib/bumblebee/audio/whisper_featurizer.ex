@@ -7,7 +7,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
       default: 80,
       doc: "the feature dimension of the extracted features"
     ],
-    sampling_frequency: [
+    sampling_rate: [
       default: 16000,
       doc: "the sampling rate at which the audio files should be digitally expressed in Hertz"
     ],
@@ -19,7 +19,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
     chunk_length: [
       default: 30,
       doc: """
-      the maximum number of chunks of `sampling_frequency` samples used to trim and pad longer or shorter
+      the maximum number of chunks of `sampling_rate` samples used to trim and pad longer or shorter
       audio sequences
       """
     ],
@@ -62,7 +62,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
         end
       end
 
-    max_length = featurizer.chunk_length * featurizer.sampling_frequency
+    max_length = featurizer.chunk_length * featurizer.sampling_rate
 
     padded_samples =
       for sample <- raw_samples do
@@ -78,7 +78,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
         |> Enum.map(fn waveform ->
           Nx.Defn.jit(&extract_fbank_features/2, defn_options).(Nx.squeeze(waveform),
             fft_length: featurizer.n_fft,
-            sampling_frequency: featurizer.sampling_frequency,
+            sampling_rate: featurizer.sampling_rate,
             mel_bins: featurizer.feature_size,
             hop_length: featurizer.hop_length
           )
@@ -90,13 +90,13 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
   end
 
   defnp extract_fbank_features(waveform, opts \\ []) do
-    opts = keyword!(opts, [:fft_length, :sampling_frequency, :mel_bins, :hop_length])
+    opts = keyword!(opts, [:fft_length, :sampling_rate, :mel_bins, :hop_length])
 
     window = NxSignal.Windows.hann(n: opts[:fft_length], is_periodic: true)
 
     {stft, _, _} =
       NxSignal.stft(waveform, window,
-        sampling_frequency: opts[:sampling_frequency],
+        sampling_rate: opts[:sampling_rate],
         fft_length: opts[:fft_length],
         overlap_length: opts[:fft_length] - opts[:hop_length],
         window_padding: :reflect
@@ -110,7 +110,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
     # we want frequencies x frames, so we need to transpose the result
     stft
     |> NxSignal.stft_to_mel(
-      opts[:sampling_frequency],
+      opts[:sampling_rate],
       fft_length: opts[:fft_length],
       mel_bins: opts[:mel_bins],
       max_mel: max_mel,
@@ -126,7 +126,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
       opts =
         convert!(data,
           feature_size: {"feature_size", number()},
-          sampling_frequency: {"sampling_frequency", number()},
+          sampling_rate: {"sampling_rate", number()},
           hop_length: {"hop_length", number()},
           chunk_length: {"chunk_length", number()},
           n_fft: {"n_fft", number()},
