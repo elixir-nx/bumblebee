@@ -14,4 +14,9 @@ defmodule Bumblebee.Featurizer do
   Performs feature extraction on the given input.
   """
   @callback apply(t(), input :: any(), defn_options :: keyword()) :: any()
+
+  @doc """
+  Builds a template output of the featurizer.
+  """
+  @callback output_template(t(), batch_size :: pos_integer()) :: Nx.Container.t()
 end

@@ -69,11 +69,13 @@ defmodule Bumblebee.MixProject do
       extra_section: "GUIDES",
       groups_for_modules: [
         Tasks: [
+          Bumblebee.Audio,
           Bumblebee.Text,
           Bumblebee.Vision,
           Bumblebee.Diffusion.StableDiffusion
         ],
         Models: [
+          Bumblebee.Audio.Whisper,
           Bumblebee.Diffusion.StableDiffusion.SafetyChecker,
           Bumblebee.Diffusion.UNet2DConditional,
           Bumblebee.Diffusion.VaeKl,
@@ -93,14 +95,18 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Vision.Vit
         ],
         Preprocessors: [
+          Bumblebee.Audio.WhisperFeaturizer,
           Bumblebee.Text.AlbertTokenizer,
           Bumblebee.Text.BartTokenizer,
           Bumblebee.Text.BertTokenizer,
+          Bumblebee.Text.CamembertTokenizer,
           Bumblebee.Text.ClipTokenizer,
           Bumblebee.Text.Gpt2Tokenizer,
           Bumblebee.Text.LayoutLmTokenizer,
           Bumblebee.Text.MbartTokenizer,
           Bumblebee.Text.RobertaTokenizer,
+          Bumblebee.Text.WhisperTokenizer,
+          Bumblebee.Text.XlmRobertaTokenizer,
           Bumblebee.Vision.ClipFeaturizer,
           Bumblebee.Vision.ConvNextFeaturizer,
           Bumblebee.Vision.DeitFeaturizer,

@@ -102,6 +102,11 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
     %{"pixel_values" => images}
   end
 
+  @impl true
+  def output_template(_featurizer, _batch_size) do
+    raise "not implemented"
+  end
+
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(featurizer, data) do
       import Shared.Converters
