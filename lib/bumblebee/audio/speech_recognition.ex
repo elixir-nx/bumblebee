@@ -16,16 +16,18 @@ defmodule Bumblebee.Audio.SpeechRecognition do
 
     sampling_rate = featurizer.sampling_rate
 
-    %{params: params} = model_info
+    %{model: model, params: params, spec: spec} = model_info
 
-    generate_fun =
-      Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec, opts)
+    generate_fun = Bumblebee.Text.Generation.build_generate(model, spec, opts)
 
     Nx.Serving.new(
       fn ->
         generate_fun =
           Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
-            inputs = featurizer.__struct__.output_template(featurizer, batch_size)
+            inputs = %{
+              "input_features" => Shared.input_template(spec, "input_features", [batch_size])
+            }
+
             [params, inputs]
           end)
 

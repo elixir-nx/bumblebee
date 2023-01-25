@@ -5,16 +5,26 @@ defmodule Bumblebee.Audio.WhisperFeaturizerTest do
 
   describe "integration" do
     test "encoding model input" do
-      assert {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/whisper-tiny.en"})
+      assert {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/whisper-tiny"})
 
       assert %Bumblebee.Audio.WhisperFeaturizer{} = featurizer
 
-      audio = Nx.from_numpy("test/fixtures/inputs/whisper/test_input_raw_1.npy")
-      expected = Nx.from_numpy("test/fixtures/inputs/whisper/test_output_featurized_1.npy")
+      audio = Nx.sin(Nx.iota({100}, type: :f32))
 
-      inputs = Bumblebee.apply_featurizer(featurizer, audio)
+      inputs = Bumblebee.apply_featurizer(featurizer, audio, defn_options: [compiler: EXLA])
 
-      assert_all_close(inputs["input_features"][0], expected, atol: 1.0e-4, rtol: 1.0e-3)
+      assert_all_close(
+        inputs["input_features"][[0, 0..3, 0..3]],
+        Nx.tensor([
+          [
+            [0.7313, 0.4332, -0.5938, -0.5938],
+            [0.7820, 0.4861, -0.5938, -0.5938],
+            [0.7391, 0.4412, -0.5938, -0.5938],
+            [0.6787, 0.3497, -0.5938, -0.5938]
+          ]
+        ]),
+        atol: 1.0e-4
+      )
     end
   end
 end

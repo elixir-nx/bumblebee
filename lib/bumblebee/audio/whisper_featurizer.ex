@@ -91,16 +91,6 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
     %{"input_features" => samples}
   end
 
-  @impl true
-  def output_template(featurizer, batch_size) do
-    # The max number of the PCM samples
-    max_samples = featurizer.chunk_length * featurizer.sampling_rate
-    # We have a new window (frame) every hop_length samples
-    num_frames = max_samples / featurizer.hop_length
-
-    %{"input_features" => Nx.template({batch_size, featurizer.feature_size, num_frames}, :f32)}
-  end
-
   defnp extract_fbank_features(waveform, opts \\ []) do
     opts = keyword!(opts, [:fft_length, :sampling_rate, :mel_bins, :hop_length])
 

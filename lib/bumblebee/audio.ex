@@ -51,16 +51,11 @@ defmodule Bumblebee.Audio do
 
       {:ok, whisper} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/whisper-tiny"})
-
-      # TODO remove revision once tokenizer.json is merged
-      {:ok, tokenizer} =
-        Bumblebee.load_tokenizer(
-          {:hf, "openai/whisper-tiny", revision: "7415e879c9b95db9220a1663ca5e0b49d2dee1bb"}
-        )
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/whisper-tiny"})
 
       serving =
         Bumblebee.Audio.speech_recognition(whisper, featurizer, tokenizer,
-          max_length: 100,
+          max_new_tokens: 100,
           defn_options: [compiler: EXLA]
         )
 

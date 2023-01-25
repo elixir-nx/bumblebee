@@ -115,8 +115,10 @@ defmodule Bumblebee.Audio.Whisper do
 
   @impl true
   def input_template(spec) do
+    input_features_length = 2 * spec.encoder_max_positions
+
     %{
-      "input_features" => Nx.template({1, spec.num_mel_bins, 1}, :s64),
+      "input_features" => Nx.template({1, spec.num_mel_bins, input_features_length}, :s64),
       "decoder_input_ids" => Nx.template({1, 1}, :s64)
     }
   end
@@ -168,7 +170,9 @@ defmodule Bumblebee.Audio.Whisper do
   end
 
   defp inputs(spec) do
-    encoder_input_shape = {nil, spec.num_mel_bins, nil}
+    input_features_length = 2 * spec.encoder_max_positions
+
+    encoder_input_shape = {nil, spec.num_mel_bins, input_features_length}
     decoder_input_shape = {nil, nil}
 
     encoder_attention_head_mask_shape =
