@@ -6,23 +6,23 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
   options = [
     feature_size: [
       default: 80,
-      doc: "the dimension of the extracted features"
+      doc: "the dimension of the extracted features. This corresponds to the number of Mel bins"
     ],
     sampling_rate: [
-      default: 16000,
+      default: 16_000,
       doc: "the sampling rate at which the audio files should be digitally expressed in Hertz"
+    ],
+    num_seconds: [
+      default: 30,
+      doc: """
+      the maximum duration of the audio sequence. This implies that the the maximum length of the
+      input sequence is `:num_seconds` * `:sampling_rate`
+      """
     ],
     hop_length: [
       default: 160,
       doc:
-        "the length of the overlapping windows for the STFT used to obtain Mel Frequency coefficients"
-    ],
-    chunk_length: [
-      default: 30,
-      doc: """
-      the maximum number of chunks of `:sampling_rate` samples used to trim and pad longer or shorter
-      audio sequences
-      """
+        "the hop between consecutive overlapping windows for the STFT used to obtain Mel Frequency coefficients"
     ],
     fft_length: [
       default: 400,
@@ -63,7 +63,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
         end
       end
 
-    max_length = featurizer.chunk_length * featurizer.sampling_rate
+    max_length = featurizer.num_seconds * featurizer.sampling_rate
 
     padded_samples =
       for sample <- raw_samples do
@@ -105,19 +105,16 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
         window_padding: :reflect
       )
 
-    # magic numbers taken from the reference implementation. This yields max_mel ~ 3016
-    f_sp = 200.0 / 3
-    max_mel = f_sp * 45.245640471924965
+    # Magic numbers taken from the reference implementation. This yields
+    # max_mel ~ 3016
+    frequency_spacing = 200.0 / 3
+    max_mel = frequency_spacing * 45.245640471924965
 
-    # stft and stft_to_mel output frames x frequencies and
-    # we want frequencies x frames, so we need to transpose the result
-    stft
-    |> NxSignal.stft_to_mel(
-      opts[:sampling_rate],
+    NxSignal.stft_to_mel(stft, opts[:sampling_rate],
       fft_length: opts[:fft_length],
       mel_bins: opts[:mel_bins],
       max_mel: max_mel,
-      mel_frequency_spacing: f_sp
+      mel_frequency_spacing: frequency_spacing
     )
   end
 
@@ -130,7 +127,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
           feature_size: {"feature_size", number()},
           sampling_rate: {"sampling_rate", number()},
           hop_length: {"hop_length", number()},
-          chunk_length: {"chunk_length", number()},
+          num_seconds: {"chunk_length", number()},
           fft_length: {"n_fft", number()},
           padding_value: {"padding_value", number()}
         )

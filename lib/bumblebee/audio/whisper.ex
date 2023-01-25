@@ -10,10 +10,11 @@ defmodule Bumblebee.Audio.Whisper do
         tokens that can be represented by the decoder
         """
       ],
-      num_mel_bins: [
+      feature_size: [
         default: 80,
         doc: """
-        the number of mel features used per input features
+        the dimensionality of the input features. This corresponds to the number of Mel
+        bins in the preprocessed input
         """
       ],
       encoder_max_positions: [
@@ -195,7 +196,7 @@ defmodule Bumblebee.Audio.Whisper do
     input_length = 2 * spec.encoder_max_positions
 
     %{
-      "input_features" => Nx.template({1, input_length, spec.num_mel_bins}, :s64),
+      "input_features" => Nx.template({1, input_length, spec.feature_size}, :s64),
       "decoder_input_ids" => Nx.template({1, 1}, :s64)
     }
   end
@@ -249,7 +250,7 @@ defmodule Bumblebee.Audio.Whisper do
   defp inputs(spec) do
     input_length = 2 * spec.encoder_max_positions
 
-    encoder_input_shape = {nil, input_length, spec.num_mel_bins}
+    encoder_input_shape = {nil, input_length, spec.feature_size}
     decoder_input_shape = {nil, nil}
 
     encoder_attention_head_mask_shape =
@@ -782,7 +783,7 @@ defmodule Bumblebee.Audio.Whisper do
         convert!(data,
           vocab_size: {"vocab_size", number()},
           hidden_size: {"d_model", number()},
-          num_mel_bins: {"num_mel_bins", number()},
+          feature_size: {"num_mel_bins", number()},
           encoder_max_positions: {"max_source_positions", number()},
           decoder_max_positions: {"max_target_positions", number()},
           encoder_num_blocks: {"encoder_layers", number()},
