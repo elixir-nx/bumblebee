@@ -94,6 +94,83 @@ defmodule Bumblebee.Audio.Whisper do
         decoder_start_token_id: 50257
       ) ++ Shared.generation_options(forced_bos_token_id: 0, forced_eos_token_id: 2)
 
+  @moduledoc """
+  Whisper model family.
+
+  ## Architectures
+
+    * `:base` - plain Whisper without any head on top
+
+    * `:for_conditional_generation` - Whisper with a language modeling
+      head. The head returns logits for each token in the original
+      sequence
+
+  ## Inputs
+
+    * `"input_features"` - `{batch_size, input_length, feature_size}`
+
+      Indices of input sequence tokens in the vocabulary.
+
+    * `"attention_head_mask"` - `{num_blocks, num_attention_heads}`
+
+      Mask to nullify selected heads of the self-attention blocks in
+      the encoder.
+
+    * `"input_embeddings"` - `{batch_size, sequence_length, hidden_size}`
+
+      Embedded representation of `"input_features"`, which can be specified
+      for more control over how `"input_features"` are embedded than the
+      model's internal embedding lookup. If `"input_embeddings"` are present,
+      then `"input_features"` will be ignored.
+
+    * `"decoder_input_ids"` - `{batch_size, target_sequence_length}`
+
+      Indices of decoder input sequence tokens in the vocabulary.
+
+    * `"decoder_attention_mask"` - `{batch_size, target_sequence_length}`
+
+      Mask indicating which decoder tokens to attend to. This is used
+      to ignore padding tokens, which are added when processing a batch
+      of sequences with different length.
+
+    * `"decoder_attention_head_mask"` - `{decoder_num_blocks, decoder_num_attention_heads}`
+
+      Mask to nullify selected heads of the self-attention blocks in
+      the decoder.
+
+    * `"decoder_input_embeddings"` - `{batch_size, sequence_length, hidden_size}`
+
+      Embedded representation of `"decoder_input_ids"`, which can be
+      specified for more control over how `"decoder_input_ids"` are
+      embedded than the model's internal embedding lookup. If
+      `"decoder_input_embeddings"` are present, then `"decoder_input_ids"`
+      will be ignored.
+
+    * `"encoder_hidden_state"` - `{batch_size, sequence_length, hidden_size}`
+
+      Last hidden state output from the encoder. This hidden state is
+      used in cross-attention blocks in the decoder. If specified, the
+      model will skip the encoding process and use this value directly
+      for cross-attentions in the decoder.
+
+    * `"cross_attention_head_mask"` - `{decoder_num_blocks, decoder_num_attention_heads}`
+
+      Mask to nullify selected heads of the cross-attention blocks in
+      the decoder with shape.
+
+    * `"cache"`
+
+      A container with cached layer results used to speed up sequential
+      decoding (autoregression). With cache, certain hidden states are
+      taken from the cache, rather than recomputed on every decoding
+      pass. The cache should be treated as opaque and initialized with
+      `Bumblebee.Text.Generation.init_cache/4`.
+
+  ## Configuration
+
+  #{Shared.options_doc(options)}
+  """
+
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
 
   @behaviour Bumblebee.ModelSpec
@@ -115,10 +192,10 @@ defmodule Bumblebee.Audio.Whisper do
 
   @impl true
   def input_template(spec) do
-    input_features_length = 2 * spec.encoder_max_positions
+    input_length = 2 * spec.encoder_max_positions
 
     %{
-      "input_features" => Nx.template({1, input_features_length, spec.num_mel_bins}, :s64),
+      "input_features" => Nx.template({1, input_length, spec.num_mel_bins}, :s64),
       "decoder_input_ids" => Nx.template({1, 1}, :s64)
     }
   end
@@ -170,9 +247,9 @@ defmodule Bumblebee.Audio.Whisper do
   end
 
   defp inputs(spec) do
-    input_features_length = 2 * spec.encoder_max_positions
+    input_length = 2 * spec.encoder_max_positions
 
-    encoder_input_shape = {nil, input_features_length, spec.num_mel_bins}
+    encoder_input_shape = {nil, input_length, spec.num_mel_bins}
     decoder_input_shape = {nil, nil}
 
     encoder_attention_head_mask_shape =
@@ -211,13 +288,10 @@ defmodule Bumblebee.Audio.Whisper do
         feature_embedding(inputs["input_features"], spec, name: join(name, "encoder"))
       end
 
+    decoder_input_ids = inputs["decoder_input_ids"]
+
     decoder_input_embeddings =
       Layers.default inputs["decoder_input_embeddings"] do
-        decoder_input_ids =
-          Layers.default inputs["decoder_input_ids"] do
-            Layers.shift_tokens_right(inputs["decoder_input_ids"], spec.decoder_start_token_id)
-          end
-
         Axon.embedding(decoder_input_ids, spec.vocab_size, spec.hidden_size,
           name: join(name, "decoder.embed_tokens")
         )
