@@ -1,11 +1,12 @@
 defmodule Bumblebee.Audio.WhisperFeaturizer do
   alias Bumblebee.Shared
+
   import Nx.Defn
 
   options = [
     feature_size: [
       default: 80,
-      doc: "the feature dimension of the extracted features"
+      doc: "the dimension of the extracted features"
     ],
     sampling_rate: [
       default: 16000,
@@ -25,11 +26,11 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
     ],
     fft_length: [
       default: 400,
-      doc: "size of the fourier transform"
+      doc: "the size of the fourier transform"
     ],
     padding_value: [
       default: 0.0,
-      doc: "padding value used to pad audio"
+      doc: "the value used to pad the audio. Should correspond to silence"
     ]
   ]
 

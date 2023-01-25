@@ -286,7 +286,6 @@ defmodule Bumblebee.Audio.Whisper do
 
     encoder_outputs =
       input_embeddings
-      |> Axon.transpose([0, 2, 1], name: join(name, "inputs.permute"))
       |> Axon.add(position_embeddings)
       |> Axon.dropout(rate: spec.dropout_rate)
       |> encoder_blocks(attention_head_mask, spec, name: join(name, "layers"))
@@ -304,10 +303,10 @@ defmodule Bumblebee.Audio.Whisper do
     name = opts[:name]
 
     input_features
+    |> Axon.transpose([0, 2, 1])
     |> Axon.conv(spec.hidden_size,
       kernel_size: 3,
       padding: [{1, 1}],
-      channels: :first,
       name: join(name, "conv1")
     )
     |> Axon.gelu()
@@ -315,8 +314,7 @@ defmodule Bumblebee.Audio.Whisper do
       kernel_size: 3,
       strides: [2],
       padding: [{1, 1}],
-      name: join(name, "conv2"),
-      channels: :first
+      name: join(name, "conv2")
     )
     |> Axon.gelu()
   end
