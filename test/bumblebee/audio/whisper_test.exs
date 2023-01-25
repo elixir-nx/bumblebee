@@ -12,7 +12,7 @@ defmodule Bumblebee.Text.WhisperTest do
 
       assert %Bumblebee.Audio.Whisper{architecture: :base} = spec
 
-      input_features = Nx.sin(Nx.iota({1, 80, 3000}, type: :f32))
+      input_features = Nx.sin(Nx.iota({1, 3000, 80}, type: :f32))
       decoder_input_ids = Nx.tensor([[50258, 50259, 50359, 50363]])
 
       inputs = %{
@@ -28,10 +28,10 @@ defmodule Bumblebee.Text.WhisperTest do
         outputs.hidden_state[[0..-1//1, 0..-1//1, 1..3]],
         Nx.tensor([
           [
-            [5.0920, 0.6505, 1.4923],
-            [-0.3086, -1.5719, -0.9174],
-            [-1.0562, 2.0042, -9.0572],
-            [-0.2586, -2.8140, -4.2827]
+            [9.1349, 0.5695, 8.7758],
+            [0.0160, -7.0785, 1.1313],
+            [6.1074, -2.0481, -1.5687],
+            [5.6247, -10.3924, 7.2008]
           ]
         ]),
         atol: 1.0e-4
@@ -44,7 +44,7 @@ defmodule Bumblebee.Text.WhisperTest do
 
       assert %Bumblebee.Audio.Whisper{architecture: :for_conditional_generation} = spec
 
-      input_features = Nx.sin(Nx.iota({1, 80, 3000}, type: :f32))
+      input_features = Nx.sin(Nx.iota({1, 3000, 80}, type: :f32))
       decoder_input_ids = Nx.tensor([[50258, 50259, 50359, 50363]])
 
       inputs = %{
@@ -60,10 +60,10 @@ defmodule Bumblebee.Text.WhisperTest do
         outputs.logits[[0..-1//1, 0..-1//1, 1..3]],
         Nx.tensor([
           [
-            [-2.1714, 2.7831, 3.2897],
-            [-8.5364, -5.1178, -6.9359],
-            [19.6169, 16.3507, 16.4517],
-            [-5.8487, -6.3570, -7.9041]
+            [2.0805, 6.0644, 7.0570],
+            [-7.8065, -3.0313, -5.1049],
+            [17.4098, 16.2510, 16.0446],
+            [-7.7142, -5.9466, -6.1812]
           ]
         ]),
         atol: 1.0e-4

@@ -119,7 +119,6 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
       max_mel: max_mel,
       mel_frequency_spacing: f_sp
     )
-    |> Nx.transpose()
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
