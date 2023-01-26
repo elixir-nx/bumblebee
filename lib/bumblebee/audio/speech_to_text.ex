@@ -1,9 +1,9 @@
-defmodule Bumblebee.Audio.SpeechRecognition do
+defmodule Bumblebee.Audio.SpeechToText do
   @moduledoc false
 
   alias Bumblebee.Shared
 
-  def speech_recognition(model_info, featurizer, tokenizer, opts \\ []) do
+  def speech_to_text(model_info, featurizer, tokenizer, opts \\ []) do
     {compile, opts} = Keyword.pop(opts, :compile)
     {defn_options, opts} = Keyword.pop(opts, :defn_options, [])
 

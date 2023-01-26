@@ -1,4 +1,4 @@
-defmodule Bumblebee.Audio.SpeechRecognitionTest do
+defmodule Bumblebee.Audio.SpeechToTextTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
@@ -14,7 +14,7 @@ defmodule Bumblebee.Audio.SpeechRecognitionTest do
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/whisper-tiny"})
 
       serving =
-        Bumblebee.Audio.speech_recognition(model_info, featurizer, tokenizer,
+        Bumblebee.Audio.speech_to_text(model_info, featurizer, tokenizer,
           max_new_tokens: 100,
           defn_options: [compiler: EXLA]
         )

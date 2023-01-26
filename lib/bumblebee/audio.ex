@@ -13,15 +13,15 @@ defmodule Bumblebee.Audio do
     * a path to an audio file (note this requires `ffmpeg` installed)
 
   """
-  @type speech_recognition_input :: Nx.t() | String.t()
-  @type speech_recognition_output :: %{results: list(speech_recognition_result())}
-  @type speech_recognition_result :: %{text: String.t()}
+  @type speech_to_text_input :: Nx.t() | String.t()
+  @type speech_to_text_output :: %{results: list(speech_to_text_result())}
+  @type speech_to_text_result :: %{text: String.t()}
 
   @doc """
   Builds serving for speech-to-text generation.
 
-  The serving accepts `t:speech_recognition_input/0` and returns
-  `t:speech_recognition_output/0`. A list of inputs is also supported.
+  The serving accepts `t:speech_to_text_input/0` and returns
+  `t:speech_to_text_output/0`. A list of inputs is also supported.
 
   Note that either `:max_new_tokens` or `:max_length` must be specified.
   The generation should generally finish based on the audio input,
@@ -54,7 +54,7 @@ defmodule Bumblebee.Audio do
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/whisper-tiny"})
 
       serving =
-        Bumblebee.Audio.speech_recognition(whisper, featurizer, tokenizer,
+        Bumblebee.Audio.speech_to_text(whisper, featurizer, tokenizer,
           max_new_tokens: 100,
           defn_options: [compiler: EXLA]
         )
@@ -63,12 +63,12 @@ defmodule Bumblebee.Audio do
       #=> %{results: [%{text: "There is a cat outside the window."}]}
 
   """
-  @spec speech_recognition(
+  @spec speech_to_text(
           Bumblebee.model_info(),
           Bumblebee.Featurizer.t(),
           Bumblebee.Tokenizer.t(),
           keyword()
         ) :: Nx.Serving.t()
-  defdelegate speech_recognition(model_info, featurizer, tokenizer, opts \\ []),
-    to: Bumblebee.Audio.SpeechRecognition
+  defdelegate speech_to_text(model_info, featurizer, tokenizer, opts \\ []),
+    to: Bumblebee.Audio.SpeechToText
 end
