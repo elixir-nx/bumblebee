@@ -260,6 +260,9 @@ defmodule Bumblebee.Vision.Vit do
       kernel_initializer: kernel_initializer(spec),
       dropout_rate: spec.dropout_rate,
       attention_dropout_rate: spec.attention_dropout_rate,
+      query_use_bias: spec.use_qkv_bias,
+      key_use_bias: spec.use_qkv_bias,
+      value_use_bias: spec.use_qkv_bias,
       layer_norm_epsilon: spec.layer_norm_epsilon,
       norm_placement: :first,
       ffn: [

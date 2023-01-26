@@ -203,24 +203,25 @@ defmodule Bumblebee.Audio.Whisper do
 
   @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
-    inputs(spec)
-    |> whisper(spec)
+    inputs = inputs(spec)
+
+    inputs
+    |> core(spec)
     |> Layers.output()
   end
 
   def model(%__MODULE__{architecture: :for_conditional_generation} = spec) do
     inputs = inputs(spec)
-    outputs = whisper(inputs, spec, name: "model")
+    outputs = core(inputs, spec)
 
-    lm_logits =
-      outputs.hidden_state
-      |> Layers.dense_transposed(spec.vocab_size,
+    logits =
+      Layers.dense_transposed(outputs.hidden_state, spec.vocab_size,
         kernel_initializer: kernel_initializer(spec),
-        name: "model.decoder.embed_tokens"
+        name: "language_modeling_head.output"
       )
 
     Layers.output(%{
-      logits: lm_logits,
+      logits: logits,
       decoder_hidden_states: outputs.decoder_hidden_states,
       decoder_attentions: outputs.decoder_attentions,
       cross_attentions: outputs.cross_attentions,
@@ -281,28 +282,7 @@ defmodule Bumblebee.Audio.Whisper do
     ])
   end
 
-  defp whisper(inputs, spec, opts \\ []) do
-    name = opts[:name]
-
-    input_embeddings =
-      Layers.default inputs["input_embeddings"] do
-        feature_embedding(inputs["input_features"], spec, name: join(name, "encoder"))
-      end
-
-    decoder_input_ids = inputs["decoder_input_ids"]
-
-    decoder_input_embeddings =
-      Layers.default inputs["decoder_input_embeddings"] do
-        Axon.embedding(decoder_input_ids, spec.vocab_size, spec.hidden_size,
-          name: join(name, "decoder.embed_tokens")
-        )
-      end
-
-    decoder_attention_mask =
-      Layers.default inputs["decoder_attention_mask"] do
-        Layers.default_attention_mask(decoder_input_embeddings)
-      end
-
+  defp core(inputs, spec) do
     encoder_outputs =
       Layers.if_present inputs["encoder_hidden_state"] do
         %{
@@ -311,30 +291,35 @@ defmodule Bumblebee.Audio.Whisper do
           attentions: Layers.none()
         }
       else
-        encoder(
-          input_embeddings,
-          inputs["attention_head_mask"],
-          spec,
-          name: join(name, "encoder")
-        )
+        embeddings =
+          encoder_embedder(inputs["input_features"], inputs["input_embeddings"], spec,
+            name: "encoder_embedder"
+          )
+
+        embeddings
+        |> encoder(inputs["attention_head_mask"], spec, name: "encoder")
+        |> Map.take([:hidden_state, :hidden_states, :attentions])
       end
 
-    # whisper does not support masking input features, but decoder
-    # needs an attention mask for the encoder
-    default_attention_mask = Axon.constant(Nx.tensor([[1]]))
+    embeddings =
+      decoder_embedder(
+        inputs["decoder_input_ids"],
+        inputs["decoder_input_embeddings"],
+        inputs["cache"],
+        spec,
+        name: "decoder_embedder"
+      )
 
     decoder_outputs =
       decoder(
-        decoder_input_ids,
-        decoder_input_embeddings,
-        decoder_attention_mask,
+        embeddings,
+        inputs["decoder_attention_mask"],
         inputs["decoder_attention_head_mask"],
         encoder_outputs.hidden_state,
-        default_attention_mask,
         inputs["cross_attention_head_mask"],
         inputs["cache"],
         spec,
-        name: join(name, "decoder")
+        name: "decoder"
       )
 
     %{
@@ -349,29 +334,21 @@ defmodule Bumblebee.Audio.Whisper do
     }
   end
 
-  defp encoder(
-         input_embeddings,
-         attention_head_mask,
-         spec,
-         opts
-       ) do
+  defp encoder_embedder(input_features, input_embedding, spec, opts) do
     name = opts[:name]
 
-    position_embeddings = feature_position_embedding(spec, name: join(name, "embed_positions"))
+    input_embeddings =
+      Layers.default input_embedding do
+        feature_embedding(input_features, spec, name: join(name, "feature_embedding"))
+      end
 
-    encoder_outputs =
-      input_embeddings
-      |> Axon.add(position_embeddings)
-      |> Axon.dropout(rate: spec.dropout_rate)
-      |> encoder_blocks(attention_head_mask, spec, name: join(name, "layers"))
+    position_embeddings =
+      Layers.learned_embeddings(spec.encoder_max_positions, spec.hidden_size,
+        name: join(name, "position_embedding")
+      )
 
-    hidden_state = Axon.layer_norm(encoder_outputs.hidden_state, name: join(name, "layer_norm"))
-
-    %{
-      encoder_outputs
-      | hidden_state: hidden_state,
-        hidden_states: Layers.append(encoder_outputs.hidden_states, hidden_state)
-    }
+    Axon.add([input_embeddings, position_embeddings])
+    |> Axon.dropout(rate: spec.dropout_rate)
   end
 
   defp feature_embedding(input_features, spec, opts) do
@@ -381,177 +358,99 @@ defmodule Bumblebee.Audio.Whisper do
     |> Axon.conv(spec.hidden_size,
       kernel_size: 3,
       padding: [{1, 1}],
-      name: join(name, "conv1")
+      name: join(name, "conv_1")
     )
     |> Axon.gelu()
     |> Axon.conv(spec.hidden_size,
       kernel_size: 3,
       strides: [2],
       padding: [{1, 1}],
-      name: join(name, "conv2")
+      name: join(name, "conv_2")
     )
     |> Axon.gelu()
   end
 
-  defp feature_position_embedding(spec, opts) do
+  defp decoder_embedder(input_ids, input_embeddings, cache, spec, opts) do
     name = opts[:name]
 
-    # strangely, they just use this randomly initialized embedding
-    # weight as the position embedding
-    kernel =
-      Axon.param("weight", fn ->
-        Axon.Shape.embedding_kernel({}, spec.encoder_max_positions, spec.hidden_size)
-      end)
-
-    Axon.layer(fn kernel, _opts -> kernel end, [kernel], name: name)
-  end
-
-  defp encoder_blocks(hidden_state, attention_head_mask, spec, opts) do
-    name = opts[:name]
-
-    state = %{
-      hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
-      attentions: Layers.maybe_container({}, spec.output_attentions)
-    }
-
-    for idx <- 0..(spec.encoder_num_blocks - 1), reduce: state do
-      state ->
-        block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
-
-        # TODO: wrap encoder block in a layer_drop combinator
-
-        {hidden_state, attention} =
-          encoder_block(state.hidden_state, block_attention_head_mask, spec, name: join(name, idx))
-
-        %{
-          hidden_state: hidden_state,
-          hidden_states: Layers.append(state.hidden_states, hidden_state),
-          attentions: Layers.append(state.attentions, attention)
-        }
-    end
-  end
-
-  defp encoder_block(hidden_state, block_attention_head_mask, spec, opts) do
-    name = opts[:name]
-
-    default_attention_mask = Axon.constant(Nx.tensor([[1]]))
-
-    residual = hidden_state
-
-    {hidden_state, attention_weights, _} =
-      hidden_state
-      |> Axon.layer_norm(name: join(name, "self_attn_layer_norm"))
-      |> attention(
-        default_attention_mask,
-        nil,
-        block_attention_head_mask,
-        Layers.none(),
-        Layers.none(),
-        spec,
-        num_heads: spec.encoder_num_attention_heads,
-        name: join(name, "self_attn")
-      )
-
-    hidden_state =
-      hidden_state
-      |> Axon.dropout(rate: spec.dropout_rate)
-      |> Axon.add(residual)
-
-    residual = hidden_state
-
-    hidden_state =
-      hidden_state
-      |> Axon.layer_norm(name: join(name, "final_layer_norm"))
-      |> Axon.dense(spec.encoder_intermediate_size, name: join(name, "fc1"))
-      |> Layers.activation(spec.activation, name: join(name, "fc1.activation"))
-      |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "fc1.dropout"))
-      |> Axon.dense(spec.hidden_size, name: join(name, "fc2"))
-      |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "fc2.dropout"))
-      |> Axon.add(residual)
-
-    {hidden_state, attention_weights}
-  end
-
-  defp decoder(
-         decoder_input_ids,
-         input_embeddings,
-         attention_mask,
-         attention_head_mask,
-         encoder_hidden_state,
-         encoder_attention_mask,
-         cross_attention_head_mask,
-         cache,
-         spec,
-         opts
-       ) do
-    name = opts[:name]
+    input_embeddings =
+      Layers.default input_embeddings do
+        Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
+          name: join(name, "token_embedding")
+        )
+      end
 
     position_embeddings =
-      token_position_embedding(decoder_input_ids, cache, spec, name: join(name, "embed_positions"))
-
-    {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
-
-    outputs =
-      input_embeddings
-      |> Axon.add(position_embeddings)
-      |> Axon.dropout(rate: spec.dropout_rate)
-      |> decoder_blocks(
-        attention_mask,
-        attention_head_mask,
-        encoder_hidden_state,
-        encoder_attention_mask,
-        cross_attention_head_mask,
-        cache,
-        spec,
-        name: join(name, "layers")
+      Layers.learned_embeddings(spec.decoder_max_positions, spec.hidden_size,
+        name: join(name, "position_embedding")
       )
 
-    hidden_state = Axon.layer_norm(outputs.hidden_state, name: join(name, "layer_norm"))
+    offset = Layers.Decoder.get_cache_offset(cache)
 
-    outputs = %{
+    # We use learned position embeddings for the maximum sequence
+    # length, so to add them to the given input embeddings we need
+    # to slice accordingly
+    embeddings =
+      Axon.layer(
+        fn input_embeddings, position_embeddings, offset, _opts ->
+          offset =
+            case offset do
+              %Axon.None{} -> 0
+              offset -> Nx.as_type(offset, {:s, 64})
+            end
+
+          input_sequence_length = Nx.axis_size(input_embeddings, 1)
+
+          position_embeddings =
+            Nx.slice_along_axis(position_embeddings, offset, input_sequence_length, axis: 1)
+
+          Nx.add(input_embeddings, position_embeddings)
+        end,
+        [input_embeddings, position_embeddings, Axon.optional(offset)]
+      )
+
+    embeddings
+    |> Axon.dropout(rate: spec.dropout_rate)
+  end
+
+  defp encoder(hidden_state, attention_head_mask, spec, opts) do
+    name = opts[:name]
+
+    outputs =
+      Layers.Transformer.blocks(hidden_state,
+        attention_head_mask: attention_head_mask,
+        num_blocks: spec.encoder_num_blocks,
+        num_attention_heads: spec.encoder_num_attention_heads,
+        hidden_size: spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
+        dropout_rate: spec.dropout_rate,
+        attention_dropout_rate: spec.attention_dropout_rate,
+        key_use_bias: false,
+        layer_norm_epsilon: 1.0e-5,
+        norm_placement: :first,
+        ffn: [
+          intermediate_size: spec.encoder_intermediate_size,
+          activation: spec.activation
+        ],
+        output_hidden_states: spec.output_hidden_states,
+        output_attentions: spec.output_attentions,
+        name: join(name, "blocks")
+      )
+
+    hidden_state = Axon.layer_norm(outputs.hidden_state, name: join(name, "norm"))
+
+    %{
       outputs
       | hidden_state: hidden_state,
         hidden_states: Layers.append(outputs.hidden_states, hidden_state)
     }
-
-    update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, input_embeddings))
   end
 
-  defp token_position_embedding(input_ids, cache, spec, opts) do
-    name = opts[:name]
-
-    # Again this is just an embedding weight, but they
-    # offset this by cache size
-    kernel =
-      Axon.param("weight", fn _, _ ->
-        Axon.Shape.embedding_kernel({}, spec.decoder_max_positions, spec.hidden_size)
-      end)
-
-    offset = Layers.Decoder.get_cache_offset(cache)
-
-    Axon.layer(
-      fn input_ids, kernel, offset, _opts ->
-        offset =
-          case offset do
-            %Axon.None{} -> 0
-            offset -> Nx.as_type(offset, {:s, 64})
-          end
-
-        input_sequence_length = elem(Nx.shape(input_ids), 1)
-        Nx.slice_along_axis(kernel, offset, input_sequence_length)
-      end,
-      [input_ids, kernel, Axon.optional(offset)],
-      name: name
-    )
-  end
-
-  defp decoder_blocks(
+  defp decoder(
          hidden_state,
          attention_mask,
          attention_head_mask,
          encoder_hidden_state,
-         encoder_attention_mask,
          cross_attention_head_mask,
          cache,
          spec,
@@ -559,216 +458,39 @@ defmodule Bumblebee.Audio.Whisper do
        ) do
     name = opts[:name]
 
-    state = %{
-      hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
-      attentions: Layers.maybe_container({}, spec.output_attentions),
-      cross_attentions: Layers.maybe_container({}, spec.output_attentions),
-      cache: cache
-    }
-
-    offset = Layers.Decoder.get_cache_offset(state.cache)
-
-    for idx <- 0..(spec.decoder_num_blocks - 1), reduce: state do
-      state ->
-        block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
-        cross_attention_block_attention_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
-
-        block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
-
-        # TODO: wrap decoder block in a layer_drop combinator
-
-        {hidden_state, attention, cross_attention, block_cache} =
-          decoder_block(
-            state.hidden_state,
-            attention_mask,
-            block_attention_head_mask,
-            encoder_hidden_state,
-            encoder_attention_mask,
-            cross_attention_block_attention_head_mask,
-            block_cache,
-            offset,
-            spec,
-            name: join(name, idx)
-          )
-
-        cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
-
-        %{
-          hidden_state: hidden_state,
-          hidden_states: Layers.append(state.hidden_states, hidden_state),
-          attentions: Layers.append(state.attentions, attention),
-          cross_attentions: Layers.append(state.cross_attentions, cross_attention),
-          cache: cache
-        }
-    end
-  end
-
-  defp decoder_block(
-         hidden_state,
-         attention_mask,
-         block_attention_head_mask,
-         encoder_hidden_state,
-         encoder_attention_mask,
-         cross_attention_block_attention_head_mask,
-         block_cache,
-         offset,
-         spec,
-         opts
-       ) do
-    name = opts[:name]
-
-    residual = hidden_state
-
-    {self_attention_cache, cross_attention_cache} =
-      Layers.Decoder.get_attention_caches(block_cache)
-
-    {hidden_state, self_attention, self_attention_cache} =
-      hidden_state
-      |> Axon.layer_norm(name: join(name, "self_attn_layer_norm"))
-      |> attention(
-        attention_mask,
-        nil,
-        block_attention_head_mask,
-        self_attention_cache,
-        offset,
-        spec,
-        num_heads: spec.decoder_num_attention_heads,
+    outputs =
+      Layers.Transformer.blocks(hidden_state,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        cross_hidden_state: encoder_hidden_state,
+        cross_attention_head_mask: cross_attention_head_mask,
+        cache: cache,
         causal?: true,
-        name: join(name, "self_attn")
-      )
-
-    hidden_state =
-      hidden_state
-      |> Axon.dropout(rate: spec.dropout_rate)
-      |> Axon.add(residual)
-
-    {hidden_state, cross_attention, cross_attention_cache} =
-      Layers.if_present encoder_hidden_state do
-        residual = hidden_state
-
-        {hidden_state, cross_attention, cross_attention_cache} =
-          hidden_state
-          |> Axon.layer_norm(name: join(name, "encoder_attn_layer_norm"))
-          |> attention(
-            encoder_attention_mask,
-            encoder_hidden_state,
-            cross_attention_block_attention_head_mask,
-            cross_attention_cache,
-            offset,
-            spec,
-            num_heads: spec.decoder_num_attention_heads,
-            name: join(name, "encoder_attn")
-          )
-
-        hidden_state =
-          hidden_state
-          |> Axon.dropout(rate: spec.dropout_rate)
-          |> Axon.add(residual)
-
-        {hidden_state, cross_attention, cross_attention_cache}
-      else
-        {hidden_state, Layers.none(), cross_attention_cache}
-      end
-
-    residual = hidden_state
-
-    hidden_state =
-      hidden_state
-      |> Axon.layer_norm(name: join(name, "final_layer_norm"))
-      |> Axon.dense(spec.decoder_intermediate_size, name: join(name, "fc1"))
-      |> Axon.activation(spec.activation, name: join(name, "activation"))
-      |> Axon.dropout(rate: spec.activation_dropout_rate, name: join(name, "dropout.1"))
-      |> Axon.dense(spec.hidden_size, name: join(name, "fc2"))
-      |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout.2"))
-      |> Axon.add(residual)
-
-    block_cache =
-      Layers.Decoder.put_attention_caches(
-        block_cache,
-        self_attention_cache,
-        cross_attention_cache
-      )
-
-    {hidden_state, self_attention, cross_attention, block_cache}
-  end
-
-  defp attention(
-         hidden_state,
-         attention_mask,
-         cross_hidden_state,
-         block_attention_head_mask,
-         attention_cache,
-         offset,
-         spec,
-         opts
-       ) do
-    name = opts[:name]
-    num_heads = opts[:num_heads]
-    causal? = Keyword.get(opts, :causal?, false)
-    cross_attention? = cross_hidden_state != nil
-
-    query =
-      hidden_state
-      |> Axon.dense(spec.hidden_size,
+        num_blocks: spec.decoder_num_blocks,
+        num_attention_heads: spec.decoder_num_attention_heads,
+        hidden_size: spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
-        name: join(name, "q_proj")
-      )
-      |> Layers.split_heads(num_heads)
-
-    # For cross-attention we are given encoder hidden state
-    projection_states = cross_hidden_state || hidden_state
-
-    key =
-      projection_states
-      |> Axon.dense(
-        spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "k_proj"),
-        use_bias: false
-      )
-      |> Layers.split_heads(num_heads)
-
-    value =
-      projection_states
-      |> Axon.dense(
-        spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "v_proj")
-      )
-      |> Layers.split_heads(num_heads)
-
-    attention_mask = Layers.expand_attention_mask(attention_mask)
-
-    attention_mask =
-      if causal? do
-        Layers.Decoder.apply_causal_mask(attention_mask, query, offset)
-      else
-        attention_mask
-      end
-
-    {key, value, attention_cache} =
-      Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset,
-        cross_attention?: cross_attention?
+        dropout_rate: spec.dropout_rate,
+        attention_dropout_rate: spec.attention_dropout_rate,
+        key_use_bias: false,
+        layer_norm_epsilon: 1.0e-5,
+        norm_placement: :first,
+        ffn: [
+          intermediate_size: spec.decoder_intermediate_size,
+          activation: spec.activation
+        ],
+        output_hidden_states: spec.output_hidden_states,
+        output_attentions: spec.output_attentions,
+        name: join(name, "blocks")
       )
 
-    attention_bias = Layers.attention_bias(attention_mask)
+    hidden_state = Axon.layer_norm(outputs.hidden_state, name: join(name, "norm"))
 
-    attention_weights =
-      Layers.attention_weights(query, key, attention_bias)
-      |> Axon.dropout(rate: spec.attention_dropout_rate)
-      |> Layers.apply_attention_head_mask(block_attention_head_mask)
-
-    attention_output =
-      attention_weights
-      |> Layers.attention_output(value)
-      |> Layers.flatten_trailing()
-      |> Axon.dense(spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "out_proj")
-      )
-
-    {attention_output, attention_weights, attention_cache}
+    %{
+      outputs
+      | hidden_state: hidden_state,
+        hidden_states: Layers.append(outputs.hidden_states, hidden_state)
+    }
   end
 
   defp kernel_initializer(spec) do
@@ -800,6 +522,55 @@ defmodule Bumblebee.Audio.Whisper do
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
+    end
+  end
+
+  defimpl Bumblebee.HuggingFace.Transformers.Model do
+    def params_mapping(_spec) do
+      %{
+        "encoder_embedder.feature_embedding.conv_1" => "model.encoder.conv1",
+        "encoder_embedder.feature_embedding.conv_2" => "model.encoder.conv2",
+        "encoder_embedder.position_embedding" => %{
+          "embeddings" => {[{"model.encoder.embed_positions", "weight"}], fn [value] -> value end}
+        },
+        "encoder.blocks.{n}.self_attention.query" => "model.encoder.layers.{n}.self_attn.q_proj",
+        "encoder.blocks.{n}.self_attention.key" => "model.encoder.layers.{n}.self_attn.k_proj",
+        "encoder.blocks.{n}.self_attention.value" => "model.encoder.layers.{n}.self_attn.v_proj",
+        "encoder.blocks.{n}.self_attention.output" =>
+          "model.encoder.layers.{n}.self_attn.out_proj",
+        "encoder.blocks.{n}.self_attention_norm" =>
+          "model.encoder.layers.{n}.self_attn_layer_norm",
+        "encoder.blocks.{n}.ffn.intermediate" => "model.encoder.layers.{n}.fc1",
+        "encoder.blocks.{n}.ffn.output" => "model.encoder.layers.{n}.fc2",
+        "encoder.blocks.{n}.output_norm" => "model.encoder.layers.{n}.final_layer_norm",
+        "encoder.norm" => "model.encoder.layer_norm",
+        "decoder_embedder.token_embedding" => "model.decoder.embed_tokens",
+        "decoder_embedder.position_embedding" => %{
+          "embeddings" => {[{"model.decoder.embed_positions", "weight"}], fn [value] -> value end}
+        },
+        "decoder.blocks.{n}.self_attention.query" => "model.decoder.layers.{n}.self_attn.q_proj",
+        "decoder.blocks.{n}.self_attention.key" => "model.decoder.layers.{n}.self_attn.k_proj",
+        "decoder.blocks.{n}.self_attention.value" => "model.decoder.layers.{n}.self_attn.v_proj",
+        "decoder.blocks.{n}.self_attention.output" =>
+          "model.decoder.layers.{n}.self_attn.out_proj",
+        "decoder.blocks.{n}.self_attention_norm" =>
+          "model.decoder.layers.{n}.self_attn_layer_norm",
+        "decoder.blocks.{n}.cross_attention.query" =>
+          "model.decoder.layers.{n}.encoder_attn.q_proj",
+        "decoder.blocks.{n}.cross_attention.key" =>
+          "model.decoder.layers.{n}.encoder_attn.k_proj",
+        "decoder.blocks.{n}.cross_attention.value" =>
+          "model.decoder.layers.{n}.encoder_attn.v_proj",
+        "decoder.blocks.{n}.cross_attention.output" =>
+          "model.decoder.layers.{n}.encoder_attn.out_proj",
+        "decoder.blocks.{n}.cross_attention_norm" =>
+          "model.decoder.layers.{n}.encoder_attn_layer_norm",
+        "decoder.blocks.{n}.ffn.intermediate" => "model.decoder.layers.{n}.fc1",
+        "decoder.blocks.{n}.ffn.output" => "model.decoder.layers.{n}.fc2",
+        "decoder.blocks.{n}.output_norm" => "model.decoder.layers.{n}.final_layer_norm",
+        "decoder.norm" => "model.decoder.layer_norm",
+        "language_modeling_head.output" => "model.decoder.embed_tokens"
+      }
     end
   end
 end

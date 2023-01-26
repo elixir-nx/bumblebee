@@ -251,10 +251,10 @@ defmodule Bumblebee.Text.Bart do
     inputs = encoder_decoder_inputs(spec)
     outputs = core(inputs, spec)
 
-    lm_logits = language_modeling_head(outputs.hidden_state, spec, name: "language_modeling_head")
+    logits = language_modeling_head(outputs.hidden_state, spec, name: "language_modeling_head")
 
     Layers.output(%{
-      logits: lm_logits,
+      logits: logits,
       decoder_hidden_states: outputs.decoder_hidden_states,
       decoder_attentions: outputs.decoder_attentions,
       cross_attentions: outputs.cross_attentions,
@@ -372,10 +372,10 @@ defmodule Bumblebee.Text.Bart do
         name: "decoder"
       )
 
-    lm_logits = language_modeling_head(outputs.hidden_state, spec, name: "language_modeling_head")
+    logits = language_modeling_head(outputs.hidden_state, spec, name: "language_modeling_head")
 
     Layers.output(%{
-      logits: lm_logits,
+      logits: logits,
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions,
       cross_attentions: outputs.cross_attentions,

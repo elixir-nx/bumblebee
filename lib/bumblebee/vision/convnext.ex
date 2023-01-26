@@ -259,12 +259,12 @@ defmodule Bumblebee.Vision.ConvNext do
         gamma_initializer: :ones
       )
       |> Axon.dense(4 * out_channels,
-        name: join(name, "pointwise_conv_0"),
+        name: join(name, "pointwise_conv_1"),
         kernel_initializer: kernel_initializer(spec)
       )
       |> Axon.activation(spec.activation, name: join(name, "activation"))
       |> Axon.dense(out_channels,
-        name: join(name, "pointwise_conv_1"),
+        name: join(name, "pointwise_conv_2"),
         kernel_initializer: kernel_initializer(spec)
       )
 
@@ -336,9 +336,9 @@ defmodule Bumblebee.Vision.ConvNext do
           "convnext.encoder.stages.{n}.layers.{m}.dwconv",
         "encoder.stages.{n}.blocks.{m}.norm" =>
           "convnext.encoder.stages.{n}.layers.{m}.layernorm",
-        "encoder.stages.{n}.blocks.{m}.pointwise_conv_0" =>
-          "convnext.encoder.stages.{n}.layers.{m}.pwconv1",
         "encoder.stages.{n}.blocks.{m}.pointwise_conv_1" =>
+          "convnext.encoder.stages.{n}.layers.{m}.pwconv1",
+        "encoder.stages.{n}.blocks.{m}.pointwise_conv_2" =>
           "convnext.encoder.stages.{n}.layers.{m}.pwconv2",
         "encoder.stages.{n}.blocks.{m}.scale" => %{
           "scale" => {
