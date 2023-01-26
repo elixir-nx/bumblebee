@@ -731,7 +731,7 @@ defmodule Bumblebee.Layers do
       `:zeros`
 
   """
-  def embeddings(num_embeddings, embedding_size, opts \\ []) do
+  def learned_embeddings(num_embeddings, embedding_size, opts \\ []) do
     opts = Keyword.validate!(opts, [:name, initializer: :zeros])
 
     name = opts[:name]
@@ -745,7 +745,7 @@ defmodule Bumblebee.Layers do
       fn embeddings, _opts -> Nx.new_axis(embeddings, 0) end,
       [embeddings],
       name: name,
-      op_name: :embeddings
+      op_name: :learned_embeddings
     )
   end
 

@@ -275,7 +275,7 @@ defmodule Bumblebee.Vision.Deit do
     num_patches = div(spec.image_size, spec.patch_size) ** 2
 
     position_embeddings =
-      Layers.embeddings(num_patches + 2, spec.hidden_size,
+      Layers.learned_embeddings(num_patches + 2, spec.hidden_size,
         initializer: :zeros,
         name: join(name, "position_embedding")
       )

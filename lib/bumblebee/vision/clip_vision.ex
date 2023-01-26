@@ -142,7 +142,7 @@ defmodule Bumblebee.Vision.ClipVision do
   defp embedder(pixel_values, spec, opts) do
     name = opts[:name]
 
-    patch_embeddings = patch_embeddings(pixel_values, spec, name: join(name, "patch_embedding"))
+    patch_embeddings = patch_embedding(pixel_values, spec, name: join(name, "patch_embedding"))
 
     input_embeddings =
       Layers.prepend_embedding(patch_embeddings,
@@ -162,7 +162,7 @@ defmodule Bumblebee.Vision.ClipVision do
     Axon.add(input_embeddings, position_embeddings)
   end
 
-  defp patch_embeddings(pixel_values, spec, opts) do
+  defp patch_embedding(pixel_values, spec, opts) do
     name = opts[:name]
 
     pixel_values
