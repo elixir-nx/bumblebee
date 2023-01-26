@@ -22,9 +22,9 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     name = opts[:name]
 
     sample
-    |> Axon.dense(embedding_size, name: join(name, "linear_1"))
+    |> Axon.dense(embedding_size, name: join(name, "intermediate"))
     |> Axon.activation(opts[:activation])
-    |> Axon.dense(embedding_size, name: join(name, "linear_2"))
+    |> Axon.dense(embedding_size, name: join(name, "output"))
   end
 
   @doc """
@@ -107,17 +107,17 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
               dropout: dropout,
               activation: activation,
               output_scale_factor: output_scale_factor,
-              name: join(name, "resnets.#{idx}")
+              name: name |> join("residual_blocks") |> join(idx)
             )
 
           hidden_state =
             if encoder_hidden_state do
-              spatial_transformer(hidden_state, encoder_hidden_state,
+              transformer_2d(hidden_state, encoder_hidden_state,
                 hidden_size: out_channels,
                 num_heads: num_attention_heads,
                 use_linear_projection: use_linear_projection,
                 depth: 1,
-                name: join(name, "attentions.#{idx}")
+                name: name |> join("transformers") |> join(idx)
               )
             else
               hidden_state
@@ -130,7 +130,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
       hidden_state =
         Diffusion.Layers.downsample_2d(hidden_state, out_channels,
           padding: downsample_padding,
-          name: join(name, "downsamplers.0")
+          name: join(name, "downsamples.0")
         )
 
       {hidden_state, Tuple.append(output_states, {hidden_state, out_channels})}
@@ -183,16 +183,16 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
               dropout: dropout,
               activation: activation,
               output_scale_factor: output_scale_factor,
-              name: join(name, "resnets.#{idx}")
+              name: name |> join("residual_blocks") |> join(idx)
             )
 
           if encoder_hidden_state do
-            spatial_transformer(hidden_state, encoder_hidden_state,
+            transformer_2d(hidden_state, encoder_hidden_state,
               hidden_size: out_channels,
               num_heads: num_attention_heads,
               use_linear_projection: use_linear_projection,
               depth: 1,
-              name: join(name, "attentions.#{idx}")
+              name: name |> join("transformers") |> join(idx)
             )
           else
             hidden_state
@@ -200,7 +200,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
       end
 
     if add_upsample do
-      Diffusion.Layers.upsample_2d(hidden_state, out_channels, name: join(name, "upsamplers.0"))
+      Diffusion.Layers.upsample_2d(hidden_state, out_channels, name: join(name, "upsamples.0"))
     else
       hidden_state
     end
@@ -240,30 +240,33 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
         channels,
         channels,
         residual_block_opts ++
-          [timestep_embedding: timestep_embedding, name: join(name, "resnets.0")]
+          [timestep_embedding: timestep_embedding, name: join(name, "residual_blocks.0")]
       )
 
     for idx <- 0..(depth - 1), reduce: hidden_state do
       hidden_state ->
         hidden_state
-        |> spatial_transformer(
+        |> transformer_2d(
           encoder_hidden_state,
           hidden_size: channels,
           num_heads: num_attention_heads,
           use_linear_projection: use_linear_projection,
           depth: 1,
-          name: join(name, "attentions.#{idx}")
+          name: name |> join("transformers") |> join(idx)
         )
         |> Diffusion.Layers.residual_block(
           channels,
           channels,
           residual_block_opts ++
-            [timestep_embedding: timestep_embedding, name: join(name, "resnets.#{idx + 1}")]
+            [
+              timestep_embedding: timestep_embedding,
+              name: name |> join("residual_blocks") |> join(idx + 1)
+            ]
         )
     end
   end
 
-  defp spatial_transformer(hidden_state, cross_hidden_state, opts) do
+  defp transformer_2d(hidden_state, cross_hidden_state, opts) do
     hidden_size = opts[:hidden_size]
     num_heads = opts[:num_heads]
     use_linear_projection = opts[:use_linear_projection]
@@ -271,23 +274,23 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     dropout = opts[:dropout] || 0.0
     name = opts[:name]
 
-    residual = hidden_state
+    shortcut = hidden_state
 
     flatten_spatial =
       &Axon.layer(
-        fn hidden_state, residual, _opts ->
-          {b, h, w, c} = Nx.shape(residual)
+        fn hidden_state, shortcut, _opts ->
+          {b, h, w, c} = Nx.shape(shortcut)
           Nx.reshape(hidden_state, {b, h * w, c})
         end,
-        [&1, residual]
+        [&1, shortcut]
       )
 
     unflatten_spatial =
       &Axon.layer(
-        fn hidden_state, residual, _opts ->
-          Nx.reshape(hidden_state, Nx.shape(residual))
+        fn hidden_state, shortcut, _opts ->
+          Nx.reshape(hidden_state, Nx.shape(shortcut))
         end,
-        [&1, residual]
+        [&1, shortcut]
       )
 
     hidden_state
@@ -296,29 +299,32 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
       if use_linear_projection do
         hidden_state
         |> flatten_spatial.()
-        |> Axon.dense(hidden_size, name: join(name, "proj_in"))
+        |> Axon.dense(hidden_size, name: join(name, "input_projection"))
       else
         hidden_state
         |> Axon.conv(hidden_size,
           kernel_size: 1,
           strides: 1,
           padding: :valid,
-          name: join(name, "proj_in")
+          name: join(name, "input_projection")
         )
         |> flatten_spatial.()
       end
     end)
-    |> spatial_transformer_blocks(cross_hidden_state,
+    |> Layers.Transformer.blocks(
+      cross_hidden_state: cross_hidden_state,
+      num_blocks: depth,
+      num_attention_heads: num_heads,
       hidden_size: hidden_size,
-      num_heads: num_heads,
-      dropout: dropout,
-      depth: depth,
-      name: name
+      dropout_rate: dropout,
+      norm_placement: :first,
+      ffn: &ffn_geglu(&1, hidden_size, dropout: dropout, name: &2),
+      name: join(name, "blocks")
     )
-    |> then(fn hidden_state ->
+    |> then(fn %{hidden_state: hidden_state} ->
       if use_linear_projection do
         hidden_state
-        |> Axon.dense(hidden_size, name: join(name, "proj_out"))
+        |> Axon.dense(hidden_size, name: join(name, "output_projection"))
         |> unflatten_spatial.()
       else
         hidden_state
@@ -327,122 +333,29 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
           kernel_size: 1,
           strides: 1,
           padding: :valid,
-          name: join(name, "proj_out")
+          name: join(name, "output_projection")
         )
       end
     end)
-    |> Axon.add(residual)
-  end
-
-  defp spatial_transformer_blocks(hidden_state, cross_hidden_state, opts) do
-    name = opts[:name]
-
-    for idx <- 0..(opts[:depth] - 1), reduce: hidden_state do
-      hidden_state ->
-        transformer_block(hidden_state, cross_hidden_state,
-          hidden_size: opts[:hidden_size],
-          num_heads: opts[:num_heads],
-          dropout: opts[:dropout],
-          name: join(name, "transformer_blocks.#{idx}")
-        )
-    end
-  end
-
-  defp transformer_block(hidden_state, cross_hidden_state, opts) do
-    name = opts[:name]
-
-    residual = hidden_state
-
-    hidden_state =
-      hidden_state
-      |> Axon.layer_norm(name: join(name, "norm1"))
-      |> attention(nil,
-        hidden_size: opts[:hidden_size],
-        num_heads: opts[:num_heads],
-        dropout: opts[:dropout],
-        name: join(name, "attn1")
-      )
-      |> Axon.add(residual)
-
-    residual = hidden_state
-
-    hidden_state =
-      hidden_state
-      |> Axon.layer_norm(name: join(name, "norm2"))
-      |> attention(cross_hidden_state,
-        hidden_size: opts[:hidden_size],
-        num_heads: opts[:num_heads],
-        dropout: opts[:dropout],
-        name: join(name, "attn2")
-      )
-      |> Axon.add(residual)
-
-    residual = hidden_state
-
-    hidden_state
-    |> Axon.layer_norm(name: join(name, "norm3"))
-    |> feed_forward_geglu(opts[:hidden_size], dropout: opts[:dropout], name: join(name, "ff"))
-    |> Axon.add(residual)
-  end
-
-  defp attention(hidden_state, cross_hidden_state, opts) do
-    name = opts[:name]
-    hidden_size = opts[:hidden_size]
-    num_heads = opts[:num_heads] || 8
-    dropout = opts[:dropout] || 0.0
-
-    cross_hidden_state = cross_hidden_state || hidden_state
-
-    query =
-      hidden_state
-      |> Axon.dense(hidden_size, use_bias: false, name: join(name, "to_q"))
-      |> Layers.split_heads(num_heads)
-
-    key =
-      cross_hidden_state
-      |> Axon.dense(hidden_size, use_bias: false, name: join(name, "to_k"))
-      |> Layers.split_heads(num_heads)
-
-    value =
-      cross_hidden_state
-      |> Axon.dense(hidden_size, use_bias: false, name: join(name, "to_v"))
-      |> Layers.split_heads(num_heads)
-
-    attention_weights =
-      Layers.attention_weights(query, key, Axon.constant(Nx.tensor(0)))
-      |> Axon.dropout(rate: dropout, name: join(name, "dropout"))
-
-    attention_output =
-      attention_weights
-      |> Layers.attention_output(value)
-      |> Layers.flatten_trailing()
-
-    attention_output
-    |> Axon.dense(hidden_size, name: join(name, "to_out.0"))
-    |> Axon.dropout(rate: dropout)
+    |> Axon.add(shortcut)
   end
 
   # A feed-forward network with GEGLU nonlinearity as in https://arxiv.org/abs/2002.05202
-  defp feed_forward_geglu(x, size, opts) do
+  defp ffn_geglu(x, size, opts) do
+    name = opts[:name]
     dropout = opts[:dropout] || 0.0
-    name = opts[:name]
 
-    inner_size = 4 * size
-
-    x
-    |> geglu(inner_size, name: join(name, "net.0"))
-    |> Axon.dropout(rate: dropout, name: join(name, "net.1"))
-    |> Axon.dense(size, name: join(name, "net.2"))
-  end
-
-  defp geglu(x, size, opts) do
-    name = opts[:name]
+    intermediate_size = 4 * size
 
     {x, gate} =
       x
-      |> Axon.dense(size * 2, name: join(name, "proj"))
+      |> Axon.dense(intermediate_size * 2, name: join(name, "intermediate"))
       |> Axon.split(2, axis: -1)
 
-    Axon.multiply(x, Axon.gelu(gate))
+    x = Axon.multiply(x, Axon.gelu(gate))
+
+    x
+    |> Axon.dropout(rate: dropout, name: join(name, "dropout"))
+    |> Axon.dense(size, name: join(name, "output"))
   end
 end

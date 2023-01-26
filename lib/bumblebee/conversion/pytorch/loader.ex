@@ -26,14 +26,22 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
   end
 
   defp load_zip!(path) do
-    {:ok, contents} = :zip.unzip(String.to_charlist(path), [:memory])
+    zip_file = Unzip.LocalFile.open(path)
+    {:ok, unzip} = Unzip.new(zip_file)
 
     contents =
-      Map.new(contents, fn {name, content} ->
+      unzip
+      |> Unzip.list_entries()
+      |> Map.new(fn %Unzip.Entry{file_name: file_name} ->
+        content =
+          unzip
+          |> Unzip.file_stream!(file_name)
+          |> Enum.to_list()
+          |> IO.iodata_to_binary()
+
         # Strip the root dir from the file name
         name =
-          name
-          |> List.to_string()
+          file_name
           |> Path.split()
           |> Enum.drop(1)
           |> Enum.join("/")

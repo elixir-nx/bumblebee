@@ -30,7 +30,7 @@ defmodule Bumblebee.Vision.Deit do
       intermediate_size: [
         default: 3072,
         docs:
-          "the dimensionality of the intermediate (often named feed-forward) layer in the encoder"
+          "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
       use_qkv_bias: [
         default: true,
@@ -138,18 +138,24 @@ defmodule Bumblebee.Vision.Deit do
   end
 
   @impl true
+  def model(%__MODULE__{architecture: :base} = spec) do
+    inputs = inputs(spec)
+
+    inputs
+    |> core(spec)
+    |> Layers.output()
+  end
+
   def model(%__MODULE__{architecture: :for_image_classification} = spec) do
-    outputs =
-      spec
-      |> inputs()
-      |> deit(spec, name: "deit")
+    inputs = inputs(spec)
+    outputs = core(inputs, spec)
 
     logits =
       outputs.hidden_state
-      |> Layers.take_token(index: 0, axis: 1, name: "cls_head")
+      |> Layers.take_token(index: 0, axis: 1)
       |> Axon.dense(spec.num_labels,
         kernel_initializer: kernel_initializer(spec),
-        name: "cls_classifier"
+        name: "image_classification_head.output"
       )
 
     Layers.output(%{
@@ -160,48 +166,42 @@ defmodule Bumblebee.Vision.Deit do
   end
 
   def model(%__MODULE__{architecture: :for_image_classification_with_teacher} = spec) do
-    outputs =
-      spec
-      |> inputs()
-      |> deit(spec, name: "deit")
+    inputs = inputs(spec)
+    outputs = core(inputs, spec)
 
-    cls_head =
+    class_logits =
       outputs.hidden_state
-      |> Layers.take_token(index: 0, axis: 1, name: "cls_head")
+      |> Layers.take_token(index: 0, axis: 1)
+      |> Axon.dense(spec.num_labels,
+        name: "image_classification_with_teacher_head.class_output"
+      )
 
-    dist_head =
+    distillation_logits =
       outputs.hidden_state
-      |> Layers.take_token(index: 1, axis: 1, name: "dist_head")
-
-    cls_logits =
-      cls_head
-      |> Axon.dense(spec.num_labels, name: "cls_classifier")
-
-    dist_logits =
-      dist_head
-      |> Axon.dense(spec.num_labels, name: "distillation_classifier")
+      |> Layers.take_token(index: 1, axis: 1)
+      |> Axon.dense(spec.num_labels,
+        name: "image_classification_with_teacher_head.distillation_output"
+      )
 
     # TODO: Replace with mean layer in Axon
 
     logits =
-      cls_logits
-      |> Axon.add(dist_logits)
+      class_logits
+      |> Axon.add(distillation_logits)
       |> Axon.nx(&Nx.divide(&1, 2))
 
     Layers.output(%{
       logits: logits,
-      cls_logits: cls_logits,
-      distillation_logits: dist_logits,
+      class_logits: class_logits,
+      distillation_logits: distillation_logits,
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions
     })
   end
 
   def model(%__MODULE__{architecture: :for_masked_image_modeling} = spec) do
-    outputs =
-      spec
-      |> inputs()
-      |> deit(spec, name: "deit")
+    inputs = inputs(spec)
+    outputs = core(inputs, spec)
 
     logits =
       outputs.hidden_state
@@ -215,22 +215,15 @@ defmodule Bumblebee.Vision.Deit do
       |> Axon.conv(spec.patch_size ** 2 * 3,
         kernel_size: 1,
         kernel_initializer: kernel_initializer(spec),
-        name: join("decoder", 0)
+        name: "masked_image_modeling_head.output"
       )
-      |> Layers.pixel_shuffle(spec.patch_size, name: join("decoder", 1))
+      |> Layers.pixel_shuffle(spec.patch_size)
 
     Layers.output(%{
       logits: logits,
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions
     })
-  end
-
-  def model(%__MODULE__{architecture: :base} = spec) do
-    spec
-    |> inputs()
-    |> deit(spec)
-    |> Layers.output()
   end
 
   defp inputs(spec) do
@@ -242,42 +235,56 @@ defmodule Bumblebee.Vision.Deit do
     ])
   end
 
-  defp deit(inputs, spec, opts \\ []) do
+  defp core(inputs, spec, opts \\ []) do
     name = opts[:name]
 
-    hidden_state = embeddings(inputs, spec, name: join(name, "embeddings"))
+    embeddings =
+      embedder(inputs["pixel_values"], inputs["patch_mask"], spec, name: join(name, "embedder"))
 
-    {hidden_state, hidden_states, attentions} =
-      encoder(hidden_state, spec, name: join(name, "encoder"))
+    encoder_outputs = encoder(embeddings, spec, name: join(name, "encoder"))
 
     hidden_state =
-      hidden_state
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm"))
+      Axon.layer_norm(encoder_outputs.hidden_state,
+        epsilon: spec.layer_norm_epsilon,
+        name: join(name, "norm")
+      )
 
     pooled = pooler(hidden_state, spec, name: join(name, "pooler"))
 
     %{
       hidden_state: hidden_state,
       pooled_state: pooled,
-      hidden_states: hidden_states,
-      attentions: attentions
+      hidden_states: encoder_outputs.hidden_states,
+      attentions: encoder_outputs.attentions
     }
   end
 
-  defp embeddings(inputs, spec, opts) do
+  defp embedder(pixel_values, patch_mask, spec, opts) do
     name = opts[:name]
 
-    pixel_values = inputs["pixel_values"]
-    patch_mask = inputs["patch_mask"]
+    patch_embeddings =
+      pixel_values
+      |> patch_embedding(spec, name: join(name, "patch_embedding"))
+      |> Layers.apply_vision_patch_mask(patch_mask, name: join(name, "mask_tokens"))
 
-    pixel_values
-    |> patch_embeddings(spec, name: join(name, "patch_embeddings"))
-    |> Layers.apply_vision_patch_mask(patch_mask, name: join(name, "mask_tokens"))
-    |> position_embeddings(spec, name: name)
+    input_embeddings =
+      patch_embeddings
+      |> Layers.prepend_embedding(name: join(name, "distillation_embedding"))
+      |> Layers.prepend_embedding(name: join(name, "class_embedding"))
+
+    num_patches = div(spec.image_size, spec.patch_size) ** 2
+
+    position_embeddings =
+      Layers.learned_embeddings(num_patches + 2, spec.hidden_size,
+        initializer: :zeros,
+        name: join(name, "position_embedding")
+      )
+
+    Axon.add(input_embeddings, position_embeddings)
     |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
   end
 
-  defp patch_embeddings(pixel_values, spec, opts) do
+  defp patch_embedding(pixel_values, spec, opts) do
     name = opts[:name]
 
     pixel_values
@@ -291,181 +298,41 @@ defmodule Bumblebee.Vision.Deit do
     |> Axon.reshape({:batch, :auto, spec.hidden_size}, name: join(name, "reshape"))
   end
 
-  defp position_embeddings(embeddings, spec, opts) do
-    name = opts[:name]
-
-    num_patches = div(spec.image_size, spec.patch_size) ** 2
-
-    cls_token = Axon.param("cls_token", fn _ -> {1, 1, spec.hidden_size} end, initializer: :zeros)
-
-    distillation_token =
-      Axon.param("distillation_token", fn _ -> {1, 1, spec.hidden_size} end, initializer: :zeros)
-
-    position_embeddings =
-      Axon.param("position_embeddings", fn _ -> {1, num_patches + 2, spec.hidden_size} end,
-        initializer: :zeros
-      )
-
-    Axon.layer(
-      fn embeddings, cls_token, distillation_token, position_embeddings, _opts ->
-        batch_size = Nx.axis_size(embeddings, 0)
-        cls_token = Nx.broadcast(cls_token, {batch_size, 1, spec.hidden_size})
-        distillation_token = Nx.broadcast(distillation_token, {batch_size, 1, spec.hidden_size})
-
-        Nx.concatenate([cls_token, distillation_token, embeddings], axis: 1)
-        |> Nx.add(position_embeddings)
-      end,
-      [embeddings, cls_token, distillation_token, position_embeddings],
-      name: name
-    )
-  end
-
   defp encoder(hidden_state, spec, opts) do
     name = opts[:name]
 
-    encoder_blocks(hidden_state, spec, name: join(name, "layer"))
-  end
-
-  defp encoder_blocks(hidden_state, spec, opts) do
-    name = opts[:name]
-
-    hidden_states = Layers.maybe_container({hidden_state}, spec.output_hidden_states)
-    attentions = Layers.maybe_container({}, spec.output_attentions)
-
-    for idx <- 0..(spec.num_blocks - 1),
-        reduce: {hidden_state, hidden_states, attentions} do
-      {hidden_state, hidden_states, attentions} ->
-        {hidden_state, attention} = encoder_block(hidden_state, spec, name: join(name, idx))
-
-        {
-          hidden_state,
-          Layers.append(hidden_states, hidden_state),
-          Layers.append(attentions, attention)
-        }
-    end
-  end
-
-  defp encoder_block(hidden_state, spec, opts) do
-    name = opts[:name]
-
-    {attention_output, attention} =
-      hidden_state
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_before"))
-      |> attention(spec, name: join(name, "attention"))
-
-    attention_output = Axon.add(attention_output, hidden_state)
-
-    output =
-      attention_output
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_after"))
-      |> intermediate(spec, name: join(name, "intermediate"))
-      |> output(attention_output, spec, name: join(name, "output"))
-
-    {output, attention}
-  end
-
-  defp attention(hidden_state, spec, opts) do
-    name = opts[:name]
-
-    {attention_output, attention} =
-      self_attention(hidden_state, spec, name: join(name, "attention"))
-
-    attention_output =
-      self_output(attention_output, hidden_state, spec, name: join(name, "output"))
-
-    {attention_output, attention}
-  end
-
-  defp self_attention(hidden_state, spec, opts) do
-    name = opts[:name]
-
-    num_heads = spec.num_attention_heads
-
-    query =
-      hidden_state
-      |> Axon.dense(spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        use_bias: spec.use_qkv_bias,
-        name: join(name, "query")
-      )
-      |> Layers.split_heads(num_heads)
-
-    key =
-      hidden_state
-      |> Axon.dense(spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        use_bias: spec.use_qkv_bias,
-        name: join(name, "key")
-      )
-      |> Layers.split_heads(num_heads)
-
-    value =
-      hidden_state
-      |> Axon.dense(spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        use_bias: spec.use_qkv_bias,
-        name: join(name, "value")
-      )
-      |> Layers.split_heads(num_heads)
-
-    attention_bias = Axon.constant(Nx.tensor(0))
-
-    attention_weights =
-      Layers.attention_weights(query, key, attention_bias)
-      |> Axon.dropout(rate: spec.attention_dropout_rate, name: join(name, "dropout"))
-
-    attention_output =
-      attention_weights
-      |> Layers.attention_output(value)
-      |> Layers.flatten_trailing()
-
-    {attention_output, attention_weights}
-  end
-
-  defp self_output(hidden_state, _input_tensor, spec, opts) do
-    name = opts[:name]
-
-    hidden_state
-    |> Axon.dense(spec.hidden_size,
+    Layers.Transformer.blocks(hidden_state,
+      num_blocks: spec.num_blocks,
+      num_attention_heads: spec.num_attention_heads,
+      hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
-      name: join(name, "dense")
+      dropout_rate: spec.dropout_rate,
+      attention_dropout_rate: spec.attention_dropout_rate,
+      query_use_bias: spec.use_qkv_bias,
+      key_use_bias: spec.use_qkv_bias,
+      value_use_bias: spec.use_qkv_bias,
+      layer_norm_epsilon: spec.layer_norm_epsilon,
+      norm_placement: :first,
+      ffn: [
+        intermediate_size: spec.intermediate_size,
+        activation: spec.activation
+      ],
+      output_hidden_states: spec.output_hidden_states,
+      output_attentions: spec.output_attentions,
+      name: join(name, "blocks")
     )
-    |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
-  end
-
-  defp intermediate(hidden_state, spec, opts) do
-    name = opts[:name]
-
-    hidden_state
-    |> Axon.dense(spec.intermediate_size,
-      kernel_initializer: kernel_initializer(spec),
-      name: join(name, "dense")
-    )
-    |> Axon.activation(spec.activation)
-  end
-
-  defp output(hidden_state, attention_output, spec, opts) do
-    name = opts[:name]
-
-    hidden_state
-    |> Axon.dense(spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      name: join(name, "dense")
-    )
-    |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
-    |> Axon.add(attention_output, name: join(name, "residual"))
   end
 
   defp pooler(hidden_state, spec, opts) do
     name = opts[:name]
 
     hidden_state
-    |> Layers.take_token(index: 0, axis: 1, name: join(name, "head"))
+    |> Layers.take_token(index: 0, axis: 1)
     |> Axon.dense(spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
-      name: join(name, "dense")
+      name: join(name, "output")
     )
-    |> Axon.tanh(name: join(name, "tanh"))
+    |> Axon.tanh()
   end
 
   defp kernel_initializer(spec) do
@@ -494,6 +361,50 @@ defmodule Bumblebee.Vision.Deit do
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
+    end
+  end
+
+  defimpl Bumblebee.HuggingFace.Transformers.Model do
+    def params_mapping(_spec) do
+      %{
+        "embedder.patch_embedding.projection" => "deit.embeddings.patch_embeddings.projection",
+        "embedder.distillation_embedding" => %{
+          "embedding" => {
+            [{"deit.embeddings", "distillation_token"}],
+            fn [value] -> Nx.squeeze(value, axes: [0, 1]) end
+          }
+        },
+        "embedder.class_embedding" => %{
+          "embedding" => {
+            [{"deit.embeddings", "cls_token"}],
+            fn [value] -> Nx.squeeze(value, axes: [0, 1]) end
+          }
+        },
+        "embedder.position_embedding" => %{
+          "embeddings" => {
+            [{"deit.embeddings", "position_embeddings"}],
+            fn [value] -> Nx.squeeze(value, axes: [0]) end
+          }
+        },
+        "encoder.blocks.{n}.self_attention_norm" => "deit.encoder.layer.{n}.layernorm_before",
+        "encoder.blocks.{n}.self_attention.key" =>
+          "deit.encoder.layer.{n}.attention.attention.key",
+        "encoder.blocks.{n}.self_attention.query" =>
+          "deit.encoder.layer.{n}.attention.attention.query",
+        "encoder.blocks.{n}.self_attention.value" =>
+          "deit.encoder.layer.{n}.attention.attention.value",
+        "encoder.blocks.{n}.self_attention.output" =>
+          "deit.encoder.layer.{n}.attention.output.dense",
+        "encoder.blocks.{n}.ffn.intermediate" => "deit.encoder.layer.{n}.intermediate.dense",
+        "encoder.blocks.{n}.ffn.output" => "deit.encoder.layer.{n}.output.dense",
+        "encoder.blocks.{n}.output_norm" => "deit.encoder.layer.{n}.layernorm_after",
+        "norm" => "deit.layernorm",
+        "pooler.output" => "deit.pooler.dense",
+        "image_classification_head.output" => "classifier",
+        "image_classification_with_teacher_head.class_output" => "cls_classifier",
+        "image_classification_with_teacher_head.distillation_output" => "distillation_classifier",
+        "masked_image_modeling_head.output" => "decoder.0"
+      }
     end
   end
 end

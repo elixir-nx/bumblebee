@@ -39,10 +39,12 @@ defmodule Bumblebee.MixProject do
       {:unpickler, "~> 0.1.0"},
       {:castore, "~> 0.1.0"},
       {:jason, "~> 1.4.0"},
+      {:unzip, "0.8.0"},
       {:progress_bar, "~> 2.0"},
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
-      {:ex_doc, "~> 0.28", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.28", only: :dev, runtime: false},
+      {:nx_signal, github: "polvalente/nx-signal", branch: "main"}
     ]
   end
 
@@ -59,15 +61,21 @@ defmodule Bumblebee.MixProject do
       main: "Bumblebee",
       source_url: "https://github.com/elixir-nx/bumblebee",
       source_ref: "v#{@version}",
-      extras: ["notebooks/examples.livemd", "notebooks/stable_diffusion.livemd"],
+      extras: [
+        "notebooks/examples.livemd",
+        "notebooks/stable_diffusion.livemd",
+        "notebooks/fine_tuning.livemd"
+      ],
       extra_section: "GUIDES",
       groups_for_modules: [
         Tasks: [
+          Bumblebee.Audio,
           Bumblebee.Text,
           Bumblebee.Vision,
           Bumblebee.Diffusion.StableDiffusion
         ],
         Models: [
+          Bumblebee.Audio.Whisper,
           Bumblebee.Diffusion.StableDiffusion.SafetyChecker,
           Bumblebee.Diffusion.UNet2DConditional,
           Bumblebee.Diffusion.VaeKl,
@@ -87,14 +95,18 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Vision.Vit
         ],
         Preprocessors: [
+          Bumblebee.Audio.WhisperFeaturizer,
           Bumblebee.Text.AlbertTokenizer,
           Bumblebee.Text.BartTokenizer,
           Bumblebee.Text.BertTokenizer,
+          Bumblebee.Text.CamembertTokenizer,
           Bumblebee.Text.ClipTokenizer,
           Bumblebee.Text.Gpt2Tokenizer,
           Bumblebee.Text.LayoutLmTokenizer,
           Bumblebee.Text.MbartTokenizer,
           Bumblebee.Text.RobertaTokenizer,
+          Bumblebee.Text.WhisperTokenizer,
+          Bumblebee.Text.XlmRobertaTokenizer,
           Bumblebee.Vision.ClipFeaturizer,
           Bumblebee.Vision.ConvNextFeaturizer,
           Bumblebee.Vision.DeitFeaturizer,

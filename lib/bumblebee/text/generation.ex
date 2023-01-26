@@ -148,7 +148,8 @@ defmodule Bumblebee.Text.Generation do
         eos_token_id: Map.get(spec, :eos_token_id),
         pad_token_id: Map.get(spec, :pad_token_id),
         forced_bos_token_id: Map.get(spec, :forced_bos_token_id),
-        forced_eos_token_id: Map.get(spec, :forced_eos_token_id)
+        forced_eos_token_id: Map.get(spec, :forced_eos_token_id),
+        forced_token_ids: Map.get(spec, :forced_token_ids)
       )
 
     decoder_start_token_id = opts[:decoder_start_token_id] || opts[:bos_token_id]
@@ -156,6 +157,7 @@ defmodule Bumblebee.Text.Generation do
     pad_token_id = opts[:pad_token_id]
     forced_bos_token_id = opts[:forced_bos_token_id]
     forced_eos_token_id = opts[:forced_eos_token_id]
+    forced_token_ids = opts[:forced_token_ids]
 
     {max_length_fun, min_length_fun} = lazy_lengths_from_opts(opts)
 
@@ -165,7 +167,13 @@ defmodule Bumblebee.Text.Generation do
     {_init_fun, predict_fun} = Axon.build(model)
 
     logits_processor_fun =
-      get_logits_processor(min_length_fun, eos_token_id, forced_bos_token_id, forced_eos_token_id)
+      get_logits_processor(
+        min_length_fun,
+        eos_token_id,
+        forced_bos_token_id,
+        forced_eos_token_id,
+        forced_token_ids
+      )
 
     &generate_impl(
       &2,
@@ -249,7 +257,7 @@ defmodule Bumblebee.Text.Generation do
       prepare_inputs_fun = fn inputs, params ->
         encoder_outputs = encoder_predict_fun.(params, inputs)
 
-        batch_size = Nx.axis_size(inputs["input_ids"], 0)
+        batch_size = Nx.axis_size(encoder_input(inputs), 0)
         decoder_input_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
 
         inputs =
@@ -282,7 +290,11 @@ defmodule Bumblebee.Text.Generation do
 
   defp encoder_decoder?(model) do
     inputs = Axon.get_inputs(model)
-    Map.has_key?(inputs, "input_ids") and Map.has_key?(inputs, "decoder_input_ids")
+    encoder_input(inputs) != nil and Map.has_key?(inputs, "decoder_input_ids")
+  end
+
+  defp encoder_input(inputs) do
+    inputs["input_ids"] || inputs["input_features"]
   end
 
   defp prepare_decoder_inputs(inputs, prefix, spec, max_length) do
@@ -320,7 +332,8 @@ defmodule Bumblebee.Text.Generation do
          min_length_fun,
          eos_token_id,
          forced_bos_token_id,
-         forced_eos_token_id
+         forced_eos_token_id,
+         forced_token_ids
        ) do
     processors = [
       if min_length_fun && eos_token_id do
@@ -334,6 +347,9 @@ defmodule Bumblebee.Text.Generation do
       end,
       if forced_eos_token_id do
         &eos_token_logits_processor(&1, &2, eos_token_id: forced_eos_token_id)
+      end,
+      if forced_token_ids do
+        &forced_tokens_logits_processor(&1, &2, forced_token_ids: forced_token_ids)
       end
     ]
 
@@ -510,6 +526,20 @@ defmodule Bumblebee.Text.Generation do
     else
       logits
     end
+  end
+
+  deftransformp forced_tokens_logits_processor(logits, context, opts \\ []) do
+    opts = Keyword.validate!(opts, [:forced_token_ids])
+    forced_token_ids = opts[:forced_token_ids]
+
+    clauses =
+      for {idx, token_id} <- forced_token_ids do
+        {Nx.equal(context.length, idx), force_token_id(logits, token_id: token_id)}
+      end
+
+    # Note that we can't use defn ifs inside transform, so we build
+    # the expression directly
+    Nx.Defn.Expr.cond(clauses, logits)
   end
 
   defnp min_length_logits_processor(logits, context, opts \\ []) do

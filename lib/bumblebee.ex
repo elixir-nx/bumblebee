@@ -114,6 +114,8 @@ defmodule Bumblebee do
       {Bumblebee.Text.Roberta, :for_sequence_classification},
     "XLMRobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
     "XLMRobertaModel" => {Bumblebee.Text.Roberta, :base},
+    "WhisperModel" => {Bumblebee.Audio.Whisper, :base},
+    "WhisperForConditionalGeneration" => {Bumblebee.Audio.Whisper, :for_conditional_generation},
     # Diffusers
     "AutoencoderKL" => {Bumblebee.Diffusion.VaeKl, :base},
     "StableDiffusionSafetyChecker" => {Bumblebee.Diffusion.StableDiffusion.SafetyChecker, :base},
@@ -124,14 +126,16 @@ defmodule Bumblebee do
     "CLIPFeatureExtractor" => Bumblebee.Vision.ClipFeaturizer,
     "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer,
     "DeiTFeatureExtractor" => Bumblebee.Vision.DeitFeaturizer,
-    "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer
+    "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer,
+    "WhisperFeatureExtractor" => Bumblebee.Audio.WhisperFeaturizer
   }
 
   @model_type_to_featurizer %{
     "convnext" => Bumblebee.Vision.ConvNextFeaturizer,
     "deit" => Bumblebee.Vision.DeitFeaturizer,
     "resnet" => Bumblebee.Vision.ConvNextFeaturizer,
-    "vit" => Bumblebee.Vision.VitFeaturizer
+    "vit" => Bumblebee.Vision.VitFeaturizer,
+    "whisper" => Bumblebee.Audio.WhisperFeaturizer
   }
 
   @model_type_to_tokenizer %{
@@ -144,6 +148,7 @@ defmodule Bumblebee do
     "layoutlm" => Bumblebee.Text.LayoutLmTokenizer,
     "mbart" => Bumblebee.Text.MbartTokenizer,
     "roberta" => Bumblebee.Text.RobertaTokenizer,
+    "whisper" => Bumblebee.Text.WhisperTokenizer,
     "xlm-roberta" => Bumblebee.Text.XlmRobertaTokenizer
   }
 
@@ -419,11 +424,14 @@ defmodule Bumblebee do
 
     input_template = module.input_template(spec)
 
+    params_mapping = Bumblebee.HuggingFace.Transformers.Model.params_mapping(spec)
+
     with {:ok, path} <- download(repository, filename) do
       params =
         Bumblebee.Conversion.PyTorch.load_params!(model, input_template, path,
           log_params_diff: log_params_diff,
-          backend: backend
+          backend: backend,
+          params_mapping: params_mapping
         )
 
       {:ok, params}
@@ -433,6 +441,12 @@ defmodule Bumblebee do
   @doc """
   Featurizes `input` with the given featurizer.
 
+  ## Options
+
+    * `:defn_options` - the options for JIT compilation. Note that
+      this is only relevant for featurizers implemented with Nx.
+      Defaults to `[]`
+
   ## Examples
 
       featurizer = Bumblebee.configure(Bumblebee.Vision.ConvNextFeaturizer)
@@ -441,9 +455,10 @@ defmodule Bumblebee do
 
   """
   @doc type: :featurizer
-  @spec apply_featurizer(Bumblebee.Featurizer.t(), any()) :: any()
-  def apply_featurizer(%module{} = featurizer, input) do
-    module.apply(featurizer, input)
+  @spec apply_featurizer(Bumblebee.Featurizer.t(), any(), keyword()) :: any()
+  def apply_featurizer(%module{} = featurizer, input, opts \\ []) do
+    opts = Keyword.validate!(opts, defn_options: [])
+    module.apply(featurizer, input, opts[:defn_options])
   end
 
   @doc """

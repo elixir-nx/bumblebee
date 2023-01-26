@@ -52,7 +52,12 @@ defmodule Bumblebee.Shared do
   """
   @spec generation_options(keyword()) :: keyword()
   def generation_options(defaults \\ []) do
-    defaults = Keyword.validate!(defaults, forced_bos_token_id: nil, forced_eos_token_id: nil)
+    defaults =
+      Keyword.validate!(defaults,
+        forced_bos_token_id: nil,
+        forced_eos_token_id: nil,
+        forced_token_ids: nil
+      )
 
     for {key, default} <- defaults do
       {key, [default: default, doc: nil]}
@@ -107,7 +112,8 @@ defmodule Bumblebee.Shared do
       decoder_start_token_id: {"decoder_start_token_id", number()},
       # Generation
       forced_bos_token_id: {"forced_bos_token_id", number()},
-      forced_eos_token_id: {"forced_eos_token_id", number()}
+      forced_eos_token_id: {"forced_eos_token_id", number()},
+      forced_token_ids: {"forced_decoder_ids", list(tuple([number(), number()]))}
     ]
 
     converters =

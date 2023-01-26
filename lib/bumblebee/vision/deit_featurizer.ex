@@ -65,7 +65,7 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
   end
 
   @impl true
-  def apply(featurizer, images) do
+  def apply(featurizer, images, _defn_options) do
     images = List.wrap(images)
 
     images =

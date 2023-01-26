@@ -160,6 +160,7 @@ defmodule Bumblebee.Utils.Nx do
           [1]
         ]
       >
+
   """
   deftransform composite_unflatten_batch(container, batch_size) do
     map(container, fn tensor ->
@@ -168,6 +169,37 @@ defmodule Bumblebee.Utils.Nx do
         |> Nx.shape()
         |> Tuple.insert_at(0, batch_size)
         |> put_elem(1, :auto)
+
+      Nx.reshape(tensor, shape)
+    end)
+  end
+
+  @doc """
+  Flattens two leading tensor axes into a single axis.
+
+  ## Examples
+
+      iex> output = %{x: Nx.tensor([[0, 0], [1, 1]]), y: Nx.tensor([[0], [1]])}
+      iex> result = Bumblebee.Utils.Nx.composite_flatten_batch(output)
+      iex> result.x
+      #Nx.Tensor<
+        s64[4]
+        [0, 0, 1, 1]
+      >
+      iex> result.y
+      #Nx.Tensor<
+        s64[2]
+        [0, 1]
+      >
+
+  """
+  deftransform composite_flatten_batch(container) do
+    map(container, fn tensor ->
+      shape =
+        tensor
+        |> Nx.shape()
+        |> Tuple.delete_at(0)
+        |> put_elem(0, :auto)
 
       Nx.reshape(tensor, shape)
     end)

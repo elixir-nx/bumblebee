@@ -56,7 +56,7 @@ defmodule Bumblebee.Vision.DeitTest do
 
       # There is no pre-trained version on Hugging Face, so we use a fixed parameter
       params =
-        update_in(params["decoder.0"]["kernel"], fn x ->
+        update_in(params["masked_image_modeling_head.output"]["kernel"], fn x ->
           # We use iota in the order of the pytorch kernel
           x
           |> Nx.transpose(axes: [3, 2, 1, 0])
