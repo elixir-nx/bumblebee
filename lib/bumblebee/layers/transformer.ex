@@ -44,6 +44,9 @@ defmodule Bumblebee.Layers.Transformer do
       :kernel_initializer,
       :dropout_rate,
       :attention_dropout_rate,
+      :query_use_bias,
+      :key_use_bias,
+      :value_use_bias,
       :layer_norm_epsilon,
       :norm_placement
     ]
@@ -190,6 +193,15 @@ defmodule Bumblebee.Layers.Transformer do
     * `:attention_dropout_rate` - the dropout rate for attention weights
       dropout. Defaults to `0.0`
 
+    * `:query_use_bias` - whether to use bias in the query projection.
+      Defaults to `true`
+
+    * `:key_use_bias` - whether to use bias in the key projection.
+      Defaults to `true`
+
+    * `:value_use_bias` - whether to use bias in the value projection.
+      Defaults to `true`
+
     * `:layer_norm_epsilon` - the epsilon used by the layer normalization
       layers. Defaults to `1.0e-5`
 
@@ -224,6 +236,9 @@ defmodule Bumblebee.Layers.Transformer do
         kernel_initializer: :glorot_uniform,
         dropout_rate: 0.0,
         attention_dropout_rate: 0.0,
+        query_use_bias: true,
+        key_use_bias: true,
+        value_use_bias: true,
         layer_norm_epsilon: 1.0e-5,
         norm_placement: :last
       ])
@@ -236,6 +251,9 @@ defmodule Bumblebee.Layers.Transformer do
     kernel_initializer = opts[:kernel_initializer]
     dropout_rate = opts[:dropout_rate]
     attention_dropout_rate = opts[:attention_dropout_rate]
+    query_use_bias = opts[:query_use_bias]
+    key_use_bias = opts[:key_use_bias]
+    value_use_bias = opts[:value_use_bias]
     layer_norm_epsilon = opts[:layer_norm_epsilon]
     attention_mask = opts[:attention_mask]
     attention_head_mask = opts[:attention_head_mask]
@@ -290,6 +308,9 @@ defmodule Bumblebee.Layers.Transformer do
         hidden_size: hidden_size,
         kernel_initializer: kernel_initializer,
         dropout_rate: attention_dropout_rate,
+        query_use_bias: query_use_bias,
+        key_use_bias: key_use_bias,
+        value_use_bias: value_use_bias,
         name: join(name, "self_attention")
       )
 
@@ -330,6 +351,9 @@ defmodule Bumblebee.Layers.Transformer do
               hidden_size: hidden_size,
               kernel_initializer: kernel_initializer,
               dropout_rate: attention_dropout_rate,
+              query_use_bias: query_use_bias,
+              key_use_bias: key_use_bias,
+              value_use_bias: value_use_bias,
               name: join(name, "cross_attention")
             )
 
@@ -427,6 +451,15 @@ defmodule Bumblebee.Layers.Transformer do
     * `:dropout_rate` - the dropout rate for attention weights dropout.
       Defaults to `0.0`
 
+    * `:query_use_bias` - whether to use bias in the query projection.
+      Defaults to `true`
+
+    * `:key_use_bias` - whether to use bias in the key projection.
+      Defaults to `true`
+
+    * `:value_use_bias` - whether to use bias in the value projection.
+      Defaults to `true`
+
     * `:name` - the prefix for layer names
 
   ## References
@@ -448,7 +481,10 @@ defmodule Bumblebee.Layers.Transformer do
         offset: Layers.none(),
         causal?: false,
         kernel_initializer: :glorot_uniform,
-        dropout_rate: 0.0
+        dropout_rate: 0.0,
+        query_use_bias: true,
+        key_use_bias: true,
+        value_use_bias: true
       ])
 
     attention_mask = opts[:attention_mask]
@@ -463,19 +499,35 @@ defmodule Bumblebee.Layers.Transformer do
     causal? = opts[:causal?]
     dropout_rate = opts[:dropout_rate]
 
+    query_use_bias = opts[:query_use_bias]
+    key_use_bias = opts[:key_use_bias]
+    value_use_bias = opts[:value_use_bias]
+
     query =
       query
-      |> Axon.dense(hidden_size, kernel_initializer: kernel_initializer, name: join(name, "query"))
+      |> Axon.dense(hidden_size,
+        kernel_initializer: kernel_initializer,
+        name: join(name, "query"),
+        use_bias: query_use_bias
+      )
       |> Layers.split_heads(num_heads)
 
     key =
       key
-      |> Axon.dense(hidden_size, kernel_initializer: kernel_initializer, name: join(name, "key"))
+      |> Axon.dense(hidden_size,
+        kernel_initializer: kernel_initializer,
+        name: join(name, "key"),
+        use_bias: key_use_bias
+      )
       |> Layers.split_heads(num_heads)
 
     value =
       value
-      |> Axon.dense(hidden_size, kernel_initializer: kernel_initializer, name: join(name, "value"))
+      |> Axon.dense(hidden_size,
+        kernel_initializer: kernel_initializer,
+        name: join(name, "value"),
+        use_bias: value_use_bias
+      )
       |> Layers.split_heads(num_heads)
 
     {key, value, attention_cache} =

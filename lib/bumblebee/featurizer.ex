@@ -13,5 +13,5 @@ defmodule Bumblebee.Featurizer do
   @doc """
   Performs feature extraction on the given input.
   """
-  @callback apply(t(), any()) :: any()
+  @callback apply(t(), input :: any(), defn_options :: keyword()) :: any()
 end

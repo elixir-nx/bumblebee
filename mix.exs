@@ -32,9 +32,9 @@ defmodule Bumblebee.MixProject do
     [
       {:axon, "~> 0.3.1", axon_opts()},
       {:tokenizers, "~> 0.2.0"},
-      {:nx, "~> 0.4.2"},
-      {:exla, "~> 0.4.2", only: [:dev, :test]},
-      {:torchx, "~> 0.4.2", only: [:dev, :test]},
+      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
+      {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
+      {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
       {:nx_image, "~> 0.1.0"},
       {:unpickler, "~> 0.1.0"},
       {:castore, "~> 0.1.0"},
@@ -43,7 +43,8 @@ defmodule Bumblebee.MixProject do
       {:progress_bar, "~> 2.0"},
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
-      {:ex_doc, "~> 0.28", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.28", only: :dev, runtime: false},
+      {:nx_signal, github: "polvalente/nx-signal", branch: "main"}
     ]
   end
 
@@ -68,11 +69,13 @@ defmodule Bumblebee.MixProject do
       extra_section: "GUIDES",
       groups_for_modules: [
         Tasks: [
+          Bumblebee.Audio,
           Bumblebee.Text,
           Bumblebee.Vision,
           Bumblebee.Diffusion.StableDiffusion
         ],
         Models: [
+          Bumblebee.Audio.Whisper,
           Bumblebee.Diffusion.StableDiffusion.SafetyChecker,
           Bumblebee.Diffusion.UNet2DConditional,
           Bumblebee.Diffusion.VaeKl,
@@ -92,14 +95,18 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Vision.Vit
         ],
         Preprocessors: [
+          Bumblebee.Audio.WhisperFeaturizer,
           Bumblebee.Text.AlbertTokenizer,
           Bumblebee.Text.BartTokenizer,
           Bumblebee.Text.BertTokenizer,
+          Bumblebee.Text.CamembertTokenizer,
           Bumblebee.Text.ClipTokenizer,
           Bumblebee.Text.Gpt2Tokenizer,
           Bumblebee.Text.LayoutLmTokenizer,
           Bumblebee.Text.MbartTokenizer,
           Bumblebee.Text.RobertaTokenizer,
+          Bumblebee.Text.WhisperTokenizer,
+          Bumblebee.Text.XlmRobertaTokenizer,
           Bumblebee.Vision.ClipFeaturizer,
           Bumblebee.Vision.ConvNextFeaturizer,
           Bumblebee.Vision.DeitFeaturizer,

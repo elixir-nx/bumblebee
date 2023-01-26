@@ -173,7 +173,7 @@ defmodule Bumblebee.Utils.HTTP do
         {to_charlist(key), to_charlist(value)}
       end)
 
-    [{'user-agent', 'bumblebee'} | headers]
+    [{~c"user-agent", ~c"bumblebee"} | headers]
   end
 
   defp parse_headers(headers) do
