@@ -196,7 +196,7 @@ defmodule Bumblebee.Audio.Whisper do
     input_length = 2 * spec.encoder_max_positions
 
     %{
-      "input_features" => Nx.template({1, input_length, spec.feature_size}, :s64),
+      "input_features" => Nx.template({1, input_length, spec.feature_size}, :f32),
       "decoder_input_ids" => Nx.template({1, 1}, :s64)
     }
   end
