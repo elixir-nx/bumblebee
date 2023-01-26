@@ -44,11 +44,11 @@ defmodule Bumblebee.Audio.SpeechRecognition do
           path when is_binary(path) ->
             ffmpeg_read_as_pcm(path, sampling_rate)
 
-          %Nx.Tensor{shape: {_, _}} = input ->
+          %Nx.Tensor{shape: {_}} = input ->
             {:ok, input}
 
           other ->
-            {:error, "expected a 2-dimensional tensor or a file path, got: #{inspect(other)}"}
+            {:error, "expected a 1-dimensional tensor or a file path, got: #{inspect(other)}"}
         end)
 
       inputs = Bumblebee.apply_featurizer(featurizer, inputs, defn_options: defn_options)
@@ -96,8 +96,7 @@ defmodule Bumblebee.Audio.SpeechRecognition do
         ])
         |> case do
           {data, 0} ->
-            input = data |> Nx.from_binary(:f32) |> Nx.reshape({:auto, 1})
-            {:ok, input}
+            {:ok, Nx.from_binary(data, :f32)}
 
           {_, 1} ->
             {:error, "ffmpeg failed to decode the given file"}

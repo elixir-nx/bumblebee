@@ -54,37 +54,24 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
 
   @impl true
   def apply(featurizer, raw_samples, defn_options) do
-    raw_samples =
-      for sample <- List.wrap(raw_samples) do
-        if Nx.rank(sample) != 2 do
-          Nx.new_axis(sample, -1)
-        else
-          sample
-        end
-      end
-
     max_length = featurizer.num_seconds * featurizer.sampling_rate
 
-    padded_samples =
-      for sample <- raw_samples do
-        pad_size = max_length - elem(Nx.shape(sample), 0)
-        Nx.pad(sample, featurizer.padding_value, [{0, pad_size, 0}, {0, 0, 0}])
-      end
-
     transformed_samples =
-      for sample <- padded_samples do
-        sample
-        |> Nx.transpose()
-        |> Nx.to_batched(1)
-        |> Enum.map(fn waveform ->
-          Nx.Defn.jit(&extract_fbank_features/2, defn_options).(Nx.squeeze(waveform),
-            fft_length: featurizer.fft_length,
-            sampling_rate: featurizer.sampling_rate,
-            mel_bins: featurizer.feature_size,
-            hop_length: featurizer.hop_length
-          )
-        end)
-        |> Nx.concatenate(axis: 0)
+      for sample <- List.wrap(raw_samples) do
+        unless Nx.rank(sample) == 1 do
+          raise ArgumentError,
+                "expected sample to be a 1-rank tensor, got: #{Nx.rank(sample)}-rank"
+        end
+
+        pad_size = max_length - Nx.axis_size(sample, 0)
+        sample = Nx.pad(sample, featurizer.padding_value, [{0, pad_size, 0}])
+
+        Nx.Defn.jit(&extract_fbank_features/2, defn_options).(sample,
+          fft_length: featurizer.fft_length,
+          sampling_rate: featurizer.sampling_rate,
+          mel_bins: featurizer.feature_size,
+          hop_length: featurizer.hop_length
+        )
       end
 
     samples = Nx.stack(transformed_samples)

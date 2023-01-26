@@ -26,7 +26,6 @@ defmodule Bumblebee.Audio.SpeechRecognitionTest do
         )
         |> File.read!()
         |> Nx.from_binary(:f32)
-        |> Nx.reshape({:auto, 1})
 
       assert %{results: [%{text: "Tower of strength."}]} = Nx.Serving.run(serving, audio)
     end

@@ -8,7 +8,7 @@ defmodule Bumblebee.Audio do
 
   Can be either of:
 
-    * a 2-dimensional `Nx.Tensor` with shape `{num_samples, num_channels}`
+    * a 1-dimensional `Nx.Tensor` with audio samples
 
     * a path to an audio file (note this requires `ffmpeg` installed)
 
