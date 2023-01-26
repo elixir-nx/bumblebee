@@ -156,7 +156,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
     inputs = inputs(spec)
-    sample = unet_2d_conditional(inputs, spec)
+    sample = core(inputs, spec)
     Layers.output(%{sample: sample})
   end
 
@@ -170,9 +170,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     ])
   end
 
-  defp unet_2d_conditional(inputs, spec, opts \\ []) do
-    name = opts[:name]
-
+  defp core(inputs, spec) do
     sample = inputs["sample"]
     timestep = inputs["timestep"]
     encoder_hidden_state = inputs["encoder_hidden_state"]
@@ -207,28 +205,26 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       Axon.conv(sample, hd(spec.hidden_sizes),
         kernel_size: 3,
         padding: [{1, 1}, {1, 1}],
-        name: join(name, "conv_in")
+        name: "input_conv"
       )
 
     {sample, down_block_residuals} =
-      down_blocks(sample, timestep_embedding, encoder_hidden_state, spec,
-        name: join(name, "down_blocks")
-      )
+      down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, name: "down_blocks")
 
     sample
-    |> mid_block(timestep_embedding, encoder_hidden_state, spec, name: join(name, "mid_block"))
+    |> mid_block(timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
     |> up_blocks(timestep_embedding, down_block_residuals, encoder_hidden_state, spec,
-      name: join(name, "up_blocks")
+      name: "up_blocks"
     )
     |> Axon.group_norm(spec.group_norm_num_groups,
       epsilon: spec.group_norm_epsilon,
-      name: join(name, "conv_norm_out")
+      name: "output_norm"
     )
-    |> Axon.activation(:silu, name: join(name, "conv_act"))
+    |> Axon.activation(:silu)
     |> Axon.conv(spec.out_channels,
       kernel_size: 3,
       padding: [{1, 1}, {1, 1}],
-      name: join(name, "conv_out")
+      name: "output_conv"
     )
   end
 
@@ -407,6 +403,65 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
         )
 
       @for.config(spec, opts)
+    end
+  end
+
+  defimpl Bumblebee.HuggingFace.Transformers.Model do
+    def params_mapping(_spec) do
+      block_mapping = %{
+        "transformers.{m}.norm" => "attentions.{m}.norm",
+        "transformers.{m}.input_projection" => "attentions.{m}.proj_in",
+        "transformers.{m}.output_projection" => "attentions.{m}.proj_out",
+        "transformers.{m}.blocks.{l}.self_attention.query" =>
+          "attentions.{m}.transformer_blocks.{l}.attn1.to_q",
+        "transformers.{m}.blocks.{l}.self_attention.key" =>
+          "attentions.{m}.transformer_blocks.{l}.attn1.to_k",
+        "transformers.{m}.blocks.{l}.self_attention.value" =>
+          "attentions.{m}.transformer_blocks.{l}.attn1.to_v",
+        "transformers.{m}.blocks.{l}.self_attention.output" =>
+          "attentions.{m}.transformer_blocks.{l}.attn1.to_out.0",
+        "transformers.{m}.blocks.{l}.cross_attention.query" =>
+          "attentions.{m}.transformer_blocks.{l}.attn2.to_q",
+        "transformers.{m}.blocks.{l}.cross_attention.key" =>
+          "attentions.{m}.transformer_blocks.{l}.attn2.to_k",
+        "transformers.{m}.blocks.{l}.cross_attention.value" =>
+          "attentions.{m}.transformer_blocks.{l}.attn2.to_v",
+        "transformers.{m}.blocks.{l}.cross_attention.output" =>
+          "attentions.{m}.transformer_blocks.{l}.attn2.to_out.0",
+        "transformers.{m}.blocks.{l}.ffn.intermediate" =>
+          "attentions.{m}.transformer_blocks.{l}.ff.net.0.proj",
+        "transformers.{m}.blocks.{l}.ffn.output" =>
+          "attentions.{m}.transformer_blocks.{l}.ff.net.2",
+        "transformers.{m}.blocks.{l}.self_attention_norm" =>
+          "attentions.{m}.transformer_blocks.{l}.norm1",
+        "transformers.{m}.blocks.{l}.cross_attention_norm" =>
+          "attentions.{m}.transformer_blocks.{l}.norm2",
+        "transformers.{m}.blocks.{l}.output_norm" =>
+          "attentions.{m}.transformer_blocks.{l}.norm3",
+        "residual_blocks.{m}.timestep_projection" => "resnets.{m}.time_emb_proj",
+        "residual_blocks.{m}.norm_1" => "resnets.{m}.norm1",
+        "residual_blocks.{m}.conv_1" => "resnets.{m}.conv1",
+        "residual_blocks.{m}.norm_2" => "resnets.{m}.norm2",
+        "residual_blocks.{m}.conv_2" => "resnets.{m}.conv2",
+        "residual_blocks.{m}.shortcut.projection" => "resnets.{m}.conv_shortcut",
+        "downsamples.{m}.conv" => "downsamplers.{m}.conv",
+        "upsamples.{m}.conv" => "upsamplers.{m}.conv"
+      }
+
+      blocks_mapping =
+        for {target, source} <- block_mapping,
+            prefix <- ["down_blocks.{n}", "mid_block", "up_blocks.{n}"],
+            do: {prefix <> "." <> target, prefix <> "." <> source},
+            into: %{}
+
+      %{
+        "time_embedding.intermediate" => "time_embedding.linear_1",
+        "time_embedding.output" => "time_embedding.linear_2",
+        "input_conv" => "conv_in",
+        "output_norm" => "conv_norm_out",
+        "output_conv" => "conv_out"
+      }
+      |> Map.merge(blocks_mapping)
     end
   end
 end

@@ -101,20 +101,20 @@ defmodule Bumblebee.Diffusion.StableDiffusion.SafetyChecker do
     num_unsafe_concepts = 17
 
     sensitive_concept_embeddings =
-      Axon.param("special_care_embeds", fn _ ->
+      Axon.param("sensitive_concept_embeddings", fn _ ->
         {num_sensitive_concepts, spec.clip_spec.projection_size}
       end)
 
     unsafe_concept_embeddings =
-      Axon.param("concept_embeds", fn _ ->
+      Axon.param("unsafe_concept_embeddings", fn _ ->
         {num_unsafe_concepts, spec.clip_spec.projection_size}
       end)
 
     sensitive_concept_thresholds =
-      Axon.param("special_care_embeds_weights", fn _ -> {num_sensitive_concepts} end)
+      Axon.param("sensitive_concept_thresholds", fn _ -> {num_sensitive_concepts} end)
 
     unsafe_concept_thresholds =
-      Axon.param("concept_embeds_weights", fn _ -> {num_unsafe_concepts} end)
+      Axon.param("unsafe_concept_thresholds", fn _ -> {num_unsafe_concepts} end)
 
     Axon.layer(
       &unsafe_detection_impl/6,
@@ -166,6 +166,40 @@ defmodule Bumblebee.Diffusion.StableDiffusion.SafetyChecker do
         |> Bumblebee.HuggingFace.Transformers.Config.load(data)
 
       @for.config(spec, clip_spec: clip_spec)
+    end
+  end
+
+  defimpl Bumblebee.HuggingFace.Transformers.Model do
+    alias Bumblebee.HuggingFace.Transformers
+
+    def params_mapping(spec) do
+      vision_mapping =
+        spec.clip_spec.vision_spec
+        |> Transformers.Model.params_mapping()
+        |> Transformers.Utils.prefix_params_mapping("vision_model", "vision_model")
+
+      %{
+        "visual_projection" => "visual_projection",
+        "unsafe_detection" => %{
+          "sensitive_concept_embeddings" => {
+            [{"unsafe_detection", "special_care_embeds"}],
+            fn [value] -> value end
+          },
+          "unsafe_concept_embeddings" => {
+            [{"unsafe_detection", "concept_embeds"}],
+            fn [value] -> value end
+          },
+          "sensitive_concept_thresholds" => {
+            [{"unsafe_detection", "special_care_embeds_weights"}],
+            fn [value] -> value end
+          },
+          "unsafe_concept_thresholds" => {
+            [{"unsafe_detection", "concept_embeds_weights"}],
+            fn [value] -> value end
+          }
+        }
+      }
+      |> Map.merge(vision_mapping)
     end
   end
 end

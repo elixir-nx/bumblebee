@@ -423,11 +423,14 @@ defmodule Bumblebee do
 
     input_template = module.input_template(spec)
 
+    params_mapping = Bumblebee.HuggingFace.Transformers.Model.params_mapping(spec)
+
     with {:ok, path} <- download(repository, filename) do
       params =
         Bumblebee.Conversion.PyTorch.load_params!(model, input_template, path,
           log_params_diff: log_params_diff,
-          backend: backend
+          backend: backend,
+          params_mapping: params_mapping
         )
 
       {:ok, params}

@@ -87,27 +87,32 @@ defmodule Bumblebee.Vision.ResNet do
   @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
     spec
-    |> resnet()
+    |> core()
     |> Layers.output()
   end
 
   def model(%__MODULE__{architecture: :for_image_classification} = spec) do
-    outputs = resnet(spec, name: "resnet")
+    outputs = core(spec)
 
     logits =
       outputs.pooled_state
-      |> Axon.flatten(name: "classifier.0")
-      |> Axon.dense(spec.num_labels, name: "classifier.1")
+      |> Axon.flatten()
+      |> Axon.dense(spec.num_labels, name: "image_classification_head.output")
 
-    Layers.output(%{logits: logits, hidden_states: outputs.hidden_states})
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states
+    })
   end
 
-  defp resnet(spec, opts \\ []) do
+  defp core(spec, opts \\ []) do
     name = opts[:name]
 
+    input = Axon.input("pixel_values", shape: {nil, 224, 224, spec.num_channels})
+
     encoder_outputs =
-      Axon.input("pixel_values", shape: {nil, 224, 224, spec.num_channels})
-      |> embeddings(spec, name: join(name, "embedder"))
+      input
+      |> embedder(spec, name: join(name, "embedder"))
       |> encoder(spec, name: join(name, "encoder"))
 
     pooled_output =
@@ -123,15 +128,15 @@ defmodule Bumblebee.Vision.ResNet do
     }
   end
 
-  defp embeddings(%Axon{} = hidden_state, spec, opts) do
+  defp embedder(pixel_values, spec, opts) do
     name = opts[:name]
 
-    hidden_state
-    |> conv(spec.embedding_size,
+    pixel_values
+    |> conv_block(spec.embedding_size,
       kernel_size: 7,
       strides: 2,
       activation: spec.activation,
-      name: join(name, "embedder")
+      name: join(name, "conv_block")
     )
     |> Axon.max_pool(
       kernel_size: 3,
@@ -141,7 +146,7 @@ defmodule Bumblebee.Vision.ResNet do
     )
   end
 
-  defp encoder(%Axon{} = hidden_state, spec, opts) do
+  defp encoder(hidden_state, spec, opts) do
     name = opts[:name]
 
     stages = spec.hidden_sizes |> Enum.zip(spec.depths) |> Enum.with_index()
@@ -171,7 +176,7 @@ defmodule Bumblebee.Vision.ResNet do
     end
   end
 
-  defp stage(%Axon{} = hidden_state, in_channels, out_channels, spec, opts) do
+  defp stage(hidden_state, in_channels, out_channels, spec, opts) do
     opts = Keyword.validate!(opts, [:name, strides: 2, depth: 2])
     name = opts[:name]
     strides = opts[:strides]
@@ -188,82 +193,89 @@ defmodule Bumblebee.Vision.ResNet do
       residual_block.(hidden_state, in_channels, out_channels,
         strides: strides,
         activation: spec.activation,
-        name: join(name, "layers.0")
+        name: join(name, "blocks.0")
       )
 
     for idx <- 1..(depth - 1), reduce: hidden_state do
       hidden_state ->
         residual_block.(hidden_state, out_channels, out_channels,
           activation: spec.activation,
-          name: join(name, "layers.#{idx}")
+          name: join(name, "blocks.#{idx}")
         )
     end
   end
 
-  defp basic_residual_block(%Axon{} = hidden_state, in_channels, out_channels, opts) do
+  defp basic_residual_block(hidden_state, in_channels, out_channels, opts) do
     opts = Keyword.validate!(opts, [:name, strides: 1, activation: :relu])
     name = opts[:name]
     strides = opts[:strides]
     activation = opts[:activation]
 
-    use_shortcut? = in_channels != out_channels or strides != 1
-
-    residual =
-      if use_shortcut? do
-        shortcut(hidden_state, out_channels, strides: strides, name: join(name, "shortcut"))
-      else
-        hidden_state
-      end
+    shortcut =
+      shortcut(hidden_state, in_channels, out_channels,
+        strides: strides,
+        name: join(name, "shortcut")
+      )
 
     hidden_state
-    |> conv(out_channels, strides: strides, name: join(name, "layer.0"))
-    |> conv(out_channels, activation: :linear, name: join(name, "layer.1"))
-    |> Axon.add(residual)
+    |> conv_block(out_channels, strides: strides, name: join(name, "conv_blocks.0"))
+    |> conv_block(out_channels, activation: :linear, name: join(name, "conv_blocks.1"))
+    |> Axon.add(shortcut)
     |> Axon.activation(activation, name: join(name, "activation"))
   end
 
-  defp bottleneck_residual_block(%Axon{} = hidden_state, in_channels, out_channels, opts) do
+  defp bottleneck_residual_block(hidden_state, in_channels, out_channels, opts) do
     opts = Keyword.validate!(opts, [:name, strides: 1, activation: :relu, reduction: 4])
     name = opts[:name]
     strides = opts[:strides]
     activation = opts[:activation]
     reduction = opts[:reduction]
 
-    use_shortcut? = in_channels != out_channels or strides != 1
+    shortcut =
+      shortcut(hidden_state, in_channels, out_channels,
+        strides: strides,
+        name: join(name, "shortcut")
+      )
+
     reduced_channels = div(out_channels, reduction)
 
-    residual =
-      if use_shortcut? do
-        shortcut(hidden_state, out_channels, strides: strides, name: join(name, "shortcut"))
-      else
-        hidden_state
-      end
-
     hidden_state
-    |> conv(reduced_channels, kernel_size: 1, name: join(name, "layer.0"))
-    |> conv(reduced_channels, strides: strides, name: join(name, "layer.1"))
-    |> conv(out_channels, kernel_size: 1, activation: :linear, name: join(name, "layer.2"))
-    |> Axon.add(residual)
+    |> conv_block(reduced_channels, kernel_size: 1, name: join(name, "conv_blocks.0"))
+    |> conv_block(reduced_channels, strides: strides, name: join(name, "conv_blocks.1"))
+    |> conv_block(out_channels,
+      kernel_size: 1,
+      activation: :linear,
+      name: join(name, "conv_blocks.2")
+    )
+    |> Axon.add(shortcut)
     |> Axon.activation(activation, name: join(name, "activation"))
   end
 
-  defp shortcut(%Axon{} = hidden_state, out_channels, opts) do
+  defp shortcut(hidden_state, in_channels, out_channels, opts) do
     opts = Keyword.validate!(opts, [:name, strides: 2])
     name = opts[:name]
     strides = opts[:strides]
 
-    hidden_state
-    |> Axon.conv(out_channels,
-      kernel_size: 1,
-      strides: strides,
-      use_bias: false,
-      kernel_initializer: conv_kernel_initializer(),
-      name: join(name, "convolution")
-    )
-    |> Axon.batch_norm(gamma_initializer: :ones, name: join(name, "normalization"))
+    # If the output shape doesn't match input shape, we need to project
+    # the shortcut connection
+    project_shortcut? = in_channels != out_channels or strides != 1
+
+    if project_shortcut? do
+      hidden_state
+      |> Axon.conv(out_channels,
+        kernel_size: 1,
+        strides: strides,
+        use_bias: false,
+        kernel_initializer: conv_kernel_initializer(),
+        name: join(name, "projection")
+      )
+      |> Axon.batch_norm(gamma_initializer: :ones, name: join(name, "norm"))
+    else
+      hidden_state
+    end
   end
 
-  defp conv(%Axon{} = hidden_state, out_channels, opts) do
+  defp conv_block(hidden_state, out_channels, opts) do
     opts = Keyword.validate!(opts, [:name, kernel_size: 3, strides: 1, activation: :relu])
     name = opts[:name]
     kernel_size = opts[:kernel_size]
@@ -280,9 +292,9 @@ defmodule Bumblebee.Vision.ResNet do
       padding: padding_spec,
       use_bias: false,
       kernel_initializer: conv_kernel_initializer(),
-      name: join(name, "convolution")
+      name: join(name, "conv")
     )
-    |> Axon.batch_norm(gamma_initializer: :ones, name: join(name, "normalization"))
+    |> Axon.batch_norm(gamma_initializer: :ones, name: join(name, "norm"))
     |> Axon.activation(activation, name: join(name, "activation"))
   end
 
@@ -306,6 +318,24 @@ defmodule Bumblebee.Vision.ResNet do
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
+    end
+  end
+
+  defimpl Bumblebee.HuggingFace.Transformers.Model do
+    def params_mapping(_spec) do
+      %{
+        "embedder.conv_block.conv" => "resnet.embedder.embedder.convolution",
+        "embedder.conv_block.norm" => "resnet.embedder.embedder.normalization",
+        "encoder.stages.{n}.blocks.{m}.conv_blocks.{l}.conv" =>
+          "resnet.encoder.stages.{n}.layers.{m}.layer.{l}.convolution",
+        "encoder.stages.{n}.blocks.{m}.conv_blocks.{l}.norm" =>
+          "resnet.encoder.stages.{n}.layers.{m}.layer.{l}.normalization",
+        "encoder.stages.{n}.blocks.{m}.shortcut.projection" =>
+          "resnet.encoder.stages.{n}.layers.{m}.shortcut.convolution",
+        "encoder.stages.{n}.blocks.{m}.shortcut.norm" =>
+          "resnet.encoder.stages.{n}.layers.{m}.shortcut.normalization",
+        "image_classification_head.output" => "classifier.1"
+      }
     end
   end
 end
