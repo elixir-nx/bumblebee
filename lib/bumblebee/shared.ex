@@ -326,4 +326,76 @@ defmodule Bumblebee.Shared do
       other -> Nx.to_template(other)
     end)
   end
+
+  @doc """
+  Updates each of the special token with the value in `data`.
+  """
+  @spec load_special_tokens(map(), map()) :: map()
+  def load_special_tokens(special_tokens, data) do
+    for {key, default_token} <- special_tokens, into: %{} do
+      token =
+        case data["#{key}_token"] do
+          nil -> default_token
+          %{"content" => token} when is_binary(token) -> token
+          token when is_binary(token) -> token
+        end
+
+      {key, token}
+    end
+  end
+
+  @doc """
+  Generates tokenizer implementation.
+  """
+  defmacro tokenizer_impl(opts) do
+    special_tokens = Keyword.fetch!(opts, :special_tokens)
+
+    quote do
+      defstruct [
+        :tokenizer,
+        special_tokens: unquote(special_tokens)
+      ]
+
+      @behaviour Bumblebee.Tokenizer
+
+      @impl true
+      def apply(%{tokenizer: tokenizer, special_tokens: %{pad: pad_token}}, input, opts \\ []) do
+        Bumblebee.Utils.Tokenizers.apply(tokenizer, input, pad_token, opts)
+      end
+
+      @impl true
+      def decode(%{tokenizer: tokenizer}, ids) do
+        Bumblebee.Utils.Tokenizers.decode(tokenizer, ids)
+      end
+
+      @impl true
+      def id_to_token(%{tokenizer: tokenizer}, id) do
+        Bumblebee.Utils.Tokenizers.id_to_token(tokenizer, id)
+      end
+
+      @impl true
+      def token_to_id(%{tokenizer: tokenizer}, token) do
+        Bumblebee.Utils.Tokenizers.token_to_id(tokenizer, token)
+      end
+
+      @impl true
+      def special_tokens(tokenizer) do
+        tokenizer.special_tokens
+      end
+
+      defimpl Bumblebee.HuggingFace.Transformers.Config do
+        def load(tokenizer, %{
+              "tokenizer_file" => path,
+              "special_tokens_map" => special_tokens_map
+            }) do
+          native_tokenizer = Bumblebee.Utils.Tokenizers.load!(path)
+
+          special_tokens =
+            Bumblebee.Shared.load_special_tokens(tokenizer.special_tokens, special_tokens_map)
+
+          %{tokenizer | tokenizer: native_tokenizer, special_tokens: special_tokens}
+        end
+      end
+    end
+  end
 end

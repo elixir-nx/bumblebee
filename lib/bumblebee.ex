@@ -31,6 +31,7 @@ defmodule Bumblebee do
   @config_filename "config.json"
   @featurizer_filename "preprocessor_config.json"
   @tokenizer_filename "tokenizer.json"
+  @tokenizer_special_tokens_filename "special_tokens_map.json"
   @scheduler_filename "scheduler_config.json"
   @params_filename %{pytorch: "pytorch_model.bin"}
 
@@ -613,8 +614,22 @@ defmodule Bumblebee do
             {:error, error} -> raise "#{error}, please specify the :module option"
           end
 
+      special_tokens_map =
+        with {:ok, path} <- download(repository, @tokenizer_special_tokens_filename),
+             {:ok, special_tokens_map} <- decode_config(path) do
+          special_tokens_map
+        else
+          _ -> %{}
+        end
+
       tokenizer = struct!(module)
-      tokenizer = HuggingFace.Transformers.Config.load(tokenizer, %{"tokenizer_file" => path})
+
+      tokenizer =
+        HuggingFace.Transformers.Config.load(tokenizer, %{
+          "tokenizer_file" => path,
+          "special_tokens_map" => special_tokens_map
+        })
+
       {:ok, tokenizer}
     end
   end
