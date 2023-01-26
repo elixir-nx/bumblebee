@@ -105,6 +105,7 @@ defmodule Bumblebee.Multimodal.Clip do
     text_model =
       text_spec
       |> Bumblebee.build_model()
+      |> Bumblebee.Utils.Axon.prefix_names("text_model.")
       |> Bumblebee.Utils.Axon.plug_inputs(%{
         "input_ids" => inputs["input_ids"],
         "attention_mask" => inputs["attention_mask"],
@@ -114,6 +115,7 @@ defmodule Bumblebee.Multimodal.Clip do
     vision_model =
       vision_spec
       |> Bumblebee.build_model()
+      |> Bumblebee.Utils.Axon.prefix_names("vision_model.")
       |> Bumblebee.Utils.Axon.plug_inputs(%{
         "pixel_values" => inputs["pixel_values"]
       })
@@ -133,7 +135,6 @@ defmodule Bumblebee.Multimodal.Clip do
       |> Layers.cosine_similarity(image_embeddings)
       |> exp_scale(
         name: "scale",
-        scale_name: "logit_scale",
         scale_initializer: Axon.Initializers.full(spec.logit_scale_initial_value)
       )
 
@@ -148,18 +149,12 @@ defmodule Bumblebee.Multimodal.Clip do
   end
 
   defp exp_scale(input, opts) do
-    opts =
-      Keyword.validate!(opts, [
-        :name,
-        scale_name: "scale",
-        scale_initializer: Axon.Initializers.full(1.0e-6)
-      ])
+    opts = Keyword.validate!(opts, [:name, scale_initializer: Axon.Initializers.full(1.0e-6)])
 
     name = opts[:name]
-    scale_name = opts[:scale_name]
     scale_initializer = opts[:scale_initializer]
 
-    scale_param = Axon.param(scale_name, fn _ -> {} end, initializer: scale_initializer)
+    scale_param = Axon.param("scale", fn _ -> {} end, initializer: scale_initializer)
 
     Axon.layer(
       fn input, scale, _opts ->
@@ -195,6 +190,32 @@ defmodule Bumblebee.Multimodal.Clip do
         )
 
       @for.config(spec, opts ++ [text_spec: text_spec, vision_spec: vision_spec])
+    end
+  end
+
+  defimpl Bumblebee.HuggingFace.Transformers.Model do
+    alias Bumblebee.HuggingFace.Transformers
+
+    def params_mapping(spec) do
+      text_mapping =
+        spec.text_spec
+        |> Transformers.Model.params_mapping()
+        |> Transformers.Utils.prefix_params_mapping("text_model", nil)
+
+      vision_mapping =
+        spec.vision_spec
+        |> Transformers.Model.params_mapping()
+        |> Transformers.Utils.prefix_params_mapping("vision_model", nil)
+
+      %{
+        "text_projection" => "text_projection",
+        "visual_projection" => "visual_projection",
+        "scale" => %{
+          "scale" => {[{"scale", "logit_scale"}], fn [scale] -> scale end}
+        }
+      }
+      |> Map.merge(text_mapping)
+      |> Map.merge(vision_mapping)
     end
   end
 end

@@ -79,12 +79,10 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
 
       assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_sequence_classification} = spec
 
-      %{"kernel" => k, "bias" => b} = params["classifier"]
-
-      params = %{
-        params
-        | "classifier" => %{"kernel" => Nx.broadcast(1.0, k), "bias" => Nx.broadcast(0.0, b)}
-      }
+      params =
+        update_in(params["sequence_classification_head.output"], fn %{"kernel" => k, "bias" => b} ->
+          %{"kernel" => Nx.broadcast(1.0, k), "bias" => Nx.broadcast(0.0, b)}
+        end)
 
       inputs = %{
         "input_ids" => Nx.tensor([[101, 7592, 2088, 102]]),
@@ -116,12 +114,10 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
 
       assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_token_classification} = spec
 
-      %{"kernel" => k, "bias" => b} = params["classifier"]
-
-      params = %{
-        params
-        | "classifier" => %{"kernel" => Nx.broadcast(1.0, k), "bias" => Nx.broadcast(0.0, b)}
-      }
+      params =
+        update_in(params["token_classification_head.output"], fn %{"kernel" => k, "bias" => b} ->
+          %{"kernel" => Nx.broadcast(1.0, k), "bias" => Nx.broadcast(0.0, b)}
+        end)
 
       inputs = %{
         "input_ids" => Nx.tensor([[101, 7592, 2088, 102]]),

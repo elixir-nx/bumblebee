@@ -33,7 +33,7 @@ defmodule Bumblebee.Text.Gpt2 do
       intermediate_size: [
         default: nil,
         doc: """
-        the dimensionality of the intermediate (often named feed-forward) layer in the decoder.
+        the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the decoder.
         If not specified, defaults to 4 times `:hidden_size`
         """
       ],
@@ -187,9 +187,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
   @impl true
   def input_template(_spec) do
-    %{
-      "input_ids" => Nx.template({1, 1}, :s64)
-    }
+    %{"input_ids" => Nx.template({1, 1}, :s64)}
   end
 
   @impl true
@@ -197,20 +195,20 @@ defmodule Bumblebee.Text.Gpt2 do
     inputs = inputs(spec)
 
     inputs
-    |> gpt2(spec)
+    |> core(spec)
     |> Layers.output()
   end
 
   def model(%__MODULE__{architecture: :for_causal_language_modeling} = spec) do
     inputs = inputs(spec)
 
-    outputs = gpt2(inputs, spec, name: "transformer")
+    outputs = core(inputs, spec)
 
     # TODO: Tie lm-head to word embedding as a spec option
     logits =
       Layers.dense_transposed(outputs.hidden_state, spec.vocab_size,
         kernel_initializer: kernel_initializer(spec),
-        name: "transformer.wte"
+        name: "language_modeling_head.output"
       )
 
     Layers.output(%{
@@ -225,12 +223,17 @@ defmodule Bumblebee.Text.Gpt2 do
   def model(%__MODULE__{architecture: :for_token_classification} = spec) do
     inputs = inputs(spec)
 
-    outputs = gpt2(inputs, spec, name: "transformer")
+    outputs = core(inputs, spec)
 
     logits =
       outputs.hidden_state
-      |> Axon.dropout(rate: classifier_dropout_rate(spec))
-      |> Axon.dense(spec.num_labels, name: "classifier")
+      |> Axon.dropout(
+        rate: classifier_dropout_rate(spec),
+        name: "token_classification_head.dropout"
+      )
+      |> Axon.dense(spec.num_labels,
+        name: "token_classification_head.output"
+      )
 
     Layers.output(%{
       logits: logits,
@@ -242,11 +245,12 @@ defmodule Bumblebee.Text.Gpt2 do
   def model(%__MODULE__{architecture: :for_sequence_classification} = spec) do
     inputs = inputs(spec)
 
-    outputs = gpt2(inputs, spec, name: "transformer")
+    outputs = core(inputs, spec)
 
     logits =
-      outputs.hidden_state
-      |> Layers.dense_transposed(spec.num_labels, name: "score")
+      Layers.dense_transposed(outputs.hidden_state, spec.num_labels,
+        name: "sequence_classification_head.output"
+      )
 
     pooled_logits =
       Layers.if_present inputs["input_ids"] do
@@ -291,316 +295,6 @@ defmodule Bumblebee.Text.Gpt2 do
     )
   end
 
-  defp gpt2(inputs, spec, opts \\ []) do
-    name = opts[:name]
-
-    input_embeddings =
-      Layers.default inputs["input_embeddings"] do
-        Axon.embedding(inputs["input_ids"], spec.vocab_size, spec.hidden_size,
-          name: join(name, "wte")
-        )
-      end
-
-    position_ids =
-      Layers.default inputs["position_ids"] do
-        Layers.default_position_ids(input_embeddings)
-      end
-
-    position_embeddings =
-      Axon.embedding(position_ids, spec.max_positions, spec.hidden_size, name: join(name, "wpe"))
-
-    attention_mask =
-      Layers.default inputs["attention_mask"] do
-        Layers.default_attention_mask(input_embeddings)
-      end
-
-    encoder_attention_mask =
-      Layers.default inputs["encoder_attention_mask"] do
-        Layers.default_attention_mask(inputs["encoder_hidden_state"])
-      end
-
-    hidden_state =
-      input_embeddings
-      |> Axon.add(position_embeddings)
-      |> Axon.dropout(rate: spec.embeddings_dropout_rate)
-
-    block_outputs =
-      blocks(
-        hidden_state,
-        attention_mask,
-        inputs["attention_head_mask"],
-        inputs["encoder_hidden_state"],
-        encoder_attention_mask,
-        inputs["cross_attention_head_mask"],
-        inputs["cache"],
-        spec,
-        name: join(name, "h")
-      )
-
-    hidden_state =
-      Axon.layer_norm(block_outputs.hidden_state,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "ln_f")
-      )
-
-    %{
-      hidden_state: hidden_state,
-      hidden_states: block_outputs.hidden_states,
-      attentions: block_outputs.attentions,
-      cross_attentions: block_outputs.cross_attentions,
-      cache: block_outputs.cache
-    }
-  end
-
-  defp blocks(
-         hidden_state,
-         attention_mask,
-         attention_head_mask,
-         encoder_hidden_state,
-         encoder_attention_mask,
-         cross_attention_head_mask,
-         cache,
-         spec,
-         opts
-       ) do
-    name = opts[:name]
-
-    {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
-
-    state = %{
-      hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
-      attentions: Layers.maybe_container({}, spec.output_attentions),
-      cross_attentions: Layers.maybe_container({}, spec.output_attentions),
-      cache: cache
-    }
-
-    offset = Layers.Decoder.get_cache_offset(state.cache)
-
-    outputs =
-      for idx <- 0..(spec.num_blocks - 1), reduce: state do
-        state ->
-          block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
-
-          cross_attention_block_attention_head_mask =
-            Axon.nx(cross_attention_head_mask, & &1[idx])
-
-          block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
-
-          {hidden_state, attention, cross_attention, block_cache} =
-            block(
-              state.hidden_state,
-              attention_mask,
-              encoder_hidden_state,
-              encoder_attention_mask,
-              block_attention_head_mask,
-              cross_attention_block_attention_head_mask,
-              block_cache,
-              offset,
-              spec,
-              name: join(name, idx)
-            )
-
-          cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
-
-          %{
-            hidden_state: hidden_state,
-            hidden_states: Layers.append(state.hidden_states, hidden_state),
-            attentions: Layers.append(state.attentions, attention),
-            cross_attentions: Layers.append(state.cross_attentions, cross_attention),
-            cache: cache
-          }
-      end
-
-    update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, hidden_state))
-  end
-
-  defp block(
-         hidden_state,
-         attention_mask,
-         encoder_hidden_state,
-         encoder_attention_mask,
-         attention_head_mask,
-         cross_attention_head_mask,
-         block_cache,
-         offset,
-         spec,
-         opts
-       ) do
-    name = opts[:name]
-    inner_dim = spec.intermediate_size || 4 * spec.hidden_size
-
-    residual = hidden_state
-
-    {self_attention_cache, cross_attention_cache} =
-      Layers.Decoder.get_attention_caches(block_cache)
-
-    {attention_output, attention_weights, self_attention_cache} =
-      hidden_state
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "ln_1"))
-      |> attention(
-        attention_mask,
-        nil,
-        attention_head_mask,
-        self_attention_cache,
-        offset,
-        spec,
-        num_heads: spec.num_attention_heads,
-        causal?: true,
-        name: join(name, "attn")
-      )
-
-    hidden_state = Axon.add(attention_output, residual)
-
-    {hidden_state, cross_attention_weights, cross_attention_cache} =
-      if spec.use_cross_attention do
-        Layers.if_present encoder_hidden_state do
-          residual = hidden_state
-
-          {cross_attention_output, cross_attention_weights, cross_attention_cache} =
-            hidden_state
-            |> Axon.layer_norm(
-              epsilon: spec.layer_norm_epsilon,
-              name: join(name, "ln_cross_attn")
-            )
-            |> attention(
-              encoder_attention_mask,
-              encoder_hidden_state,
-              cross_attention_head_mask,
-              cross_attention_cache,
-              offset,
-              spec,
-              name: join(name, "crossattention"),
-              num_heads: spec.num_attention_heads
-            )
-
-          hidden_state = Axon.add(cross_attention_output, residual)
-          {hidden_state, cross_attention_weights, cross_attention_cache}
-        else
-          {hidden_state, Layers.none(), cross_attention_cache}
-        end
-      else
-        {hidden_state, Layers.none(), cross_attention_cache}
-      end
-
-    residual = hidden_state
-
-    hidden_state =
-      hidden_state
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "ln_2"))
-      |> mlp(inner_dim, spec, name: join(name, "mlp"))
-      |> Axon.add(residual)
-
-    block_cache =
-      Layers.Decoder.put_attention_caches(
-        block_cache,
-        self_attention_cache,
-        cross_attention_cache
-      )
-
-    {hidden_state, attention_weights, cross_attention_weights, block_cache}
-  end
-
-  defp attention(
-         hidden_state,
-         attention_mask,
-         cross_hidden_state,
-         block_attention_head_mask,
-         attention_cache,
-         offset,
-         spec,
-         opts
-       ) do
-    name = opts[:name]
-    num_heads = opts[:num_heads]
-    causal? = Keyword.get(opts, :causal?, false)
-    cross_attention? = cross_hidden_state != nil
-
-    {query, key, value} =
-      if cross_attention? do
-        q_out =
-          Layers.conv1d(hidden_state, spec.hidden_size,
-            kernel_initializer: kernel_initializer(spec),
-            name: join(name, "q_attn")
-          )
-
-        {query} = Axon.split(q_out, 1, axis: 1)
-
-        kv_out =
-          Layers.conv1d(cross_hidden_state, spec.hidden_size * 2,
-            kernel_initializer: kernel_initializer(spec),
-            name: join(name, "c_attn")
-          )
-
-        {key, value} = Axon.split(kv_out, 2, axis: 2)
-
-        {query, key, value}
-      else
-        qkv_out =
-          Layers.conv1d(hidden_state, spec.hidden_size * 3,
-            kernel_initializer: kernel_initializer(spec),
-            name: join(name, "c_attn")
-          )
-
-        Axon.split(qkv_out, 3, axis: 2)
-      end
-
-    query = Layers.split_heads(query, num_heads)
-    key = Layers.split_heads(key, num_heads)
-    value = Layers.split_heads(value, num_heads)
-
-    attention_mask = Layers.expand_attention_mask(attention_mask)
-
-    attention_mask =
-      if causal? do
-        Layers.Decoder.apply_causal_mask(attention_mask, query, offset)
-      else
-        attention_mask
-      end
-
-    {key, value, attention_cache} =
-      Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset,
-        cross_attention?: cross_attention?
-      )
-
-    attention_bias = Layers.attention_bias(attention_mask)
-
-    attention_weights = Layers.attention_weights(query, key, attention_bias)
-
-    attention_weights =
-      attention_weights
-      |> Axon.dropout(rate: spec.attention_dropout_rate)
-      |> Layers.apply_attention_head_mask(block_attention_head_mask)
-
-    attention_output =
-      attention_weights
-      |> Layers.attention_output(value)
-      |> Layers.flatten_trailing()
-      |> Layers.conv1d(spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "c_proj")
-      )
-      |> Axon.dropout(rate: spec.dropout_rate)
-
-    {attention_output, attention_weights, attention_cache}
-  end
-
-  defp mlp(hidden_state, inner_dim, spec, opts) do
-    name = opts[:name]
-
-    hidden_state
-    |> Layers.conv1d(inner_dim,
-      kernel_initializer: kernel_initializer(spec),
-      name: join(name, "c_fc")
-    )
-    |> Layers.activation(spec.activation, name: join(name, "act"))
-    |> Layers.conv1d(spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      name: join(name, "c_proj")
-    )
-    |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
-  end
-
   defp inputs(spec) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, spec.hidden_size}
@@ -620,6 +314,112 @@ defmodule Bumblebee.Text.Gpt2 do
       ),
       Axon.input("cache", optional: true)
     ])
+  end
+
+  defp core(inputs, spec) do
+    embeddings =
+      embedder(inputs["input_ids"], inputs["position_ids"], inputs["input_embeddings"], spec,
+        name: "embedder"
+      )
+
+    outputs =
+      decoder(
+        embeddings,
+        inputs["attention_mask"],
+        inputs["attention_head_mask"],
+        inputs["encoder_hidden_state"],
+        inputs["encoder_attention_mask"],
+        inputs["cross_attention_head_mask"],
+        inputs["cache"],
+        spec,
+        name: "decoder"
+      )
+
+    hidden_state =
+      Axon.layer_norm(outputs.hidden_state,
+        epsilon: spec.layer_norm_epsilon,
+        name: "norm"
+      )
+
+    %{
+      hidden_state: hidden_state,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions,
+      cross_attentions: outputs.cross_attentions,
+      cache: outputs.cache
+    }
+  end
+
+  defp embedder(input_ids, position_ids, input_embeddings, spec, opts) do
+    name = opts[:name]
+
+    input_embeddings =
+      Layers.default input_embeddings do
+        Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
+          name: join(name, "token_embedding")
+        )
+      end
+
+    position_ids =
+      Layers.default position_ids do
+        Layers.default_position_ids(input_embeddings)
+      end
+
+    position_embeddings =
+      Axon.embedding(position_ids, spec.max_positions, spec.hidden_size,
+        name: join(name, "position_embedding")
+      )
+
+    input_embeddings
+    |> Axon.add(position_embeddings)
+    |> Axon.dropout(rate: spec.embeddings_dropout_rate)
+  end
+
+  defp decoder(
+         hidden_state,
+         attention_mask,
+         attention_head_mask,
+         encoder_hidden_state,
+         encoder_attention_mask,
+         cross_attention_head_mask,
+         cache,
+         spec,
+         opts
+       ) do
+    name = opts[:name]
+
+    Layers.Transformer.blocks(
+      hidden_state,
+      [
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        cache: cache,
+        causal?: true,
+        num_blocks: spec.num_blocks,
+        num_attention_heads: spec.num_attention_heads,
+        hidden_size: spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
+        dropout_rate: spec.dropout_rate,
+        attention_dropout_rate: spec.attention_dropout_rate,
+        layer_norm_epsilon: spec.layer_norm_epsilon,
+        norm_placement: :first,
+        ffn: [
+          intermediate_size: spec.intermediate_size || 4 * spec.hidden_size,
+          activation: spec.activation
+        ],
+        output_hidden_states: spec.output_hidden_states,
+        output_attentions: spec.output_attentions,
+        name: join(name, "blocks")
+      ] ++
+        if(spec.use_cross_attention,
+          do: [
+            cross_hidden_state: encoder_hidden_state,
+            cross_attention_mask: encoder_attention_mask,
+            cross_attention_head_mask: cross_attention_head_mask
+          ],
+          else: []
+        )
+    )
   end
 
   defp classifier_dropout_rate(spec) do
@@ -652,6 +452,63 @@ defmodule Bumblebee.Text.Gpt2 do
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
+    end
+  end
+
+  defimpl Bumblebee.HuggingFace.Transformers.Model do
+    def params_mapping(_spec) do
+      %{
+        "embedder.token_embedding" => "transformer.wte",
+        "embedder.position_embedding" => "transformer.wpe",
+        "decoder.blocks.{n}.self_attention.query" =>
+          dense_from_conv1d("transformer.h.{n}.attn.c_attn", 3, 0),
+        "decoder.blocks.{n}.self_attention.key" =>
+          dense_from_conv1d("transformer.h.{n}.attn.c_attn", 3, 1),
+        "decoder.blocks.{n}.self_attention.value" =>
+          dense_from_conv1d("transformer.h.{n}.attn.c_attn", 3, 2),
+        "decoder.blocks.{n}.self_attention.output" =>
+          dense_from_conv1d("transformer.h.{n}.attn.c_proj", 1, 0),
+        "decoder.blocks.{n}.self_attention_norm" => "transformer.h.{n}.ln_1",
+        "decoder.blocks.{n}.cross_attention.query" =>
+          dense_from_conv1d("transformer.h.{n}.crossattention.q_attn", 1, 0),
+        "decoder.blocks.{n}.cross_attention.key" =>
+          dense_from_conv1d("transformer.h.{n}.crossattention.c_attn", 2, 0),
+        "decoder.blocks.{n}.cross_attention.value" =>
+          dense_from_conv1d("transformer.h.{n}.crossattention.c_attn", 2, 1),
+        "decoder.blocks.{n}.cross_attention.output" =>
+          dense_from_conv1d("transformer.h.{n}.crossattention.c_proj", 1, 0),
+        "decoder.blocks.{n}.ffn.intermediate" =>
+          dense_from_conv1d("transformer.h.{n}.mlp.c_fc", 1, 0),
+        "decoder.blocks.{n}.ffn.output" =>
+          dense_from_conv1d("transformer.h.{n}.mlp.c_proj", 1, 0),
+        "decoder.blocks.{n}.cross_attention_norm" => "transformer.h.{n}.ln_cross_attn",
+        "decoder.blocks.{n}.output_norm" => "transformer.h.{n}.ln_2",
+        "norm" => "transformer.ln_f",
+        "language_modeling_head.output" => "transformer.wte",
+        "token_classification_head.output" => "classifier",
+        "sequence_classification_head.output" => "score"
+      }
+    end
+
+    defp dense_from_conv1d(source_layer_name, num_chunks, idx) do
+      %{
+        "kernel" => {
+          [{source_layer_name, "weight"}],
+          fn [kernel] ->
+            size = Nx.axis_size(kernel, 1)
+            step = div(size, num_chunks)
+            Nx.slice_along_axis(kernel, idx * step, step, axis: 1)
+          end
+        },
+        "bias" => {
+          [{source_layer_name, "bias"}],
+          fn [bias] ->
+            size = Nx.axis_size(bias, 0)
+            step = div(size, num_chunks)
+            Nx.slice_along_axis(bias, idx * step, step)
+          end
+        }
+      }
     end
   end
 end

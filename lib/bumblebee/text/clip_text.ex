@@ -33,7 +33,7 @@ defmodule Bumblebee.Text.ClipText do
       intermediate_size: [
         default: 2048,
         doc:
-          "the dimensionality of the intermediate (often named feed-forward) layer in the encoder"
+          "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
       activation: [
         default: :quick_gelu,
@@ -116,7 +116,7 @@ defmodule Bumblebee.Text.ClipText do
     inputs = inputs()
 
     inputs
-    |> clip_text(spec, name: "text_model")
+    |> core(spec)
     |> Layers.output()
   end
 
@@ -130,40 +130,14 @@ defmodule Bumblebee.Text.ClipText do
     ])
   end
 
-  defp clip_text(inputs, spec, opts) do
-    name = opts[:name]
-
+  defp core(inputs, spec) do
     input_ids = inputs["input_ids"]
 
-    attention_mask =
-      Layers.default inputs["attention_mask"] do
-        Layers.default_attention_mask(input_ids)
-      end
-
-    position_ids =
-      Layers.default inputs["position_ids"] do
-        Layers.default_position_ids(input_ids)
-      end
-
-    text_transformer(input_ids, attention_mask, position_ids, spec, name: name)
-  end
-
-  defp text_transformer(input_ids, attention_mask, position_ids, spec, opts) do
-    name = opts[:name]
-
-    hidden_state = text_embeddings(input_ids, position_ids, spec, name: join(name, "embeddings"))
-
-    encoder_outputs =
-      Bumblebee.Layers.Clip.encoder(hidden_state, attention_mask, spec,
-        name: join(name, "encoder"),
-        causal?: true
-      )
+    embeddings = embedder(input_ids, inputs["position_ids"], spec, name: "embedder")
+    encoder_outputs = encoder(embeddings, inputs["attention_mask"], spec, name: "encoder")
 
     hidden_state =
-      Axon.layer_norm(encoder_outputs.hidden_state,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "final_layer_norm")
-      )
+      Axon.layer_norm(encoder_outputs.hidden_state, epsilon: spec.layer_norm_epsilon, name: "norm")
 
     pooled_state =
       Axon.layer(
@@ -182,8 +156,13 @@ defmodule Bumblebee.Text.ClipText do
     }
   end
 
-  defp text_embeddings(input_ids, position_ids, spec, opts) do
+  defp embedder(input_ids, position_ids, spec, opts) do
     name = opts[:name]
+
+    position_ids =
+      Layers.default position_ids do
+        Layers.default_position_ids(input_ids)
+      end
 
     input_embeddings =
       Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
@@ -198,6 +177,30 @@ defmodule Bumblebee.Text.ClipText do
       )
 
     Axon.add(input_embeddings, position_embeddings)
+  end
+
+  defp encoder(embeddings, attention_mask, spec, opts) do
+    name = opts[:name]
+
+    Layers.Transformer.blocks(embeddings,
+      attention_mask: attention_mask,
+      causal?: true,
+      num_blocks: spec.num_blocks,
+      num_attention_heads: spec.num_attention_heads,
+      hidden_size: spec.hidden_size,
+      kernel_initializer: Axon.Initializers.normal(scale: 0.01),
+      dropout_rate: 0.0,
+      attention_dropout_rate: spec.attention_dropout_rate,
+      layer_norm_epsilon: spec.layer_norm_epsilon,
+      norm_placement: :first,
+      ffn: [
+        intermediate_size: spec.intermediate_size,
+        activation: spec.activation
+      ],
+      output_hidden_states: spec.output_hidden_states,
+      output_attentions: spec.output_attentions,
+      name: join(name, "blocks")
+    )
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
@@ -223,6 +226,28 @@ defmodule Bumblebee.Text.ClipText do
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
+    end
+  end
+
+  defimpl Bumblebee.HuggingFace.Transformers.Model do
+    def params_mapping(_spec) do
+      %{
+        "embedder.token_embedding" => "text_model.embeddings.token_embedding",
+        "embedder.position_embedding" => "text_model.embeddings.position_embedding",
+        "encoder.blocks.{n}.self_attention.query" =>
+          "text_model.encoder.layers.{n}.self_attn.q_proj",
+        "encoder.blocks.{n}.self_attention.key" =>
+          "text_model.encoder.layers.{n}.self_attn.k_proj",
+        "encoder.blocks.{n}.self_attention.value" =>
+          "text_model.encoder.layers.{n}.self_attn.v_proj",
+        "encoder.blocks.{n}.self_attention.output" =>
+          "text_model.encoder.layers.{n}.self_attn.out_proj",
+        "encoder.blocks.{n}.self_attention_norm" => "text_model.encoder.layers.{n}.layer_norm1",
+        "encoder.blocks.{n}.ffn.intermediate" => "text_model.encoder.layers.{n}.mlp.fc1",
+        "encoder.blocks.{n}.ffn.output" => "text_model.encoder.layers.{n}.mlp.fc2",
+        "encoder.blocks.{n}.output_norm" => "text_model.encoder.layers.{n}.layer_norm2",
+        "norm" => "text_model.final_layer_norm"
+      }
     end
   end
 end

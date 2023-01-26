@@ -84,7 +84,7 @@ defmodule Bumblebee.Diffusion.Layers do
   @doc """
   Adds a residual block to the network.
   """
-  def residual_block(x, in_channels, out_channels, opts \\ []) do
+  def residual_block(hidden_state, in_channels, out_channels, opts \\ []) do
     timestep_embedding = opts[:timestep_embedding]
     dropout = opts[:dropout] || 0.0
     norm_num_groups = opts[:norm_num_groups] || 32
@@ -92,62 +92,58 @@ defmodule Bumblebee.Diffusion.Layers do
     norm_epsilon = opts[:norm_epsilon] || 1.0e-6
     activation = opts[:activation] || :swish
     output_scale_factor = opts[:output_scale_factor] || 1.0
-    use_shortcut = Keyword.get(opts, :use_shortcut, in_channels != out_channels)
+    project_shortcut? = Keyword.get(opts, :project_shortcut?, in_channels != out_channels)
     name = opts[:name]
 
-    h = x
-
-    h =
-      h
-      |> Axon.group_norm(norm_num_groups, epsilon: norm_epsilon, name: join(name, "norm1"))
-      |> Axon.activation(activation, name: join(name, "act1"))
-
-    h =
-      Axon.conv(h, out_channels,
-        kernel_size: 3,
-        strides: 1,
-        padding: [{1, 1}, {1, 1}],
-        name: join(name, "conv1")
-      )
-
-    h =
-      if timestep_embedding do
-        timestep_embedding
-        |> Axon.activation(activation, name: join(name, "timestep.act1"))
-        |> Axon.dense(out_channels, name: join(name, "time_emb_proj"))
-        |> Axon.nx(&Nx.new_axis(Nx.new_axis(&1, 1), 1))
-        |> Axon.add(h)
+    shortcut =
+      if project_shortcut? do
+        Axon.conv(hidden_state, out_channels,
+          kernel_size: 1,
+          strides: 1,
+          padding: :valid,
+          name: join(name, "shortcut.projection")
+        )
       else
-        h
+        hidden_state
       end
 
-    h =
-      h
-      |> Axon.group_norm(norm_num_groups_out, epsilon: norm_epsilon, name: join(name, "norm2"))
-      |> Axon.activation(activation, name: join(name, "act2"))
-      |> Axon.dropout(rate: dropout, name: join(name, "dropout"))
+    hidden_state =
+      hidden_state
+      |> Axon.group_norm(norm_num_groups, epsilon: norm_epsilon, name: join(name, "norm_1"))
+      |> Axon.activation(activation)
       |> Axon.conv(out_channels,
         kernel_size: 3,
         strides: 1,
         padding: [{1, 1}, {1, 1}],
-        name: join(name, "conv2")
+        name: join(name, "conv_1")
       )
 
-    x =
-      if use_shortcut do
-        Axon.conv(x, out_channels,
-          kernel_size: 1,
-          strides: 1,
-          padding: :valid,
-          name: join(name, "conv_shortcut")
-        )
+    hidden_state =
+      if timestep_embedding do
+        timestep_embedding
+        |> Axon.activation(activation)
+        |> Axon.dense(out_channels, name: join(name, "timestep_projection"))
+        |> Axon.nx(&Nx.new_axis(Nx.new_axis(&1, 1), 1))
+        |> Axon.add(hidden_state)
       else
-        x
+        hidden_state
       end
 
-    h
-    |> Axon.add(x)
-    |> Axon.nx(fn x -> Nx.divide(x, output_scale_factor) end)
+    hidden_state =
+      hidden_state
+      |> Axon.group_norm(norm_num_groups_out, epsilon: norm_epsilon, name: join(name, "norm_2"))
+      |> Axon.activation(activation)
+      |> Axon.dropout(rate: dropout)
+      |> Axon.conv(out_channels,
+        kernel_size: 3,
+        strides: 1,
+        padding: [{1, 1}, {1, 1}],
+        name: join(name, "conv_2")
+      )
+
+    hidden_state
+    |> Axon.add(shortcut)
+    |> Axon.nx(&Nx.divide(&1, output_scale_factor))
   end
 
   @doc """

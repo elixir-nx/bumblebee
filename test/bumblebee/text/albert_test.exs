@@ -80,14 +80,13 @@ defmodule Bumblebee.Text.AlbertTest do
       assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "albert-base-v2"}, architecture: :for_multiple_choice)
 
-      # The base is missing classifier params so we set
-      # them to a static val here
-      classifier_params = %{
-        "kernel" => Nx.broadcast(1.0e-3, {spec.hidden_size, 1}),
-        "bias" => Nx.tensor(0.0)
-      }
-
-      params = Map.replace(params, "classifier", classifier_params)
+      # The base is missing classifier params so we set them to
+      # a static value here
+      params =
+        put_in(params["multiple_choice_head.output"], %{
+          "kernel" => Nx.broadcast(1.0e-3, {spec.hidden_size, 1}),
+          "bias" => Nx.tensor(0.0)
+        })
 
       assert %Bumblebee.Text.Albert{architecture: :for_multiple_choice} = spec
 

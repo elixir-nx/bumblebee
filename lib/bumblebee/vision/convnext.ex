@@ -98,38 +98,40 @@ defmodule Bumblebee.Vision.ConvNext do
   @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
     spec
-    |> convnext()
+    |> core()
     |> Layers.output()
   end
 
   def model(%__MODULE__{architecture: :for_image_classification} = spec) do
-    outputs = convnext(spec, name: "convnext")
+    outputs = core(spec)
 
     logits =
-      outputs.pooled_state
-      |> Axon.dense(spec.num_labels,
-        name: "classifier",
+      Axon.dense(outputs.pooled_state, spec.num_labels,
+        name: "image_classification_head.output",
         kernel_initializer: kernel_initializer(spec)
       )
 
-    Layers.output(%{logits: logits, hidden_states: outputs.hidden_states})
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states
+    })
   end
 
-  defp convnext(spec, opts \\ []) do
+  defp core(spec, opts \\ []) do
     name = opts[:name]
 
     pixel_values = Axon.input("pixel_values", shape: {nil, 224, 224, spec.num_channels})
 
-    embedding_output = embeddings(pixel_values, spec, name: join(name, "embeddings"))
-
-    encoder_outputs = encoder(embedding_output, spec, name: join(name, "encoder"))
+    encoder_outputs =
+      pixel_values
+      |> embedder(spec, name: join(name, "embedder"))
+      |> encoder(spec, name: join(name, "encoder"))
 
     pooled_output =
       encoder_outputs.hidden_state
       |> Axon.global_avg_pool()
       |> Axon.layer_norm(
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "layernorm"),
+        name: join(name, "norm"),
         beta_initializer: :zeros,
         gamma_initializer: :ones
       )
@@ -141,20 +143,20 @@ defmodule Bumblebee.Vision.ConvNext do
     }
   end
 
-  defp embeddings(%Axon{} = pixel_values, spec, opts) do
+  defp embedder(pixel_values, spec, opts) do
     name = opts[:name]
-    [embedding_size | _] = spec.hidden_sizes
+    embedding_size = hd(spec.hidden_sizes)
 
     pixel_values
     |> Axon.conv(embedding_size,
       kernel_size: spec.patch_size,
       strides: spec.patch_size,
-      name: join(name, "patch_embeddings"),
+      name: join(name, "patch_embedding"),
       kernel_initializer: kernel_initializer(spec)
     )
     |> Axon.layer_norm(
       epsilon: 1.0e-6,
-      name: join(name, "layernorm"),
+      name: join(name, "norm"),
       beta_initializer: :zeros,
       gamma_initializer: :ones
     )
@@ -209,14 +211,14 @@ defmodule Bumblebee.Vision.ConvNext do
         hidden_state
         |> Axon.layer_norm(
           epsilon: 1.0e-6,
-          name: join(name, "downsampling_layer.0"),
+          name: join(name, "downsample_norm"),
           beta_initializer: :zeros,
           gamma_initializer: :ones
         )
         |> Axon.conv(out_channels,
           kernel_size: 2,
           strides: strides,
-          name: join(name, "downsampling_layer.1"),
+          name: join(name, "downsample"),
           kernel_initializer: kernel_initializer(spec)
         )
       else
@@ -229,58 +231,56 @@ defmodule Bumblebee.Vision.ConvNext do
     for {drop_path_rate, idx} <- Enum.with_index(drop_path_rates), reduce: downsampled do
       x ->
         block(x, out_channels, spec,
-          name: name |> join("layers") |> join(idx),
+          name: name |> join("blocks") |> join(idx),
           drop_path_rate: drop_path_rate
         )
     end
   end
 
-  defp block(%Axon{} = hidden_state, out_channels, spec, opts) do
+  defp block(hidden_state, out_channels, spec, opts) do
     name = opts[:name]
-
     drop_path_rate = opts[:drop_path_rate]
 
     input = hidden_state
 
-    x =
+    hidden_state =
       hidden_state
       |> Axon.depthwise_conv(1,
         kernel_size: 7,
         padding: [{3, 3}, {3, 3}],
-        name: join(name, "dwconv"),
+        name: join(name, "depthwise_conv"),
         kernel_initializer: kernel_initializer(spec)
       )
       |> Axon.layer_norm(
         epsilon: 1.0e-6,
         channel_index: 3,
-        name: join(name, "layernorm"),
+        name: join(name, "norm"),
         beta_initializer: :zeros,
         gamma_initializer: :ones
       )
       |> Axon.dense(4 * out_channels,
-        name: join(name, "pwconv1"),
+        name: join(name, "pointwise_conv_0"),
         kernel_initializer: kernel_initializer(spec)
       )
       |> Axon.activation(spec.activation, name: join(name, "activation"))
       |> Axon.dense(out_channels,
-        name: join(name, "pwconv2"),
+        name: join(name, "pointwise_conv_1"),
         kernel_initializer: kernel_initializer(spec)
       )
 
-    scaled =
+    hidden_state =
       if spec.scale_initial_value > 0 do
-        Layers.scale(x,
-          name: name,
+        Layers.scale(hidden_state,
           scale_initializer: Axon.Initializers.full(spec.scale_initial_value),
-          scale_name: "layer_scale_parameter"
+          name: join(name, "scale")
         )
       else
-        x
+        hidden_state
       end
 
-    scaled
+    hidden_state
     |> Layers.drop_path(rate: drop_path_rate, name: join(name, "drop_path"))
-    |> Axon.add(input, name: join(name, "residual"))
+    |> Axon.add(input)
   end
 
   defp get_drop_path_rates(depths, rate) do
@@ -321,6 +321,34 @@ defmodule Bumblebee.Vision.ConvNext do
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
+    end
+  end
+
+  defimpl Bumblebee.HuggingFace.Transformers.Model do
+    def params_mapping(_spec) do
+      %{
+        "embedder.patch_embedding" => "convnext.embeddings.patch_embeddings",
+        "embedder.norm" => "convnext.embeddings.layernorm",
+        "encoder.stages.{n}.downsample_norm" =>
+          "convnext.encoder.stages.{n}.downsampling_layer.0",
+        "encoder.stages.{n}.downsample" => "convnext.encoder.stages.{n}.downsampling_layer.1",
+        "encoder.stages.{n}.blocks.{m}.depthwise_conv" =>
+          "convnext.encoder.stages.{n}.layers.{m}.dwconv",
+        "encoder.stages.{n}.blocks.{m}.norm" =>
+          "convnext.encoder.stages.{n}.layers.{m}.layernorm",
+        "encoder.stages.{n}.blocks.{m}.pointwise_conv_0" =>
+          "convnext.encoder.stages.{n}.layers.{m}.pwconv1",
+        "encoder.stages.{n}.blocks.{m}.pointwise_conv_1" =>
+          "convnext.encoder.stages.{n}.layers.{m}.pwconv2",
+        "encoder.stages.{n}.blocks.{m}.scale" => %{
+          "scale" => {
+            [{"convnext.encoder.stages.{n}.layers.{m}", "layer_scale_parameter"}],
+            fn [scale] -> scale end
+          }
+        },
+        "norm" => "convnext.layernorm",
+        "image_classification_head.output" => "classifier"
+      }
     end
   end
 end

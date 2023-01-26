@@ -60,8 +60,14 @@ defmodule Bumblebee.Layers do
   Converts attention mask to bias.
   """
   def attention_bias(attention_mask) do
-    Axon.nx(attention_mask, fn attention_mask ->
-      Nx.select(Nx.greater(attention_mask, 0), 0, -1.0e10)
+    attention_mask
+    |> Axon.optional()
+    |> Axon.nx(fn
+      %Axon.None{} ->
+        Nx.tensor(0)
+
+      attention_mask ->
+        Nx.select(Nx.greater(attention_mask, 0), 0, -1.0e10)
     end)
   end
 
@@ -212,8 +218,6 @@ defmodule Bumblebee.Layers do
 
     * `:name` - layer name
 
-    * `:scale_name` - scale parameter name
-
     * `:scale_initializer` - initializer for the scale parameter
 
     * `:channel_index` - index of the axis to scale. Defaults to the
@@ -224,13 +228,11 @@ defmodule Bumblebee.Layers do
     opts =
       Keyword.validate!(opts, [
         :name,
-        scale_name: "scale",
         scale_initializer: Axon.Initializers.full(1.0e-6),
         channel_index: -1
       ])
 
     name = opts[:name]
-    scale_name = opts[:scale_name]
     scale_initializer = opts[:scale_initializer]
     channel_index = opts[:channel_index]
 
@@ -241,7 +243,7 @@ defmodule Bumblebee.Layers do
       {out_channels}
     end
 
-    scale_param = Axon.param(scale_name, scale_shape, initializer: scale_initializer)
+    scale_param = Axon.param("scale", scale_shape, initializer: scale_initializer)
 
     Axon.layer(
       fn input, scale, _opts ->
@@ -716,5 +718,69 @@ defmodule Bumblebee.Layers do
         Nx.concatenate([start_ids, input_ids[[0..-1//1, 0..-2//1]]], axis: 1)
       end
     end)
+  end
+
+  @doc """
+  Returns a node with parameterized embeddings.
+
+  ## Options
+
+    * `:name` - layer name
+
+    * `:initializer` - initializer for the embeddings. Defaults to
+      `:zeros`
+
+  """
+  def learned_embeddings(num_embeddings, embedding_size, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, initializer: :zeros])
+
+    name = opts[:name]
+
+    embeddings =
+      Axon.param("embeddings", fn -> {num_embeddings, embedding_size} end,
+        initializer: opts[:initializer]
+      )
+
+    Axon.layer(
+      fn embeddings, _opts -> Nx.new_axis(embeddings, 0) end,
+      [embeddings],
+      name: name,
+      op_name: :learned_embeddings
+    )
+  end
+
+  @doc """
+  Prepends a single parameterized embedding to the given embeddings.
+
+  This is usually useful when adding embeddings for special tokens,
+  such as CLS, in transformer models where the input is different
+  than text, hence the token is not a part of the input.
+  """
+  def prepend_embedding(embeddings, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, initializer: :zeros])
+
+    name = opts[:name]
+
+    embedding =
+      Axon.param("embedding", fn embeddings -> {elem(embeddings, 2)} end,
+        initializer: opts[:initializer]
+      )
+
+    Axon.layer(
+      fn embeddings, embedding, _opts ->
+        batch_size = Nx.axis_size(embeddings, 0)
+        embedding_size = Nx.axis_size(embeddings, -1)
+
+        embedding =
+          embedding
+          |> Nx.reshape({1, 1, embedding_size})
+          |> Nx.broadcast({batch_size, 1, embedding_size})
+
+        Nx.concatenate([embedding, embeddings], axis: 1)
+      end,
+      [embeddings, embedding],
+      name: name,
+      op_name: :prepend_embedding
+    )
   end
 end
