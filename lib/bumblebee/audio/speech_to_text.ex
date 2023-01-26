@@ -41,14 +41,14 @@ defmodule Bumblebee.Audio.SpeechToText do
     |> Nx.Serving.client_preprocessing(fn input ->
       {inputs, multi?} =
         Shared.validate_serving_input!(input, fn
-          path when is_binary(path) ->
-            ffmpeg_read_as_pcm(path, sampling_rate)
-
           %Nx.Tensor{shape: {_}} = input ->
             {:ok, input}
 
+          {:file, path} when is_binary(path) ->
+            ffmpeg_read_as_pcm(path, sampling_rate)
+
           other ->
-            {:error, "expected a 1-dimensional tensor or a file path, got: #{inspect(other)}"}
+            {:error, "expected a 1-dimensional tensor or {:file, path}, got: #{inspect(other)}"}
         end)
 
       inputs = Bumblebee.apply_featurizer(featurizer, inputs, defn_options: defn_options)

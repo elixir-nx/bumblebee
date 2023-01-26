@@ -10,10 +10,11 @@ defmodule Bumblebee.Audio do
 
     * a 1-dimensional `Nx.Tensor` with audio samples
 
-    * a path to an audio file (note this requires `ffmpeg` installed)
+    * `{:file, path}` with path to an audio file (note that this
+      requires `ffmpeg` installed)
 
   """
-  @type speech_to_text_input :: Nx.t() | String.t()
+  @type speech_to_text_input :: Nx.t() | {:file, String.t()}
   @type speech_to_text_output :: %{results: list(speech_to_text_result())}
   @type speech_to_text_result :: %{text: String.t()}
 
@@ -59,7 +60,7 @@ defmodule Bumblebee.Audio do
           defn_options: [compiler: EXLA]
         )
 
-      Nx.Serving.run(serving, "/path/to/audio.wav")
+      Nx.Serving.run(serving, {:file, "/path/to/audio.wav"})
       #=> %{results: [%{text: "There is a cat outside the window."}]}
 
   """
