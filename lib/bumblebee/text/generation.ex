@@ -27,6 +27,13 @@ defmodule Bumblebee.Text.Generation do
 
   @doc false
   def generation(model_info, tokenizer, opts \\ []) do
+    %{params: params, spec: spec} = model_info
+
+    Shared.validate_architecture!(spec, [
+      :for_conditional_generation,
+      :for_causal_language_modeling
+    ])
+
     {compile, opts} = Keyword.pop(opts, :compile)
     {defn_options, opts} = Keyword.pop(opts, :defn_options, [])
 
@@ -37,8 +44,6 @@ defmodule Bumblebee.Text.Generation do
       raise ArgumentError,
             "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
     end
-
-    %{params: params} = model_info
 
     generate_fun = build_generate(model_info.model, model_info.spec, opts)
 
