@@ -146,6 +146,12 @@ defmodule Bumblebee.Text.TokenClassification do
     |> group_entities(tokenizer)
   end
 
+  defp aggregate(_, _, _, strategy) do
+    raise ArgumentError,
+          "unrecognized aggregation strategy #{inspect(strategy)}," <>
+            " currently supported strategies are :same or nil for no aggregation"
+  end
+
   defp filter_entities(entities, ignored_labels) do
     Enum.filter(entities, fn entity ->
       {_prefix, label} = parse_label(entity.label)
