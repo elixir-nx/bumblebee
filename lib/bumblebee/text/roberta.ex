@@ -346,9 +346,9 @@ defmodule Bumblebee.Text.Roberta do
 
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
-      decoder_attention_heads: spec.num_attention_heads,
-      encoder_attention_heads: spec.num_attention_heads,
-      decoder_blocks: spec.num_blocks,
+      decoder_num_attention_heads: spec.num_attention_heads,
+      encoder_num_attention_heads: spec.num_attention_heads,
+      decoder_num_blocks: spec.num_blocks,
       encoder_sequence_length: encoder_sequence_length
     )
   end
