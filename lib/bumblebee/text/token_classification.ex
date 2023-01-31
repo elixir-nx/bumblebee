@@ -147,9 +147,9 @@ defmodule Bumblebee.Text.TokenClassification do
   end
 
   defp aggregate(_, _, _, strategy) do
-    raise ArgumentError, "unrecognized aggregation strategy #{inspect(strategy)}" <>
-                          " currently supported strategies are :same or nil for no" <>
-                          " aggregation"
+    raise ArgumentError,
+          "unrecognized aggregation strategy #{inspect(strategy)}," <>
+            " currently supported strategies are :same or nil for no aggregation"
   end
 
   defp filter_entities(entities, ignored_labels) do
