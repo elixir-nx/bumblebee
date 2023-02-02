@@ -1,5 +1,4 @@
 defmodule Bumblebee.Text.QuestionAnswering do
-  alias Bumblebee.Tokenizer
   alias Bumblebee.Shared
   alias Bumblebee.Utils
   alias Axon
@@ -34,8 +33,7 @@ defmodule Bumblebee.Text.QuestionAnswering do
     {_init_fun, predict_fun} = Axon.build(model)
 
     scores_fun = fn params, input ->
-      # input = Utils.Nx.composite_flatten_batch(input)
-      output = predict_fun.(params, input)
+       predict_fun.(params, input)
     end
 
     Nx.Serving.new(
@@ -53,7 +51,7 @@ defmodule Bumblebee.Text.QuestionAnswering do
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
 
-          scores = predict_fun.(params, inputs)
+          predict_fun.(params, inputs)
         end
       end,
       batch_size: batch_size
@@ -78,35 +76,34 @@ defmodule Bumblebee.Text.QuestionAnswering do
         )
 
       inputs = Map.take(all_inputs, ["input_ids", "attention_mask"])
-      {Nx.Batch.concatenate([inputs]), {all_inputs, multi?}}
+      {Nx.Batch.concatenate([inputs]), {Map.merge(all_inputs, %{context_info: input}), multi?}}
     end)
-    |> Nx.Serving.client_postprocessing(fn outputs, metadata, {inputs, multi?} ->
+    |> Nx.Serving.client_postprocessing(fn outputs, _metadata, {inputs, _multi?} ->
+
+       %{context_info: %{context: context}} = inputs
       %{
         results:
           Enum.zip_with(
-            Utils.Nx.batch_to_list(inputs),
+            Utils.Nx.batch_to_list(Map.drop(inputs, [:context_info])),
             Utils.Nx.batch_to_list(outputs),
             fn inputs, outputs ->
-              answer_start_index =
-                outputs.start_logits
-                |> Axon.Activations.softmax()
-                |> Nx.argmax()
-                |> Nx.to_number()
+              start_scores = Axon.Activations.softmax(outputs.start_logits)
+              start_idx = start_scores |> Nx.argmax() |> Nx.to_number()
 
-              answer_end_index =
-                outputs.end_logits |> Axon.Activations.softmax() |> Nx.argmax() |> Nx.to_number()
+              end_scores = Axon.Activations.softmax(outputs.end_logits)
+              end_idx = end_scores |> Nx.argmax() |> Nx.to_number()
+              start = inputs["start_offsets"][start_idx] |> Nx.to_number()
+              ending = inputs["end_offsets"][end_idx] |> Nx.to_number()
 
-              start = inputs["start_offsets"][answer_start_index] |> Nx.to_number()
-              ending = inputs["end_offsets"][answer_end_index] |> Nx.to_number()
-              answer_tokens = inputs["input_ids"][answer_start_index..answer_end_index]
+              score = Nx.multiply(start_scores[start_idx], end_scores[end_idx]) |> Nx.to_number()
 
-              answer = Bumblebee.Tokenizer.decode(tokenizer, answer_tokens)
+              answer = binary_part(context, start, ending - start )
 
               %{
                 text: answer,
                 start: start,
                 end: ending,
-                score: answer_start_index * answer_end_index
+                score: score
               }
             end
           )

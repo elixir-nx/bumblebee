@@ -28,7 +28,7 @@ defmodule Bumblebee.Text.QuestionAnsweringTest do
       assert %{
                results: [
                  %{
-                   text: " blackeuler",
+                   text: "blackeuler",
                    start: 11,
                    end: 21,
                    score: _score
