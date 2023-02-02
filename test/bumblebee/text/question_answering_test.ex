@@ -13,24 +13,22 @@ defmodule Bumblebee.Text.QuestionAnsweringTest do
       serving =
         Bumblebee.Text.question_answering(roberta, tokenizer,
           compile: [batch_size: 1, sequence_length: 32],
-                    defn_options: [compiler: EXLA]
-
+          defn_options: [compiler: EXLA]
         )
 
       text_and_context = %{
-        question: "What is your dads name ",
-        context: "My  dads name is blue"
+        question: "What is my name",
+        context: "My name is blackeuler"
       }
 
       assert %{
-               predictions: [
+               results: [
                  %{
-                   text: "blue",
-                   start: answer_start_index,
-                   end: answer_end_index,
-                   score: score
+                   text: " blackeuler",
+                   start: 11,
+                   end: 21,
+                   score: _score
                  }
-                 | rest
                ]
              } = Nx.Serving.run(serving, text_and_context)
     end

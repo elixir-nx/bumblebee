@@ -87,21 +87,26 @@ defmodule Bumblebee.Text.QuestionAnswering do
             Utils.Nx.batch_to_list(inputs),
             Utils.Nx.batch_to_list(outputs),
             fn inputs, outputs ->
-              answer_start_index = outputs.start_logits |> Nx.argmax() |> Nx.to_number()
+              answer_start_index =
+                outputs.start_logits
+                |> Axon.Activations.softmax()
+                |> Nx.argmax()
+                |> Nx.to_number()
 
-              answer_end_index = outputs.end_logits |> Nx.argmax() |> Nx.to_number()
+              answer_end_index =
+                outputs.end_logits |> Axon.Activations.softmax() |> Nx.argmax() |> Nx.to_number()
 
               start = inputs["start_offsets"][answer_start_index] |> Nx.to_number()
               ending = inputs["end_offsets"][answer_end_index] |> Nx.to_number()
               answer_tokens = inputs["input_ids"][answer_start_index..answer_end_index]
 
-              answers = Bumblebee.Tokenizer.decode(tokenizer, answer_tokens)
+              answer = Bumblebee.Tokenizer.decode(tokenizer, answer_tokens)
 
               %{
                 text: answers,
                 start: start,
                 end: ending,
-                score: 0
+                score: answer_start_index * answer_end_index
               }
             end
           )
