@@ -272,6 +272,28 @@ defmodule Bumblebee.Text do
   @spec fill_mask(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
   defdelegate fill_mask(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.FillMask
 
+  @type question_answering_input :: {String.t(), String.t()}
+  @type question_answering_output :: %{
+          answer: String.t()
+        }
+  @doc """
+
+  Builds serving for the question answering task.
+
+  The serving accepts `t:question_answering_input/0` and returns `t:question_answering_ouput/0`.
+
+  The question answering task predicts an answer for a question given some context.
+
+  """
+  @spec question_answering(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          list(String.t()),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate question_answering(model_info, tokenizer, opts \\ []),
+    to: Bumblebee.Text.QuestionAnswering
+
   @type zero_shot_classification_input :: String.t()
   @type zero_shot_classification_output :: %{
           predictions: list(zero_shot_classification_prediction())
