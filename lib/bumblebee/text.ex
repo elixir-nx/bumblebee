@@ -288,7 +288,6 @@ defmodule Bumblebee.Text do
   @spec question_answering(
           Bumblebee.model_info(),
           Bumblebee.Tokenizer.t(),
-          list(String.t()),
           keyword()
         ) :: Nx.Serving.t()
   defdelegate question_answering(model_info, tokenizer, opts \\ []),
