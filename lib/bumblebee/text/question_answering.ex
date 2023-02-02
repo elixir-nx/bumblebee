@@ -91,9 +91,8 @@ defmodule Bumblebee.Text.QuestionAnswering do
 
               answer_end_index = outputs.end_logits |> Nx.argmax() |> Nx.to_number()
 
-
-              start = inputs["start_offsets"][answer_start_index]
-              ending = inputs["end_offsets"][answer_end_index]
+              start = inputs["start_offsets"][answer_start_index] |> Nx.to_number()
+              ending = inputs["end_offsets"][answer_end_index] |> Nx.to_number()
               answer_tokens = inputs["input_ids"][answer_start_index..answer_end_index]
 
               answers = Bumblebee.Tokenizer.decode(tokenizer, answer_tokens)
@@ -107,69 +106,6 @@ defmodule Bumblebee.Text.QuestionAnswering do
             end
           )
       }
-    end)
-  end
-
-  defp gather_raw_entities(scores, sequence_length, tokenizer, inputs) do
-    flat_special_tokens_mask = Nx.to_flat_list(inputs["special_tokens_mask"])
-    flat_input_ids = Nx.to_flat_list(inputs["input_ids"])
-    flat_start_offsets = Nx.to_flat_list(inputs["start_offsets"])
-    flat_end_offsets = Nx.to_flat_list(inputs["end_offsets"])
-
-    # TODO: Optional offset mapping
-    # TODO: Non-BPE tokenizers
-    IO.inspect(sequence_length, label: "Sequence Length")
-
-    token_infos =
-      Enum.zip([
-        0..(sequence_length - 1),
-        flat_input_ids,
-        flat_start_offsets,
-        flat_end_offsets,
-        flat_special_tokens_mask
-      ])
-
-    for {token_idx, token_id, start_idx, end_idx, _special? = 0} <- token_infos do
-      token = Bumblebee.Tokenizer.id_to_token(tokenizer, token_id)
-      # Indices are expressed in terms of utf8 bytes
-      token_reference_length = end_idx - start_idx
-
-      token_scores = scores[token_idx]
-
-      %{
-        token: token,
-        token_id: token_id,
-        scores: token_scores,
-        start: start_idx,
-        end: end_idx,
-        index: token_idx,
-        # Subword tokens usually have the ## prefix, so they are longer
-        # than the actual word piece
-        is_subword: byte_size(token) != token_reference_length
-      }
-    end
-  end
-
-  defp aggregate(entities, spec, _tokenizer, nil) do
-    entities
-    |> add_token_labels(spec)
-    |> Enum.map(fn entity ->
-      %{
-        start: entity.start,
-        end: entity.end,
-        label: entity.label,
-        score: entity.score,
-        phrase: entity.token
-      }
-    end)
-  end
-
-  defp add_token_labels(entities, spec) do
-    Enum.map(entities, fn entity ->
-      entity_idx = entity.scores |> Nx.argmax() |> Nx.to_number()
-      score = Nx.to_number(entity.scores[entity_idx])
-      label = spec.id_to_label[entity_idx]
-      Map.merge(entity, %{label: label, score: score})
     end)
   end
 end
