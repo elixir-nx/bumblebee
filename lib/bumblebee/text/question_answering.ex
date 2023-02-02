@@ -103,7 +103,7 @@ defmodule Bumblebee.Text.QuestionAnswering do
               answer = Bumblebee.Tokenizer.decode(tokenizer, answer_tokens)
 
               %{
-                text: answers,
+                text: answer,
                 start: start,
                 end: ending,
                 score: answer_start_index * answer_end_index

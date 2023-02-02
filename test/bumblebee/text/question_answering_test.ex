@@ -7,7 +7,11 @@ defmodule Bumblebee.Text.QuestionAnsweringTest do
 
   describe "integration" do
     test "returns top scored labels" do
-      {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
+      {:ok, roberta} =
+        Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"},
+          architecture: :for_question_answering
+        )
+
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
 
       serving =
