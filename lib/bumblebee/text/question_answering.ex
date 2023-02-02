@@ -60,27 +60,29 @@ defmodule Bumblebee.Text.QuestionAnswering do
         end)
 
       inputs = Bumblebee.apply_tokenizer(tokenizer, inputs)
+      IO.inspect(inputs)
 
       {Nx.Batch.concatenate([inputs]), {inputs, multi?}}
     end)
     |> Nx.Serving.client_postprocessing(fn outputs, metadata, {inputs, multi?} ->
-      IO.inspect(inputs, label: "Given Inputs")
-      Enum.zip_with(Utils.Nx.batch_to_list(inputs), Utils.Nx.batch_to_list(outputs), fn inputs,
-                                                                                        outputs ->
+      %{
+        predictions:
+          Enum.zip_with(
+            Utils.Nx.batch_to_list(inputs),
+            Utils.Nx.batch_to_list(outputs),
+            fn inputs, outputs ->
+              answer_start_index = outputs.start_logits |> Nx.argmax(axis: -1) |> Nx.to_number()
 
-        answer_start_index = outputs.start_logits |> Nx.argmax() |> Nx.to_number()
-        answer_end_index = outputs.end_logits |> Nx.argmax() |> Nx.to_number()
+              answer_end_index = outputs.end_logits |> Nx.argmax(axis: -1) |> Nx.to_number()
 
-        IO.inspect(Nx.to_flat_list(inputs["input_ids"]))
+              answer_tokens = inputs["input_ids"][answer_start_index..answer_end_index]
 
-        answer_tokens =
-          inputs["input_ids"][ answer_start_index..answer_end_index]
+              answers = Bumblebee.Tokenizer.decode(tokenizer, answer_tokens)
 
-        answers = Bumblebee.Tokenizer.decode(tokenizer, answer_tokens)
-
-        %{text: answers, start: answer_start_index, end: answer_end_index}
-      end)
-      |> Shared.normalize_output(multi?)
+              %{text: answers, start: answer_start_index, end: answer_end_index}
+            end
+          )
+      }
     end)
   end
 end

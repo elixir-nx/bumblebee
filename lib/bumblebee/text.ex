@@ -272,9 +272,15 @@ defmodule Bumblebee.Text do
   @spec fill_mask(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
   defdelegate fill_mask(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.FillMask
 
-  @type question_answering_input :: {String.t(), String.t()}
+  @type question_answering_input :: %{question: String.t(), context: String.t()}
   @type question_answering_output :: %{
-          answer: String.t()
+          predictions: list(question_answering_result())
+        }
+  @type question_answering_result :: %{
+          text: String.t(),
+          start: number(),
+          end: number(),
+          score: number()
         }
   @doc """
 
