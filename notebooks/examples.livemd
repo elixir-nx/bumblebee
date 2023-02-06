@@ -178,29 +178,26 @@ Another text-related task is question answering, where the objective is to retri
 ```elixir
 {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
-:ok
-```
 
-```elixir
+serving = Bumblebee.Text.question_answering(roberta, tokenizer)
+
 question_input =
   Kino.Input.text("Question",
     default: "Which name is also used to describe the Amazon rainforest in English?"
   )
-  |> Kino.render()
 
 context_input =
   Kino.Input.textarea("Context",
     default:
       ~s/The Amazon rainforest (Portuguese: Floresta Amazônica or Amazônia; Spanish: Selva Amazónica, Amazonía or usually Amazonia; French: Forêt amazonienne; Dutch: Amazoneregenwoud), also known in English as Amazonia or the Amazon Jungle, is a moist broadleaf forest that covers most of the Amazon basin of South America. This basin encompasses 7,000,000 square kilometres (2,700,000 sq mi), of which 5,500,000 square kilometres (2,100,000 sq mi) are covered by the rainforest. This region includes territory belonging to nine nations. The majority of the forest is contained within Brazil, with 60% of the rainforest, followed by Peru with 13%, Colombia with 10%, and with minor amounts in Venezuela, Ecuador, Bolivia, Guyana, Suriname and French Guiana. States or departments in four nations contain "Amazonas" in their names. The Amazon represents over half of the planet's remaining rainforests, and comprises the largest and most biodiverse tract of tropical rainforest in the world, with an estimated 390 billion individual trees divided into 16,000 species./
   )
+
+Kino.Layout.grid([question_input, context_input])
 ```
 
 ```elixir
 question = Kino.Input.read(question_input)
 context = Kino.Input.read(context_input)
-
-serving = Bumblebee.Text.question_answering(roberta, tokenizer)
-
 Nx.Serving.run(serving, %{question: question, context: context})
 ```
 
