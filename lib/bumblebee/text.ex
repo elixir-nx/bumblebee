@@ -273,9 +273,11 @@ defmodule Bumblebee.Text do
   defdelegate fill_mask(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.FillMask
 
   @type question_answering_input :: %{question: String.t(), context: String.t()}
+
   @type question_answering_output :: %{
           predictions: list(question_answering_result())
         }
+
   @type question_answering_result :: %{
           text: String.t(),
           start: number(),
@@ -283,12 +285,45 @@ defmodule Bumblebee.Text do
           score: number()
         }
   @doc """
-
   Builds serving for the question answering task.
 
-  The serving accepts `t:question_answering_input/0` and returns `t:question_answering_ouput/0`.
+  The serving accepts `t:question_answering_input/0` and returns
+  `t:question_answering_output/0`. A list of inputs is also supported.
 
-  The question answering task predicts an answer for a question given some context.
+  The question answering task finds the most probable answer to a
+  question within the given context text.
+
+  ## Options
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size. Note
+          that the batch size refers to the number of prompts to classify,
+          while the model prediction is made for every combination of
+          prompt and label
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  ## Examples
+
+      {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
+
+      serving = Bumblebee.Text.question_answering(roberta, tokenizer)
+
+      input = %{question: "What's my name?", context: "My name is Sarah and I live in London."}
+      Nx.Serving.run(serving, input)
+      #=> %{results: [%{end: 16, score: 0.81039959192276, start: 11, text: "Sarah"}]}
 
   """
   @spec question_answering(
@@ -309,7 +344,8 @@ defmodule Bumblebee.Text do
   Builds serving for the zero-shot classification task.
 
   The serving accepts `t:zero_shot_classification_input/0` and returns
-  `t:zero_shot_classification_output/0`.
+  `t:zero_shot_classification_output/0`. A list of inputs is also
+  supported.
 
   The zero-shot task predicts zero-shot labels for a given sequence by
   proposing each label as a premise-hypothesis pairing.

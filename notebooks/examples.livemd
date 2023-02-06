@@ -181,8 +181,6 @@ Another text-related task is question answering, where the objective is to retri
 :ok
 ```
 
-
-
 ```elixir
 question_input =
   Kino.Input.text("Question",
@@ -201,9 +199,9 @@ context_input =
 question = Kino.Input.read(question_input)
 context = Kino.Input.read(context_input)
 
-serving = Bumblebee.Text.question_answering(roberta,tokenizer)
+serving = Bumblebee.Text.question_answering(roberta, tokenizer)
 
-Nx.Serving.run(serving, {question,context})
+Nx.Serving.run(serving, %{question: question, context: context})
 ```
 
 ## Final notes

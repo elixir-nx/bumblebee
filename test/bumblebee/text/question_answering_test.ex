@@ -6,35 +6,43 @@ defmodule Bumblebee.Text.QuestionAnsweringTest do
   @moduletag model_test_tags()
 
   describe "integration" do
-    test "returns top scored labels" do
-      {:ok, roberta} =
-        Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"},
-          architecture: :for_question_answering
-        )
-
+    test "returns the most probable answer" do
+      {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
 
-      serving =
-        Bumblebee.Text.question_answering(roberta, tokenizer,
-          compile: [batch_size: 1, sequence_length: 32],
-          defn_options: [compiler: EXLA]
-        )
+      serving = Bumblebee.Text.question_answering(roberta, tokenizer)
 
-      text_and_context = %{
-        question: "What is my name",
-        context: "My name is blackeuler"
-      }
+      input = %{question: "What's my name?", context: "My name is Sarah and I live in London."}
 
       assert %{
                results: [
                  %{
-                   text: "blackeuler",
+                   text: "Sarah",
                    start: 11,
-                   end: 21,
-                   score: _score
+                   end: 16,
+                   score: score
                  }
                ]
-             } = Nx.Serving.run(serving, text_and_context)
+             } = Nx.Serving.run(serving, input)
+
+      assert_all_close(score, 0.8105)
+    end
+
+    test "supports multiple inputs" do
+      {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
+
+      serving = Bumblebee.Text.question_answering(roberta, tokenizer)
+
+      inputs = [
+        %{question: "What's my name?", context: "My name is Sarah and I live in London."},
+        %{question: "Where do I live?", context: "My name is Clara and I live in Berkeley."}
+      ]
+
+      assert [
+               %{results: [%{text: "Sarah", start: 11, end: 16, score: _}]},
+               %{results: [%{text: "Berkeley", start: 31, end: 39, score: _}]}
+             ] = Nx.Serving.run(serving, inputs)
     end
   end
 end
