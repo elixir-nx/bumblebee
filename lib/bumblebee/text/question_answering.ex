@@ -8,12 +8,7 @@ defmodule Bumblebee.Text.QuestionAnswering do
     %{model: model, params: params, spec: spec} = model_info
     Shared.validate_architecture!(spec, :for_question_answering)
 
-    opts =
-      Keyword.validate!(opts, [
-        :compile,
-        top_k: 1,
-        defn_options: []
-      ])
+    opts = Keyword.validate!(opts, [:compile, defn_options: []])
 
     compile = opts[:compile]
     defn_options = opts[:defn_options]
