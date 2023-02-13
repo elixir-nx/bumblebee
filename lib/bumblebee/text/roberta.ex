@@ -487,7 +487,9 @@ defmodule Bumblebee.Text.Roberta do
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.dropout_rate,
         attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm_epsilon: spec.layer_norm_epsilon,
+        layer_norm: [
+          layer_norm_epsilon: spec.layer_norm_epsilon
+        ],
         ffn: [
           intermediate_size: spec.intermediate_size,
           activation: spec.activation

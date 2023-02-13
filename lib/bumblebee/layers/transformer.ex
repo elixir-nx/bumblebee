@@ -274,7 +274,7 @@ defmodule Bumblebee.Layers.Transformer do
         value_use_bias: true,
         output_use_bias: true,
         norm_placement: :last,
-        output_norm: false
+        output_norm: true
       ])
 
     name = opts[:name]

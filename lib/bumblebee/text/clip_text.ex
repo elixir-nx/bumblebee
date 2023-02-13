@@ -191,7 +191,9 @@ defmodule Bumblebee.Text.ClipText do
       kernel_initializer: Axon.Initializers.normal(scale: 0.01),
       dropout_rate: 0.0,
       attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm_epsilon: spec.layer_norm_epsilon,
+      layer_norm: [
+        layer_norm_epsilon: spec.layer_norm_epsilon
+      ],
       norm_placement: :first,
       ffn: [
         intermediate_size: spec.intermediate_size,

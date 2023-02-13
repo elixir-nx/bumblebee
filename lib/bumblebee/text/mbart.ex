@@ -518,7 +518,9 @@ defmodule Bumblebee.Text.Mbart do
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.dropout_rate,
         attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm_epsilon: 1.0e-5,
+        layer_norm: [
+          layer_norm_epsilon: 1.0e-5
+        ],
         norm_placement: :first,
         ffn: [
           intermediate_size: spec.encoder_intermediate_size,
@@ -614,7 +616,9 @@ defmodule Bumblebee.Text.Mbart do
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.dropout_rate,
         attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm_epsilon: 1.0e-5,
+        layer_norm: [
+          layer_norm_epsilon: 1.0e-5
+        ],
         norm_placement: :first,
         ffn: [
           intermediate_size: spec.decoder_intermediate_size,
