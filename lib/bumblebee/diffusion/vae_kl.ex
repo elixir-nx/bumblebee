@@ -357,7 +357,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
       |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "norm"))
       |> Axon.reshape({:batch, :auto, channels})
 
-    {hidden_state, _attention, _self_attention_cache} =
+    {hidden_state, _attention, _self_attention_cache, _position_bias} =
       Layers.Transformer.multi_head_attention(hidden_state, hidden_state, hidden_state,
         num_heads: num_heads,
         hidden_size: channels,

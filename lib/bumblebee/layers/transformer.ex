@@ -89,6 +89,8 @@ defmodule Bumblebee.Layers.Transformer do
     block_opts = Keyword.take(opts, block_opts_keys)
 
     {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
+    position_bias = Layers.none()
+    cross_attention_position_bias = Layers.none()
     offset = Layers.Decoder.get_cache_offset(cache)
 
     state = %{
@@ -96,7 +98,9 @@ defmodule Bumblebee.Layers.Transformer do
       hidden_states: Layers.maybe_container({hidden_state}, output_hidden_states),
       attentions: Layers.maybe_container({}, output_attentions),
       cross_attentions: Layers.maybe_container({}, output_attentions),
-      cache: cache
+      cache: cache,
+      position_bias: position_bias,
+      cross_attention_position_bias: cross_attention_position_bias
     }
 
     outputs =
@@ -106,14 +110,16 @@ defmodule Bumblebee.Layers.Transformer do
           block_cross_attention_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
           block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
 
-          # relative attention bias is conditionally applied per-block
           relative_attention_bias = Enum.at(relative_attention_bias, idx)
 
-          {hidden_state, attention, cross_attention, block_cache} =
+          {hidden_state, attention, cross_attention, block_cache, position_bias,
+           cross_attention_position_bias} =
             block(
               state.hidden_state,
               [
                 attention_mask: attention_mask,
+                position_bias: position_bias,
+                cross_attention_position_bias: cross_attention_position_bias,
                 attention_head_mask: block_attention_head_mask,
                 cross_hidden_state: cross_hidden_state,
                 cross_attention_mask: cross_attention_mask,
@@ -132,11 +138,14 @@ defmodule Bumblebee.Layers.Transformer do
             hidden_states: Layers.append(state.hidden_states, hidden_state),
             attentions: Layers.append(state.attentions, attention),
             cross_attentions: Layers.append(state.cross_attentions, cross_attention),
-            cache: cache
+            cache: cache,
+            position_bias: position_bias,
+            cross_attention_position_bias: cross_attention_position_bias
           }
       end
 
     update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, hidden_state))
+    |> Map.drop([:position_bias, :cross_attention_position_bias])
   end
 
   @doc """
@@ -263,6 +272,8 @@ defmodule Bumblebee.Layers.Transformer do
         cross_hidden_state: nil,
         cross_attention_mask: Layers.none(),
         cross_attention_head_mask: Layers.none(),
+        position_bias: Layers.none(),
+        cross_attention_position_bias: Layers.none(),
         block_cache: Layers.none(),
         offset: Layers.none(),
         causal?: false,
@@ -296,6 +307,8 @@ defmodule Bumblebee.Layers.Transformer do
     cross_hidden_state = opts[:cross_hidden_state]
     cross_attention_mask = opts[:cross_attention_mask]
     cross_attention_head_mask = opts[:cross_attention_head_mask]
+    position_bias = opts[:position_bias]
+    cross_attention_position_bias = opts[:cross_attention_position_bias]
     block_cache = opts[:block_cache]
     offset = opts[:offset]
     norm_placement = opts[:norm_placement]
@@ -343,10 +356,11 @@ defmodule Bumblebee.Layers.Transformer do
         layer_norm_fun.(hidden_state, join(name, "self_attention_norm"))
       end)
 
-    {hidden_state, attention, self_attention_cache} =
+    {hidden_state, attention, self_attention_cache, position_bias} =
       multi_head_attention(hidden_state, hidden_state, hidden_state,
         attention_mask: attention_mask,
         attention_head_mask: attention_head_mask,
+        position_bias: position_bias,
         attention_cache: self_attention_cache,
         offset: offset,
         causal?: causal?,
@@ -372,7 +386,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     # Cross-attention, shortcut connection, normalization and dropout
 
-    {hidden_state, cross_attention, cross_attention_cache} =
+    {hidden_state, cross_attention, cross_attention_cache, cross_attention_position_bias} =
       if cross_hidden_state do
         Layers.if_present cross_hidden_state do
           shortcut = hidden_state
@@ -383,7 +397,7 @@ defmodule Bumblebee.Layers.Transformer do
               layer_norm_fun.(hidden_state, join(name, "cross_attention_norm"))
             end)
 
-          {hidden_state, cross_attention, cross_attention_cache} =
+          {hidden_state, cross_attention, cross_attention_cache, cross_attention_position_bias} =
             multi_head_attention(hidden_state, cross_hidden_state, cross_hidden_state,
               attention_mask: cross_attention_mask,
               attention_head_mask: cross_attention_head_mask,
@@ -397,6 +411,7 @@ defmodule Bumblebee.Layers.Transformer do
               key_use_bias: key_use_bias,
               value_use_bias: value_use_bias,
               output_use_bias: output_use_bias,
+              position_bias: cross_attention_position_bias,
               relative_attention_bias: relative_attention_bias,
               name: join(name, "cross_attention")
             )
@@ -409,12 +424,12 @@ defmodule Bumblebee.Layers.Transformer do
               layer_norm_fun.(hidden_state, join(name, "cross_attention_norm"))
             end)
 
-          {hidden_state, cross_attention, cross_attention_cache}
+          {hidden_state, cross_attention, cross_attention_cache, cross_attention_position_bias}
         else
-          {hidden_state, Layers.none(), cross_attention_cache}
+          {hidden_state, Layers.none(), cross_attention_cache, Layers.none()}
         end
       else
-        {hidden_state, Layers.none(), cross_attention_cache}
+        {hidden_state, Layers.none(), cross_attention_cache, Layers.none()}
       end
 
     # Output feed-forward network, shortcut connection, normalization and dropout
@@ -439,7 +454,8 @@ defmodule Bumblebee.Layers.Transformer do
         cross_attention_cache
       )
 
-    {hidden_state, attention, cross_attention, block_cache}
+    {hidden_state, attention, cross_attention, block_cache, position_bias,
+     cross_attention_position_bias}
   end
 
   defp basic_ffn(x, intermediate_size, output_size, opts) do
@@ -534,6 +550,7 @@ defmodule Bumblebee.Layers.Transformer do
         :relative_attention_bias,
         attention_mask: Layers.none(),
         attention_head_mask: Layers.none(),
+        position_bias: Layers.none(),
         attention_cache: Layers.none(),
         offset: Layers.none(),
         causal?: false,
@@ -549,6 +566,7 @@ defmodule Bumblebee.Layers.Transformer do
     attention_head_mask = opts[:attention_head_mask]
     attention_cache = opts[:attention_cache]
     offset = opts[:offset]
+    position_bias = opts[:position_bias]
 
     name = opts[:name]
     num_heads = opts[:num_heads]
@@ -603,25 +621,34 @@ defmodule Bumblebee.Layers.Transformer do
         attention_mask
       end
 
-    attention_bias =
+    {attention_bias, position_bias} =
       case relative_attention_bias do
         nil ->
-          Layers.attention_bias(attention_mask)
+          {Layers.attention_bias(attention_mask), Layers.none()}
 
         bias_opts when is_list(bias_opts) ->
           validate_required_keys!(bias_opts, [:num_buckets, :max_distance, :bidirectional])
           bias_opts = Keyword.validate!(bias_opts, [:num_buckets, :max_distance, :bidirectional])
 
           position_bias =
-            Layers.relative_attention_bias(query, key,
-              num_buckets: bias_opts[:num_buckets],
-              max_distance: bias_opts[:max_distance],
-              bidirectional: bias_opts[:bidirectional],
-              num_heads: num_heads,
-              name: join(name, "relative_attention_bias")
-            )
+            Layers.default position_bias do
+              Layers.relative_attention_bias(query, key,
+                num_buckets: bias_opts[:num_buckets],
+                max_distance: bias_opts[:max_distance],
+                bidirectional: bias_opts[:bidirectional],
+                num_heads: num_heads,
+                name: join(name, "relative_attention_bias")
+              )
+            end
 
-          Axon.add(position_bias, Layers.attention_bias(attention_mask))
+          {Layers.attention_bias(attention_mask), position_bias}
+      end
+
+    attention_bias =
+      Layers.if_present position_bias do
+        Axon.add(attention_bias, position_bias)
+      else
+        attention_bias
       end
 
     attention_weights =
@@ -639,7 +666,7 @@ defmodule Bumblebee.Layers.Transformer do
         use_bias: output_use_bias
       )
 
-    {attention_output, attention_weights, attention_cache}
+    {attention_output, attention_weights, attention_cache, position_bias}
   end
 
   defp maybe(term, false, _fun), do: term
