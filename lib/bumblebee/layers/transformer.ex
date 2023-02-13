@@ -50,7 +50,8 @@ defmodule Bumblebee.Layers.Transformer do
       :value_use_bias,
       :output_use_bias,
       :norm_placement,
-      :output_norm
+      :output_norm,
+      :scale_query?
     ]
 
     opts =
@@ -118,8 +119,8 @@ defmodule Bumblebee.Layers.Transformer do
               state.hidden_state,
               [
                 attention_mask: attention_mask,
-                position_bias: position_bias,
-                cross_attention_position_bias: cross_attention_position_bias,
+                position_bias: state.position_bias,
+                cross_attention_position_bias: state.cross_attention_position_bias,
                 attention_head_mask: block_attention_head_mask,
                 cross_hidden_state: cross_hidden_state,
                 cross_attention_mask: cross_attention_mask,
@@ -145,7 +146,6 @@ defmodule Bumblebee.Layers.Transformer do
       end
 
     update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, hidden_state))
-    |> Map.drop([:position_bias, :cross_attention_position_bias])
   end
 
   @doc """
@@ -248,6 +248,9 @@ defmodule Bumblebee.Layers.Transformer do
 
         * `:bidirectional` (required) - whether to apply the relative attention
           bias bidirectionally
+    
+    * `:scale_query?` - whether to scale query in the traditional style of
+      multi-headed attention. Defaults to `true`
 
     * `:name` - the prefix for layer names
 
@@ -285,7 +288,8 @@ defmodule Bumblebee.Layers.Transformer do
         value_use_bias: true,
         output_use_bias: true,
         norm_placement: :last,
-        output_norm: true
+        output_norm: true,
+        scale_query?: true
       ])
 
     name = opts[:name]
@@ -313,6 +317,7 @@ defmodule Bumblebee.Layers.Transformer do
     offset = opts[:offset]
     norm_placement = opts[:norm_placement]
     output_norm = opts[:output_norm]
+    scale_query? = opts[:scale_query?]
 
     ffn_fun =
       case ffn do
@@ -373,6 +378,7 @@ defmodule Bumblebee.Layers.Transformer do
         value_use_bias: value_use_bias,
         output_use_bias: output_use_bias,
         relative_attention_bias: relative_attention_bias,
+        scale_query?: scale_query?,
         name: join(name, "self_attention")
       )
 
@@ -413,6 +419,7 @@ defmodule Bumblebee.Layers.Transformer do
               output_use_bias: output_use_bias,
               position_bias: cross_attention_position_bias,
               relative_attention_bias: relative_attention_bias,
+              scale_query?: scale_query?,
               name: join(name, "cross_attention")
             )
 
@@ -554,6 +561,7 @@ defmodule Bumblebee.Layers.Transformer do
         attention_cache: Layers.none(),
         offset: Layers.none(),
         causal?: false,
+        scale_query?: true,
         kernel_initializer: :glorot_uniform,
         dropout_rate: 0.0,
         query_use_bias: true,
@@ -573,6 +581,7 @@ defmodule Bumblebee.Layers.Transformer do
     hidden_size = opts[:hidden_size]
     kernel_initializer = opts[:kernel_initializer]
     causal? = opts[:causal?]
+    scale_query? = opts[:scale_query?]
     dropout_rate = opts[:dropout_rate]
 
     query_use_bias = opts[:query_use_bias]
@@ -590,6 +599,11 @@ defmodule Bumblebee.Layers.Transformer do
         use_bias: query_use_bias
       )
       |> Layers.split_heads(num_heads)
+
+    query =
+      if not scale_query?,
+        do: Axon.nx(query, &Nx.multiply(&1, Nx.sqrt(Nx.axis_size(&1, -1)))),
+        else: query
 
     key =
       key
@@ -624,7 +638,7 @@ defmodule Bumblebee.Layers.Transformer do
     {attention_bias, position_bias} =
       case relative_attention_bias do
         nil ->
-          {Layers.attention_bias(attention_mask), Layers.none()}
+          {Layers.attention_bias(attention_mask), position_bias}
 
         bias_opts when is_list(bias_opts) ->
           validate_required_keys!(bias_opts, [:num_buckets, :max_distance, :bidirectional])

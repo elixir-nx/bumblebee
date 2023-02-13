@@ -346,6 +346,7 @@ defmodule Bumblebee.Text.T5 do
           ]
           | List.duplicate(nil, spec.encoder_num_blocks - 1)
         ],
+        scale_query?: false,
         name: join(name, "blocks")
       )
 
@@ -402,6 +403,7 @@ defmodule Bumblebee.Text.T5 do
           ]
           | List.duplicate(nil, spec.decoder_num_blocks - 1)
         ],
+        scale_query?: false,
         name: join(name, "blocks")
       )
 
