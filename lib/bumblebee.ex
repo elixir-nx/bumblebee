@@ -102,6 +102,8 @@ defmodule Bumblebee do
     "RobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
     "RobertaForCausalLM" => {Bumblebee.Text.Roberta, :for_causal_language_modeling},
     "RobertaModel" => {Bumblebee.Text.Roberta, :base},
+    "T5Model" => {Bumblebee.Text.T5, :base},
+    "T5ForConditionalGeneration" => {Bumblebee.Text.T5, :for_conditional_generation},
     "ViTForImageClassification" => {Bumblebee.Vision.Vit, :for_image_classification},
     "ViTForMaskedImageModeling" => {Bumblebee.Vision.Vit, :for_masked_image_modeling},
     "ViTModel" => {Bumblebee.Vision.Vit, :base},
