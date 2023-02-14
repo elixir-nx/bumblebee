@@ -114,7 +114,7 @@ defmodule Bumblebee.Layers do
 
     relative_position_if_large =
       max_exact +
-        Nx.log(relative_position) / max_exact / Nx.log(opts[:max_distance] / max_exact) *
+        Nx.log(relative_position / max_exact) / Nx.log(opts[:max_distance] / max_exact) *
           (num_buckets - max_exact)
 
     relative_position_if_large =
@@ -122,6 +122,7 @@ defmodule Bumblebee.Layers do
         relative_position_if_large,
         Nx.broadcast(num_buckets - 1, Nx.shape(relative_position_if_large))
       )
+      |> Nx.as_type(:s64)
 
     relative_buckets + Nx.select(is_small, relative_position, relative_position_if_large)
   end

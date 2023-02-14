@@ -7,8 +7,11 @@ defmodule Bumblebee.Text.T5Test do
 
   describe "integration" do
     test "base model" do
+      assert {:ok, spec} = Bumblebee.load_spec({:hf, "t5-small"}, architecture: :base)
+      spec = Bumblebee.configure(spec, output_hidden_states: true)
+
       assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "t5-small"}, architecture: :base)
+               Bumblebee.load_model({:hf, "t5-small"}, spec: spec)
 
       assert %Bumblebee.Text.T5{architecture: :base} = spec
 

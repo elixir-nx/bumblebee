@@ -347,11 +347,12 @@ defmodule Bumblebee.Text.T5 do
           | List.duplicate(nil, spec.encoder_num_blocks - 1)
         ],
         scale_query?: false,
+        output_shortcut: false,
         name: join(name, "blocks")
       )
 
     hidden_state =
-      encoder_outputs.hidden_state
+      encoder_outputs.hidden_states
       |> Layers.rms_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
       |> Axon.dropout(rate: spec.dropout_rate)
 
@@ -404,6 +405,7 @@ defmodule Bumblebee.Text.T5 do
           | List.duplicate(nil, spec.decoder_num_blocks - 1)
         ],
         scale_query?: false,
+        output_shortcut: false,
         name: join(name, "blocks")
       )
 
