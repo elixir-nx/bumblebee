@@ -217,6 +217,27 @@ defmodule Bumblebee.Text.T5 do
     |> Layers.output()
   end
 
+  def model(%__MODULE__{architecture: :for_conditional_generation} = spec) do
+    inputs = encoder_decoder_inputs(spec)
+    outputs = core(inputs, spec)
+
+    logits =
+      outputs.hidden_state
+      |> Axon.nx(&Nx.multiply(&1, Nx.rsqrt(spec.hidden_size)))
+      |> language_modeling_head(spec, name: "language_modeling_head")
+
+    Layers.output(%{
+      logits: logits,
+      decoder_hidden_states: outputs.decoder_hidden_states,
+      decoder_attentions: outputs.decoder_attentions,
+      cross_attentions: outputs.cross_attentions,
+      encoder_hidden_state: outputs.encoder_hidden_state,
+      encoder_hidden_states: outputs.encoder_hidden_states,
+      encoder_attentions: outputs.encoder_attentions,
+      cache: outputs.cache
+    })
+  end
+
   defp encoder_decoder_inputs(spec) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, spec.hidden_size}
@@ -437,6 +458,15 @@ defmodule Bumblebee.Text.T5 do
     |> Axon.dense(spec.hidden_size, name: join(name, "dense.1"), use_bias: false)
   end
 
+  defp language_modeling_head(hidden_state, spec, opts) do
+    name = opts[:name]
+
+    Layers.dense_transposed(hidden_state, spec.vocab_size,
+      kernel_initializer: kernel_initializer(spec),
+      name: join(name, "output")
+    )
+  end
+
   defp kernel_initializer(spec) do
     Axon.Initializers.normal(scale: spec.initializer_scale)
   end
@@ -502,7 +532,9 @@ defmodule Bumblebee.Text.T5 do
         "decoder.blocks.0.self_attention.relative_attention_bias" =>
           "decoder.block.0.layer.0.SelfAttention.relative_attention_bias",
         "decoder.blocks.0.cross_attention.relative_attention_bias" =>
-          "decoder.block.0.layer.1.EncDecAttention.relative_attention_bias"
+          "decoder.block.0.layer.1.EncDecAttention.relative_attention_bias",
+        # language modeling
+        "language_modeling_head.output" => "shared"
       }
     end
   end

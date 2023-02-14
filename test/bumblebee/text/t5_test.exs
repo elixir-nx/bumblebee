@@ -33,5 +33,38 @@ defmodule Bumblebee.Text.T5Test do
         atol: 1.0e-4
       )
     end
+
+    test "conditional generation model" do
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "t5-small"},
+                 architecture: :for_conditional_generation
+               )
+
+      assert %Bumblebee.Text.T5{architecture: :for_conditional_generation} = spec
+
+      input_ids = Nx.tensor([[37, 32099, 10681, 16, 32098, 2447, 1]])
+      decoder_input_ids = Nx.tensor([[32099, 5295, 1782, 32098, 8, 32097, 1]])
+
+      inputs = %{
+        "input_ids" => input_ids,
+        "decoder_input_ids" => decoder_input_ids
+      }
+
+      outputs = Axon.predict(model, params, inputs)
+
+      assert Nx.shape(outputs.logits) == {1, 7, 32128}
+
+      assert_all_close(
+        outputs.logits[[0, 1..3, 1..3]],
+        Nx.tensor([
+          [
+            [-11.7720, -12.8368, -9.6471],
+            [-10.6815, -11.4800, -8.5046],
+            [-15.8921, -15.2948, -8.4964]
+          ]
+        ]),
+        atol: 1.0e-4
+      )
+    end
   end
 end
