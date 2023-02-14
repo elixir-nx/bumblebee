@@ -352,7 +352,7 @@ defmodule Bumblebee.Text.T5 do
       )
 
     hidden_state =
-      encoder_outputs.hidden_states
+      encoder_outputs.hidden_state
       |> Layers.rms_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
       |> Axon.dropout(rate: spec.dropout_rate)
 

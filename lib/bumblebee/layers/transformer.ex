@@ -424,7 +424,6 @@ defmodule Bumblebee.Layers.Transformer do
               value_use_bias: value_use_bias,
               output_use_bias: output_use_bias,
               position_bias: cross_attention_position_bias,
-              relative_attention_bias: relative_attention_bias,
               scale_query?: scale_query?,
               name: join(name, "cross_attention")
             )
