@@ -3,7 +3,7 @@ defmodule Bumblebee.Layers do
 
   import Nx.Defn
 
-  @unsupported_activations [:gelu_new, :quick_gelu]
+  @unsupported_activations [:gelu_new, :quick_gelu, :gated_gelu]
 
   @pi :math.pi()
 
@@ -27,6 +27,12 @@ defmodule Bumblebee.Layers do
     else
       Axon.activation(input, activation, name: name)
     end
+  end
+
+  @doc """
+  Implements the Gated GeLU activation from huggingface/transformers.
+  """
+  defn gated_gelu(input, _opts \\ []) do
   end
 
   @doc """

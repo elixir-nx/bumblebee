@@ -14,6 +14,10 @@ defmodule Bumblebee.Text.T5 do
         default: 512,
         doc: "the dimensionality of hidden layers"
       ],
+      projection_size: [
+        default: 64,
+        doc: "the size of the key, value, and query projection per attention head"
+      ],
       encoder_num_blocks: [
         default: 6,
         doc: "the number of Transformer blocks in the encoder"
@@ -353,6 +357,7 @@ defmodule Bumblebee.Text.T5 do
         norm_placement: :first,
         output_norm: false,
         ffn: &ffn(&1, spec, name: &2),
+        projection_size: spec.projection_size,
         output_hidden_states: spec.output_hidden_states,
         output_attentions: spec.output_attentions,
         query_use_bias: false,
@@ -407,6 +412,7 @@ defmodule Bumblebee.Text.T5 do
         hidden_size: spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.dropout_rate,
+        projection_size: spec.projection_size,
         layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
         norm_placement: :first,
         output_norm: false,
@@ -441,9 +447,18 @@ defmodule Bumblebee.Text.T5 do
   defp ffn(hidden_state, spec, opts) do
     name = opts[:name]
 
+    hidden_state =
+      hidden_state
+      |> Layers.rms_norm(name: join(name, "layer_norm"), epsilon: spec.layer_norm_epsilon)
+
+    hidden_state =
+      if is_gated_act?(spec.activation) do
+        dense_gated_act_dense(hidden_state, spec, name: name)
+      else
+        dense_act_dense(hidden_state, spec, name: name)
+      end
+
     hidden_state
-    |> Layers.rms_norm(name: join(name, "layer_norm"), epsilon: spec.layer_norm_epsilon)
-    |> dense_act_dense(spec, name: name)
     |> Axon.dropout(rate: spec.dropout_rate)
     |> Axon.add(hidden_state)
   end
@@ -454,6 +469,26 @@ defmodule Bumblebee.Text.T5 do
     hidden_state
     |> Axon.dense(spec.intermediate_size, name: join(name, "dense.0"), use_bias: false)
     |> Layers.activation(spec.activation)
+    |> Axon.dropout(rate: spec.dropout_rate)
+    |> Axon.dense(spec.hidden_size, name: join(name, "dense.1"), use_bias: false)
+  end
+
+  defp dense_gated_act_dense(hidden_state, spec, opts) do
+    name = opts[:name]
+
+    hidden_gelu =
+      hidden_state
+      |> Axon.dense(spec.intermediate_size, name: join(name, "dense.0_0"), use_bias: false)
+      |> Layers.activation(spec.activation)
+
+    hidden_linear =
+      Axon.dense(hidden_state, spec.intermediate_size,
+        name: join(name, "dense.0_1"),
+        use_bias: false
+      )
+
+    hidden_gelu
+    |> Axon.multiply(hidden_linear)
     |> Axon.dropout(rate: spec.dropout_rate)
     |> Axon.dense(spec.hidden_size, name: join(name, "dense.1"), use_bias: false)
   end
@@ -471,6 +506,10 @@ defmodule Bumblebee.Text.T5 do
     Axon.Initializers.normal(scale: spec.initializer_scale)
   end
 
+  defp is_gated_act?(activation) do
+    activation in [:gated_gelu, :gated_silu]
+  end
+
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(spec, data) do
       import Shared.Converters
@@ -479,10 +518,11 @@ defmodule Bumblebee.Text.T5 do
         convert!(data,
           vocab_size: {"vocab_size", number()},
           hidden_size: {"d_model", number()},
+          projection_size: {"d_kv", number()},
           encoder_num_blocks: {"num_layers", number()},
-          decoder_num_blocks: {"num_layers", number()},
+          decoder_num_blocks: {"num_decoder_layers", number()},
           encoder_num_attention_heads: {"num_heads", number()},
-          decoder_num_attention_heads: {"decoder_attention_heads", number()},
+          decoder_num_attention_heads: {"num_heads", number()},
           relative_attention_num_buckets: {"relative_attention_num_buckets", number()},
           relative_attention_max_distance: {"relative_attention_max_distance", number()},
           intermediate_size: {"d_ff", number()},

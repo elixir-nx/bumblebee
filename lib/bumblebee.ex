@@ -150,6 +150,7 @@ defmodule Bumblebee do
     "layoutlm" => Bumblebee.Text.LayoutLmTokenizer,
     "mbart" => Bumblebee.Text.MbartTokenizer,
     "roberta" => Bumblebee.Text.RobertaTokenizer,
+    "t5" => Bumblebee.Text.T5Tokenizer,
     "whisper" => Bumblebee.Text.WhisperTokenizer,
     "xlm-roberta" => Bumblebee.Text.XlmRobertaTokenizer
   }

@@ -43,6 +43,7 @@ defmodule Bumblebee.Layers.Transformer do
       :ffn,
       :layer_norm,
       :kernel_initializer,
+      :projection_size,
       :dropout_rate,
       :attention_dropout_rate,
       :query_use_bias,
@@ -213,6 +214,12 @@ defmodule Bumblebee.Layers.Transformer do
     * `:kernel_initializer` - initializer for kernel weights. Defaults
       to `:glorot_uniform`
 
+    * `:projection_size` - the projection size for key, value, and query
+      states per-head. In most cases, the projection size is equal to
+      `hidden_size // num_heads`. However, if set, this will project key,
+      value, and query by a factor of `projection_size * num_heads`.
+      Defaults to `nil`
+
     * `:dropout_rate` - the dropout rate for dropout layers. Defaults
       to `0.0`
 
@@ -285,6 +292,7 @@ defmodule Bumblebee.Layers.Transformer do
         offset: Layers.none(),
         causal?: false,
         kernel_initializer: :glorot_uniform,
+        projection_size: nil,
         dropout_rate: 0.0,
         attention_dropout_rate: 0.0,
         query_use_bias: true,
@@ -305,6 +313,7 @@ defmodule Bumblebee.Layers.Transformer do
     relative_attention_bias = opts[:relative_attention_bias]
     causal? = opts[:causal?]
     kernel_initializer = opts[:kernel_initializer]
+    projection_size = opts[:projection_size]
     dropout_rate = opts[:dropout_rate]
     attention_dropout_rate = opts[:attention_dropout_rate]
     query_use_bias = opts[:query_use_bias]
@@ -378,6 +387,7 @@ defmodule Bumblebee.Layers.Transformer do
         num_heads: num_attention_heads,
         hidden_size: hidden_size,
         kernel_initializer: kernel_initializer,
+        projection_size: projection_size,
         dropout_rate: attention_dropout_rate,
         query_use_bias: query_use_bias,
         key_use_bias: key_use_bias,
@@ -418,6 +428,7 @@ defmodule Bumblebee.Layers.Transformer do
               num_heads: num_attention_heads,
               hidden_size: hidden_size,
               kernel_initializer: kernel_initializer,
+              projection_size: projection_size,
               dropout_rate: attention_dropout_rate,
               query_use_bias: query_use_bias,
               key_use_bias: key_use_bias,
@@ -521,6 +532,13 @@ defmodule Bumblebee.Layers.Transformer do
 
     * `:dropout_rate` - the dropout rate for attention weights dropout.
       Defaults to `0.0`
+    
+    * `:projection_size` - the projection size for key, value, and query
+      states per-head. In most cases, the projection size is equal to
+      `hidden_size // num_heads`. However, if set, this will project key,
+      value, and query by a factor of `projection_size * num_heads`.
+      Defaults to `nil`
+
 
     * `:query_use_bias` - whether to use bias in the query projection.
       Defaults to `true`
@@ -571,6 +589,7 @@ defmodule Bumblebee.Layers.Transformer do
         scale_query?: true,
         kernel_initializer: :glorot_uniform,
         dropout_rate: 0.0,
+        projection_size: nil,
         query_use_bias: true,
         key_use_bias: true,
         value_use_bias: true,
@@ -598,9 +617,16 @@ defmodule Bumblebee.Layers.Transformer do
 
     relative_attention_bias = opts[:relative_attention_bias]
 
+    inner_dim =
+      if projection_size = opts[:projection_size] do
+        num_heads * projection_size
+      else
+        hidden_size
+      end
+
     query =
       query
-      |> Axon.dense(hidden_size,
+      |> Axon.dense(inner_dim,
         kernel_initializer: kernel_initializer,
         name: join(name, "query"),
         use_bias: query_use_bias
@@ -614,7 +640,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     key =
       key
-      |> Axon.dense(hidden_size,
+      |> Axon.dense(inner_dim,
         kernel_initializer: kernel_initializer,
         name: join(name, "key"),
         use_bias: key_use_bias
@@ -623,7 +649,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     value =
       value
-      |> Axon.dense(hidden_size,
+      |> Axon.dense(inner_dim,
         kernel_initializer: kernel_initializer,
         name: join(name, "value"),
         use_bias: value_use_bias
