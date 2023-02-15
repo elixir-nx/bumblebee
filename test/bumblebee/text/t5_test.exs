@@ -33,7 +33,7 @@ defmodule Bumblebee.Text.T5Test do
 
     test "base model gated activation" do
       assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "google/flan-t5-small"})
+               Bumblebee.load_model({:hf, "google/flan-t5-small"}, architecture: :base)
 
       assert %Bumblebee.Text.T5{architecture: :base} = spec
 

@@ -10,11 +10,17 @@ defmodule Bumblebee.Text.T5 do
         tokens that can be represented in model input and output
         """
       ],
+      tie_word_embeddings: [
+        default: true,
+        doc: """
+        whether or not to tie encoder and decoder token embedding
+        """
+      ],
       hidden_size: [
         default: 512,
         doc: "the dimensionality of hidden layers"
       ],
-      projection_size: [
+      attention_projection_size: [
         default: 64,
         doc: "the size of the key, value, and query projection per attention head"
       ],
@@ -276,8 +282,12 @@ defmodule Bumblebee.Text.T5 do
           attentions: Layers.none()
         }
       else
+        encoder_embedding_name = if spec.tie_word_embeddings, do: "shared", else: "encoder"
+
         embeddings =
-          embedder(inputs["input_ids"], inputs["input_embeddings"], spec, name: "shared")
+          embedder(inputs["input_ids"], inputs["input_embeddings"], spec,
+            name: encoder_embedding_name
+          )
 
         embeddings
         |> encoder(inputs["attention_mask"], inputs["attention_head_mask"], spec, name: "encoder")
@@ -289,12 +299,14 @@ defmodule Bumblebee.Text.T5 do
         Layers.shift_tokens_right(inputs["input_ids"], spec.decoder_start_token_id)
       end
 
+    decoder_embedding_name = if spec.tie_word_embeddings, do: "shared", else: "decoder"
+
     embeddings =
       embedder(
         decoder_input_ids,
         inputs["decoder_input_embeddings"],
         spec,
-        name: "shared"
+        name: decoder_embedding_name
       )
 
     decoder_outputs =
@@ -351,7 +363,7 @@ defmodule Bumblebee.Text.T5 do
         norm_placement: :first,
         output_norm: false,
         ffn: &ffn(&1, spec, name: &2),
-        projection_size: spec.projection_size,
+        attention_projection_size: spec.attention_projection_size,
         output_hidden_states: spec.output_hidden_states,
         output_attentions: spec.output_attentions,
         query_use_bias: false,
@@ -406,7 +418,7 @@ defmodule Bumblebee.Text.T5 do
         hidden_size: spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.dropout_rate,
-        projection_size: spec.projection_size,
+        attention_projection_size: spec.attention_projection_size,
         layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
         norm_placement: :first,
         output_norm: false,
@@ -441,6 +453,8 @@ defmodule Bumblebee.Text.T5 do
   defp ffn(hidden_state, spec, opts) do
     name = opts[:name]
 
+    shortcut = hidden_state
+
     hidden_state =
       hidden_state
       |> Layers.rms_norm(name: join(name, "layer_norm"), epsilon: spec.layer_norm_epsilon)
@@ -454,7 +468,7 @@ defmodule Bumblebee.Text.T5 do
 
     hidden_state
     |> Axon.dropout(rate: spec.dropout_rate)
-    |> Axon.add(hidden_state)
+    |> Axon.add(shortcut)
   end
 
   defp dense_act_dense(hidden_state, spec, opts) do
@@ -501,7 +515,7 @@ defmodule Bumblebee.Text.T5 do
   end
 
   defp is_gated_act?(activation) do
-    activation in [:gated_gelu, :gated_silu]
+    activation in [:"gated-gelu", :"gated-selu"]
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
@@ -511,8 +525,9 @@ defmodule Bumblebee.Text.T5 do
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
+          tie_word_embeddings: {"tie_word_embeddings", boolean()},
           hidden_size: {"d_model", number()},
-          projection_size: {"d_kv", number()},
+          attention_projection_size: {"d_kv", number()},
           encoder_num_blocks: {"num_layers", number()},
           decoder_num_blocks: {"num_decoder_layers", number()},
           encoder_num_attention_heads: {"num_heads", number()},
@@ -533,7 +548,11 @@ defmodule Bumblebee.Text.T5 do
     def params_mapping(_spec) do
       %{
         "shared.token_embedding" => "shared",
+        "encoder.token_embedding" => "encoder.embed_tokens",
+        "decoder.token_embedding" => "decoder.embed_tokens",
         # encoder
+        "encoder.blocks.{n}.ffn.dense.0_0" => "encoder.block.{n}.layer.1.DenseReluDense.wi_0",
+        "encoder.blocks.{n}.ffn.dense.0_1" => "encoder.block.{n}.layer.1.DenseReluDense.wi_1",
         "encoder.blocks.{n}.ffn.dense.0" => "encoder.block.{n}.layer.1.DenseReluDense.wi",
         "encoder.blocks.{n}.ffn.dense.1" => "encoder.block.{n}.layer.1.DenseReluDense.wo",
         "encoder.blocks.{n}.ffn.layer_norm" => "encoder.block.{n}.layer.1.layer_norm",
@@ -546,6 +565,8 @@ defmodule Bumblebee.Text.T5 do
           "encoder.block.0.layer.0.SelfAttention.relative_attention_bias",
         "encoder.output_norm" => "encoder.final_layer_norm",
         # decoder
+        "decoder.blocks.{n}.ffn.dense.0_0" => "decoder.block.{n}.layer.2.DenseReluDense.wi_0",
+        "decoder.blocks.{n}.ffn.dense.0_1" => "decoder.block.{n}.layer.2.DenseReluDense.wi_1",
         "decoder.blocks.{n}.ffn.dense.0" => "decoder.block.{n}.layer.2.DenseReluDense.wi",
         "decoder.blocks.{n}.ffn.dense.1" => "decoder.block.{n}.layer.2.DenseReluDense.wo",
         "decoder.blocks.{n}.ffn.layer_norm" => "decoder.block.{n}.layer.2.layer_norm",
