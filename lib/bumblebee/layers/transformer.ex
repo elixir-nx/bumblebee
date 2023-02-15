@@ -189,6 +189,10 @@ defmodule Bumblebee.Layers.Transformer do
       * `:layer_norm_epsilon` - the epsilon used by the layer normalization
         layers. Defaults to `1.0e-5`
 
+      Alternatively a custom 2-arity function may be given. The function
+      should add a normalization node to the given Axon node. The function
+      also receives layer name prefix as the second argument.
+
     * `:attention_mask` - a mask indicating which positions to attend to
 
     * `:attention_head_mask` - a mask to nullify selected attention heads
@@ -214,11 +218,8 @@ defmodule Bumblebee.Layers.Transformer do
     * `:kernel_initializer` - initializer for kernel weights. Defaults
       to `:glorot_uniform`
 
-    * `:projection_size` - the projection size for key, value, and query
-      states per-head. In most cases, the projection size is equal to
-      `hidden_size // num_heads`. However, if set, this will project key,
-      value, and query by a factor of `projection_size * num_heads`.
-      Defaults to `nil`
+    * `:attention_projection_size` - the projection size for key, value,
+      and query states per-head. Defaults to `div(hidden_size, num_attention_heads)`
 
     * `:dropout_rate` - the dropout rate for dropout layers. Defaults
       to `0.0`

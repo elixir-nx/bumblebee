@@ -174,13 +174,7 @@ defmodule Bumblebee.Text.T5 do
 
   @impl true
   def architectures(),
-    do: [
-      :base,
-      :for_causal_language_modeling,
-      :for_conditional_generation,
-      :for_sequence_classification,
-      :for_question_answering
-    ]
+    do: [:base, :for_conditional_generation]
 
   @impl true
   def config(spec, opts \\ []) do
