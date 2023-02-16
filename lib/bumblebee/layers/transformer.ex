@@ -260,7 +260,7 @@ defmodule Bumblebee.Layers.Transformer do
 
         * `:bidirectional` (required) - whether to apply the relative attention
           bias bidirectionally
-    
+
     * `:scale_query?` - whether to scale query in the traditional style of
       multi-headed attention. Defaults to `true`
 
@@ -533,7 +533,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     * `:dropout_rate` - the dropout rate for attention weights dropout.
       Defaults to `0.0`
-    
+
     * `:attention_projection_size` - the projection size for key, value,
       and query states per-head. Defaults to `div(hidden_size, num_attention_heads)`
 
@@ -676,7 +676,7 @@ defmodule Bumblebee.Layers.Transformer do
 
           position_bias =
             Layers.default position_bias do
-              Layers.relative_attention_bias(query, key,
+              Layers.relative_attention_bias(query, key, attention_cache, offset,
                 num_buckets: bias_opts[:num_buckets],
                 max_distance: bias_opts[:max_distance],
                 bidirectional: bias_opts[:bidirectional],

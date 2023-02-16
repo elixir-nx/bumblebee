@@ -31,7 +31,7 @@ defmodule Bumblebee.Text.T5Test do
       )
     end
 
-    test "base model gated activation" do
+    test "base model (gated activation)" do
       assert {:ok, %{model: model, params: params, spec: spec}} =
                Bumblebee.load_model({:hf, "google/flan-t5-small"}, architecture: :base)
 
@@ -89,6 +89,35 @@ defmodule Bumblebee.Text.T5Test do
       )
     end
 
+    test "conditional generation model (tied embeddings)" do
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "google/flan-t5-small"})
+
+      assert %Bumblebee.Text.T5{architecture: :for_conditional_generation} = spec
+
+      input_ids = Nx.tensor([[37, 32099, 10681, 16, 32098, 2447, 1]])
+      decoder_input_ids = Nx.tensor([[32099, 5295, 1782, 32098, 8, 32097, 1]])
+
+      inputs = %{
+        "input_ids" => input_ids,
+        "decoder_input_ids" => decoder_input_ids
+      }
+
+      outputs = Axon.predict(model, params, inputs)
+
+      assert Nx.shape(outputs.logits) == {1, 7, 32128}
+
+      assert_all_close(
+        outputs.logits[[0, 1..3, 1..3]],
+        Nx.tensor([
+          [2.7100, -3.0434, 1.2578],
+          [3.1423, -3.6663, 1.2443],
+          [1.0911, -3.8732, 0.5008]
+        ]),
+        atol: 1.0e-4
+      )
+    end
+
     test "text generation" do
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "t5-small"})
       assert {:ok, model_info} = Bumblebee.load_model({:hf, "t5-small"})
@@ -100,12 +129,31 @@ defmodule Bumblebee.Text.T5Test do
       generate =
         Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec,
           min_length: 0,
-          max_length: 8
+          max_length: 10
         )
 
       token_ids = EXLA.jit(generate).(model_info.params, inputs)
 
       assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["Wie alt sind Sie?"]
+    end
+
+    test "text generation (tied embeddings)" do
+      assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google/flan-t5-small"})
+      assert {:ok, model_info} = Bumblebee.load_model({:hf, "google/flan-t5-small"})
+
+      text = "translate English to German: How old are you?"
+
+      inputs = Bumblebee.apply_tokenizer(tokenizer, text)
+
+      generate =
+        Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec,
+          min_length: 0,
+          max_length: 10
+        )
+
+      token_ids = EXLA.jit(generate).(model_info.params, inputs)
+
+      assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["Wie ich er bitten?"]
     end
   end
 end

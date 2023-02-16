@@ -79,7 +79,7 @@ defmodule Bumblebee.Layers do
   @doc """
   Computes relative attention bias.
   """
-  def relative_attention_bias(query, key, opts \\ []) do
+  def relative_attention_bias(query, key, attention_cache, offset, opts \\ []) do
     opts =
       Keyword.validate!(opts, [
         :name,
@@ -92,23 +92,43 @@ defmodule Bumblebee.Layers do
     name = opts[:name]
 
     relative_position_buckets =
-      Axon.layer(&compute_relative_position_buckets/3, [query, key],
+      Axon.layer(
+        &compute_relative_position_buckets/4,
+        [query, key, Axon.optional(attention_cache)],
         bidirectional: opts[:bidirectional],
         num_buckets: opts[:num_buckets],
         max_distance: opts[:max_distance]
       )
 
-    relative_position_buckets
-    |> Axon.embedding(opts[:num_buckets], opts[:num_heads], name: name)
-    |> Axon.transpose([2, 0, 1])
-    |> Axon.nx(&Nx.new_axis(&1, 0))
+    bias =
+      relative_position_buckets
+      |> Axon.embedding(opts[:num_buckets], opts[:num_heads], name: name)
+      |> Axon.transpose([2, 0, 1])
+      |> Axon.nx(&Nx.new_axis(&1, 0))
+
+    Axon.layer(
+      fn bias, query, offset, _opts ->
+        case offset do
+          %Axon.None{} ->
+            bias
+
+          offset ->
+            mask_shift = Nx.as_type(offset, {:s, 64})
+            query_length = Nx.axis_size(query, 1)
+            Nx.slice_along_axis(bias, mask_shift, query_length, axis: 2)
+        end
+      end,
+      [bias, query, Axon.optional(offset)]
+    )
   end
 
-  defnp compute_relative_position_buckets(query, key, opts \\ []) do
+  defnp compute_relative_position_buckets(query, key, attention_cache, opts \\ []) do
     opts = keyword!(opts, mode: :train, bidirectional: true, num_buckets: 32, max_distance: 128)
 
-    context_position = Nx.iota({Nx.axis_size(query, 1), 1})
-    memory_position = Nx.iota({1, Nx.axis_size(key, 1)})
+    {key_length, query_length} = key_query_lengths(query, key, attention_cache)
+
+    context_position = Nx.iota({query_length, 1})
+    memory_position = Nx.iota({1, key_length})
     relative_position = memory_position - context_position
 
     {num_buckets, relative_buckets, relative_position} =
@@ -130,6 +150,17 @@ defmodule Bumblebee.Layers do
       |> Nx.as_type(:s64)
 
     relative_buckets + Nx.select(is_small, relative_position, relative_position_if_large)
+  end
+
+  deftransformp key_query_lengths(query, key, attention_cache) do
+    case attention_cache do
+      %Axon.None{} ->
+        {Nx.axis_size(key, 1), Nx.axis_size(query, 1)}
+
+      attention_cache ->
+        key_length = Nx.axis_size(attention_cache.key, 1)
+        {key_length, key_length}
+    end
   end
 
   deftransformp bidirectional_buckets(relative_position, num_buckets, bidirectional) do

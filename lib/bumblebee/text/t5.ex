@@ -226,10 +226,14 @@ defmodule Bumblebee.Text.T5 do
     inputs = encoder_decoder_inputs(spec)
     outputs = core(inputs, spec)
 
-    logits =
-      outputs.hidden_state
-      |> Axon.nx(&Nx.multiply(&1, Nx.rsqrt(spec.hidden_size)))
-      |> language_modeling_head(spec, name: "language_modeling_head")
+    hidden_state =
+      if spec.tie_word_embeddings do
+        Axon.nx(outputs.hidden_state, &Nx.multiply(&1, Nx.rsqrt(spec.hidden_size)))
+      else
+        outputs.hidden_state
+      end
+
+    logits = language_modeling_head(hidden_state, spec, name: "language_modeling_head")
 
     Layers.output(%{
       logits: logits,
@@ -283,12 +287,8 @@ defmodule Bumblebee.Text.T5 do
           attentions: Layers.none()
         }
       else
-        encoder_embedding_name = if spec.tie_word_embeddings, do: "shared", else: "encoder"
-
         embeddings =
-          embedder(inputs["input_ids"], inputs["input_embeddings"], spec,
-            name: encoder_embedding_name
-          )
+          embedder(inputs["input_ids"], inputs["input_embeddings"], spec, name: "encoder")
 
         embeddings
         |> encoder(inputs["attention_mask"], inputs["attention_head_mask"], spec, name: "encoder")
@@ -300,15 +300,8 @@ defmodule Bumblebee.Text.T5 do
         Layers.shift_tokens_right(inputs["input_ids"], spec.decoder_start_token_id)
       end
 
-    decoder_embedding_name = if spec.tie_word_embeddings, do: "shared", else: "decoder"
-
     embeddings =
-      embedder(
-        decoder_input_ids,
-        inputs["decoder_input_embeddings"],
-        spec,
-        name: decoder_embedding_name
-      )
+      embedder(decoder_input_ids, inputs["decoder_input_embeddings"], spec, name: "decoder")
 
     decoder_outputs =
       decoder(
@@ -505,6 +498,7 @@ defmodule Bumblebee.Text.T5 do
   defp language_modeling_head(hidden_state, spec, opts) do
     name = opts[:name]
 
+    # TODO: Tie lm-head to word embedding as a spec option
     Layers.dense_transposed(hidden_state, spec.vocab_size,
       kernel_initializer: kernel_initializer(spec),
       name: join(name, "output")
@@ -546,11 +540,12 @@ defmodule Bumblebee.Text.T5 do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(_spec) do
+    def params_mapping(spec) do
       %{
-        "shared.token_embedding" => "shared",
-        "encoder.token_embedding" => "encoder.embed_tokens",
-        "decoder.token_embedding" => "decoder.embed_tokens",
+        "encoder.token_embedding" =>
+          if(spec.tie_word_embeddings, do: "shared", else: "encoder.embed_tokens"),
+        "decoder.token_embedding" =>
+          if(spec.tie_word_embeddings, do: "shared", else: "decoder.embed_tokens"),
         # encoder
         "encoder.blocks.{n}.ffn.dense.0_0" => "encoder.block.{n}.layer.1.DenseReluDense.wi_0",
         "encoder.blocks.{n}.ffn.dense.0_1" => "encoder.block.{n}.layer.1.DenseReluDense.wi_1",
@@ -590,7 +585,8 @@ defmodule Bumblebee.Text.T5 do
         "decoder.blocks.0.cross_attention.relative_attention_bias" =>
           "decoder.block.0.layer.1.EncDecAttention.relative_attention_bias",
         # language modeling
-        "language_modeling_head.output" => "shared"
+        "language_modeling_head.output" =>
+          if(spec.tie_word_embeddings, do: "shared", else: "lm_head")
       }
     end
   end
