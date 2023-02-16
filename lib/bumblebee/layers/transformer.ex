@@ -621,11 +621,6 @@ defmodule Bumblebee.Layers.Transformer do
       )
       |> Layers.split_heads(num_heads)
 
-    query =
-      if not scale_query?,
-        do: Axon.nx(query, &Nx.multiply(&1, Nx.sqrt(Nx.axis_size(&1, -1)))),
-        else: query
-
     key =
       key
       |> Axon.dense(inner_size,
@@ -687,7 +682,7 @@ defmodule Bumblebee.Layers.Transformer do
       end
 
     attention_weights =
-      Layers.attention_weights(query, key, attention_bias)
+      Layers.attention_weights(query, key, attention_bias, scale_query?: scale_query?)
       |> Axon.dropout(rate: dropout_rate)
       |> Layers.apply_attention_head_mask(attention_head_mask)
 

@@ -186,19 +186,31 @@ defmodule Bumblebee.Layers do
 
   @doc """
   Computes attention weights.
+
+  ## Options
+
+    * `:scale_query?` - whether to scale the query. Defaults to `true`
+
   """
-  def attention_weights(query, key, bias) do
-    Axon.layer(&attention_weights_impl/4, [query, key, bias])
+  def attention_weights(query, key, bias, opts \\ []) do
+    Axon.layer(&attention_weights_impl/4, [query, key, bias], opts)
   end
 
-  defnp attention_weights_impl(query, key, bias, _opts \\ []) do
+  defnp attention_weights_impl(query, key, bias, opts \\ []) do
+    opts = keyword!(opts, mode: :train, scale_query?: true)
+
     key = Nx.transpose(key, axes: [0, 2, 1, 3])
     query = Nx.transpose(query, axes: [0, 2, 1, 3])
 
-    depth = Nx.axis_size(query, -1)
-    scaled_query = query / Nx.sqrt(depth)
+    query =
+      if opts[:scale_query?] do
+        depth = Nx.axis_size(query, -1)
+        query / Nx.sqrt(depth)
+      else
+        query
+      end
 
-    weights = Nx.dot(scaled_query, [3], [0, 1], key, [3], [0, 1])
+    weights = Nx.dot(query, [3], [0, 1], key, [3], [0, 1])
     weights = weights + bias
     Axon.Activations.softmax(weights, axis: -1)
   end
