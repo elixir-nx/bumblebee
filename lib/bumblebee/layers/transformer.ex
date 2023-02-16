@@ -51,7 +51,6 @@ defmodule Bumblebee.Layers.Transformer do
       :value_use_bias,
       :output_use_bias,
       :norm_placement,
-      :output_norm,
       :output_shortcut,
       :scale_query?
     ]
@@ -243,12 +242,6 @@ defmodule Bumblebee.Layers.Transformer do
       be placed before each group of layers (:first) or after each group
       of layers (:last). Defaults to `:last`
 
-    * `:output_norm` - controls whether normalization is applied on the
-      attention output at the block level. Defaults to `true`
-
-    * `:output_norm` - controls whether to apply residual connection on
-      attention output ffn at the block level. Defaults to `true`
-
     * `:relative_attention_bias` - settings for relative attention bias.
       If set, will apply relative attention bias with the given options.
       Valid options are:
@@ -301,7 +294,6 @@ defmodule Bumblebee.Layers.Transformer do
         value_use_bias: true,
         output_use_bias: true,
         norm_placement: :last,
-        output_norm: true,
         output_shortcut: true,
         scale_query?: true
       ])
@@ -331,7 +323,6 @@ defmodule Bumblebee.Layers.Transformer do
     block_cache = opts[:block_cache]
     offset = opts[:offset]
     norm_placement = opts[:norm_placement]
-    output_norm = opts[:output_norm]
     output_shortcut = opts[:output_shortcut]
     scale_query? = opts[:scale_query?]
 
@@ -462,14 +453,14 @@ defmodule Bumblebee.Layers.Transformer do
 
     hidden_state =
       hidden_state
-      |> maybe(output_norm and norm_placement == :first, fn hidden_state ->
+      |> maybe(norm_placement == :first, fn hidden_state ->
         layer_norm_fun.(hidden_state, join(name, "output_norm"))
       end)
       |> ffn_fun.(join(name, "ffn"))
       |> maybe(output_shortcut, fn hidden_state ->
         Axon.add(hidden_state, shortcut)
       end)
-      |> maybe(output_norm and norm_placement == :last, fn hidden_state ->
+      |> maybe(norm_placement == :last, fn hidden_state ->
         layer_norm_fun.(hidden_state, join(name, "output_norm"))
       end)
 

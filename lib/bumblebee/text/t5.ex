@@ -355,7 +355,6 @@ defmodule Bumblebee.Text.T5 do
         dropout_rate: spec.dropout_rate,
         layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
         norm_placement: :first,
-        output_norm: false,
         ffn: &ffn(&1, spec, name: &2),
         attention_projection_size: spec.attention_projection_size,
         output_hidden_states: spec.output_hidden_states,
@@ -415,7 +414,6 @@ defmodule Bumblebee.Text.T5 do
         attention_projection_size: spec.attention_projection_size,
         layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
         norm_placement: :first,
-        output_norm: false,
         ffn: &ffn(&1, spec, name: &2),
         output_hidden_states: spec.output_hidden_states,
         output_attentions: spec.output_attentions,
@@ -447,11 +445,9 @@ defmodule Bumblebee.Text.T5 do
   defp ffn(hidden_state, spec, opts) do
     name = opts[:name]
 
-    shortcut = hidden_state
-
-    hidden_state =
-      hidden_state
-      |> Layers.rms_norm(name: join(name, "layer_norm"), epsilon: spec.layer_norm_epsilon)
+    # There ia a normalization layer before the FFN, but the shortcut
+    # connection uses the prior state
+    shortcut = parent(hidden_state)
 
     hidden_state =
       if is_gated_act?(spec.activation) do
@@ -463,6 +459,12 @@ defmodule Bumblebee.Text.T5 do
     hidden_state
     |> Axon.dropout(rate: spec.dropout_rate)
     |> Axon.add(shortcut)
+  end
+
+  defp parent(%Axon{nodes: nodes, output: id} = axon) do
+    # TODO: use Axon.pop_node once we update Axon
+    {%{parent: [parent_id]}, nodes} = Map.pop!(nodes, id)
+    %{axon | nodes: nodes, output: parent_id}
   end
 
   defp dense_act_dense(hidden_state, spec, opts) do
@@ -547,11 +549,11 @@ defmodule Bumblebee.Text.T5 do
         "decoder.token_embedding" =>
           if(spec.tie_word_embeddings, do: "shared", else: "decoder.embed_tokens"),
         # encoder
+        "encoder.blocks.{n}.output_norm" => "encoder.block.{n}.layer.1.layer_norm",
         "encoder.blocks.{n}.ffn.dense.0_0" => "encoder.block.{n}.layer.1.DenseReluDense.wi_0",
         "encoder.blocks.{n}.ffn.dense.0_1" => "encoder.block.{n}.layer.1.DenseReluDense.wi_1",
         "encoder.blocks.{n}.ffn.dense.0" => "encoder.block.{n}.layer.1.DenseReluDense.wi",
         "encoder.blocks.{n}.ffn.dense.1" => "encoder.block.{n}.layer.1.DenseReluDense.wo",
-        "encoder.blocks.{n}.ffn.layer_norm" => "encoder.block.{n}.layer.1.layer_norm",
         "encoder.blocks.{n}.self_attention_norm" => "encoder.block.{n}.layer.0.layer_norm",
         "encoder.blocks.{n}.self_attention.key" => "encoder.block.{n}.layer.0.SelfAttention.k",
         "encoder.blocks.{n}.self_attention.query" => "encoder.block.{n}.layer.0.SelfAttention.q",
@@ -561,11 +563,11 @@ defmodule Bumblebee.Text.T5 do
           "encoder.block.0.layer.0.SelfAttention.relative_attention_bias",
         "encoder.output_norm" => "encoder.final_layer_norm",
         # decoder
+        "decoder.blocks.{n}.output_norm" => "decoder.block.{n}.layer.2.layer_norm",
         "decoder.blocks.{n}.ffn.dense.0_0" => "decoder.block.{n}.layer.2.DenseReluDense.wi_0",
         "decoder.blocks.{n}.ffn.dense.0_1" => "decoder.block.{n}.layer.2.DenseReluDense.wi_1",
         "decoder.blocks.{n}.ffn.dense.0" => "decoder.block.{n}.layer.2.DenseReluDense.wi",
         "decoder.blocks.{n}.ffn.dense.1" => "decoder.block.{n}.layer.2.DenseReluDense.wo",
-        "decoder.blocks.{n}.ffn.layer_norm" => "decoder.block.{n}.layer.2.layer_norm",
         "decoder.blocks.{n}.self_attention.key" => "decoder.block.{n}.layer.0.SelfAttention.k",
         "decoder.blocks.{n}.self_attention.query" => "decoder.block.{n}.layer.0.SelfAttention.q",
         "decoder.blocks.{n}.self_attention.value" => "decoder.block.{n}.layer.0.SelfAttention.v",
