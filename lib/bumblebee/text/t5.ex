@@ -205,6 +205,7 @@ defmodule Bumblebee.Text.T5 do
 
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
+      attention_projection_size: spec.attention_projection_size,
       decoder_num_attention_heads: spec.decoder_num_attention_heads,
       encoder_num_attention_heads: spec.encoder_num_attention_heads,
       decoder_num_blocks: spec.decoder_num_blocks,

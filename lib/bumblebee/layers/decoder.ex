@@ -35,6 +35,9 @@ defmodule Bumblebee.Layers.Decoder do
 
     * `:hidden_size` - the dimensionality of the hidden layers
 
+    * `:attention_projection_size` - the size of the key, value, and query
+      projection per attention head
+
     * `:decoder_num_blocks` - the number of Transformer blocks in the decoder
 
     * `:decoder_num_attention_heads` - the number of decoder attention heads
@@ -53,16 +56,22 @@ defmodule Bumblebee.Layers.Decoder do
     encoder_num_attention_heads = opts[:encoder_num_attention_heads]
     encoder_sequence_length = opts[:encoder_sequence_length]
 
+    decoder_head_size =
+      opts[:attention_projection_size] || div(hidden_size, decoder_num_attention_heads)
+
+    encoder_head_size =
+      opts[:attention_projection_size] || div(hidden_size, encoder_num_attention_heads)
+
     self_attention =
-      attention_cache(batch_size, max_length, hidden_size, decoder_num_attention_heads)
+      attention_cache(batch_size, max_length, decoder_num_attention_heads, decoder_head_size)
 
     cross_attention =
       if encoder_sequence_length do
         attention_cache(
           batch_size,
           encoder_sequence_length,
-          hidden_size,
-          encoder_num_attention_heads
+          encoder_num_attention_heads,
+          encoder_head_size
         )
       else
         %Axon.None{}
@@ -80,8 +89,7 @@ defmodule Bumblebee.Layers.Decoder do
     %{blocks: blocks, offset: offset, attention_mask: attention_mask}
   end
 
-  defp attention_cache(batch_size, sequence_length, hidden_size, num_heads) do
-    head_size = div(hidden_size, num_heads)
+  defp attention_cache(batch_size, sequence_length, num_heads, head_size) do
     shape = {batch_size, sequence_length, num_heads, head_size}
     zeros = Nx.broadcast(0.0, shape)
     %{key: zeros, value: zeros}
