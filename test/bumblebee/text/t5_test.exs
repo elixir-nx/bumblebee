@@ -90,17 +90,22 @@ defmodule Bumblebee.Text.T5Test do
     end
 
     test "text generation" do
-      assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google/flan-t5-small"})
-      assert {:ok, model} = Bumblebee.load_model({:hf, "google/flan-t5-small"})
+      assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "t5-small"})
+      assert {:ok, model_info} = Bumblebee.load_model({:hf, "t5-small"})
 
-      assert serving = Bumblebee.Text.generation(tokenizer, model, defn_options: [compiler: EXLA])
+      text = "translate English to German: How old are you?"
 
-      input_text = "translate English to German: How old are you?"
-      %{"input_ids" => input_ids} = Bumblebee.apply_tokenizer(tokenizer, input_text)
+      inputs = Bumblebee.apply_tokenizer(tokenizer, text)
 
-      out = Nx.Serving.run(serving, input_ids)
+      generate =
+        Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec,
+          min_length: 0,
+          max_length: 8
+        )
 
-      assert out == "<pad> Wie ich er bitten?</s>"
+      token_ids = EXLA.jit(generate).(model_info.params, inputs)
+
+      assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["Wie alt sind Sie?"]
     end
   end
 end

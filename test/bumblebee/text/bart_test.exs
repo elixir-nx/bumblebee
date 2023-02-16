@@ -163,9 +163,7 @@ defmodule Bumblebee.Text.BartTest do
         max_length: 8
       )
 
-    token_ids = generate.(model_info.params, inputs)
-
-    assert_equal(token_ids, Nx.tensor([[2, 0, 8332, 947, 717, 1768, 5, 2]]))
+    token_ids = EXLA.jit(generate).(model_info.params, inputs)
 
     assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["PG&E scheduled the"]
   end

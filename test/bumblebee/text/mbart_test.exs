@@ -172,7 +172,7 @@ defmodule Bumblebee.Text.MbartTest do
         max_length: 6
       )
 
-    token_ids = generate.(model_info.params, inputs)
+    token_ids = EXLA.jit(generate).(model_info.params, inputs)
 
     assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["42 este răspunsul"]
   end
