@@ -34,7 +34,7 @@ defmodule Bumblebee.Layers do
   """
   defn gelu_new(input, _opts \\ []) do
     0.5 * input *
-      (1.0 + Nx.tanh(Nx.sqrt(2.0 / @pi) * (input + 0.044715 * Nx.power(input, 3.0))))
+      (1.0 + Nx.tanh(Nx.sqrt(2.0 / @pi) * (input + 0.044715 * Nx.pow(input, 3.0))))
   end
 
   @doc """
@@ -273,10 +273,17 @@ defmodule Bumblebee.Layers do
 
   """
   def drop_path(%Axon{} = input, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, rate: 0.0])
+    opts = Keyword.validate!(opts, [:name, :seed, rate: 0.0])
+    seed = Keyword.get_lazy(opts, :seed, fn -> :erlang.system_time() end)
+
+    key_state =
+      Axon.param("key", fn _ -> {2} end,
+        type: {:u, 32},
+        initializer: fn _, _ -> Nx.Random.key(seed) end
+      )
 
     if opts[:rate] > 0.0 do
-      Axon.layer(&drop_path_impl/2, [input],
+      Axon.layer(&drop_path_impl/3, [input, key_state],
         name: opts[:name],
         op_name: :drop_path,
         rate: opts[:rate]
@@ -286,24 +293,32 @@ defmodule Bumblebee.Layers do
     end
   end
 
-  defnp drop_path_impl(x, opts \\ []) do
-    opts = keyword!(opts, rate: 0.0, mode: :train)
+  deftransformp drop_path_impl(x, prng_key, opts \\ []) do
+    opts = Keyword.validate!(opts, rate: 0.0, mode: :train)
+    rate = opts[:rate]
 
-    transform({x, opts[:rate], opts[:mode]}, fn
-      {x, rate, :train} when Elixir.Kernel.!=(rate, 0.0) ->
+    case opts[:mode] do
+      :train ->
         keep_prob = 1 - rate
         shape = Tuple.duplicate(1, Nx.rank(x)) |> put_elem(0, Nx.axis_size(x, 0))
 
+        {rand, next_key} = Nx.Random.uniform(prng_key, shape: shape)
+
         bernoulli_noise =
           keep_prob
-          |> Nx.add(Nx.random_uniform(shape))
+          |> Nx.add(rand)
           |> Nx.floor()
 
-        x |> Nx.divide(keep_prob) |> Nx.multiply(bernoulli_noise)
+        out =
+          x
+          |> Nx.divide(keep_prob)
+          |> Nx.multiply(bernoulli_noise)
 
-      {x, _rate, _mode} ->
+        %Axon.StatefulOutput{output: out, state: %{"key" => next_key}}
+
+      _mode ->
         x
-    end)
+    end
   end
 
   @doc """
@@ -464,38 +479,37 @@ defmodule Bumblebee.Layers do
     )
   end
 
-  defnp pixel_shuffle_impl(input, opts \\ []) do
-    opts = keyword!(opts, [:upscale_factor, mode: :inference])
+  deftransformp pixel_shuffle_impl(input, opts \\ []) do
+    opts = Keyword.validate!(opts, [:upscale_factor, mode: :inference])
+    upscale_factor = opts[:upscale_factor]
 
-    transform({input, opts[:upscale_factor]}, fn {input, upscale_factor} ->
-      {batch, [height, width, channels]} =
-        input
-        |> Nx.shape()
-        |> Tuple.to_list()
-        |> Enum.split(-3)
+    {batch, [height, width, channels]} =
+      input
+      |> Nx.shape()
+      |> Tuple.to_list()
+      |> Enum.split(-3)
 
-      out_height = height * upscale_factor
-      out_width = width * upscale_factor
-      out_channels = div(channels, upscale_factor * upscale_factor)
+    out_height = height * upscale_factor
+    out_width = width * upscale_factor
+    out_channels = div(channels, upscale_factor * upscale_factor)
 
-      x =
-        Nx.reshape(
-          input,
-          List.to_tuple(batch ++ [height, width, out_channels, upscale_factor, upscale_factor])
-        )
-
-      {batch_axes, [height_axis, width_axis, out_channels_axis, upscale_axis1, upscale_axis2]} =
-        x
-        |> Nx.axes()
-        |> Enum.split(-5)
-
-      x
-      |> Nx.transpose(
-        axes:
-          batch_axes ++ [height_axis, upscale_axis1, width_axis, upscale_axis2, out_channels_axis]
+    x =
+      Nx.reshape(
+        input,
+        List.to_tuple(batch ++ [height, width, out_channels, upscale_factor, upscale_factor])
       )
-      |> Nx.reshape(List.to_tuple(batch ++ [out_height, out_width, out_channels]))
-    end)
+
+    {batch_axes, [height_axis, width_axis, out_channels_axis, upscale_axis1, upscale_axis2]} =
+      x
+      |> Nx.axes()
+      |> Enum.split(-5)
+
+    x
+    |> Nx.transpose(
+      axes:
+        batch_axes ++ [height_axis, upscale_axis1, width_axis, upscale_axis2, out_channels_axis]
+    )
+    |> Nx.reshape(List.to_tuple(batch ++ [out_height, out_width, out_channels]))
   end
 
   @doc """

@@ -31,7 +31,7 @@ defmodule Bumblebee.Text.QuestionAnswering do
     end
 
     Nx.Serving.new(
-      fn ->
+      fn defn_options ->
         predict_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
@@ -49,7 +49,7 @@ defmodule Bumblebee.Text.QuestionAnswering do
           predict_fun.(params, inputs)
         end
       end,
-      batch_size: batch_size
+      [batch_size: batch_size] ++ defn_options
     )
     |> Nx.Serving.client_preprocessing(fn raw_input ->
       {raw_inputs, multi?} =

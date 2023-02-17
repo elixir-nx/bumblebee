@@ -52,7 +52,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
     end
 
     Nx.Serving.new(
-      fn ->
+      fn defn_options ->
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
@@ -71,7 +71,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
           Utils.Nx.composite_unflatten_batch(scores, inputs.size)
         end
       end,
-      batch_size: batch_size
+      [batch_size: batch_size] ++ defn_options
     )
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)

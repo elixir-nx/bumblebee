@@ -21,7 +21,7 @@ defmodule Bumblebee.Audio.SpeechToText do
     generate_fun = Bumblebee.Text.Generation.build_generate(model, spec, opts)
 
     Nx.Serving.new(
-      fn ->
+      fn defn_options ->
         generate_fun =
           Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
             inputs = %{
@@ -36,7 +36,7 @@ defmodule Bumblebee.Audio.SpeechToText do
           generate_fun.(params, inputs)
         end
       end,
-      batch_size: batch_size
+      [batch_size: batch_size] ++ defn_options
     )
     |> Nx.Serving.client_preprocessing(fn input ->
       {inputs, multi?} =

@@ -35,7 +35,7 @@ defmodule Bumblebee.Diffusion.SchedulerUtils do
 
       :quadratic ->
         Bumblebee.Utils.Nx.linspace(Nx.sqrt(beta_start), Nx.sqrt(beta_end), steps: num_timesteps)
-        |> Nx.power(2)
+        |> Nx.pow(2)
 
       :squared_cosine ->
         betas_for_alpha_bar(&squared_cosine_alpha_bar/1, num_timesteps: num_timesteps)

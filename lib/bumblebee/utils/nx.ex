@@ -247,22 +247,7 @@ defmodule Bumblebee.Utils.Nx do
 
   """
   defn batched_take(tensor, idx) do
-    {batch_size, axis_size, flat_shape, final_shape} =
-      transform({tensor, idx}, fn {tensor, idx} ->
-        tensor_shape = Nx.shape(tensor)
-        idx_shape = Nx.shape(idx)
-
-        unless Elixir.Kernel.==(elem(tensor_shape, 0), elem(idx_shape, 0)) do
-          raise ArgumentError,
-                "expected tensor and indices with the same leading axis size, got: #{inspect(tensor_shape)} and #{inspect(idx_shape)}"
-        end
-
-        [batch_size, axis_size | inner_sizes] = Tuple.to_list(tensor_shape)
-
-        flat_shape = List.to_tuple([batch_size * axis_size | inner_sizes])
-        final_shape = List.to_tuple(Tuple.to_list(idx_shape) ++ inner_sizes)
-        {batch_size, axis_size, flat_shape, final_shape}
-      end)
+    {batch_size, axis_size, flat_shape, final_shape} = get_batched_take_shapes(tensor, idx)
 
     flat_idx =
       idx
@@ -274,6 +259,22 @@ defmodule Bumblebee.Utils.Nx do
     |> Nx.reshape(flat_shape)
     |> Nx.take(flat_idx)
     |> Nx.reshape(final_shape)
+  end
+
+  deftransformp get_batched_take_shapes(tensor, idx) do
+    tensor_shape = Nx.shape(tensor)
+    idx_shape = Nx.shape(idx)
+
+    unless Elixir.Kernel.==(elem(tensor_shape, 0), elem(idx_shape, 0)) do
+      raise ArgumentError,
+            "expected tensor and indices with the same leading axis size, got: #{inspect(tensor_shape)} and #{inspect(idx_shape)}"
+    end
+
+    [batch_size, axis_size | inner_sizes] = Tuple.to_list(tensor_shape)
+
+    flat_shape = List.to_tuple([batch_size * axis_size | inner_sizes])
+    final_shape = List.to_tuple(Tuple.to_list(idx_shape) ++ inner_sizes)
+    {batch_size, axis_size, flat_shape, final_shape}
   end
 
   @doc """
@@ -315,7 +316,7 @@ defmodule Bumblebee.Utils.Nx do
   defnp normalize(tensor) do
     norm =
       tensor
-      |> Nx.power(2)
+      |> Nx.pow(2)
       |> Nx.sum(axes: [-1], keep_axes: true)
       |> Nx.sqrt()
 
