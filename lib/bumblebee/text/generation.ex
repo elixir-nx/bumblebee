@@ -669,7 +669,7 @@ defmodule Bumblebee.Text.Generation do
 
     vocab = Nx.iota(Nx.shape(logits), axis: -1)
     probabilities = Axon.Activations.softmax(logits)
-    next_token = Nx.Random.choice(key, vocab, probabilities)
+    next_token = Nx.Random.choice(key, vocab, probabilities, [])
 
     next_finished? = Nx.logical_or(finished?, Nx.equal(next_token, eos_token_id))
     next_token = next_token * Nx.logical_not(next_finished?) + pad_token_id * next_finished?
