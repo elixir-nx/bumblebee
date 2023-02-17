@@ -48,7 +48,7 @@ defmodule Bumblebee.Text.Generation do
     generate_fun = build_generate(model_info.model, model_info.spec, opts)
 
     Nx.Serving.new(
-      fn ->
+      fn defn_options ->
         generate_fun =
           Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
             inputs = %{
@@ -64,7 +64,7 @@ defmodule Bumblebee.Text.Generation do
           generate_fun.(params, inputs)
         end
       end,
-      batch_size: batch_size
+      [batch_size: batch_size] ++ defn_options
     )
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
@@ -121,16 +121,9 @@ defmodule Bumblebee.Text.Generation do
       (including padding). In general, prefer `:min_new_tokens`, which
       ignores the number of tokens in the prompt
 
-    * `:num_beams` - the number of beams to use in a beam search. If set
-      to 1, beam search will not be used. Defaults to `1`
-
-    * `:early_stopping` - whether to stop the beam search when at least
-      `:num_beams` sentences are finished per batch or not. Defaults to
-      `false`
-
     * `:sample` - whether or not to use random sampling. Defaults to `false`
 
-    * `:prng_key` - random key to use when sampling. Defaults to `nil`
+    * `:seed` - random seed to use when sampling. Defaults to `nil`
 
     * `:decoder_start_token_id` - the id of the initial token when
       generating from scratch, in case of encoder-decoder models
@@ -159,10 +152,8 @@ defmodule Bumblebee.Text.Generation do
         min_new_tokens: nil,
         max_length: nil,
         min_length: nil,
-        num_beams: 1,
         sample: false,
-        early_stopping: false,
-        prng_key: nil,
+        seed: nil,
         decoder_start_token_id: Map.get(spec, :decoder_start_token_id),
         bos_token_id: Map.get(spec, :bos_token_id),
         eos_token_id: Map.get(spec, :eos_token_id),
@@ -179,10 +170,8 @@ defmodule Bumblebee.Text.Generation do
     forced_eos_token_id = opts[:forced_eos_token_id]
     forced_token_ids = opts[:forced_token_ids]
 
-    num_beams = opts[:num_beams]
-    early_stopping = opts[:early_stopping]
     sample = opts[:sample]
-    prng_key = opts[:prng_key]
+    seed = opts[:seed]
 
     {max_length_fun, min_length_fun} = lazy_lengths_from_opts(opts)
 
@@ -209,10 +198,8 @@ defmodule Bumblebee.Text.Generation do
       update_inputs_fun,
       pad_token_id: pad_token_id,
       eos_token_id: eos_token_id,
-      num_beams: num_beams,
-      early_stopping: early_stopping,
       sample: sample,
-      prng_key: prng_key
+      seed: seed
     )
   end
 
@@ -398,20 +385,18 @@ defmodule Bumblebee.Text.Generation do
                   update_inputs_fun,
                   opts \\ []
                 ) do
-    {num_beams, opts} = Keyword.pop!(opts, :num_beams)
-    {early_stopping, opts} = Keyword.pop!(opts, :early_stopping)
     {sample, opts} = Keyword.pop!(opts, :sample)
-    {prng_key, opts} = Keyword.pop!(opts, :prng_key)
+    {seed, opts} = Keyword.pop!(opts, :seed)
 
     {decoder_inputs, decoder_input_ids, max_length} = prepare_inputs_fun.(inputs, params)
 
     cond do
-      sample and num_beams == 1 ->
-        prng_key = prng_key || Nx.Random.key(:erlang.system_time())
-        prng_key = Nx.backend_copy(prng_key, Nx.BinaryBackend)
+      sample ->
+        seed = seed || :erlang.system_time()
+        prng_key = Nx.Random.key(seed)
 
         sample(
-          inputs,
+          decoder_inputs,
           decoder_input_ids,
           predict_fun,
           params,
@@ -632,7 +617,7 @@ defmodule Bumblebee.Text.Generation do
   end
 
   defnp sample_condition(finished?, length, max_length) do
-    not(Nx.all(finished?) or length == max_length)
+    not (Nx.all(finished?) or length == max_length)
   end
 
   defnp sample_step(
@@ -669,16 +654,29 @@ defmodule Bumblebee.Text.Generation do
 
     vocab = Nx.iota(Nx.shape(logits), axis: -1)
     probabilities = Axon.Activations.softmax(logits)
-    next_token = Nx.Random.choice(key, vocab, probabilities, [])
+    next_token = batched_choice(key, vocab, probabilities)
 
     next_finished? = Nx.logical_or(finished?, Nx.equal(next_token, eos_token_id))
     next_token = next_token * Nx.logical_not(next_finished?) + pad_token_id * next_finished?
-    next_token = Nx.new_axis(next_token, 1)
 
     sequences = Nx.put_slice(sequences, [0, length], next_token)
     inputs = update_inputs_fun.(inputs, model_outputs, next_token)
 
     {sequences, length + 1, next_finished?, inputs, key_next}
+  end
+
+  deftransformp batched_choice(key, vocab, probabilities) do
+    {batch_size, _} = Nx.shape(vocab)
+
+    tokens =
+      for i <- 0..(batch_size - 1) do
+        candidate_tokens = vocab[[i, 0..-1//1]]
+        candidate_probs = probabilities[[i, 0..-1//1]]
+        {token, _} = Nx.Random.choice(key, candidate_tokens, candidate_probs, samples: 1)
+        Nx.new_axis(token, 0)
+      end
+
+    Nx.concatenate(tokens, axis: 0)
   end
 
   ## Beam Search

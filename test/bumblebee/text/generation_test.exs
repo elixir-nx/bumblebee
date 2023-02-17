@@ -30,15 +30,18 @@ defmodule Bumblebee.Text.GenerationTest do
         Bumblebee.Text.generation(model_info, tokenizer,
           max_new_tokens: 8,
           sample: true,
-          prng_key: Nx.Random.key(0)
+          seed: 0
         )
 
       prompt = """
       I enjoy walking with my cute dog
       """
 
-      assert %{results: [%{text: "On the field, on a field trip,"}]} =
-               Nx.Serving.run(serving, prompt)
+      assert %{
+               results: [
+                 %{text: "I enjoy walking with my cute dog\n\nThey are always there for me\n"}
+               ]
+             } = Nx.Serving.run(serving, prompt)
     end
   end
 end
