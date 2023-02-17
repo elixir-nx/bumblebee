@@ -6,7 +6,7 @@ defmodule Bumblebee.Text.GenerationTest do
   @moduletag model_test_tags()
 
   describe "integration" do
-    test "generates text" do
+    test "generates text with greedy generation" do
       {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})
 
@@ -20,6 +20,25 @@ defmodule Bumblebee.Text.GenerationTest do
       serving = Bumblebee.Text.generation(model_info, tokenizer, max_new_tokens: 8)
 
       assert %{results: [%{text: "PG&E scheduled the black"}]} = Nx.Serving.run(serving, article)
+    end
+
+    test "generates text with sampling" do
+      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+
+      serving =
+        Bumblebee.Text.generation(model_info, tokenizer,
+          max_new_tokens: 8,
+          sample: true,
+          prng_key: Nx.Random.key(0)
+        )
+
+      prompt = """
+      I enjoy walking with my cute dog
+      """
+
+      assert %{results: [%{text: "On the field, on a field trip,"}]} =
+               Nx.Serving.run(serving, prompt)
     end
   end
 end

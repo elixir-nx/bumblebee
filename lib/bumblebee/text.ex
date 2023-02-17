@@ -116,6 +116,17 @@ defmodule Bumblebee.Text do
     * `:min_new_tokens` - the minimum number of tokens to be generated,
       ignoring the number of tokens in the prompt
 
+    * `:num_beams` - the number of beams to use in a beam search. If set
+      to 1, beam search will not be used. Defaults to `1`
+
+    * `:early_stopping` - whether to stop the beam search when at least
+      `:num_beams` sentences are finished per batch or not. Defaults to
+      `false`
+
+    * `:sample` - whether or not to use random sampling. Defaults to `false`
+
+    * `:prng_key` - random key to use when sampling. Defaults to `nil`
+
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
       following keys:
