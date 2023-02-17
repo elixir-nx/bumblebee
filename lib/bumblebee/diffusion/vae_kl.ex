@@ -479,7 +479,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
         "decoder.input_conv" => "decoder.conv_in",
         "decoder.output_norm" => "decoder.conv_norm_out",
         "decoder.output_conv" => "decoder.conv_out",
-        # not present
+        # TODO: this is never loaded, add support for :ignored source name
         "sample" => "sample"
       }
       |> Map.merge(blocks_mapping)
