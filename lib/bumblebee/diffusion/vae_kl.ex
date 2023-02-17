@@ -392,18 +392,24 @@ defmodule Bumblebee.Diffusion.VaeKl do
         initializer: fn _, _ -> Nx.Random.key(:erlang.system_time()) end
       )
 
-    z = Axon.layer(fn mean, prng_key, opts ->
-      mode = opts[:mode]
-      case mode do
-        :train ->
-          {rand, next_key} = Nx.Random.normal(prng_key, shape: Nx.shape(mean))
-          %Axon.StatefulOutput{output: rand, state: %{"key" => next_key}}
+    z =
+      Axon.layer(
+        fn mean, prng_key, opts ->
+          mode = opts[:mode]
 
-        :inference ->
-          {rand, _next_key} = Nx.Random.normal(prng_key, shape: Nx.shape(mean))
-          rand
-      end
-    end, [posterior.mean, key_state], name: name)
+          case mode do
+            :train ->
+              {rand, next_key} = Nx.Random.normal(prng_key, shape: Nx.shape(mean))
+              %Axon.StatefulOutput{output: rand, state: %{"key" => next_key}}
+
+            :inference ->
+              {rand, _next_key} = Nx.Random.normal(prng_key, shape: Nx.shape(mean))
+              rand
+          end
+        end,
+        [posterior.mean, key_state],
+        name: name
+      )
 
     z
     |> Axon.multiply(posterior.std)
