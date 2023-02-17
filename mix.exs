@@ -30,11 +30,11 @@ defmodule Bumblebee.MixProject do
 
   defp deps do
     [
-      {:axon, "~> 0.3.1", axon_opts()},
+      {:axon, "~> 0.5", axon_opts()},
       {:tokenizers, "~> 0.2.0"},
-      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-      {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
-      {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
+      {:nx, "~> 0.5"},
+      {:exla, "~> 0.5", only: [:dev, :test]},
+      {:torchx, "~> 0.5", only: [:dev, :test]},
       {:nx_image, "~> 0.1.0"},
       {:unpickler, "~> 0.1.0"},
       {:castore, "~> 0.1.0"},
@@ -44,7 +44,7 @@ defmodule Bumblebee.MixProject do
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
-      {:nx_signal, github: "polvalente/nx-signal", branch: "main"}
+      {:nx_signal, "~> 0.1"}
     ]
   end
 
