@@ -154,7 +154,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
       Axon.cond(
         sample_posterior,
         &Nx.equal(&1, Nx.tensor(1)),
-        sample(posterior),
+        sample(posterior, name: "sample"),
         mode(posterior)
       )
 
@@ -383,7 +383,9 @@ defmodule Bumblebee.Diffusion.VaeKl do
     %{mean: mean, logvar: logvar, std: std, var: var}
   end
 
-  defp sample(posterior) do
+  defp sample(posterior, opts) do
+    name = opts[:name]
+
     key_state =
       Axon.param("key", fn _ -> {2} end,
         type: {:u, 32},
@@ -401,7 +403,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
           {rand, _next_key} = Nx.Random.normal(prng_key, shape: Nx.shape(mean))
           rand
       end
-    end, [posterior.mean, key_state])
+    end, [posterior.mean, key_state], name: name)
 
     z
     |> Axon.multiply(posterior.std)
@@ -470,7 +472,9 @@ defmodule Bumblebee.Diffusion.VaeKl do
         "decoder.post_quantization_conv" => "post_quant_conv",
         "decoder.input_conv" => "decoder.conv_in",
         "decoder.output_norm" => "decoder.conv_norm_out",
-        "decoder.output_conv" => "decoder.conv_out"
+        "decoder.output_conv" => "decoder.conv_out",
+        # not present
+        "sample" => "sample"
       }
       |> Map.merge(blocks_mapping)
     end
