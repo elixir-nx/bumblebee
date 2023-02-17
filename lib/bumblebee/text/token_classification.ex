@@ -53,8 +53,9 @@ defmodule Bumblebee.Text.TokenClassification do
           scores_fun.(params, inputs)
         end
       end,
-      [batch_size: batch_size] ++ defn_options
+      defn_options
     )
+    |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 

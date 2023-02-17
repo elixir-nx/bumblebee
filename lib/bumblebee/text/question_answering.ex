@@ -49,8 +49,9 @@ defmodule Bumblebee.Text.QuestionAnswering do
           predict_fun.(params, inputs)
         end
       end,
-      [batch_size: batch_size] ++ defn_options
+      defn_options
     )
+    |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn raw_input ->
       {raw_inputs, multi?} =
         Shared.validate_serving_input!(raw_input, fn
