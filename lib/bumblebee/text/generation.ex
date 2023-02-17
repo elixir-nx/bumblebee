@@ -632,7 +632,7 @@ defmodule Bumblebee.Text.Generation do
   end
 
   defnp sample_condition(finished?, length, max_length) do
-    Nx.logical_not(Nx.logical_or(Nx.all(finished?), Nx.equal(length, max_length)))
+    not(Nx.all(finished?) or length == max_length)
   end
 
   defnp sample_step(
