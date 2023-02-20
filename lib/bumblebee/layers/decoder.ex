@@ -35,7 +35,7 @@ defmodule Bumblebee.Layers.Decoder do
 
     * `:hidden_size` - the dimensionality of the hidden layers
 
-    * `:attention_projection_size` - the size of the key, value, and query
+    * `:attention_head_size` - the size of the key, value, and query
       projection per attention head
 
     * `:decoder_num_blocks` - the number of Transformer blocks in the decoder
@@ -57,10 +57,10 @@ defmodule Bumblebee.Layers.Decoder do
     encoder_sequence_length = opts[:encoder_sequence_length]
 
     decoder_head_size =
-      opts[:attention_projection_size] || div(hidden_size, decoder_num_attention_heads)
+      opts[:attention_head_size] || div(hidden_size, decoder_num_attention_heads)
 
     encoder_head_size =
-      opts[:attention_projection_size] || div(hidden_size, encoder_num_attention_heads)
+      opts[:attention_head_size] || div(hidden_size, encoder_num_attention_heads)
 
     self_attention =
       attention_cache(batch_size, max_length, decoder_num_attention_heads, decoder_head_size)

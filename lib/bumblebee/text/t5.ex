@@ -20,7 +20,7 @@ defmodule Bumblebee.Text.T5 do
         default: 512,
         doc: "the dimensionality of hidden layers"
       ],
-      attention_projection_size: [
+      attention_head_size: [
         default: 64,
         doc: "the size of the key, value, and query projection per attention head"
       ],
@@ -210,7 +210,7 @@ defmodule Bumblebee.Text.T5 do
 
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
-      attention_projection_size: spec.attention_projection_size,
+      attention_head_size: spec.attention_head_size,
       decoder_num_attention_heads: spec.decoder_num_attention_heads,
       encoder_num_attention_heads: spec.encoder_num_attention_heads,
       decoder_num_blocks: spec.decoder_num_blocks,
@@ -361,7 +361,7 @@ defmodule Bumblebee.Text.T5 do
         layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
         norm_placement: :first,
         ffn: &ffn(&1, spec, name: &2),
-        attention_projection_size: spec.attention_projection_size,
+        attention_head_size: spec.attention_head_size,
         output_hidden_states: spec.output_hidden_states,
         output_attentions: spec.output_attentions,
         query_use_bias: false,
@@ -416,7 +416,7 @@ defmodule Bumblebee.Text.T5 do
         hidden_size: spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.dropout_rate,
-        attention_projection_size: spec.attention_projection_size,
+        attention_head_size: spec.attention_head_size,
         layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
         norm_placement: :first,
         ffn: &ffn(&1, spec, name: &2),
@@ -509,7 +509,7 @@ defmodule Bumblebee.Text.T5 do
           vocab_size: {"vocab_size", number()},
           tie_word_embeddings: {"tie_word_embeddings", boolean()},
           hidden_size: {"d_model", number()},
-          attention_projection_size: {"d_kv", number()},
+          attention_head_size: {"d_kv", number()},
           encoder_num_blocks: {"num_layers", number()},
           decoder_num_blocks: {"num_decoder_layers", number()},
           encoder_num_attention_heads: {"num_heads", number()},

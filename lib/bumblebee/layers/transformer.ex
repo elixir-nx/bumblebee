@@ -43,7 +43,7 @@ defmodule Bumblebee.Layers.Transformer do
       :ffn,
       :layer_norm,
       :kernel_initializer,
-      :attention_projection_size,
+      :attention_head_size,
       :dropout_rate,
       :attention_dropout_rate,
       :query_use_bias,
@@ -206,7 +206,7 @@ defmodule Bumblebee.Layers.Transformer do
     * `:kernel_initializer` - initializer for kernel weights. Defaults
       to `:glorot_uniform`
 
-    * `:attention_projection_size` - the projection size for key, value,
+    * `:attention_head_size` - the projection size for key, value,
       and query states per-head. Defaults to `div(hidden_size, num_attention_heads)`
 
     * `:dropout_rate` - the dropout rate for dropout layers. Defaults
@@ -286,7 +286,7 @@ defmodule Bumblebee.Layers.Transformer do
         offset: Layers.none(),
         causal?: false,
         kernel_initializer: :glorot_uniform,
-        attention_projection_size: nil,
+        attention_head_size: nil,
         dropout_rate: 0.0,
         attention_dropout_rate: 0.0,
         query_use_bias: true,
@@ -306,7 +306,7 @@ defmodule Bumblebee.Layers.Transformer do
     relative_attention_bias = opts[:relative_attention_bias]
     causal? = opts[:causal?]
     kernel_initializer = opts[:kernel_initializer]
-    attention_projection_size = opts[:attention_projection_size]
+    attention_head_size = opts[:attention_head_size]
     dropout_rate = opts[:dropout_rate]
     attention_dropout_rate = opts[:attention_dropout_rate]
     query_use_bias = opts[:query_use_bias]
@@ -379,7 +379,7 @@ defmodule Bumblebee.Layers.Transformer do
         num_heads: num_attention_heads,
         hidden_size: hidden_size,
         kernel_initializer: kernel_initializer,
-        attention_projection_size: attention_projection_size,
+        attention_head_size: attention_head_size,
         dropout_rate: attention_dropout_rate,
         query_use_bias: query_use_bias,
         key_use_bias: key_use_bias,
@@ -420,7 +420,7 @@ defmodule Bumblebee.Layers.Transformer do
               num_heads: num_attention_heads,
               hidden_size: hidden_size,
               kernel_initializer: kernel_initializer,
-              attention_projection_size: attention_projection_size,
+              attention_head_size: attention_head_size,
               dropout_rate: attention_dropout_rate,
               query_use_bias: query_use_bias,
               key_use_bias: key_use_bias,
@@ -525,7 +525,7 @@ defmodule Bumblebee.Layers.Transformer do
     * `:dropout_rate` - the dropout rate for attention weights dropout.
       Defaults to `0.0`
 
-    * `:attention_projection_size` - the projection size for key, value,
+    * `:attention_head_size` - the projection size for key, value,
       and query states per-head. Defaults to `div(hidden_size, num_attention_heads)`
 
     * `:query_use_bias` - whether to use bias in the query projection.
@@ -577,7 +577,7 @@ defmodule Bumblebee.Layers.Transformer do
         scale_query?: true,
         kernel_initializer: :glorot_uniform,
         dropout_rate: 0.0,
-        attention_projection_size: nil,
+        attention_head_size: nil,
         query_use_bias: true,
         key_use_bias: true,
         value_use_bias: true,
@@ -606,8 +606,8 @@ defmodule Bumblebee.Layers.Transformer do
     relative_attention_bias = opts[:relative_attention_bias]
 
     inner_size =
-      if attention_projection_size = opts[:attention_projection_size] do
-        num_heads * attention_projection_size
+      if attention_head_size = opts[:attention_head_size] do
+        num_heads * attention_head_size
       else
         hidden_size
       end
