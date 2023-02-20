@@ -939,7 +939,7 @@ defmodule Bumblebee.Layers do
 
     variance =
       input
-      |> Nx.power(2)
+      |> Nx.pow(2)
       |> Nx.mean(axes: [opts[:channel_index]], keep_axes: true)
 
     x =
