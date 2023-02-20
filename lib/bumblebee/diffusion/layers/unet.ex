@@ -317,7 +317,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
       num_attention_heads: num_heads,
       hidden_size: hidden_size,
       layer_norm: [
-        layer_norm_epsilon: 1.0e-5
+        epsilon: 1.0e-5
       ],
       dropout_rate: dropout,
       norm_placement: :first,

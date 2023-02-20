@@ -181,17 +181,6 @@ defmodule Bumblebee.Layers.Transformer do
       should add FFN nodes to the given Axon node. The function also
       receives layer name prefix as the second argument.
 
-    * `:layer_norm` (required) - configuration of the layer norm operation
-      at the end of the transformer block. By default the network uses regular
-      layer normalization configured with the following options:
-
-      * `:layer_norm_epsilon` - the epsilon used by the layer normalization
-        layers. Defaults to `1.0e-5`
-
-      Alternatively a custom 2-arity function may be given. The function
-      should add a normalization node to the given Axon node. The function
-      also receives layer name prefix as the second argument.
-
     * `:attention_mask` - a mask indicating which positions to attend to
 
     * `:attention_head_mask` - a mask to nullify selected attention heads
@@ -237,6 +226,17 @@ defmodule Bumblebee.Layers.Transformer do
 
     * `:output_use_bias` - whether to use bias in the output projection.
       Defaults to `true`
+
+    * `:layer_norm` - configuration of the layer norm operation
+      at the end of the transformer block. By default the network uses regular
+      layer normalization configured with the following options:
+
+        * `:epsilon` - the epsilon used by the layer normalization
+          layers. Defaults to `1.0e-5`
+
+      Alternatively a custom 2-arity function may be given. The function
+      should add a normalization node to the given Axon node. The function
+      also receives layer name prefix as the second argument.
 
     * `:norm_placement` - controls whether normalization layers should
       be placed before each group of layers (:first) or after each group
@@ -346,10 +346,10 @@ defmodule Bumblebee.Layers.Transformer do
     layer_norm_fun =
       case layer_norm do
         opts when is_list(opts) ->
-          validate_required_keys!(opts, [:layer_norm_epsilon])
-          opts = Keyword.validate!(opts, [:layer_norm_epsilon])
+          validate_required_keys!(opts, [:epsilon])
+          opts = Keyword.validate!(opts, [:epsilon])
 
-          &Axon.layer_norm(&1, epsilon: opts[:layer_norm_epsilon], name: &2)
+          &Axon.layer_norm(&1, epsilon: opts[:epsilon], name: &2)
 
         fun when is_function(fun) ->
           fun
@@ -651,27 +651,26 @@ defmodule Bumblebee.Layers.Transformer do
         attention_mask
       end
 
-    {attention_bias, position_bias} =
+    attention_bias = Layers.attention_bias(attention_mask)
+
+    position_bias =
       case relative_attention_bias do
         nil ->
-          {Layers.attention_bias(attention_mask), position_bias}
+          position_bias
 
         bias_opts when is_list(bias_opts) ->
           validate_required_keys!(bias_opts, [:num_buckets, :max_distance, :bidirectional])
           bias_opts = Keyword.validate!(bias_opts, [:num_buckets, :max_distance, :bidirectional])
 
-          position_bias =
-            Layers.default position_bias do
-              Layers.relative_attention_bias(query, key, attention_cache, offset,
-                num_buckets: bias_opts[:num_buckets],
-                max_distance: bias_opts[:max_distance],
-                bidirectional: bias_opts[:bidirectional],
-                num_heads: num_heads,
-                name: join(name, "relative_attention_bias")
-              )
-            end
-
-          {Layers.attention_bias(attention_mask), position_bias}
+          Layers.default position_bias do
+            Layers.relative_attention_bias(query, key, attention_cache, offset,
+              num_buckets: bias_opts[:num_buckets],
+              max_distance: bias_opts[:max_distance],
+              bidirectional: bias_opts[:bidirectional],
+              num_heads: num_heads,
+              name: join(name, "relative_attention_bias")
+            )
+          end
       end
 
     attention_bias =

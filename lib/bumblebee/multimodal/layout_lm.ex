@@ -426,7 +426,7 @@ defmodule Bumblebee.Multimodal.LayoutLm do
       dropout_rate: spec.dropout_rate,
       attention_dropout_rate: spec.attention_dropout_rate,
       layer_norm: [
-        layer_norm_epsilon: spec.layer_norm_epsilon
+        epsilon: spec.layer_norm_epsilon
       ],
       ffn: [
         intermediate_size: spec.intermediate_size,

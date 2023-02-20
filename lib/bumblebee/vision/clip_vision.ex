@@ -196,7 +196,7 @@ defmodule Bumblebee.Vision.ClipVision do
       dropout_rate: 0.0,
       attention_dropout_rate: spec.attention_dropout_rate,
       layer_norm: [
-        layer_norm_epsilon: spec.layer_norm_epsilon
+        epsilon: spec.layer_norm_epsilon
       ],
       norm_placement: :first,
       ffn: [

@@ -551,7 +551,7 @@ defmodule Bumblebee.Text.Bart do
       dropout_rate: spec.dropout_rate,
       attention_dropout_rate: spec.attention_dropout_rate,
       layer_norm: [
-        layer_norm_epsilon: 1.0e-5
+        epsilon: 1.0e-5
       ],
       ffn: [
         intermediate_size: spec.encoder_intermediate_size,
@@ -591,7 +591,7 @@ defmodule Bumblebee.Text.Bart do
       dropout_rate: spec.dropout_rate,
       attention_dropout_rate: spec.attention_dropout_rate,
       layer_norm: [
-        layer_norm_epsilon: 1.0e-5
+        epsilon: 1.0e-5
       ],
       ffn: [
         intermediate_size: spec.decoder_intermediate_size,

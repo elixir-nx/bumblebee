@@ -427,7 +427,7 @@ defmodule Bumblebee.Audio.Whisper do
         attention_dropout_rate: spec.attention_dropout_rate,
         key_use_bias: false,
         layer_norm: [
-          layer_norm_epsilon: 1.0e-5
+          epsilon: 1.0e-5
         ],
         norm_placement: :first,
         ffn: [
@@ -476,7 +476,7 @@ defmodule Bumblebee.Audio.Whisper do
         attention_dropout_rate: spec.attention_dropout_rate,
         key_use_bias: false,
         layer_norm: [
-          layer_norm_epsilon: 1.0e-5
+          epsilon: 1.0e-5
         ],
         norm_placement: :first,
         ffn: [

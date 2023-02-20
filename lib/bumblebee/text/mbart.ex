@@ -519,7 +519,7 @@ defmodule Bumblebee.Text.Mbart do
         dropout_rate: spec.dropout_rate,
         attention_dropout_rate: spec.attention_dropout_rate,
         layer_norm: [
-          layer_norm_epsilon: 1.0e-5
+          epsilon: 1.0e-5
         ],
         norm_placement: :first,
         ffn: [
@@ -617,7 +617,7 @@ defmodule Bumblebee.Text.Mbart do
         dropout_rate: spec.dropout_rate,
         attention_dropout_rate: spec.attention_dropout_rate,
         layer_norm: [
-          layer_norm_epsilon: 1.0e-5
+          epsilon: 1.0e-5
         ],
         norm_placement: :first,
         ffn: [
