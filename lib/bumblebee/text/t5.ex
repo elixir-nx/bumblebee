@@ -368,14 +368,12 @@ defmodule Bumblebee.Text.T5 do
         key_use_bias: false,
         value_use_bias: false,
         output_use_bias: false,
-        relative_attention_bias: [
-          [
-            bidirectional: true,
-            num_buckets: spec.relative_attention_num_buckets,
-            max_distance: spec.relative_attention_max_distance
-          ]
-          | List.duplicate(nil, spec.encoder_num_blocks - 1)
+        attention_relative_bias: [
+          bidirectional: true,
+          num_buckets: spec.relative_attention_num_buckets,
+          max_distance: spec.relative_attention_max_distance
         ],
+        share_attention_relative_bias: true,
         scale_query?: false,
         output_shortcut: false,
         name: join(name, "blocks")
@@ -426,14 +424,12 @@ defmodule Bumblebee.Text.T5 do
         key_use_bias: false,
         value_use_bias: false,
         output_use_bias: false,
-        relative_attention_bias: [
-          [
-            bidirectional: false,
-            num_buckets: spec.relative_attention_num_buckets,
-            max_distance: spec.relative_attention_max_distance
-          ]
-          | List.duplicate(nil, spec.decoder_num_blocks - 1)
+        attention_relative_bias: [
+          bidirectional: false,
+          num_buckets: spec.relative_attention_num_buckets,
+          max_distance: spec.relative_attention_max_distance
         ],
+        share_attention_relative_bias: true,
         scale_query?: false,
         output_shortcut: false,
         name: join(name, "blocks")
@@ -556,6 +552,13 @@ defmodule Bumblebee.Text.T5 do
         "decoder.token_embedding" =>
           if(spec.tie_word_embeddings, do: "shared", else: "decoder.embed_tokens"),
         # encoder
+        "encoder.blocks.{n}.self_attention_norm" => "encoder.block.{n}.layer.0.layer_norm",
+        "encoder.blocks.{n}.self_attention.query" => "encoder.block.{n}.layer.0.SelfAttention.q",
+        "encoder.blocks.{n}.self_attention.key" => "encoder.block.{n}.layer.0.SelfAttention.k",
+        "encoder.blocks.{n}.self_attention.value" => "encoder.block.{n}.layer.0.SelfAttention.v",
+        "encoder.blocks.{n}.self_attention.output" => "encoder.block.{n}.layer.0.SelfAttention.o",
+        "encoder.blocks.0.self_attention.relative_attention_bias" =>
+          "encoder.block.0.layer.0.SelfAttention.relative_attention_bias",
         "encoder.blocks.{n}.output_norm" => "encoder.block.{n}.layer.1.layer_norm",
         "encoder.blocks.{n}.ffn.gate" => "encoder.block.{n}.layer.1.DenseReluDense.wi_0",
         "encoder.blocks.{n}.ffn.intermediate" =>
@@ -564,15 +567,23 @@ defmodule Bumblebee.Text.T5 do
             else: "encoder.block.{n}.layer.1.DenseReluDense.wi"
           ),
         "encoder.blocks.{n}.ffn.output" => "encoder.block.{n}.layer.1.DenseReluDense.wo",
-        "encoder.blocks.{n}.self_attention_norm" => "encoder.block.{n}.layer.0.layer_norm",
-        "encoder.blocks.{n}.self_attention.key" => "encoder.block.{n}.layer.0.SelfAttention.k",
-        "encoder.blocks.{n}.self_attention.query" => "encoder.block.{n}.layer.0.SelfAttention.q",
-        "encoder.blocks.{n}.self_attention.value" => "encoder.block.{n}.layer.0.SelfAttention.v",
-        "encoder.blocks.{n}.self_attention.output" => "encoder.block.{n}.layer.0.SelfAttention.o",
-        "encoder.blocks.0.self_attention.relative_attention_bias" =>
-          "encoder.block.0.layer.0.SelfAttention.relative_attention_bias",
         "encoder.output_norm" => "encoder.final_layer_norm",
         # decoder
+        "decoder.blocks.{n}.self_attention_norm" => "decoder.block.{n}.layer.0.layer_norm",
+        "decoder.blocks.{n}.self_attention.query" => "decoder.block.{n}.layer.0.SelfAttention.q",
+        "decoder.blocks.{n}.self_attention.key" => "decoder.block.{n}.layer.0.SelfAttention.k",
+        "decoder.blocks.{n}.self_attention.value" => "decoder.block.{n}.layer.0.SelfAttention.v",
+        "decoder.blocks.{n}.self_attention.output" => "decoder.block.{n}.layer.0.SelfAttention.o",
+        "decoder.blocks.0.self_attention.relative_attention_bias" =>
+          "decoder.block.0.layer.0.SelfAttention.relative_attention_bias",
+        "decoder.blocks.{n}.cross_attention_norm" => "decoder.block.{n}.layer.1.layer_norm",
+        "decoder.blocks.{n}.cross_attention.key" => "decoder.block.{n}.layer.1.EncDecAttention.k",
+        "decoder.blocks.{n}.cross_attention.query" =>
+          "decoder.block.{n}.layer.1.EncDecAttention.q",
+        "decoder.blocks.{n}.cross_attention.value" =>
+          "decoder.block.{n}.layer.1.EncDecAttention.v",
+        "decoder.blocks.{n}.cross_attention.output" =>
+          "decoder.block.{n}.layer.1.EncDecAttention.o",
         "decoder.blocks.{n}.output_norm" => "decoder.block.{n}.layer.2.layer_norm",
         "decoder.blocks.{n}.ffn.gate" => "decoder.block.{n}.layer.2.DenseReluDense.wi_0",
         "decoder.blocks.{n}.ffn.intermediate" =>
@@ -581,24 +592,7 @@ defmodule Bumblebee.Text.T5 do
             else: "decoder.block.{n}.layer.2.DenseReluDense.wi"
           ),
         "decoder.blocks.{n}.ffn.output" => "decoder.block.{n}.layer.2.DenseReluDense.wo",
-        "decoder.blocks.{n}.self_attention.key" => "decoder.block.{n}.layer.0.SelfAttention.k",
-        "decoder.blocks.{n}.self_attention.query" => "decoder.block.{n}.layer.0.SelfAttention.q",
-        "decoder.blocks.{n}.self_attention.value" => "decoder.block.{n}.layer.0.SelfAttention.v",
-        "decoder.blocks.{n}.self_attention.output" => "decoder.block.{n}.layer.0.SelfAttention.o",
-        "decoder.blocks.{n}.cross_attention.key" => "decoder.block.{n}.layer.1.EncDecAttention.k",
-        "decoder.blocks.{n}.cross_attention.query" =>
-          "decoder.block.{n}.layer.1.EncDecAttention.q",
-        "decoder.blocks.{n}.cross_attention.value" =>
-          "decoder.block.{n}.layer.1.EncDecAttention.v",
-        "decoder.blocks.{n}.cross_attention.output" =>
-          "decoder.block.{n}.layer.1.EncDecAttention.o",
-        "decoder.blocks.{n}.self_attention_norm" => "decoder.block.{n}.layer.0.layer_norm",
-        "decoder.blocks.{n}.cross_attention_norm" => "decoder.block.{n}.layer.1.layer_norm",
         "decoder.output_norm" => "decoder.final_layer_norm",
-        "decoder.blocks.0.self_attention.relative_attention_bias" =>
-          "decoder.block.0.layer.0.SelfAttention.relative_attention_bias",
-        "decoder.blocks.0.cross_attention.relative_attention_bias" =>
-          "decoder.block.0.layer.1.EncDecAttention.relative_attention_bias",
         # language modeling
         "language_modeling_head.output" =>
           if(spec.tie_word_embeddings, do: "shared", else: "lm_head")
