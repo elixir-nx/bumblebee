@@ -33,7 +33,7 @@ defmodule Bumblebee.Vision.ImageClassification do
     end
 
     Nx.Serving.new(
-      fn ->
+      fn defn_options ->
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
@@ -48,8 +48,9 @@ defmodule Bumblebee.Vision.ImageClassification do
           scores_fun.(params, inputs)
         end
       end,
-      batch_size: batch_size
+      defn_options
     )
+    |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       {images, multi?} = Shared.validate_serving_input!(input, &Shared.validate_image/1)
       inputs = Bumblebee.apply_featurizer(featurizer, images)
