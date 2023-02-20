@@ -402,8 +402,7 @@ defmodule Bumblebee.Text.Albert do
         name = name |> join("groups") |> join(group_idx) |> join("blocks") |> join(inner_idx)
 
         # TODO: wrap encoder block in a layer_drop combinator
-        {hidden_state, attention, _cross_attention, _block_cache, _position_bias,
-         _cross_attention_position_bias} =
+        {hidden_state, attention, _cross_attention, _block_cache, _position_bias} =
           Layers.Transformer.block(hidden_state,
             attention_mask: attention_mask,
             num_attention_heads: spec.num_attention_heads,
