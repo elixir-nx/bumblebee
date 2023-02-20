@@ -57,6 +57,11 @@ defmodule Bumblebee.Text.T5 do
         default: :relu,
         doc: "the activation function"
       ],
+      ffn_gated_activation: [
+        default: false,
+        doc:
+          "whether to use a gated variant of the activation function in the feed-forward network (FFN)"
+      ],
       dropout_rate: [
         default: 0.1,
         doc: "the dropout rate for encoder and decoder"
@@ -449,14 +454,28 @@ defmodule Bumblebee.Text.T5 do
     # connection uses the prior state
     shortcut = parent(hidden_state)
 
+    intermediate =
+      Axon.dense(hidden_state, spec.intermediate_size,
+        name: join(name, "intermediate"),
+        use_bias: false
+      )
+
     hidden_state =
-      if is_gated_act?(spec.activation) do
-        dense_gated_act_dense(hidden_state, spec, name: name)
+      if spec.ffn_gated_activation do
+        gate =
+          Axon.dense(hidden_state, spec.intermediate_size,
+            name: join(name, "gate"),
+            use_bias: false
+          )
+
+        Axon.multiply(intermediate, Layers.activation(gate, spec.activation))
       else
-        dense_act_dense(hidden_state, spec, name: name)
+        Layers.activation(intermediate, spec.activation)
       end
 
     hidden_state
+    |> Axon.dropout(rate: spec.dropout_rate)
+    |> Axon.dense(spec.hidden_size, name: join(name, "output"), use_bias: false)
     |> Axon.dropout(rate: spec.dropout_rate)
     |> Axon.add(shortcut)
   end
@@ -465,36 +484,6 @@ defmodule Bumblebee.Text.T5 do
     # TODO: use Axon.pop_node once we update Axon
     {%{parent: [parent_id]}, nodes} = Map.pop!(nodes, id)
     %{axon | nodes: nodes, output: parent_id}
-  end
-
-  defp dense_act_dense(hidden_state, spec, opts) do
-    name = opts[:name]
-
-    hidden_state
-    |> Axon.dense(spec.intermediate_size, name: join(name, "dense.0"), use_bias: false)
-    |> Layers.activation(spec.activation)
-    |> Axon.dropout(rate: spec.dropout_rate)
-    |> Axon.dense(spec.hidden_size, name: join(name, "dense.1"), use_bias: false)
-  end
-
-  defp dense_gated_act_dense(hidden_state, spec, opts) do
-    name = opts[:name]
-
-    hidden_gelu =
-      hidden_state
-      |> Axon.dense(spec.intermediate_size, name: join(name, "dense.0_0"), use_bias: false)
-      |> Layers.activation(spec.activation)
-
-    hidden_linear =
-      Axon.dense(hidden_state, spec.intermediate_size,
-        name: join(name, "dense.0_1"),
-        use_bias: false
-      )
-
-    hidden_gelu
-    |> Axon.multiply(hidden_linear)
-    |> Axon.dropout(rate: spec.dropout_rate)
-    |> Axon.dense(spec.hidden_size, name: join(name, "dense.1"), use_bias: false)
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do
@@ -509,10 +498,6 @@ defmodule Bumblebee.Text.T5 do
 
   defp kernel_initializer(spec) do
     Axon.Initializers.normal(scale: spec.initializer_scale)
-  end
-
-  defp is_gated_act?(activation) do
-    activation in [:"gated-gelu", :"gated-selu"]
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
@@ -532,12 +517,34 @@ defmodule Bumblebee.Text.T5 do
           relative_attention_num_buckets: {"relative_attention_num_buckets", number()},
           relative_attention_max_distance: {"relative_attention_max_distance", number()},
           intermediate_size: {"d_ff", number()},
-          activation: {"feed_forward_proj", atom()},
+          activation: {"feed_forward_proj", activation()},
+          ffn_gated_activation: {"feed_forward_proj", ffn_gated_activation()},
           dropout_rate: {"dropout", number()},
           initializer_scale: {"initializer_factor", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
+    end
+
+    defp activation() do
+      fn name, value ->
+        try do
+          case String.replace_prefix(value, "gated-", "") do
+            # See https://github.com/huggingface/transformers/pull/17420
+            "gelu" -> {:ok, :gelu_new}
+            value -> {:ok, String.to_atom(value)}
+          end
+        rescue
+          _error ->
+            {:error, "unsupported value for #{inspect(name)}, got: #{inspect(value)}"}
+        end
+      end
+    end
+
+    defp ffn_gated_activation() do
+      fn _name, value ->
+        {:ok, String.starts_with?(value, "gated-")}
+      end
     end
   end
 
@@ -550,10 +557,13 @@ defmodule Bumblebee.Text.T5 do
           if(spec.tie_word_embeddings, do: "shared", else: "decoder.embed_tokens"),
         # encoder
         "encoder.blocks.{n}.output_norm" => "encoder.block.{n}.layer.1.layer_norm",
-        "encoder.blocks.{n}.ffn.dense.0_0" => "encoder.block.{n}.layer.1.DenseReluDense.wi_0",
-        "encoder.blocks.{n}.ffn.dense.0_1" => "encoder.block.{n}.layer.1.DenseReluDense.wi_1",
-        "encoder.blocks.{n}.ffn.dense.0" => "encoder.block.{n}.layer.1.DenseReluDense.wi",
-        "encoder.blocks.{n}.ffn.dense.1" => "encoder.block.{n}.layer.1.DenseReluDense.wo",
+        "encoder.blocks.{n}.ffn.gate" => "encoder.block.{n}.layer.1.DenseReluDense.wi_0",
+        "encoder.blocks.{n}.ffn.intermediate" =>
+          if(spec.ffn_gated_activation,
+            do: "encoder.block.{n}.layer.1.DenseReluDense.wi_1",
+            else: "encoder.block.{n}.layer.1.DenseReluDense.wi"
+          ),
+        "encoder.blocks.{n}.ffn.output" => "encoder.block.{n}.layer.1.DenseReluDense.wo",
         "encoder.blocks.{n}.self_attention_norm" => "encoder.block.{n}.layer.0.layer_norm",
         "encoder.blocks.{n}.self_attention.key" => "encoder.block.{n}.layer.0.SelfAttention.k",
         "encoder.blocks.{n}.self_attention.query" => "encoder.block.{n}.layer.0.SelfAttention.q",
@@ -564,10 +574,13 @@ defmodule Bumblebee.Text.T5 do
         "encoder.output_norm" => "encoder.final_layer_norm",
         # decoder
         "decoder.blocks.{n}.output_norm" => "decoder.block.{n}.layer.2.layer_norm",
-        "decoder.blocks.{n}.ffn.dense.0_0" => "decoder.block.{n}.layer.2.DenseReluDense.wi_0",
-        "decoder.blocks.{n}.ffn.dense.0_1" => "decoder.block.{n}.layer.2.DenseReluDense.wi_1",
-        "decoder.blocks.{n}.ffn.dense.0" => "decoder.block.{n}.layer.2.DenseReluDense.wi",
-        "decoder.blocks.{n}.ffn.dense.1" => "decoder.block.{n}.layer.2.DenseReluDense.wo",
+        "decoder.blocks.{n}.ffn.gate" => "decoder.block.{n}.layer.2.DenseReluDense.wi_0",
+        "decoder.blocks.{n}.ffn.intermediate" =>
+          if(spec.ffn_gated_activation,
+            do: "decoder.block.{n}.layer.2.DenseReluDense.wi_1",
+            else: "decoder.block.{n}.layer.2.DenseReluDense.wi"
+          ),
+        "decoder.blocks.{n}.ffn.output" => "decoder.block.{n}.layer.2.DenseReluDense.wo",
         "decoder.blocks.{n}.self_attention.key" => "decoder.block.{n}.layer.0.SelfAttention.k",
         "decoder.blocks.{n}.self_attention.query" => "decoder.block.{n}.layer.0.SelfAttention.q",
         "decoder.blocks.{n}.self_attention.value" => "decoder.block.{n}.layer.0.SelfAttention.v",

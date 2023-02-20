@@ -3,11 +3,7 @@ defmodule Bumblebee.Layers do
 
   import Nx.Defn
 
-  @unsupported_activations %{
-    :gelu_new => :gelu_new,
-    :quick_gelu => :quick_gelu,
-    :"gated-gelu" => :gelu_new
-  }
+  @unsupported_activations [:gelu_new, :quick_gelu]
 
   @pi :math.pi()
 
@@ -26,9 +22,8 @@ defmodule Bumblebee.Layers do
     opts = Keyword.validate!(opts, [:name])
     name = opts[:name]
 
-    if Map.has_key?(@unsupported_activations, activation) do
-      act = @unsupported_activations[activation]
-      Axon.activation(input, &apply(__MODULE__, act, [&1, &2]), name: name)
+    if activation in @unsupported_activations do
+      Axon.activation(input, &apply(__MODULE__, activation, [&1, &2]), name: name)
     else
       Axon.activation(input, activation, name: name)
     end
