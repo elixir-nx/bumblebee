@@ -72,20 +72,140 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Computes attention weights.
+  Computes relative attention bias.
   """
-  def attention_weights(query, key, bias) do
-    Axon.layer(&attention_weights_impl/4, [query, key, bias])
+  def relative_attention_bias(query, key, attention_cache, offset, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [
+        :name,
+        bidirectional: true,
+        num_heads: 8,
+        num_buckets: 32,
+        max_distance: 128
+      ])
+
+    name = opts[:name]
+
+    relative_position_buckets =
+      Axon.layer(
+        &compute_relative_position_buckets/4,
+        [query, key, Axon.optional(attention_cache)],
+        bidirectional: opts[:bidirectional],
+        num_buckets: opts[:num_buckets],
+        max_distance: opts[:max_distance]
+      )
+
+    bias =
+      relative_position_buckets
+      |> Axon.embedding(opts[:num_buckets], opts[:num_heads], name: name)
+      |> Axon.transpose([2, 0, 1])
+      |> Axon.nx(&Nx.new_axis(&1, 0))
+
+    Axon.layer(
+      fn bias, query, offset, _opts ->
+        case offset do
+          %Axon.None{} ->
+            bias
+
+          offset ->
+            mask_shift = Nx.as_type(offset, {:s, 64})
+            query_length = Nx.axis_size(query, 1)
+            Nx.slice_along_axis(bias, mask_shift, query_length, axis: 2)
+        end
+      end,
+      [bias, query, Axon.optional(offset)]
+    )
   end
 
-  defnp attention_weights_impl(query, key, bias, _opts \\ []) do
+  defnp compute_relative_position_buckets(query, key, attention_cache, opts \\ []) do
+    opts = keyword!(opts, mode: :train, bidirectional: true, num_buckets: 32, max_distance: 128)
+
+    {key_length, query_length} = key_query_lengths(query, key, attention_cache)
+
+    context_position = Nx.iota({query_length, 1})
+    memory_position = Nx.iota({1, key_length})
+    relative_position = memory_position - context_position
+
+    {num_buckets, relative_buckets, relative_position} =
+      bidirectional_buckets(relative_position, opts[:num_buckets], opts[:bidirectional])
+
+    max_exact = Nx.quotient(num_buckets, 2)
+    is_small = Nx.less(relative_position, max_exact)
+
+    relative_position_if_large =
+      max_exact +
+        Nx.log(relative_position / max_exact) / Nx.log(opts[:max_distance] / max_exact) *
+          (num_buckets - max_exact)
+
+    relative_position_if_large =
+      Nx.min(
+        relative_position_if_large,
+        Nx.broadcast(num_buckets - 1, Nx.shape(relative_position_if_large))
+      )
+      |> Nx.as_type(:s64)
+
+    relative_buckets + Nx.select(is_small, relative_position, relative_position_if_large)
+  end
+
+  deftransformp key_query_lengths(query, key, attention_cache) do
+    case attention_cache do
+      %Axon.None{} ->
+        {Nx.axis_size(key, 1), Nx.axis_size(query, 1)}
+
+      attention_cache ->
+        key_length = Nx.axis_size(attention_cache.key, 1)
+        {key_length, key_length}
+    end
+  end
+
+  deftransformp bidirectional_buckets(relative_position, num_buckets, bidirectional) do
+    relative_buckets = 0
+
+    if bidirectional do
+      num_buckets = div(num_buckets, 2)
+
+      relative_buckets =
+        Nx.add(relative_buckets, Nx.multiply(Nx.greater(relative_position, 0), num_buckets))
+
+      relative_position = Nx.abs(relative_position)
+      {num_buckets, relative_buckets, relative_position}
+    else
+      relative_position =
+        relative_position
+        |> Nx.min(Nx.broadcast(0, Nx.shape(relative_position)))
+        |> Nx.negate()
+
+      {num_buckets, relative_buckets, relative_position}
+    end
+  end
+
+  @doc """
+  Computes attention weights.
+
+  ## Options
+
+    * `:scale_query?` - whether to scale the query. Defaults to `true`
+
+  """
+  def attention_weights(query, key, bias, opts \\ []) do
+    Axon.layer(&attention_weights_impl/4, [query, key, bias], opts)
+  end
+
+  defnp attention_weights_impl(query, key, bias, opts \\ []) do
+    opts = keyword!(opts, mode: :train, scale_query?: true)
+
     key = Nx.transpose(key, axes: [0, 2, 1, 3])
     query = Nx.transpose(query, axes: [0, 2, 1, 3])
 
-    depth = Nx.axis_size(query, -1)
-    scaled_query = query / Nx.sqrt(depth)
+    query =
+      if opts[:scale_query?] do
+        depth = Nx.axis_size(query, -1)
+        query / Nx.sqrt(depth)
+      else
+        query
+      end
 
-    weights = Nx.dot(scaled_query, [3], [0, 1], key, [3], [0, 1])
+    weights = Nx.dot(query, [3], [0, 1], key, [3], [0, 1])
     weights = weights + bias
     Axon.Activations.softmax(weights, axis: -1)
   end
@@ -796,5 +916,36 @@ defmodule Bumblebee.Layers do
       name: name,
       op_name: :prepend_embedding
     )
+  end
+
+  @doc """
+  Adds an RMS Normalization layer to the network.
+  """
+  # TODO: Add to Axon
+  def rms_norm(input, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [:name, channel_index: -1, epsilon: 1.0e-6, initializer: :ones])
+
+    weight =
+      Axon.param("weight", &Axon.Shape.norm_param(&1, opts[:channel_index]),
+        initializer: opts[:initializer]
+      )
+
+    Axon.layer(&rms_norm_impl/3, [input, weight], name: opts[:name], epsilon: opts[:epsilon])
+  end
+
+  defnp rms_norm_impl(input, weight, opts \\ []) do
+    opts = keyword!(opts, epsilon: 1.0e-6, channel_index: -1, mode: :train)
+
+    variance =
+      input
+      |> Nx.pow(2)
+      |> Nx.mean(axes: [opts[:channel_index]], keep_axes: true)
+
+    x =
+      input
+      |> Nx.multiply(Nx.rsqrt(variance + opts[:epsilon]))
+
+    x * weight
   end
 end

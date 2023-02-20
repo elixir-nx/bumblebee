@@ -401,7 +401,9 @@ defmodule Bumblebee.Text.Gpt2 do
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.dropout_rate,
         attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm_epsilon: spec.layer_norm_epsilon,
+        layer_norm: [
+          epsilon: spec.layer_norm_epsilon
+        ],
         norm_placement: :first,
         ffn: [
           intermediate_size: spec.intermediate_size || 4 * spec.hidden_size,

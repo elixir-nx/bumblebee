@@ -316,6 +316,9 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
       num_blocks: depth,
       num_attention_heads: num_heads,
       hidden_size: hidden_size,
+      layer_norm: [
+        epsilon: 1.0e-5
+      ],
       dropout_rate: dropout,
       norm_placement: :first,
       ffn: &ffn_geglu(&1, hidden_size, dropout: dropout, name: &2),

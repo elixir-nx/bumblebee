@@ -550,7 +550,9 @@ defmodule Bumblebee.Text.Bart do
       kernel_initializer: kernel_initializer(spec),
       dropout_rate: spec.dropout_rate,
       attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm_epsilon: 1.0e-5,
+      layer_norm: [
+        epsilon: 1.0e-5
+      ],
       ffn: [
         intermediate_size: spec.encoder_intermediate_size,
         activation: spec.activation
@@ -588,7 +590,9 @@ defmodule Bumblebee.Text.Bart do
       kernel_initializer: kernel_initializer(spec),
       dropout_rate: spec.dropout_rate,
       attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm_epsilon: 1.0e-5,
+      layer_norm: [
+        epsilon: 1.0e-5
+      ],
       ffn: [
         intermediate_size: spec.decoder_intermediate_size,
         activation: spec.activation

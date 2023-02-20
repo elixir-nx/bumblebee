@@ -402,7 +402,7 @@ defmodule Bumblebee.Text.Albert do
         name = name |> join("groups") |> join(group_idx) |> join("blocks") |> join(inner_idx)
 
         # TODO: wrap encoder block in a layer_drop combinator
-        {hidden_state, attention, _cross_attention, _block_cache} =
+        {hidden_state, attention, _cross_attention, _block_cache, _position_bias} =
           Layers.Transformer.block(hidden_state,
             attention_mask: attention_mask,
             num_attention_heads: spec.num_attention_heads,
@@ -410,7 +410,9 @@ defmodule Bumblebee.Text.Albert do
             kernel_initializer: kernel_initializer(spec),
             dropout_rate: spec.dropout_rate,
             attention_dropout_rate: spec.attention_dropout_rate,
-            layer_norm_epsilon: spec.layer_norm_epsilon,
+            layer_norm: [
+              epsilon: spec.layer_norm_epsilon
+            ],
             ffn: [
               intermediate_size: spec.intermediate_size,
               activation: spec.activation

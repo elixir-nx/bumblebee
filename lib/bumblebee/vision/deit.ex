@@ -311,7 +311,9 @@ defmodule Bumblebee.Vision.Deit do
       query_use_bias: spec.use_qkv_bias,
       key_use_bias: spec.use_qkv_bias,
       value_use_bias: spec.use_qkv_bias,
-      layer_norm_epsilon: spec.layer_norm_epsilon,
+      layer_norm: [
+        epsilon: spec.layer_norm_epsilon
+      ],
       norm_placement: :first,
       ffn: [
         intermediate_size: spec.intermediate_size,
