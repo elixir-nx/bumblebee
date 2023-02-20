@@ -45,7 +45,6 @@ defmodule Bumblebee.Layers.Transformer do
       :causal?,
       :hidden_size,
       :ffn,
-      :layer_norm,
       :kernel_initializer,
       :attention_head_size,
       :dropout_rate,
@@ -54,6 +53,7 @@ defmodule Bumblebee.Layers.Transformer do
       :key_use_bias,
       :value_use_bias,
       :output_use_bias,
+      :layer_norm,
       :norm_placement,
       :output_shortcut,
       :scale_query?
@@ -276,7 +276,6 @@ defmodule Bumblebee.Layers.Transformer do
         :num_attention_heads,
         :hidden_size,
         :ffn,
-        :layer_norm,
         attention_mask: Layers.none(),
         attention_head_mask: Layers.none(),
         attention_relative_bias: Layers.none(),
@@ -295,6 +294,7 @@ defmodule Bumblebee.Layers.Transformer do
         value_use_bias: true,
         output_use_bias: true,
         norm_placement: :last,
+        layer_norm: [],
         output_shortcut: true,
         scale_query?: true
       ])
@@ -303,7 +303,6 @@ defmodule Bumblebee.Layers.Transformer do
     num_attention_heads = opts[:num_attention_heads]
     hidden_size = opts[:hidden_size]
     ffn = opts[:ffn]
-    layer_norm = opts[:layer_norm]
     causal? = opts[:causal?]
     kernel_initializer = opts[:kernel_initializer]
     attention_head_size = opts[:attention_head_size]
@@ -321,6 +320,7 @@ defmodule Bumblebee.Layers.Transformer do
     cross_attention_head_mask = opts[:cross_attention_head_mask]
     block_cache = opts[:block_cache]
     offset = opts[:offset]
+    layer_norm = opts[:layer_norm]
     norm_placement = opts[:norm_placement]
     output_shortcut = opts[:output_shortcut]
     scale_query? = opts[:scale_query?]
@@ -345,8 +345,7 @@ defmodule Bumblebee.Layers.Transformer do
     layer_norm_fun =
       case layer_norm do
         opts when is_list(opts) ->
-          validate_required_keys!(opts, [:epsilon])
-          opts = Keyword.validate!(opts, [:epsilon])
+          opts = Keyword.validate!(opts, epsilon: 1.0e-5)
 
           &Axon.layer_norm(&1, epsilon: opts[:epsilon], name: &2)
 
