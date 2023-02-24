@@ -155,6 +155,72 @@ defmodule Bumblebee.Text do
   @spec generation(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
   defdelegate generation(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.Generation
 
+  @type conversation_input :: %{text: String.t(), history: conversation_history() | nil}
+  @type conversation_output :: %{text: String.t(), history: conversation_history()}
+
+  @type conversation_history :: list({:user | :generated, String.t()})
+
+  @doc """
+  Builds serving for conversational generation.
+
+  The serving accepts `t:conversation_input/0` and returns
+  `t:conversation_output/0`. A list of inputs is also supported.
+
+  Each call to serving returns the conversation history, which can be
+  fed into the next run to maintain the context.
+
+  Note that either `:max_new_tokens` or `:max_length` must be specified.
+
+  ## Options
+
+    * `:max_new_tokens` - the maximum number of tokens to be generated,
+      ignoring the number of tokens in the prompt
+
+    * `:min_new_tokens` - the minimum number of tokens to be generated,
+      ignoring the number of tokens in the prompt
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length.
+          Note that in this case, the whole conversation history is the
+          input, so this value should be relatively large to allow long
+          history (though the supported upper limit depends on the model)
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  Also accepts all the other options of `Bumblebee.Text.Generation.build_generate/3`.
+
+  ## Examples
+
+      {:ok, model} = Bumblebee.load_model({:hf, "microsoft/DialoGPT-medium"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+
+      serving = Bumblebee.Text.conversation(model, tokenizer, max_new_tokens: 100)
+
+      history = nil
+
+      message = "Hey!"
+      %{text: text, history: history} = Nx.Serving.run(serving, %{text: message, history: history})
+      #=> %{history: ..., text: "Hey !"}
+
+      message = "What's up?"
+      %{text: text, history: history} = Nx.Serving.run(serving, %{text: message, history: history})
+      #=> %{history: ..., text: "Not much ."}
+
+  """
+  @spec conversation(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
+  defdelegate conversation(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.Conversation
+
   @type text_classification_input :: String.t()
   @type text_classification_output :: %{predictions: list(text_classification_prediction())}
   @type text_classification_prediction :: %{score: number(), label: String.t()}
