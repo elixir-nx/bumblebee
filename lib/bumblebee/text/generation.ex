@@ -377,6 +377,14 @@ defmodule Bumblebee.Text.Generation do
                 ) do
     {decoder_inputs, decoder_input_ids, max_length} = prepare_inputs_fun.(inputs, params)
 
+    length = Nx.axis_size(decoder_input_ids, 1)
+
+    if length >= max_length do
+      raise ArgumentError,
+            "the input sequence has #{length} tokens, but max_length is set to #{max_length}." <>
+              " Consider increasing :max_new_tokens (or :max_length), or padding the input to a shorter length"
+    end
+
     greedy(
       decoder_inputs,
       decoder_input_ids,
@@ -402,10 +410,6 @@ defmodule Bumblebee.Text.Generation do
     eos_token_id = opts[:eos_token_id]
 
     {batch_size, length} = Nx.shape(decoder_input_ids)
-
-    if length > max_length do
-      raise ArgumentError, "expected the input to be at most #{max_length} tokens, got: #{length}"
-    end
 
     sequences = Nx.broadcast(pad_token_id, {batch_size, max_length})
     sequences = Nx.put_slice(sequences, [0, 0], decoder_input_ids)
