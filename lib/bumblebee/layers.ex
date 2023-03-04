@@ -3,7 +3,7 @@ defmodule Bumblebee.Layers do
 
   import Nx.Defn
 
-  @unsupported_activations [:gelu_new, :quick_gelu]
+  @unsupported_activations [:gelu_new, :quick_gelu, :swish]
 
   @pi :math.pi()
 
@@ -42,6 +42,13 @@ defmodule Bumblebee.Layers do
   """
   defn quick_gelu(input, _opts \\ []) do
     input * Nx.sigmoid(1.702 * input)
+  end
+
+  @doc """
+  Implements the Swish activation from huggingface/transformers.
+  """
+  defn swish(input, _opts) do
+    Axon.Activations.silu(input)
   end
 
   @doc """
