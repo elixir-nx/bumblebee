@@ -18,13 +18,6 @@ defmodule Bumblebee.Text.Distilbert do
         such as 512, 1024 or 2048
         """
       ],
-      max_token_types: [
-        default: 2,
-        doc: """
-        the vocabulary size of the token type embedding (also referred to as segment embedding).
-        This corresponds to how many different token groups can be distinguished in the input
-        """
-      ],
       hidden_size: [
         default: 768,
         doc: "the dimensionality of hidden layers"
@@ -520,7 +513,6 @@ defmodule Bumblebee.Text.Distilbert do
         convert!(data,
           vocab_size: {"vocab_size", number()},
           max_positions: {"max_position_embeddings", number()},
-          max_token_types: {"type_vocab_size", number()},
           hidden_size: {"hidden_size", number()},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
