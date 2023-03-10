@@ -128,17 +128,13 @@ defmodule Bumblebee.Text.Distilbert do
   The `:for_multiple_choice` model accepts groups of sequences, so the
   expected sequence shape is `{batch_size, num_choices, sequence_length}`.
 
-  The `:for_causal_language_modeling` model is a decoder and accepts
-  the following additional inputs: `"encoder_hidden_state"`,
-  `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache"`.
-
   ## Configuration
 
   #{Shared.options_doc(options)}
 
   ## References
 
-    * [BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding](https://arxiv.org/abs/1810.04805)
+    * [DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter](https://arxiv.org/abs/1910.01108)
 
   """
 
