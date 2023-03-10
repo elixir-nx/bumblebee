@@ -377,26 +377,24 @@ defmodule Bumblebee.Text.Distilbert do
 
     Layers.Transformer.blocks(
       hidden_state,
-      [
-        attention_mask: attention_mask,
-        attention_head_mask: attention_head_mask,
-        num_blocks: spec.num_blocks,
-        num_attention_heads: spec.num_attention_heads,
-        hidden_size: spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        dropout_rate: spec.dropout_rate,
-        attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm: [
-          epsilon: spec.layer_norm_epsilon
-        ],
-        ffn: [
-          intermediate_size: spec.intermediate_size,
-          activation: spec.activation
-        ],
-        output_hidden_states: spec.output_hidden_states,
-        output_attentions: spec.output_attentions,
-        name: join(name, "blocks")
-      ]
+      attention_mask: attention_mask,
+      attention_head_mask: attention_head_mask,
+      num_blocks: spec.num_blocks,
+      num_attention_heads: spec.num_attention_heads,
+      hidden_size: spec.hidden_size,
+      kernel_initializer: kernel_initializer(spec),
+      dropout_rate: spec.dropout_rate,
+      attention_dropout_rate: spec.attention_dropout_rate,
+      layer_norm: [
+        epsilon: spec.layer_norm_epsilon
+      ],
+      ffn: [
+        intermediate_size: spec.intermediate_size,
+        activation: spec.activation
+      ],
+      output_hidden_states: spec.output_hidden_states,
+      output_attentions: spec.output_attentions,
+      name: join(name, "blocks")
     )
   end
 
