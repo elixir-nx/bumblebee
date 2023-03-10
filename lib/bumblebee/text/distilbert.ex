@@ -146,7 +146,6 @@ defmodule Bumblebee.Text.Distilbert do
 
   @behaviour Bumblebee.ModelSpec
   @behaviour Bumblebee.Configurable
-  @behaviour Bumblebee.Text.Generation
 
   import Bumblebee.Utils.Model, only: [join: 2]
 
@@ -308,27 +307,9 @@ defmodule Bumblebee.Text.Distilbert do
     })
   end
 
-  @impl true
-  def init_cache(spec, batch_size, max_length, inputs) do
-    encoder_sequence_length =
-      if encoder_hidden_state = inputs["encoder_hidden_state"] do
-        Nx.axis_size(encoder_hidden_state, 1)
-      end
-
-    Layers.Decoder.init_cache(batch_size, max_length,
-      hidden_size: spec.hidden_size,
-      decoder_num_attention_heads: spec.num_attention_heads,
-      encoder_num_attention_heads: spec.num_attention_heads,
-      decoder_num_blocks: spec.num_blocks,
-      encoder_sequence_length: encoder_sequence_length
-    )
-  end
-
   defp inputs(spec, opts \\ []) do
     shape = Keyword.get(opts, :shape, {nil, nil})
-    decoder? = Keyword.get(opts, :decoder?, false)
 
-    hidden_shape = Tuple.append(shape, spec.hidden_size)
     attention_head_mask_shape = {spec.num_blocks, spec.num_attention_heads}
 
     inputs =
@@ -339,27 +320,10 @@ defmodule Bumblebee.Text.Distilbert do
         Axon.input("attention_head_mask", optional: true, shape: attention_head_mask_shape)
       ])
 
-    extra_decoder_inputs =
-      Bumblebee.Utils.Model.inputs_to_map([
-        Axon.input("encoder_hidden_state", optional: true, shape: hidden_shape),
-        Axon.input("encoder_attention_mask", optional: true, shape: shape),
-        Axon.input("cross_attention_head_mask", optional: true, shape: attention_head_mask_shape),
-        Axon.input("cache", optional: true)
-      ])
-
-    extra_decoder_inputs =
-      if decoder? do
-        extra_decoder_inputs
-      else
-        Map.new(extra_decoder_inputs, fn {name, _input} -> {name, Layers.none()} end)
-      end
-
-    Map.merge(inputs, extra_decoder_inputs)
+    inputs
   end
 
-  defp core(inputs, spec, opts \\ []) do
-    decoder? = Keyword.get(opts, :decoder?, false)
-
+  defp core(inputs, spec) do
     embeddings = embedder(inputs["input_ids"], inputs["position_ids"], spec, name: "embedder")
 
     encoder_outputs =
@@ -367,12 +331,7 @@ defmodule Bumblebee.Text.Distilbert do
         embeddings,
         inputs["attention_mask"],
         inputs["attention_head_mask"],
-        inputs["encoder_hidden_state"],
-        inputs["encoder_attention_mask"],
-        inputs["cross_attention_head_mask"],
-        inputs["cache"],
         spec,
-        decoder?: decoder?,
         name: "encoder"
       )
 
@@ -382,9 +341,7 @@ defmodule Bumblebee.Text.Distilbert do
       hidden_state: encoder_outputs.hidden_state,
       pooled_state: pooled_state,
       hidden_states: encoder_outputs.hidden_states,
-      attentions: encoder_outputs.attentions,
-      cross_attentions: encoder_outputs.cross_attentions,
-      cache: encoder_outputs.cache
+      attentions: encoder_outputs.attentions
     }
   end
 
@@ -417,25 +374,16 @@ defmodule Bumblebee.Text.Distilbert do
          hidden_state,
          attention_mask,
          attention_head_mask,
-         encoder_hidden_state,
-         encoder_attention_mask,
-         cross_attention_head_mask,
-         cache,
          spec,
          opts
        ) do
     name = opts[:name]
-    decoder? = opts[:decoder?]
-
-    cross_attention? = decoder? and spec.use_cross_attention
 
     Layers.Transformer.blocks(
       hidden_state,
       [
         attention_mask: attention_mask,
         attention_head_mask: attention_head_mask,
-        cache: cache,
-        causal?: decoder?,
         num_blocks: spec.num_blocks,
         num_attention_heads: spec.num_attention_heads,
         hidden_size: spec.hidden_size,
@@ -452,15 +400,7 @@ defmodule Bumblebee.Text.Distilbert do
         output_hidden_states: spec.output_hidden_states,
         output_attentions: spec.output_attentions,
         name: join(name, "blocks")
-      ] ++
-        if(cross_attention?,
-          do: [
-            cross_hidden_state: encoder_hidden_state,
-            cross_attention_mask: encoder_attention_mask,
-            cross_attention_head_mask: cross_attention_head_mask
-          ],
-          else: []
-        )
+      ]
     )
   end
 
@@ -545,16 +485,6 @@ defmodule Bumblebee.Text.Distilbert do
           "distilbert.transformer.layer.{n}.attention.out_lin",
         "encoder.blocks.{n}.self_attention_norm" =>
           "distilbert.transformer.layer.{n}.sa_layer_norm",
-        "encoder.blocks.{n}.cross_attention.query" =>
-          "distilbert.transformer.layer.{n}.attention.self.query",
-        "encoder.blocks.{n}.cross_attention.key" =>
-          "distilbert.transformer.layer.{n}.attention.self.key",
-        "encoder.blocks.{n}.cross_attention.value" =>
-          "distilbert.transformer.layer.{n}.attention.self.value",
-        "encoder.blocks.{n}.cross_attention.output" =>
-          "distilbert.transformer.layer.{n}.attention.output.dense",
-        "encoder.blocks.{n}.cross_attention_norm" =>
-          "distilbert.transformer.layer.{n}.attention.output.LayerNorm",
         "encoder.blocks.{n}.ffn.intermediate" => "distilbert.transformer.layer.{n}.ffn.lin1",
         "encoder.blocks.{n}.ffn.output" => "distilbert.transformer.layer.{n}.ffn.lin2",
         "encoder.blocks.{n}.output_norm" => "distilbert.transformer.layer.{n}.output_layer_norm",
