@@ -4,11 +4,11 @@
 
 ```elixir
 Mix.install([
-  {:bumblebee, "~> 0.1"},
-  {:axon, github: "elixir-nx/axon", override: true},
-  {:nx, "~> 0.4", override: true},
-  {:exla, "~> 0.4"},
-  {:explorer, "~> 0.3"}
+  {:bumblebee, "~> 0.2.0"},
+  {:axon, "~> 0.5.1"},
+  {:nx, "~> 0.5.1"},
+  {:exla, "~> 0.5.1"},
+  {:explorer, "~> 0.5.0"}
 ])
 ```
 
@@ -62,15 +62,15 @@ spec = Bumblebee.configure(spec, num_labels: 5)
 
 ```
 
-02:45:59.567 [info] TfrtCpuClient created.
+14:41:33.314 [info] TfrtCpuClient created.
 
-02:46:00.264 [debug] the following parameters were missing:
+14:41:33.820 [debug] the following parameters were missing:
 
-  * classifier.kernel
-  * classifier.bias
+  * sequence_classification_head.output.kernel
+  * sequence_classification_head.output.bias
 
 
-02:46:00.264 [debug] the following PyTorch parameters were unused:
+14:41:33.820 [debug] the following PyTorch parameters were unused:
 
   * cls.predictions.bias
   * cls.predictions.decoder.weight
@@ -95,7 +95,8 @@ spec = Bumblebee.configure(spec, num_labels: 5)
      max_input_chars_per_word: 100,
      model_type: "bpe",
      unk_token: "[UNK]"
-   ]>
+   ]>,
+   special_tokens: %{cls: "[CLS]", mask: "[MASK]", pad: "[PAD]", sep: "[SEP]", unk: "[UNK]"}
  }}
 ```
 
@@ -166,10 +167,10 @@ test_data =
 ```
 #Stream<[
   enum: #Stream<[
-    enum: #Function<73.6935098/2 in Stream.zip_with/2>,
-    funs: [#Function<3.6935098/1 in Stream.chunk_while/4>]
+    enum: #Function<73.124013645/2 in Stream.zip_with/2>,
+    funs: [#Function<3.124013645/1 in Stream.chunk_while/4>]
   ]>,
-  funs: [#Function<48.6935098/1 in Stream.map/2>]
+  funs: [#Function<48.124013645/1 in Stream.map/2>]
 ]>
 ```
 
@@ -186,7 +187,7 @@ Enum.take(train_data, 1)
   {%{
      "attention_mask" => #Nx.Tensor<
        s64[32][64]
-       EXLA.Backend<host:0, 0.247848737.3308650518.135641>
+       EXLA.Backend<host:0, 0.801663575.1558315030.66545>
        [
          [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ...],
          ...
@@ -194,7 +195,7 @@ Enum.take(train_data, 1)
      >,
      "input_ids" => #Nx.Tensor<
        s64[32][64]
-       EXLA.Backend<host:0, 0.247848737.3308650518.135640>
+       EXLA.Backend<host:0, 0.801663575.1558315030.66544>
        [
          [101, 173, 1197, 119, 2284, 2953, 3272, 1917, 178, 1440, 1111, 1107, 170, 1704, 22351, 119, 1119, 112, 188, 3505, 1105, 3123, 1106, 2037, 1106, 1443, 1217, 10063, 4404, 132, 1119, 112, 188, 1579, 1113, 1159, 1107, 3195, 1117, 4420, 132, 1119, 112, 188, 6559, 1114, ...],
          ...
@@ -202,7 +203,7 @@ Enum.take(train_data, 1)
      >,
      "token_type_ids" => #Nx.Tensor<
        s64[32][64]
-       EXLA.Backend<host:0, 0.247848737.3308650518.135642>
+       EXLA.Backend<host:0, 0.801663575.1558315030.66546>
        [
          [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...],
          ...
@@ -211,7 +212,7 @@ Enum.take(train_data, 1)
    },
    #Nx.Tensor<
      s64[32]
-     EXLA.Backend<host:0, 0.247848737.3308650513.135921>
+     EXLA.Backend<host:0, 0.801663575.1558315028.66360>
      [5, 2, 4, 4, 1, 5, 5, 1, 2, 3, 1, 1, 4, 2, 5, 5, 5, 5, 5, 5, 4, 3, 2, 5, 1, 1, 1, 2, 2, 4, 2, 2]
    >}
 ]
@@ -231,8 +232,6 @@ test_data = Enum.take(test_data, 50)
 :ok
 ```
 
-<!-- livebook:{"branch_parent_index":2} -->
-
 ## Train the model
 
 Now we can go about training the model! First, we need to extract the Axon model and parameters from the Bumblebee model map:
@@ -248,8 +247,8 @@ model
 ```
 #Axon<
   inputs: %{"attention_head_mask" => {12, 12}, "attention_mask" => {nil, nil}, "input_ids" => {nil, nil}, "position_ids" => {nil, nil}, "token_type_ids" => {nil, nil}}
-  outputs: "container_25"
-  nodes: 698
+  outputs: "container_37"
+  nodes: 790
 >
 ```
 
@@ -278,7 +277,7 @@ logits_model = Axon.nx(model, & &1.logits)
 #Axon<
   inputs: %{"attention_head_mask" => {12, 12}, "attention_mask" => {nil, nil}, "input_ids" => {nil, nil}, "position_ids" => {nil, nil}, "token_type_ids" => {nil, nil}}
   outputs: "nx_0"
-  nodes: 699
+  nodes: 791
 >
 ```
 
@@ -302,21 +301,21 @@ loop = Axon.Loop.trainer(logits_model, loss, optimizer, log: 1)
 ```
 #Axon.Loop<
   metrics: %{
-    "loss" => {#Function<10.31916781/3 in Axon.Metrics.running_average/1>,
+    "loss" => {#Function<11.3813108/3 in Axon.Metrics.running_average/1>,
      #Function<41.3316493/2 in :erl_eval.expr/6>}
   },
   handlers: %{
     completed: [],
     epoch_completed: [
-      {#Function<26.133875793/1 in Axon.Loop.log/3>,
-       #Function<5.133875793/2 in Axon.Loop.build_filter_fn/1>}
+      {#Function<27.14409478/1 in Axon.Loop.log/3>,
+       #Function<6.14409478/2 in Axon.Loop.build_filter_fn/1>}
     ],
     epoch_halted: [],
     epoch_started: [],
     halted: [],
     iteration_completed: [
-      {#Function<26.133875793/1 in Axon.Loop.log/3>,
-       #Function<64.133875793/2 in Axon.Loop.build_filter_fn/1>}
+      {#Function<27.14409478/1 in Axon.Loop.log/3>,
+       #Function<64.14409478/2 in Axon.Loop.build_filter_fn/1>}
     ],
     iteration_started: [],
     started: []
@@ -338,23 +337,23 @@ loop = Axon.Loop.metric(loop, accuracy, "accuracy")
 ```
 #Axon.Loop<
   metrics: %{
-    "accuracy" => {#Function<10.31916781/3 in Axon.Metrics.running_average/1>,
+    "accuracy" => {#Function<11.3813108/3 in Axon.Metrics.running_average/1>,
      #Function<41.3316493/2 in :erl_eval.expr/6>},
-    "loss" => {#Function<10.31916781/3 in Axon.Metrics.running_average/1>,
+    "loss" => {#Function<11.3813108/3 in Axon.Metrics.running_average/1>,
      #Function<41.3316493/2 in :erl_eval.expr/6>}
   },
   handlers: %{
     completed: [],
     epoch_completed: [
-      {#Function<26.133875793/1 in Axon.Loop.log/3>,
-       #Function<5.133875793/2 in Axon.Loop.build_filter_fn/1>}
+      {#Function<27.14409478/1 in Axon.Loop.log/3>,
+       #Function<6.14409478/2 in Axon.Loop.build_filter_fn/1>}
     ],
     epoch_halted: [],
     epoch_started: [],
     halted: [],
     iteration_completed: [
-      {#Function<26.133875793/1 in Axon.Loop.log/3>,
-       #Function<64.133875793/2 in Axon.Loop.build_filter_fn/1>}
+      {#Function<27.14409478/1 in Axon.Loop.log/3>,
+       #Function<64.14409478/2 in Axon.Loop.build_filter_fn/1>}
     ],
     iteration_started: [],
     started: []
@@ -374,25 +373,25 @@ loop = Axon.Loop.checkpoint(loop, event: :epoch_completed)
 ```
 #Axon.Loop<
   metrics: %{
-    "accuracy" => {#Function<10.31916781/3 in Axon.Metrics.running_average/1>,
+    "accuracy" => {#Function<11.3813108/3 in Axon.Metrics.running_average/1>,
      #Function<41.3316493/2 in :erl_eval.expr/6>},
-    "loss" => {#Function<10.31916781/3 in Axon.Metrics.running_average/1>,
+    "loss" => {#Function<11.3813108/3 in Axon.Metrics.running_average/1>,
      #Function<41.3316493/2 in :erl_eval.expr/6>}
   },
   handlers: %{
     completed: [],
     epoch_completed: [
-      {#Function<16.133875793/1 in Axon.Loop.checkpoint/2>,
-       #Function<5.133875793/2 in Axon.Loop.build_filter_fn/1>},
-      {#Function<26.133875793/1 in Axon.Loop.log/3>,
-       #Function<5.133875793/2 in Axon.Loop.build_filter_fn/1>}
+      {#Function<17.14409478/1 in Axon.Loop.checkpoint/2>,
+       #Function<6.14409478/2 in Axon.Loop.build_filter_fn/1>},
+      {#Function<27.14409478/1 in Axon.Loop.log/3>,
+       #Function<6.14409478/2 in Axon.Loop.build_filter_fn/1>}
     ],
     epoch_halted: [],
     epoch_started: [],
     halted: [],
     iteration_completed: [
-      {#Function<26.133875793/1 in Axon.Loop.log/3>,
-       #Function<64.133875793/2 in Axon.Loop.build_filter_fn/1>}
+      {#Function<27.14409478/1 in Axon.Loop.log/3>,
+       #Function<64.14409478/2 in Axon.Loop.build_filter_fn/1>}
     ],
     iteration_started: [],
     started: []
