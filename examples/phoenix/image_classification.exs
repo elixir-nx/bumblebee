@@ -9,12 +9,12 @@ Application.put_env(:sample, PhoenixDemo.Endpoint,
 Mix.install([
   {:plug_cowboy, "~> 2.6"},
   {:jason, "~> 1.4"},
-  {:phoenix, "~> 1.7.0-rc.0", override: true},
+  {:phoenix, "~> 1.7.0"},
   {:phoenix_live_view, "~> 0.18.3"},
   # Bumblebee and friends
-  {:bumblebee, "~> 0.1.2"},
-  {:nx, "~> 0.4.1"},
-  {:exla, "~> 0.4.1"}
+  {:bumblebee, "~> 0.2.0"},
+  {:nx, "~> 0.5.1"},
+  {:exla, "~> 0.5.1"}
 ])
 
 Application.put_env(:nx, :default_backend, EXLA.Backend)
