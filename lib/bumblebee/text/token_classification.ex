@@ -182,37 +182,33 @@ defmodule Bumblebee.Text.TokenClassification do
         if entity[:is_subword] do
           {[entity | word_group], word_entities}
         else
-          {[entity], [word_group | word_entities]}
+          {[entity], [Enum.reverse(word_group) | word_entities]}
         end
       end)
 
     [final_group | word_entities]
-    |> Enum.flat_map(&aggregate_word(&1, spec, strategy))
     |> Enum.reverse()
+    |> Enum.flat_map(fn group -> 
+      {idx, score} = aggregate_word(group, strategy)
+      label = spec.id_to_label[idx]
+      Enum.map(group, fn entity -> %{entity | label: label, score: score} end)
+    end)
   end
 
-  defp aggregate_word(group, spec, :first) do
-    [first_entity | _] = group = Enum.reverse(group)
+  defp aggregate_word([first_entity | _], :first) do
     idx = Nx.argmax(first_entity.scores) |> Nx.to_number()
     score = Nx.to_number(Nx.squeeze(first_entity.scores[[idx]]))
-    label = spec.id_to_label[idx]
-
-    group
-    |> Enum.map(fn entity -> %{entity | label: label, score: score} end)
-    |> Enum.reverse()
+    {idx, score}
   end
 
-  defp aggregate_word(group, spec, :max) do
+  defp aggregate_word(group, :max) do
     max_entity = Enum.max_by(group, &Nx.to_number(Nx.argmax(&1.scores)))
     idx = Nx.argmax(max_entity.scores) |> Nx.to_number()
     score = Nx.to_number(Nx.squeeze(max_entity.scores[[idx]]))
-    label = spec.id_to_label[idx]
-
-    group
-    |> Enum.map(fn entity -> %{entity | label: label, score: score} end)
+    {idx, score}
   end
 
-  defp aggregate_word(group, spec, :average) do
+  defp aggregate_word(group, :average) do
     scores =
       group
       |> Enum.map(& &1.scores)
@@ -221,10 +217,7 @@ defmodule Bumblebee.Text.TokenClassification do
 
     idx = Nx.argmax(scores) |> Nx.to_number()
     score = Nx.to_number(Nx.squeeze(scores[[idx]]))
-    label = spec.id_to_label[idx]
-
-    group
-    |> Enum.map(fn entity -> %{entity | label: label, score: score} end)
+    {idx, score}
   end
 
   defp group_entities([entity | entities], tokenizer) do
