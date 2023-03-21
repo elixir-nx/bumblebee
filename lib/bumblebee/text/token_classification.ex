@@ -179,7 +179,7 @@ defmodule Bumblebee.Text.TokenClassification do
   defp override_token_labels([entity | entities], spec, strategy) do
     {final_group, word_entities} =
       Enum.reduce(entities, {[entity], []}, fn entity, {word_group, word_entities} ->
-        if entity[:is_subword] do
+        if entity.is_subword do
           {[entity | word_group], word_entities}
         else
           {[entity], [Enum.reverse(word_group) | word_entities]}
