@@ -188,7 +188,7 @@ defmodule Bumblebee.Text.TokenClassification do
 
     [final_group | word_entities]
     |> Enum.reverse()
-    |> Enum.flat_map(fn group -> 
+    |> Enum.flat_map(fn group ->
       {idx, score} = aggregate_word(group, strategy)
       label = spec.id_to_label[idx]
       Enum.map(group, fn entity -> %{entity | label: label, score: score} end)
