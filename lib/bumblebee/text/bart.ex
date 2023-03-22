@@ -251,7 +251,10 @@ defmodule Bumblebee.Text.Bart do
     inputs = encoder_decoder_inputs(spec)
     outputs = core(inputs, spec)
 
-    logits = language_modeling_head(outputs.hidden_state, spec, name: "language_modeling_head")
+    logits =
+      outputs.hidden_state
+      |> language_modeling_head(spec, name: "language_modeling_head")
+      |> Axon.bias(name: "language_modeling_head.logits_bias", bias_initializer: :zeros)
 
     Layers.output(%{
       logits: logits,
@@ -685,6 +688,9 @@ defmodule Bumblebee.Text.Bart do
         "decoder.blocks.{n}.ffn.output" => "model.decoder.layers.{n}.fc2",
         "decoder.blocks.{n}.output_norm" => "model.decoder.layers.{n}.final_layer_norm",
         "language_modeling_head.output" => "model.shared",
+        "language_modeling_head.logits_bias" => %{
+          "bias" => {[{"model", "final_logits_bias"}], fn [value] -> Nx.squeeze(value) end}
+        },
         "sequence_classification_head.dense" => "classification_head.dense",
         "sequence_classification_head.output" => "classification_head.out_proj",
         "question_answering_head.output" => "qa_outputs"
