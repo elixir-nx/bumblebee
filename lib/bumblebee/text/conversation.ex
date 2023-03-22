@@ -15,7 +15,10 @@ defmodule Bumblebee.Text.Conversation do
   def conversation(model_info, tokenizer, opts \\ []) do
     %{params: params, spec: spec} = model_info
 
-    Shared.validate_architecture!(spec, [:for_causal_language_modeling])
+    Shared.validate_architecture!(spec, [
+      :for_causal_language_modeling,
+      :for_conditional_generation
+    ])
 
     {compile, opts} = Keyword.pop(opts, :compile)
     {defn_options, opts} = Keyword.pop(opts, :defn_options, [])
@@ -27,6 +30,8 @@ defmodule Bumblebee.Text.Conversation do
       raise ArgumentError,
             "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
     end
+
+    encoder_decoder? = encoder_decoder?(model_info.model)
 
     generate_fun =
       Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec, opts)
@@ -47,8 +52,15 @@ defmodule Bumblebee.Text.Conversation do
           inputs = Shared.maybe_pad(inputs, batch_size)
           sequences = generate_fun.(params, inputs)
           inputs = Nx.Defn.jit_apply(&Function.identity/1, [inputs])
-          input_length = Nx.axis_size(inputs["input_ids"], 1)
-          sequences[[0..-1//1, input_length..-1//1]]
+
+          start_idx =
+            if encoder_decoder? do
+              1
+            else
+              Nx.axis_size(inputs["input_ids"], 1)
+            end
+
+          sequences[[0..-1//1, start_idx..-1//1]]
         end
       end,
       defn_options
@@ -89,5 +101,10 @@ defmodule Bumblebee.Text.Conversation do
 
   defp validate_input(input) do
     {:error, "expected input to be a map with :text and :history, got: #{inspect(input)}"}
+  end
+
+  defp encoder_decoder?(model) do
+    inputs = Axon.get_inputs(model)
+    Map.has_key?(inputs, "input_ids") and Map.has_key?(inputs, "decoder_input_ids")
   end
 end
