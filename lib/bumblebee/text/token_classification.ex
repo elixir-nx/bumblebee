@@ -147,6 +147,14 @@ defmodule Bumblebee.Text.TokenClassification do
     |> group_entities(tokenizer)
   end
 
+  defp aggregate(entities, spec, tokenizer, strategy)
+       when strategy in [:word_max, :word_average, :word_first] do
+    entities
+    |> add_token_labels(spec)
+    |> override_token_labels(spec, strategy)
+    |> group_entities(tokenizer)
+  end
+
   defp aggregate(_, _, _, strategy) do
     raise ArgumentError,
           "unrecognized aggregation strategy #{inspect(strategy)}," <>
@@ -167,6 +175,50 @@ defmodule Bumblebee.Text.TokenClassification do
       label = spec.id_to_label[entity_idx]
       Map.merge(entity, %{label: label, score: score})
     end)
+  end
+
+  defp override_token_labels([entity | entities], spec, strategy) do
+    {final_group, word_entities} =
+      Enum.reduce(entities, {[entity], []}, fn entity, {word_group, word_entities} ->
+        if entity.is_subword do
+          {[entity | word_group], word_entities}
+        else
+          {[entity], [Enum.reverse(word_group) | word_entities]}
+        end
+      end)
+
+    [final_group | word_entities]
+    |> Enum.reverse()
+    |> Enum.flat_map(fn group ->
+      {idx, score} = aggregate_word(group, strategy)
+      label = spec.id_to_label[idx]
+      Enum.map(group, fn entity -> %{entity | label: label, score: score} end)
+    end)
+  end
+
+  defp aggregate_word([first_entity | _], :word_first) do
+    idx = Nx.argmax(first_entity.scores) |> Nx.to_number()
+    score = Nx.to_number(Nx.squeeze(first_entity.scores[[idx]]))
+    {idx, score}
+  end
+
+  defp aggregate_word(group, :word_max) do
+    max_entity = Enum.max_by(group, &Nx.to_number(Nx.argmax(&1.scores)))
+    idx = Nx.argmax(max_entity.scores) |> Nx.to_number()
+    score = Nx.to_number(Nx.squeeze(max_entity.scores[[idx]]))
+    {idx, score}
+  end
+
+  defp aggregate_word(group, :word_average) do
+    scores =
+      group
+      |> Enum.map(& &1.scores)
+      |> Nx.stack()
+      |> Nx.mean(axes: [0])
+
+    idx = Nx.argmax(scores) |> Nx.to_number()
+    score = Nx.to_number(Nx.squeeze(scores[[idx]]))
+    {idx, score}
   end
 
   defp group_entities([entity | entities], tokenizer) do
