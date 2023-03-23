@@ -192,7 +192,17 @@ defmodule Bumblebee.Text.TokenClassification do
     |> Enum.flat_map(fn group ->
       {idx, score} = aggregate_word(group, strategy)
       label = spec.id_to_label[idx]
-      Enum.map(group, fn entity -> %{entity | label: label, score: score} end)
+
+      for {entity, idx} <- Enum.with_index(group) do
+        label =
+          if idx == 0 do
+            label
+          else
+            force_inside_label(label)
+          end
+
+        %{entity | label: label, score: score}
+      end
     end)
   end
 
@@ -259,4 +269,7 @@ defmodule Bumblebee.Text.TokenClassification do
   defp parse_label("B-" <> label), do: {:b, label}
   defp parse_label("I-" <> label), do: {:i, label}
   defp parse_label(label), do: {:i, label}
+
+  defp force_inside_label("B-" <> label), do: "I-" <> label
+  defp force_inside_label(label), do: label
 end

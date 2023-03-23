@@ -70,40 +70,40 @@ defmodule Bumblebee.Text.TokenClassificationTest do
             aggregation: unquote(aggregation)
           )
 
-        text = "I went with Jane Doe to Atlanta and we talked to John Smith about Microsoft"
+        text = "I went with Janine Doe to Atlanta and we talked to John Smith about Microsoft"
 
         assert %{entities: [jane, atlanta, john, microsoft]} = Nx.Serving.run(serving, text)
 
         assert %{
                  label: "PER",
-                 score: _jane_score,
-                 phrase: "Jane Doe",
+                 score: _janine_score,
+                 phrase: "Janine Doe",
                  start: 12,
-                 end: 20
+                 end: 22
                } = jane
 
         assert %{
                  label: "LOC",
                  score: _atlanta_score,
                  phrase: "Atlanta",
-                 start: 24,
-                 end: 31
+                 start: 26,
+                 end: 33
                } = atlanta
 
         assert %{
                  label: "PER",
                  score: _john_score,
                  phrase: "John Smith",
-                 start: 49,
-                 end: 59
+                 start: 51,
+                 end: 61
                } = john
 
         assert %{
                  label: "ORG",
                  score: _microsoft_score,
                  phrase: "Microsoft",
-                 start: 66,
-                 end: 75
+                 start: 68,
+                 end: 77
                } = microsoft
       end
     end
@@ -118,7 +118,7 @@ defmodule Bumblebee.Text.TokenClassificationTest do
         )
 
       texts = [
-        "I went with Jane Doe to Atlanta and we talked to John Smith about Microsoft",
+        "I went with Janine Doe to Atlanta and we talked to John Smith about Microsoft",
         "John went to Philadelphia"
       ]
 
