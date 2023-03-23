@@ -49,20 +49,20 @@ defmodule Bumblebee.Text do
           boundaries are respected and the prefix is omitted in the
           output labels
 
-        * `:first` - uses `:same` strategy except that word tokens
+        * `:word_first` - uses `:same` strategy except that word tokens
           cannot end up with different labels. With this strategy word
           gets the label of the first token of that word when there
           is ambiguity. Note that this works only on word based models
 
-        * `:average` - uses `:same` strategy except that word tokens
+        * `:word_average` - uses `:same` strategy except that word tokens
           cannot end up with different labels. With this strategy scores
           are averaged across word tokens and then the maximum label
           is taken. Note that this works only on word based models
 
-        * `:max` - uses `:same` strategy except that word tokens cannot
-          end up with different labels. With this strategy word gets
-          the label of the token with the maximum score. Note that this
-          works only on word based models
+        * `:word_max` - uses `:same` strategy except that word tokens
+          cannot end up with different labels. With this strategy word
+          gets the label of the token with the maximum score. Note that
+          this works only on word based models
 
     * `:ignored_labels` - the labels to ignore in the final output.
       The labels should be specified without BIO prefix. Defaults to

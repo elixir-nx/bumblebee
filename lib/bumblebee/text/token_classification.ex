@@ -147,7 +147,8 @@ defmodule Bumblebee.Text.TokenClassification do
     |> group_entities(tokenizer)
   end
 
-  defp aggregate(entities, spec, tokenizer, strategy) when strategy in [:max, :average, :first] do
+  defp aggregate(entities, spec, tokenizer, strategy)
+       when strategy in [:word_max, :word_average, :word_first] do
     entities
     |> add_token_labels(spec)
     |> override_token_labels(spec, strategy)
@@ -195,20 +196,20 @@ defmodule Bumblebee.Text.TokenClassification do
     end)
   end
 
-  defp aggregate_word([first_entity | _], :first) do
+  defp aggregate_word([first_entity | _], :word_first) do
     idx = Nx.argmax(first_entity.scores) |> Nx.to_number()
     score = Nx.to_number(Nx.squeeze(first_entity.scores[[idx]]))
     {idx, score}
   end
 
-  defp aggregate_word(group, :max) do
+  defp aggregate_word(group, :word_max) do
     max_entity = Enum.max_by(group, &Nx.to_number(Nx.argmax(&1.scores)))
     idx = Nx.argmax(max_entity.scores) |> Nx.to_number()
     score = Nx.to_number(Nx.squeeze(max_entity.scores[[idx]]))
     {idx, score}
   end
 
-  defp aggregate_word(group, :average) do
+  defp aggregate_word(group, :word_average) do
     scores =
       group
       |> Enum.map(& &1.scores)

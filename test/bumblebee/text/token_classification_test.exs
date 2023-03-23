@@ -60,7 +60,7 @@ defmodule Bumblebee.Text.TokenClassificationTest do
              } = Nx.Serving.run(serving, text)
     end
 
-    for aggregation <- [:first, :max, :average] do
+    for aggregation <- [:word_first, :word_max, :word_average] do
       test "correctly extracts entities with :#{aggregation} aggregation" do
         assert {:ok, model_info} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
         assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
