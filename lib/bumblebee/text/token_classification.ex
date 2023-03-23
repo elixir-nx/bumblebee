@@ -193,7 +193,7 @@ defmodule Bumblebee.Text.TokenClassification do
       {idx, score} = aggregate_word(group, strategy)
       label = spec.id_to_label[idx]
 
-      for {entity, idx} <- Enum.with_index(group) do
+      Enum.with_index(group, fn entity, idx ->
         label =
           if idx == 0 do
             label
@@ -202,7 +202,7 @@ defmodule Bumblebee.Text.TokenClassification do
           end
 
         %{entity | label: label, score: score}
-      end
+      end)
     end)
   end
 
