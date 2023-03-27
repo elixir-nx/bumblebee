@@ -39,12 +39,10 @@ defmodule Bumblebee.Multimodal.Clip do
       padding tokens, which are added when processing a batch of sequences
       with different length.
 
-
     * `"position_ids"` - `{batch_size, sequence_length}`
 
       Indices of positions of each input sequence tokens in the position
       embeddings.
-
 
     * `"pixel_values"` - `{batch_size, image_size, image_size, num_channels}`
 

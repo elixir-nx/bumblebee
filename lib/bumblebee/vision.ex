@@ -47,7 +47,7 @@ defmodule Bumblebee.Vision do
 
       serving = Bumblebee.Vision.image_classification(resnet, featurizer)
 
-      image = ...
+      image = StbImage.read_file!(path)
       Nx.Serving.run(serving, image)
       #=> %{
       #=>   predictions: [

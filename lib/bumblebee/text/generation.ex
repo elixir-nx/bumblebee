@@ -300,7 +300,7 @@ defmodule Bumblebee.Text.Generation do
   end
 
   defp encoder_input(inputs) do
-    inputs["input_ids"] || inputs["input_features"]
+    inputs["input_ids"] || inputs["input_features"] || inputs["pixel_values"]
   end
 
   defp prepare_decoder_inputs(inputs, prefix, spec, max_length) do

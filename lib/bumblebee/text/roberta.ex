@@ -592,15 +592,15 @@ defmodule Bumblebee.Text.Roberta do
         "encoder.blocks.{n}.self_attention_norm" =>
           "roberta.encoder.layer.{n}.attention.output.LayerNorm",
         "encoder.blocks.{n}.cross_attention.query" =>
-          "roberta.encoder.layer.{n}.attention.self.query",
+          "roberta.encoder.layer.{n}.crossattention.self.query",
         "encoder.blocks.{n}.cross_attention.key" =>
-          "roberta.encoder.layer.{n}.attention.self.key",
+          "roberta.encoder.layer.{n}.crossattention.self.key",
         "encoder.blocks.{n}.cross_attention.value" =>
-          "roberta.encoder.layer.{n}.attention.self.value",
+          "roberta.encoder.layer.{n}.crossattention.self.value",
         "encoder.blocks.{n}.cross_attention.output" =>
-          "roberta.encoder.layer.{n}.attention.output.dense",
+          "roberta.encoder.layer.{n}.crossattention.output.dense",
         "encoder.blocks.{n}.cross_attention_norm" =>
-          "roberta.encoder.layer.{n}.attention.output.LayerNorm",
+          "roberta.encoder.layer.{n}.crossattention.output.LayerNorm",
         "encoder.blocks.{n}.ffn.intermediate" => "roberta.encoder.layer.{n}.intermediate.dense",
         "encoder.blocks.{n}.ffn.output" => "roberta.encoder.layer.{n}.output.dense",
         "encoder.blocks.{n}.output_norm" => "roberta.encoder.layer.{n}.output.LayerNorm",
