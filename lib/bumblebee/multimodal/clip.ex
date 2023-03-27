@@ -81,7 +81,7 @@ defmodule Bumblebee.Multimodal.Clip do
 
     %{
       "input_ids" => Nx.template({1, 1}, :s64),
-      "pixel_values" => Nx.template(vision_shape, :s64)
+      "pixel_values" => Nx.template(vision_shape, :f32)
     }
   end
 

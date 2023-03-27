@@ -99,7 +99,7 @@ defmodule Bumblebee.Multimodal.Blip do
     vision_shape = {1, vision_spec.image_size, vision_spec.image_size, vision_spec.num_channels}
 
     %{
-      "pixel_values" => Nx.template(vision_shape, :s64),
+      "pixel_values" => Nx.template(vision_shape, :f32),
       "decoder_input_ids" => Nx.template({1, 1}, :s64)
     }
   end
