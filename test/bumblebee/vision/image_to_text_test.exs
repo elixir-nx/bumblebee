@@ -1,4 +1,4 @@
-defmodule Bumblebee.Multimodal.ImageToTextTest do
+defmodule Bumblebee.Vision.ImageToTextTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
@@ -17,7 +17,7 @@ defmodule Bumblebee.Multimodal.ImageToTextTest do
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Salesforce/blip-image-captioning-large"})
 
       serving =
-        Bumblebee.Multimodal.ImageToText.image_to_text(blip, featurizer, tokenizer,
+        Bumblebee.Vision.ImageToText.image_to_text(blip, featurizer, tokenizer,
           max_new_tokens: 100,
           defn_options: [compiler: EXLA]
         )

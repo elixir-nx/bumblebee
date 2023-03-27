@@ -1,4 +1,4 @@
-defmodule Bumblebee.Multimodal.ImageToText do
+defmodule Bumblebee.Vision.ImageToText do
   @moduledoc false
 
   alias Bumblebee.Shared
