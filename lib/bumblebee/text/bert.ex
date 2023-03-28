@@ -636,14 +636,15 @@ defmodule Bumblebee.Text.Bert do
         "encoder.blocks.{n}.self_attention_norm" =>
           "bert.encoder.layer.{n}.attention.output.LayerNorm",
         "encoder.blocks.{n}.cross_attention.query" =>
-          "bert.encoder.layer.{n}.attention.self.query",
-        "encoder.blocks.{n}.cross_attention.key" => "bert.encoder.layer.{n}.attention.self.key",
+          "bert.encoder.layer.{n}.crossattention.self.query",
+        "encoder.blocks.{n}.cross_attention.key" =>
+          "bert.encoder.layer.{n}.crossattention.self.key",
         "encoder.blocks.{n}.cross_attention.value" =>
-          "bert.encoder.layer.{n}.attention.self.value",
+          "bert.encoder.layer.{n}.crossattention.self.value",
         "encoder.blocks.{n}.cross_attention.output" =>
-          "bert.encoder.layer.{n}.attention.output.dense",
+          "bert.encoder.layer.{n}.crossattention.output.dense",
         "encoder.blocks.{n}.cross_attention_norm" =>
-          "bert.encoder.layer.{n}.attention.output.LayerNorm",
+          "bert.encoder.layer.{n}.crossattention.output.LayerNorm",
         "encoder.blocks.{n}.ffn.intermediate" => "bert.encoder.layer.{n}.intermediate.dense",
         "encoder.blocks.{n}.ffn.output" => "bert.encoder.layer.{n}.output.dense",
         "encoder.blocks.{n}.output_norm" => "bert.encoder.layer.{n}.output.LayerNorm",
