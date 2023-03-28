@@ -14,7 +14,7 @@ defmodule Bumblebee.Vision.ImageToTextTest do
       {:ok, featurizer} =
         Bumblebee.load_featurizer({:hf, "Salesforce/blip-image-captioning-base"})
 
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Salesforce/blip-image-captioning-large"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Salesforce/blip-image-captioning-base"})
 
       serving =
         Bumblebee.Vision.ImageToText.image_to_text(blip, featurizer, tokenizer,

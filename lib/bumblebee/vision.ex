@@ -106,7 +106,7 @@ defmodule Bumblebee.Vision do
 
       {:ok, blip} = Bumblebee.load_model({:hf, "Salesforce/blip-image-captioning-base"})
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "Salesforce/blip-image-captioning-base"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Salesforce/blip-image-captioning-large"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Salesforce/blip-image-captioning-base"})
 
       serving =
         Bumblebee.Multimodal.ImageToText.image_to_text(blip, featurizer, tokenizer,
