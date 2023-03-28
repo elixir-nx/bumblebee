@@ -526,15 +526,15 @@ defmodule Bumblebee.Multimodal.LayoutLm do
         "encoder.blocks.{n}.self_attention_norm" =>
           "layoutlm.encoder.layer.{n}.attention.output.LayerNorm",
         "encoder.blocks.{n}.cross_attention.query" =>
-          "layoutlm.encoder.layer.{n}.attention.self.query",
+          "layoutlm.encoder.layer.{n}.crossattention.self.query",
         "encoder.blocks.{n}.cross_attention.key" =>
-          "layoutlm.encoder.layer.{n}.attention.self.key",
+          "layoutlm.encoder.layer.{n}.crossattention.self.key",
         "encoder.blocks.{n}.cross_attention.value" =>
-          "layoutlm.encoder.layer.{n}.attention.self.value",
+          "layoutlm.encoder.layer.{n}.crossattention.self.value",
         "encoder.blocks.{n}.cross_attention.output" =>
-          "layoutlm.encoder.layer.{n}.attention.output.dense",
+          "layoutlm.encoder.layer.{n}.crossattention.output.dense",
         "encoder.blocks.{n}.cross_attention_norm" =>
-          "layoutlm.encoder.layer.{n}.attention.output.LayerNorm",
+          "layoutlm.encoder.layer.{n}.crossattention.output.LayerNorm",
         "encoder.blocks.{n}.ffn.intermediate" => "layoutlm.encoder.layer.{n}.intermediate.dense",
         "encoder.blocks.{n}.ffn.output" => "layoutlm.encoder.layer.{n}.output.dense",
         "encoder.blocks.{n}.output_norm" => "layoutlm.encoder.layer.{n}.output.LayerNorm",

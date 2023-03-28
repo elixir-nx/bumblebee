@@ -1,10 +1,10 @@
-defmodule Bumblebee.Vision.ClipVision do
+defmodule Bumblebee.Vision.BlipVision do
   alias Bumblebee.Shared
 
   options =
     [
       image_size: [
-        default: 224,
+        default: 384,
         doc: "the size of the input spatial dimensions"
       ],
       num_channels: [
@@ -12,7 +12,7 @@ defmodule Bumblebee.Vision.ClipVision do
         doc: "the number of channels in the input"
       ],
       patch_size: [
-        default: 32,
+        default: 16,
         doc: "the size of the patch spatial dimensions"
       ],
       hidden_size: [
@@ -33,7 +33,7 @@ defmodule Bumblebee.Vision.ClipVision do
           "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
       activation: [
-        default: :quick_gelu,
+        default: :gelu,
         doc: "the activation function"
       ],
       attention_dropout_rate: [
@@ -43,6 +43,11 @@ defmodule Bumblebee.Vision.ClipVision do
       layer_norm_epsilon: [
         default: 1.0e-5,
         doc: "the epsilon used by the layer normalization layers"
+      ],
+      initializer_scale: [
+        default: 0.02,
+        doc:
+          "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
     ] ++
       Shared.common_options([
@@ -51,7 +56,7 @@ defmodule Bumblebee.Vision.ClipVision do
       ])
 
   @moduledoc """
-  The CLIP model for image encoding.
+  The BLIP model for image encoding.
 
   ## Architectures
 
@@ -113,18 +118,18 @@ defmodule Bumblebee.Vision.ClipVision do
   defp core(inputs, spec) do
     embeddings = embedder(inputs["pixel_values"], spec, name: "embedder")
 
-    encoder_outputs =
-      embeddings
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: "pre_norm")
-      |> encoder(spec, name: "encoder")
+    encoder_outputs = encoder(embeddings, spec, name: "encoder")
+
+    hidden_state =
+      Axon.layer_norm(encoder_outputs.hidden_state, epsilon: spec.layer_norm_epsilon, name: "norm")
 
     pooled_state =
-      encoder_outputs.hidden_state
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: "post_norm")
+      hidden_state
       |> Layers.take_token(index: 0, axis: 1)
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: "norm")
 
     %{
-      hidden_state: encoder_outputs.hidden_state,
+      hidden_state: hidden_state,
       pooled_state: pooled_state,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions
@@ -144,10 +149,10 @@ defmodule Bumblebee.Vision.ClipVision do
 
     num_patches = div(spec.image_size, spec.patch_size) ** 2
     num_positions = num_patches + 1
-    position_ids = position_ids(num_positions)
 
     position_embeddings =
-      Axon.embedding(position_ids, num_patches + 1, spec.hidden_size,
+      Layers.learned_embeddings(num_positions, spec.hidden_size,
+        initializer: Axon.Initializers.normal(),
         name: join(name, "position_embedding")
       )
 
@@ -162,19 +167,10 @@ defmodule Bumblebee.Vision.ClipVision do
       kernel_size: spec.patch_size,
       strides: spec.patch_size,
       padding: :valid,
-      kernel_initializer: Axon.Initializers.normal(),
-      use_bias: false,
+      kernel_initializer: kernel_initializer(spec),
       name: name
     )
     |> Axon.reshape({:batch, :auto, spec.hidden_size}, name: join(name, "reshape"))
-  end
-
-  defp position_ids(num_position_ids) do
-    Axon.layer(
-      fn _opts -> Nx.iota({1, num_position_ids}) end,
-      [],
-      op_name: :position_ids
-    )
   end
 
   defp encoder(embeddings, spec, opts) do
@@ -184,7 +180,7 @@ defmodule Bumblebee.Vision.ClipVision do
       num_blocks: spec.num_blocks,
       num_attention_heads: spec.num_attention_heads,
       hidden_size: spec.hidden_size,
-      kernel_initializer: Axon.Initializers.normal(scale: 0.01),
+      kernel_initializer: kernel_initializer(spec),
       dropout_rate: 0.0,
       attention_dropout_rate: spec.attention_dropout_rate,
       layer_norm: [
@@ -201,9 +197,13 @@ defmodule Bumblebee.Vision.ClipVision do
     )
   end
 
+  defp kernel_initializer(spec) do
+    Axon.Initializers.normal(scale: spec.initializer_scale)
+  end
+
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    # Support loading from the entire Clip configuration
-    def load(spec, %{"model_type" => "clip", "vision_config" => data}) do
+    # Support loading from the entire Blip configuration
+    def load(spec, %{"model_type" => "blip", "vision_config" => data}) do
       load(spec, data)
     end
 
@@ -220,7 +220,8 @@ defmodule Bumblebee.Vision.ClipVision do
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", atom()},
           attention_dropout_rate: {"attention_dropout", number()},
-          layer_norm_epsilon: {"layer_norm_eps", number()}
+          layer_norm_epsilon: {"layer_norm_eps", number()},
+          initializer_scale: {"initializer_range", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -234,24 +235,52 @@ defmodule Bumblebee.Vision.ClipVision do
         "embedder.class_embedding" => %{
           "embedding" => {
             [{"vision_model.embeddings", "class_embedding"}],
-            fn [value] -> value end
+            fn [value] -> Nx.squeeze(value, axes: [0, 1]) end
           }
         },
-        "embedder.position_embedding" => "vision_model.embeddings.position_embedding",
+        "embedder.position_embedding" => %{
+          "embeddings" =>
+            {[{"vision_model.embeddings", "position_embedding"}],
+             fn [value] -> Nx.squeeze(value, axes: [0]) end}
+        },
         "encoder.blocks.{n}.self_attention_norm" => "vision_model.encoder.layers.{n}.layer_norm1",
         "encoder.blocks.{n}.self_attention.query" =>
-          "vision_model.encoder.layers.{n}.self_attn.q_proj",
+          sliced_dense("vision_model.encoder.layers.{n}.self_attn.qkv", 3, 0),
         "encoder.blocks.{n}.self_attention.key" =>
-          "vision_model.encoder.layers.{n}.self_attn.k_proj",
+          sliced_dense("vision_model.encoder.layers.{n}.self_attn.qkv", 3, 1),
         "encoder.blocks.{n}.self_attention.value" =>
-          "vision_model.encoder.layers.{n}.self_attn.v_proj",
+          sliced_dense("vision_model.encoder.layers.{n}.self_attn.qkv", 3, 2),
         "encoder.blocks.{n}.self_attention.output" =>
-          "vision_model.encoder.layers.{n}.self_attn.out_proj",
+          "vision_model.encoder.layers.{n}.self_attn.projection",
         "encoder.blocks.{n}.ffn.intermediate" => "vision_model.encoder.layers.{n}.mlp.fc1",
         "encoder.blocks.{n}.ffn.output" => "vision_model.encoder.layers.{n}.mlp.fc2",
         "encoder.blocks.{n}.output_norm" => "vision_model.encoder.layers.{n}.layer_norm2",
-        "pre_norm" => "vision_model.pre_layrnorm",
-        "post_norm" => "vision_model.post_layernorm"
+        "norm" => "vision_model.post_layernorm"
+      }
+    end
+
+    defp sliced_dense(source_layer_name, num_chunks, idx) do
+      %{
+        "kernel" => {
+          [{source_layer_name, "weight"}],
+          fn [kernel] ->
+            # Slice units
+            size = Nx.axis_size(kernel, 0)
+            step = div(size, num_chunks)
+            kernel = Nx.slice_along_axis(kernel, idx * step, step, axis: 0)
+            # Transpose the kernel
+            [out_features, in_features] = Nx.axes(kernel)
+            Nx.transpose(kernel, axes: [in_features, out_features])
+          end
+        },
+        "bias" => {
+          [{source_layer_name, "bias"}],
+          fn [bias] ->
+            size = Nx.axis_size(bias, 0)
+            step = div(size, num_chunks)
+            Nx.slice_along_axis(bias, idx * step, step)
+          end
+        }
       }
     end
   end

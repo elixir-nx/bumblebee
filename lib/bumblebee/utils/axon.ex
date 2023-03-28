@@ -123,7 +123,7 @@ defmodule Bumblebee.Utils.Axon do
 
     nodes =
       axon.nodes
-      |> Map.drop(Map.values(id_mapping))
+      |> Map.drop(Map.keys(id_mapping))
       |> Map.new(fn {id, node} ->
         {parent, :ok} =
           deep_map_reduce(node.parent, :ok, fn id, :ok ->

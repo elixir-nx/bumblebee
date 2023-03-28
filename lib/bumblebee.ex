@@ -60,6 +60,7 @@ defmodule Bumblebee do
     "BlenderbotForConditionalGeneration" =>
       {Bumblebee.Text.Blenderbot, :for_conditional_generation},
     "BlenderbotModel" => {Bumblebee.Text.Blenderbot, :base},
+    "BlipForConditionalGeneration" => {Bumblebee.Multimodal.Blip, :for_conditional_generation},
     # These models are just RoBERTa models, but the config will list them as CamemBERT
     "CamembertModel" => {Bumblebee.Text.Roberta, :base},
     "CamembertForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
@@ -141,6 +142,10 @@ defmodule Bumblebee do
     "WhisperFeatureExtractor" => Bumblebee.Audio.WhisperFeaturizer
   }
 
+  @transformers_image_processor_type_to_featurizer %{
+    "BlipImageProcessor" => Bumblebee.Vision.BlipFeaturizer
+  }
+
   @model_type_to_featurizer %{
     "convnext" => Bumblebee.Vision.ConvNextFeaturizer,
     "deit" => Bumblebee.Vision.DeitFeaturizer,
@@ -154,6 +159,7 @@ defmodule Bumblebee do
     "bart" => Bumblebee.Text.BartTokenizer,
     "bert" => Bumblebee.Text.BertTokenizer,
     "blenderbot" => Bumblebee.Text.BlenderbotTokenizer,
+    "blip" => Bumblebee.Text.BertTokenizer,
     "distilbert" => Bumblebee.Text.DistilbertTokenizer,
     "camembert" => Bumblebee.Text.CamembertTokenizer,
     "clip" => Bumblebee.Text.ClipTokenizer,
@@ -514,6 +520,17 @@ defmodule Bumblebee do
 
   defp infer_featurizer_type(%{"feature_extractor_type" => class_name}, _repository) do
     case @transformers_class_to_featurizer[class_name] do
+      nil ->
+        {:error,
+         "could not match the class name #{inspect(class_name)} to any of the supported featurizers"}
+
+      module ->
+        {:ok, module}
+    end
+  end
+
+  defp infer_featurizer_type(%{"image_processor_type" => class_name}, _repository) do
+    case @transformers_image_processor_type_to_featurizer[class_name] do
       nil ->
         {:error,
          "could not match the class name #{inspect(class_name)} to any of the supported featurizers"}
