@@ -603,8 +603,8 @@ defmodule Bumblebee.Text.Generation do
 
           batch_size = Nx.axis_size(logits, 0)
 
-          token_ids = sequences[[.., i + ngram_but_one_length]]
-          indices = Nx.stack([Nx.iota({batch_size}), token_ids], axis: -1)
+          token_id = sequences[[.., i + ngram_but_one_length]]
+          indices = Nx.stack([Nx.iota({batch_size}), token_id], axis: -1)
 
           match? = Nx.all(ngram_but_one == last_ngram_but_one, axes: [1])
           updates = Nx.select(match?, Nx.Constants.neg_infinity(), 0)
