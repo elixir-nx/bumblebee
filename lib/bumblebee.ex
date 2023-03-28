@@ -57,6 +57,9 @@ defmodule Bumblebee do
     "BertForTokenClassification" => {Bumblebee.Text.Bert, :for_token_classification},
     "BertLMHeadModel" => {Bumblebee.Text.Bert, :for_causal_language_modeling},
     "BertModel" => {Bumblebee.Text.Bert, :base},
+    "BlenderbotForConditionalGeneration" =>
+      {Bumblebee.Text.Blenderbot, :for_conditional_generation},
+    "BlenderbotModel" => {Bumblebee.Text.Blenderbot, :base},
     "BlipForConditionalGeneration" => {Bumblebee.Multimodal.Blip, :for_conditional_generation},
     # These models are just RoBERTa models, but the config will list them as CamemBERT
     "CamembertModel" => {Bumblebee.Text.Roberta, :base},
@@ -155,6 +158,7 @@ defmodule Bumblebee do
     "albert" => Bumblebee.Text.AlbertTokenizer,
     "bart" => Bumblebee.Text.BartTokenizer,
     "bert" => Bumblebee.Text.BertTokenizer,
+    "blenderbot" => Bumblebee.Text.BlenderbotTokenizer,
     "blip" => Bumblebee.Text.BertTokenizer,
     "distilbert" => Bumblebee.Text.DistilbertTokenizer,
     "camembert" => Bumblebee.Text.CamembertTokenizer,

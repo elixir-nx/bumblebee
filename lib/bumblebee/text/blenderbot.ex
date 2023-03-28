@@ -1,17 +1,17 @@
-defmodule Bumblebee.Text.Bart do
+defmodule Bumblebee.Text.Blenderbot do
   alias Bumblebee.Shared
 
   options =
     [
       vocab_size: [
-        default: 50265,
+        default: 8008,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
         """
       ],
       max_positions: [
-        default: 1024,
+        default: 128,
         doc: """
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
         length that this model can process. Typically this is set to a large value just in case,
@@ -19,32 +19,32 @@ defmodule Bumblebee.Text.Bart do
         """
       ],
       hidden_size: [
-        default: 1024,
+        default: 2560,
         doc: "the dimensionality of hidden layers"
       ],
       encoder_num_blocks: [
-        default: 12,
+        default: 2,
         doc: "the number of Transformer blocks in the encoder"
       ],
       decoder_num_blocks: [
-        default: 12,
+        default: 24,
         doc: "the number of Transformer blocks in the decoder"
       ],
       encoder_num_attention_heads: [
-        default: 16,
+        default: 32,
         doc: "the number of attention heads for each attention layer in the encoder"
       ],
       decoder_num_attention_heads: [
-        default: 16,
+        default: 32,
         doc: "the number of attention heads for each attention layer in the decoder"
       ],
       encoder_intermediate_size: [
-        default: 4096,
+        default: 10240,
         docs:
           "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
       decoder_intermediate_size: [
-        default: 4096,
+        default: 10240,
         docs:
           "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the decoder"
       ],
@@ -68,10 +68,6 @@ defmodule Bumblebee.Text.Bart do
         default: 0.0,
         doc: "the dropout rate for activations inside fully connected layers"
       ],
-      classifier_dropout_rate: [
-        default: 0.0,
-        doc: "the dropout rate for the classification head"
-      ],
       initializer_scale: [
         default: 0.02,
         doc:
@@ -80,38 +76,25 @@ defmodule Bumblebee.Text.Bart do
     ] ++
       Shared.common_options([
         :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
+        :output_attentions
       ]) ++
       Shared.token_options(
-        pad_token_id: 1,
-        bos_token_id: 0,
+        pad_token_id: 0,
+        bos_token_id: 1,
         eos_token_id: 2,
-        decoder_start_token_id: 2
-      ) ++ Shared.generation_options(forced_bos_token_id: 0, forced_eos_token_id: 2)
+        decoder_start_token_id: 1
+      ) ++ Shared.generation_options(forced_eos_token_id: 2)
 
   @moduledoc """
-  BART model family.
+  Blenderbot model family.
 
   ## Architectures
 
-    * `:base` - plain BART without any head on top
+    * `:base` - plain Blenderbot without any head on top
 
-    * `:for_causal_language_modeling` - BART with a language modeling
+    * `:for_conditional_generation` - Blenderbot with a language modeling
       head. The head returns logits for each token in the original
       sequence
-
-    * `:for_conditional_generation` - BART with a language modeling
-      head. The head returns logits for each token in the original
-      sequence
-
-    * `:for_sequence_classification` - BART with a sequence
-      classification head. The head returns logits corresponding to
-      possible classes
-
-    * `:for_question_answering` - BART with a span classification head.
-      The head returns logits for the span start and end positions
 
   ## Inputs
 
@@ -192,13 +175,6 @@ defmodule Bumblebee.Text.Bart do
       pass. The cache should be treated as opaque and initialized with
       `Bumblebee.Text.Generation.init_cache/4`.
 
-  ### Exceptions
-
-  The `:for_causal_language_modeling` model is just the decoder part and
-  accepts the following inputs instead: `"input_ids"`, `"attention_mask"`,
-  `"position_ids"`, `"attention_head_mask"`, `"input_embeddings"`, `"encoder_hidden_state"`,
-  `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache"`.
-
   ## Configuration
 
   #{Shared.options_doc(options)}
@@ -215,20 +191,11 @@ defmodule Bumblebee.Text.Bart do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(),
-    do: [
-      :base,
-      :for_causal_language_modeling,
-      :for_conditional_generation,
-      :for_sequence_classification,
-      :for_question_answering
-    ]
+  def architectures(), do: [:base, :for_conditional_generation]
 
   @impl true
   def config(spec, opts \\ []) do
-    spec
-    |> Shared.put_config_attrs(opts)
-    |> Shared.validate_label_options()
+    Shared.put_config_attrs(spec, opts)
   end
 
   @impl true
@@ -264,124 +231,6 @@ defmodule Bumblebee.Text.Bart do
       encoder_hidden_state: outputs.encoder_hidden_state,
       encoder_hidden_states: outputs.encoder_hidden_states,
       encoder_attentions: outputs.encoder_attentions,
-      cache: outputs.cache
-    })
-  end
-
-  def model(%__MODULE__{architecture: :for_sequence_classification} = spec) do
-    inputs = encoder_decoder_inputs(spec)
-    outputs = core(inputs, spec)
-
-    sentence_representation =
-      Axon.layer(
-        fn input_ids, hidden_state, _opts ->
-          eos_mask = Nx.equal(input_ids, spec.eos_token_id)
-          eos_idx = Nx.argmax(eos_mask, tie_break: :high, axis: 1)
-          Bumblebee.Utils.Nx.batched_take(hidden_state, eos_idx)
-        end,
-        [inputs["input_ids"], outputs.hidden_state]
-      )
-
-    logits =
-      sentence_representation
-      |> Axon.dropout(rate: spec.classifier_dropout_rate)
-      |> Axon.dense(spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: "sequence_classification_head.dense"
-      )
-      |> Axon.activation(:tanh)
-      |> Axon.dropout(rate: spec.classifier_dropout_rate)
-      |> Axon.dense(spec.num_labels,
-        kernel_initializer: kernel_initializer(spec),
-        name: "sequence_classification_head.output"
-      )
-
-    Layers.output(%{
-      logits: logits,
-      decoder_hidden_states: outputs.decoder_hidden_states,
-      decoder_attentions: outputs.decoder_attentions,
-      cross_attentions: outputs.cross_attentions,
-      encoder_hidden_state: outputs.encoder_hidden_state,
-      encoder_hidden_states: outputs.encoder_hidden_states,
-      encoder_attentions: outputs.encoder_attentions
-    })
-  end
-
-  def model(%__MODULE__{architecture: :for_question_answering} = spec) do
-    inputs = encoder_decoder_inputs(spec)
-    outputs = core(inputs, spec)
-
-    logits =
-      Axon.dense(outputs.hidden_state, 2,
-        kernel_initializer: kernel_initializer(spec),
-        name: "question_answering_head.output"
-      )
-
-    {start_logits, end_logits} = Layers.split_pair(logits)
-
-    Layers.output(%{
-      start_logits: start_logits,
-      end_logits: end_logits,
-      decoder_hidden_states: outputs.decoder_hidden_states,
-      decoder_attentions: outputs.decoder_attentions,
-      cross_attentions: outputs.cross_attentions,
-      encoder_hidden_state: outputs.encoder_hidden_state,
-      encoder_hidden_states: outputs.encoder_hidden_states,
-      encoder_attentions: outputs.encoder_attentions
-    })
-  end
-
-  def model(%__MODULE__{architecture: :for_causal_language_modeling} = spec) do
-    shape = {nil, nil}
-    hidden_shape = {nil, nil, spec.hidden_size}
-
-    decoder_attention_head_mask_shape =
-      {spec.decoder_num_blocks, spec.decoder_num_attention_heads}
-
-    inputs =
-      Bumblebee.Utils.Model.inputs_to_map([
-        Axon.input("input_ids", optional: true, shape: shape),
-        Axon.input("attention_mask", optional: true, shape: shape),
-        Axon.input("position_ids", optional: true, shape: shape),
-        Axon.input("attention_head_mask",
-          optional: true,
-          shape: decoder_attention_head_mask_shape
-        ),
-        Axon.input("input_embeddings", optional: true, shape: hidden_shape),
-        Axon.input("encoder_hidden_state", optional: true, shape: hidden_shape),
-        Axon.input("encoder_attention_mask", optional: true, shape: shape),
-        Axon.input("cross_attention_head_mask",
-          optional: true,
-          shape: decoder_attention_head_mask_shape
-        ),
-        Axon.input("cache", optional: true)
-      ])
-
-    embeddings =
-      embedder(inputs["input_ids"], inputs["position_ids"], inputs["input_embeddings"], spec,
-        name: "decoder_embedder"
-      )
-
-    outputs =
-      decoder(
-        embeddings,
-        inputs["attention_mask"],
-        inputs["attention_head_mask"],
-        inputs["encoder_hidden_state"],
-        inputs["encoder_attention_mask"],
-        inputs["cross_attention_head_mask"],
-        inputs["cache"],
-        spec,
-        name: "decoder"
-      )
-
-    logits = language_modeling_head(outputs.hidden_state, spec, name: "language_modeling_head")
-
-    Layers.output(%{
-      logits: logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions,
-      cross_attentions: outputs.cross_attentions,
       cache: outputs.cache
     })
   end
@@ -510,7 +359,6 @@ defmodule Bumblebee.Text.Bart do
       position_embedding(position_ids, spec, name: join(name, "position_embedding"))
 
     Axon.add([input_embeddings, position_embeddings])
-    |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "norm"))
     |> Axon.dropout(rate: spec.dropout_rate)
   end
 
@@ -532,38 +380,42 @@ defmodule Bumblebee.Text.Bart do
 
   defp position_embedding(position_ids, spec, opts) do
     name = opts[:name]
-
-    # For BART we need to offset the embeddings
-    offset = 2
-
-    position_ids
-    |> Axon.add(Axon.constant(Nx.tensor(offset)))
-    |> Axon.embedding(spec.max_positions + offset, spec.hidden_size, name: name)
+    Axon.embedding(position_ids, spec.max_positions, spec.hidden_size, name: name)
   end
 
   defp encoder(hidden_state, attention_mask, attention_head_mask, spec, opts) do
     name = opts[:name]
 
-    Layers.Transformer.blocks(hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      num_blocks: spec.encoder_num_blocks,
-      num_attention_heads: spec.encoder_num_attention_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      dropout_rate: spec.dropout_rate,
-      attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm: [
-        epsilon: 1.0e-5
-      ],
-      ffn: [
-        intermediate_size: spec.encoder_intermediate_size,
-        activation: spec.activation
-      ],
-      output_hidden_states: spec.output_hidden_states,
-      output_attentions: spec.output_attentions,
-      name: join(name, "blocks")
-    )
+    encoder_outputs =
+      Layers.Transformer.blocks(hidden_state,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        num_blocks: spec.encoder_num_blocks,
+        num_attention_heads: spec.encoder_num_attention_heads,
+        hidden_size: spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
+        dropout_rate: spec.dropout_rate,
+        attention_dropout_rate: spec.attention_dropout_rate,
+        layer_norm: [
+          epsilon: 1.0e-5
+        ],
+        norm_placement: :first,
+        ffn: [
+          intermediate_size: spec.encoder_intermediate_size,
+          activation: spec.activation
+        ],
+        output_hidden_states: spec.output_hidden_states,
+        output_attentions: spec.output_attentions,
+        name: join(name, "blocks")
+      )
+
+    hidden_state = Axon.layer_norm(encoder_outputs.hidden_state, name: join(name, "norm"))
+
+    %{
+      hidden_state: hidden_state,
+      hidden_states: Layers.append(encoder_outputs.hidden_states, hidden_state),
+      attentions: encoder_outputs.attentions
+    }
   end
 
   defp decoder(
@@ -579,31 +431,43 @@ defmodule Bumblebee.Text.Bart do
        ) do
     name = opts[:name]
 
-    Layers.Transformer.blocks(hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      cross_hidden_state: encoder_hidden_state,
-      cross_attention_mask: encoder_attention_mask,
-      cross_attention_head_mask: cross_attention_head_mask,
-      cache: cache,
-      causal?: true,
-      num_blocks: spec.decoder_num_blocks,
-      num_attention_heads: spec.decoder_num_attention_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      dropout_rate: spec.dropout_rate,
-      attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm: [
-        epsilon: 1.0e-5
-      ],
-      ffn: [
-        intermediate_size: spec.decoder_intermediate_size,
-        activation: spec.activation
-      ],
-      output_hidden_states: spec.output_hidden_states,
-      output_attentions: spec.output_attentions,
-      name: join(name, "blocks")
-    )
+    decoder_outputs =
+      Layers.Transformer.blocks(hidden_state,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        cross_hidden_state: encoder_hidden_state,
+        cross_attention_mask: encoder_attention_mask,
+        cross_attention_head_mask: cross_attention_head_mask,
+        cache: cache,
+        causal?: true,
+        num_blocks: spec.decoder_num_blocks,
+        num_attention_heads: spec.decoder_num_attention_heads,
+        hidden_size: spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
+        dropout_rate: spec.dropout_rate,
+        attention_dropout_rate: spec.attention_dropout_rate,
+        layer_norm: [
+          epsilon: 1.0e-5
+        ],
+        norm_placement: :first,
+        ffn: [
+          intermediate_size: spec.decoder_intermediate_size,
+          activation: spec.activation
+        ],
+        output_hidden_states: spec.output_hidden_states,
+        output_attentions: spec.output_attentions,
+        name: join(name, "blocks")
+      )
+
+    hidden_state = Axon.layer_norm(decoder_outputs.hidden_state, name: join(name, "norm"))
+
+    %{
+      cache: decoder_outputs.cache,
+      hidden_state: hidden_state,
+      hidden_states: Layers.append(decoder_outputs.hidden_states, hidden_state),
+      attentions: decoder_outputs.attentions,
+      cross_attentions: decoder_outputs.cross_attentions
+    }
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do
@@ -640,7 +504,6 @@ defmodule Bumblebee.Text.Bart do
           dropout_rate: {"dropout", number()},
           attention_dropout_rate: {"attention_dropout", number()},
           activation_dropout_rate: {"activation_dropout", number()},
-          classifier_dropout_rate: {"classifier_dropout", number()},
           initializer_scale: {"init_std", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
@@ -653,7 +516,6 @@ defmodule Bumblebee.Text.Bart do
       %{
         "encoder_embedder.token_embedding" => "model.encoder.embed_tokens",
         "encoder_embedder.position_embedding" => "model.encoder.embed_positions",
-        "encoder_embedder.norm" => "model.encoder.layernorm_embedding",
         "encoder.blocks.{n}.self_attention.query" => "model.encoder.layers.{n}.self_attn.q_proj",
         "encoder.blocks.{n}.self_attention.key" => "model.encoder.layers.{n}.self_attn.k_proj",
         "encoder.blocks.{n}.self_attention.value" => "model.encoder.layers.{n}.self_attn.v_proj",
@@ -664,9 +526,9 @@ defmodule Bumblebee.Text.Bart do
         "encoder.blocks.{n}.ffn.intermediate" => "model.encoder.layers.{n}.fc1",
         "encoder.blocks.{n}.ffn.output" => "model.encoder.layers.{n}.fc2",
         "encoder.blocks.{n}.output_norm" => "model.encoder.layers.{n}.final_layer_norm",
+        "encoder.norm" => "model.encoder.layer_norm",
         "decoder_embedder.token_embedding" => "model.decoder.embed_tokens",
         "decoder_embedder.position_embedding" => "model.decoder.embed_positions",
-        "decoder_embedder.norm" => "model.decoder.layernorm_embedding",
         "decoder.blocks.{n}.self_attention.query" => "model.decoder.layers.{n}.self_attn.q_proj",
         "decoder.blocks.{n}.self_attention.key" => "model.decoder.layers.{n}.self_attn.k_proj",
         "decoder.blocks.{n}.self_attention.value" => "model.decoder.layers.{n}.self_attn.v_proj",
@@ -687,13 +549,11 @@ defmodule Bumblebee.Text.Bart do
         "decoder.blocks.{n}.ffn.intermediate" => "model.decoder.layers.{n}.fc1",
         "decoder.blocks.{n}.ffn.output" => "model.decoder.layers.{n}.fc2",
         "decoder.blocks.{n}.output_norm" => "model.decoder.layers.{n}.final_layer_norm",
+        "decoder.norm" => "model.decoder.layer_norm",
         "language_modeling_head.output" => "model.shared",
         "language_modeling_head.logits_bias" => %{
           "bias" => {[{"model", "final_logits_bias"}], fn [value] -> Nx.squeeze(value) end}
-        },
-        "sequence_classification_head.dense" => "classification_head.dense",
-        "sequence_classification_head.output" => "classification_head.out_proj",
-        "question_answering_head.output" => "qa_outputs"
+        }
       }
     end
   end
