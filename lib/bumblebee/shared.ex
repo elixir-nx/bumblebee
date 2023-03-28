@@ -56,7 +56,8 @@ defmodule Bumblebee.Shared do
       Keyword.validate!(defaults,
         forced_bos_token_id: nil,
         forced_eos_token_id: nil,
-        forced_token_ids: nil
+        forced_token_ids: nil,
+        no_repeat_ngram_length: nil
       )
 
     for {key, default} <- defaults do
@@ -113,7 +114,8 @@ defmodule Bumblebee.Shared do
       # Generation
       forced_bos_token_id: {"forced_bos_token_id", number()},
       forced_eos_token_id: {"forced_eos_token_id", number()},
-      forced_token_ids: {"forced_decoder_ids", list(tuple([number(), number()]))}
+      forced_token_ids: {"forced_decoder_ids", list(tuple([number(), number()]))},
+      no_repeat_ngram_length: {"no_repeat_ngram_size", number()}
     ]
 
     converters =

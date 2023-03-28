@@ -155,7 +155,8 @@ defmodule Bumblebee.Text.Generation do
         pad_token_id: Map.get(spec, :pad_token_id),
         forced_bos_token_id: Map.get(spec, :forced_bos_token_id),
         forced_eos_token_id: Map.get(spec, :forced_eos_token_id),
-        forced_token_ids: Map.get(spec, :forced_token_ids)
+        forced_token_ids: Map.get(spec, :forced_token_ids),
+        no_repeat_ngram_length: Map.get(spec, :no_repeat_ngram_length)
       )
 
     decoder_start_token_id = opts[:decoder_start_token_id] || opts[:bos_token_id]
@@ -164,6 +165,7 @@ defmodule Bumblebee.Text.Generation do
     forced_bos_token_id = opts[:forced_bos_token_id]
     forced_eos_token_id = opts[:forced_eos_token_id]
     forced_token_ids = opts[:forced_token_ids]
+    no_repeat_ngram_length = opts[:no_repeat_ngram_length]
 
     {max_length_fun, min_length_fun} = lazy_lengths_from_opts(opts)
 
@@ -178,7 +180,8 @@ defmodule Bumblebee.Text.Generation do
         eos_token_id,
         forced_bos_token_id,
         forced_eos_token_id,
-        forced_token_ids
+        forced_token_ids,
+        no_repeat_ngram_length
       )
 
     &generate_impl(
@@ -339,9 +342,13 @@ defmodule Bumblebee.Text.Generation do
          eos_token_id,
          forced_bos_token_id,
          forced_eos_token_id,
-         forced_token_ids
+         forced_token_ids,
+         no_repeat_ngram_length
        ) do
     processors = [
+      if no_repeat_ngram_length do
+        &no_repeat_ngram_logits_processor(&1, &2, ngram_length: no_repeat_ngram_length)
+      end,
       if min_length_fun && eos_token_id do
         &min_length_logits_processor(&1, &2,
           min_length_fun: min_length_fun,
@@ -562,6 +569,51 @@ defmodule Bumblebee.Text.Generation do
     if context.length < min_length do
       ignore_token_id(logits, token_id: eos_token_id)
     else
+      logits
+    end
+  end
+
+  defnp no_repeat_ngram_logits_processor(logits, context, opts \\ []) do
+    opts = keyword!(opts, [:ngram_length])
+    ngram_length = opts[:ngram_length]
+
+    if context.length + 1 < ngram_length do
+      logits
+    else
+      # Given a sequence of last {ngram_length - 1} tokens, we look
+      # for prior occurrences of that sequence and we want to make the
+      # subsequent token ignored. This way the n-gram is not repeated
+      # this time around
+
+      ngram_but_one_length = ngram_length - 1
+
+      last_ngram_but_one =
+        Nx.slice_along_axis(
+          context.sequences,
+          context.length - ngram_but_one_length,
+          ngram_but_one_length,
+          axis: 1
+        )
+
+      {_, _, _, _, logits} =
+        while {i = 0, last_ngram_but_one, sequences = context.sequences, length = context.length,
+               logits},
+              i + ngram_but_one_length < length do
+          ngram_but_one = Nx.slice_along_axis(sequences, i, ngram_but_one_length, axis: 1)
+
+          batch_size = Nx.axis_size(logits, 0)
+
+          token_ids = sequences[[.., i + ngram_but_one_length]]
+          indices = Nx.stack([Nx.iota({batch_size}), token_ids], axis: -1)
+
+          match? = Nx.all(ngram_but_one == last_ngram_but_one, axes: [1])
+          updates = Nx.select(match?, Nx.Constants.neg_infinity(), 0)
+
+          logits = Nx.indexed_add(logits, indices, updates)
+
+          {i + 1, last_ngram_but_one, sequences, length, logits}
+        end
+
       logits
     end
   end
