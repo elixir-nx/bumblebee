@@ -24,7 +24,7 @@ defmodule Bumblebee.Text.BlenderbotTest do
       assert Nx.shape(outputs.hidden_state) == {1, 2, 1280}
 
       assert_all_close(
-        outputs.hidden_state[[0, 0..-1//1, 1..3]],
+        outputs.hidden_state[[0, .., 1..3]],
         Nx.tensor([[0.1749, 0.4835, 0.3060], [0.0664, 0.0215, 0.5945]]),
         atol: 1.0e-4
       )
@@ -46,7 +46,7 @@ defmodule Bumblebee.Text.BlenderbotTest do
       assert Nx.shape(outputs.logits) == {1, 2, 8008}
 
       assert_all_close(
-        outputs.logits[[0, 0..-1//1, 1..3]],
+        outputs.logits[[0, .., 1..3]],
         Nx.tensor([[12.0658, 3.7026, -4.7830], [-2.9581, 7.9437, -5.8420]]),
         atol: 1.0e-4
       )

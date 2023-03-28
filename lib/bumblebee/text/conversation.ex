@@ -60,7 +60,7 @@ defmodule Bumblebee.Text.Conversation do
               Nx.axis_size(inputs["input_ids"], 1)
             end
 
-          sequences[[0..-1//1, start_idx..-1//1]]
+          sequences[[.., start_idx..-1//1]]
         end
       end,
       defn_options
