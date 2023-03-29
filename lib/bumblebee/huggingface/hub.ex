@@ -27,6 +27,9 @@ defmodule Bumblebee.HuggingFace.Hub do
       Defaults to the standard cache location for the given operating
       system
 
+    * `:offline` - if `true`, cached path is returned if exists and
+      and error otherwise
+
     * `:auth_token` - the token to use as HTTP bearer authorization
       for remote files
 
@@ -34,6 +37,7 @@ defmodule Bumblebee.HuggingFace.Hub do
   @spec cached_download(String.t(), keyword()) :: {:ok, String.t()} | {:error, String.t()}
   def cached_download(url, opts \\ []) do
     cache_dir = opts[:cache_dir] || bumblebee_cache_dir()
+    offline = opts[:offline] || bumblebee_offline?()
     auth_token = opts[:auth_token]
 
     dir = Path.join(cache_dir, "huggingface")
@@ -47,25 +51,37 @@ defmodule Bumblebee.HuggingFace.Hub do
         []
       end
 
-    with {:ok, etag, download_url} <- head_download(url, headers) do
-      metadata_path = Path.join(dir, metadata_filename(url))
-      entry_path = Path.join(dir, entry_filename(url, etag))
+    metadata_path = Path.join(dir, metadata_filename(url))
 
+    if offline do
       case load_json(metadata_path) do
-        {:ok, %{"etag" => ^etag}} ->
+        {:ok, %{"etag" => etag}} ->
+          entry_path = Path.join(dir, entry_filename(url, etag))
           {:ok, entry_path}
 
         _ ->
-          case HTTP.download(download_url, entry_path, headers: headers) |> finish_request() do
-            :ok ->
-              :ok = store_json(metadata_path, %{"etag" => etag, "url" => url})
-              {:ok, entry_path}
+          {:error, "could not find file in local cache and outgoing traffic is disabled"}
+      end
+    else
+      with {:ok, etag, download_url} <- head_download(url, headers) do
+        entry_path = Path.join(dir, entry_filename(url, etag))
 
-            error ->
-              File.rm_rf!(metadata_path)
-              File.rm_rf!(entry_path)
-              error
-          end
+        case load_json(metadata_path) do
+          {:ok, %{"etag" => ^etag}} ->
+            {:ok, entry_path}
+
+          _ ->
+            case HTTP.download(download_url, entry_path, headers: headers) |> finish_request() do
+              :ok ->
+                :ok = store_json(metadata_path, %{"etag" => etag, "url" => url})
+                {:ok, entry_path}
+
+              error ->
+                File.rm_rf!(metadata_path)
+                File.rm_rf!(entry_path)
+                error
+            end
+        end
       end
     end
   end
@@ -144,5 +160,9 @@ defmodule Bumblebee.HuggingFace.Hub do
     else
       :filename.basedir(:user_cache, "bumblebee")
     end
+  end
+
+  defp bumblebee_offline?() do
+    System.get_env("BUMBLEBEE_OFFLINE") in ~w(1 true)
   end
 end
