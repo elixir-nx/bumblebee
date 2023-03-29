@@ -194,6 +194,11 @@ defmodule Bumblebee do
           operating system. You can also configure it globally by
           setting the `BUMBLEBEE_CACHE_DIR` environment variable
 
+        * `:offline` - if `true`, only cached files are accessed and
+          missing files result in an error. You can also configure it
+          globally by setting the `BUMBLEBEE_OFFLINE` environment
+          variable to `true`
+
         * `:auth_token` - the token to use as HTTP bearer authorization
           for remote files
 
@@ -797,6 +802,7 @@ defmodule Bumblebee do
   defp download({:hf, repository_id, opts}, filename) do
     revision = opts[:revision]
     cache_dir = opts[:cache_dir]
+    offline = opts[:offline]
     auth_token = opts[:auth_token]
     subdir = opts[:subdir]
 
@@ -804,7 +810,11 @@ defmodule Bumblebee do
 
     url = HuggingFace.Hub.file_url(repository_id, filename, revision)
 
-    HuggingFace.Hub.cached_download(url, cache_dir: cache_dir, auth_token: auth_token)
+    HuggingFace.Hub.cached_download(url,
+      cache_dir: cache_dir,
+      offline: offline,
+      auth_token: auth_token
+    )
   end
 
   defp normalize_repository!({:hf, repository_id}) when is_binary(repository_id) do
@@ -812,7 +822,7 @@ defmodule Bumblebee do
   end
 
   defp normalize_repository!({:hf, repository_id, opts}) when is_binary(repository_id) do
-    opts = Keyword.validate!(opts, [:revision, :cache_dir, :auth_token, :subdir])
+    opts = Keyword.validate!(opts, [:revision, :cache_dir, :offline, :auth_token, :subdir])
     {:hf, repository_id, opts}
   end
 
