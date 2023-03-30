@@ -34,6 +34,37 @@ In such scenarios, you must change the calls from `Bumblebee.load_xyz({:hf, "mic
 
 Bumblebee can download and cache data from both public and private Hugging Face repositories. You can control the cache directory by setting `BUMBLEBEE_CACHE_DIR`. Therefore, one option during deployment is to set the `BUMBLEBEE_CACHE_DIR` to a directory within your application. If using Docker, you must then include said directory in your application and make sure that `BUMBLEBEE_CACHE_DIR` points to it.
 
+When using Docker multi-stage build, you can populate the cache in the build stage, then copy the contents of `BUMBLEBEE_CACHE_DIR` to the final image. It is also recommended to set `BUMBLEBEE_OFFLINE` to `true` in the final image to make sure the models are always loaded from the cache. If you start a serving under your app supervision tree, then populating the cache is as simple as calling `mix app.start`, otherwise you can define a custom mix task that loads the relevant models.
+
+### Configuring Nx
+
+We currently recommend [EXLA](https://hexdocs.pm/exla/EXLA.html) to compile the numerical computations.
+
+There are generally two types of computations you run with Nx:
+
+  1. One-off operations, such as calling `Nx.sum(data)`, oftentimes used when preparing data for the model. Those operations are delegated to the default backend compiled one-by-one.
+
+  2. Large defn computations, such as running a neural network model. Those are usually compiled as a whole explicitly using the configured compiler.
+
+EXLA allows only a single computation per device to run at the same time, so if a GPU is available we want it to only run computations falling under the 2. type.
+
+To achieve that, you can configure your default backend (used for 1.) to always use the CPU:
+
+```elixir
+config :nx, :default_backend, {EXLA.Backend, client: :host}
+```
+
+Then, for any expensive computations you can use [`Nx.Defn.compile/3`](https://hexdocs.pm/nx/Nx.Defn.html#compile/3) (or [`Axon.compile/4`](https://hexdocs.pm/axon/Axon.html#compile/4)) passing `compiler: EXLA` as an option. When you use a Bumblebee serving the compilation is handled for you, just make sure to pass `:compile` and `defn_options: [compiler: EXLA]`.
+
+There's a final important detail related to parameters. With the above configuration, a model will run on the GPU, however parameters will be loaded onto the CPU (due to the default backend), so they will need to be copied onto the GPU every time. To avoid that, you want to make sure that parameters are allocated on the same device that the computation runs on. You can use [`Nx.with_default_backend/2`](https://hexdocs.pm/nx/Nx.html#with_default_backend/2) to temporarily override the default backend (this time without forcing `:host`):
+
+```elixir
+{:ok, model_info} =
+  Nx.with_default_backend(EXLA.Backend, fn ->
+    Bumblebee.load_model({:hf, "microsoft/resnet"})
+  end)
+```
+
 ### User images
 
 When working with user-given images, the most trivial approach would be to just upload an image as is, in a format like PNG or JPEG. However, this approach has two downsides:
