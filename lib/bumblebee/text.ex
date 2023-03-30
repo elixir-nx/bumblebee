@@ -217,10 +217,10 @@ defmodule Bumblebee.Text do
 
   ## Examples
 
-      {:ok, model} = Bumblebee.load_model({:hf, "microsoft/DialoGPT-medium"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+      {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/blenderbot-400M-distill"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/blenderbot-400M-distill"})
 
-      serving = Bumblebee.Text.conversation(model, tokenizer, max_new_tokens: 100)
+      serving = Bumblebee.Text.conversation(model_info, tokenizer, max_new_tokens: 100)
 
       history = nil
 

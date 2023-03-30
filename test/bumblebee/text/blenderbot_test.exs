@@ -55,13 +55,7 @@ defmodule Bumblebee.Text.BlenderbotTest do
 
   test "conditional generation" do
     {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/blenderbot-400M-distill"})
-
-    # TODO remove revision once https://huggingface.co/facebook/blenderbot-400M-distill/discussions/3 is merged
-    {:ok, tokenizer} =
-      Bumblebee.load_tokenizer(
-        {:hf, "facebook/blenderbot-400M-distill",
-         revision: "b2632bc548e0292931bdda575802d63334c797bb"}
-      )
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/blenderbot-400M-distill"})
 
     assert %Bumblebee.Text.Blenderbot{architecture: :for_conditional_generation} = model_info.spec
 
