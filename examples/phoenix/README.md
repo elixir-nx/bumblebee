@@ -54,7 +54,7 @@ To achieve that, you can configure your default backend (used for 1.) to always 
 config :nx, :default_backend, {EXLA.Backend, client: :host}
 ```
 
-Then, for any expensive computations you can use [`Nx.Defn.compile/3`](https://hexdocs.pm/nx/Nx.Defn.html#compile/3) (or [`Axon.compile/4`](https://hexdocs.pm/nx/Nx.Defn.html#compile/3)) passing `compiler: EXLA` as an option. When you use a Bumblebee serving the compilation is handled for you, just make sure to pass `:compile` and `defn_options: [compiler: EXLA]`.
+Then, for any expensive computations you can use [`Nx.Defn.compile/3`](https://hexdocs.pm/nx/Nx.Defn.html#compile/3) (or [`Axon.compile/4`](https://hexdocs.pm/axon/Axon.html#compile/4)) passing `compiler: EXLA` as an option. When you use a Bumblebee serving the compilation is handled for you, just make sure to pass `:compile` and `defn_options: [compiler: EXLA]`.
 
 There's a final important detail related to parameters. With the above configuration, a model will run on the GPU, however parameters will be loaded onto the CPU (due to the default backend), so they will need to be copied onto the GPU every time. To avoid that, you want to make sure that parameters are allocated on the same device that the computation runs on. With Bumblebee, you can pass a `:backend` option when loading the model:
 
