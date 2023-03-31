@@ -28,7 +28,7 @@ defmodule Bumblebee.HuggingFace.Transformers.Utils do
   @spec map_params_source_layer_names(
           Transformers.Model.params_source(),
           (String.t() -> String.t())
-        ) :: Transformers.Model.params_source()
+        ) :: Transformers.Model.layer_name() | Transformers.Model.params_source()
   def map_params_source_layer_names(%{} = params_source, fun) do
     Map.new(params_source, fn {param_name, {sources, source_fun}} ->
       sources = for {layer_name, param_name} <- sources, do: {fun.(layer_name), param_name}
