@@ -14,7 +14,8 @@ defmodule Bumblebee.Conversion.PyTorch do
   ## Options
 
     * `:log_params_diff` - whether to log missing, mismatched and unused
-      parameters. Defaults to `true`
+      parameters. By default diff is logged only if some parameters
+      cannot be loaded
 
     * `:backend` - the backend to allocate the tensors on. It is either
       an atom or a tuple in the shape `{backend, options}`
@@ -26,7 +27,7 @@ defmodule Bumblebee.Conversion.PyTorch do
   """
   @spec load_params!(Axon.t(), map(), Path.t(), keyword()) :: map()
   def load_params!(model, input_template, path, opts \\ []) do
-    opts = Keyword.validate!(opts, log_params_diff: true, backend: nil, params_mapping: %{})
+    opts = Keyword.validate!(opts, [:log_params_diff, :backend, params_mapping: %{}])
 
     with_default_backend(opts[:backend], fn ->
       pytorch_state = Bumblebee.Conversion.PyTorch.Loader.load!(path)
@@ -39,15 +40,17 @@ defmodule Bumblebee.Conversion.PyTorch do
 
       {params, diff} = init_params(model, params_expr, pytorch_state, opts[:params_mapping])
 
+      params_complete? = diff.missing == [] and diff.mismatched == []
+
       params =
-        if diff.missing == [] and diff.mismatched == [] do
+        if params_complete? do
           params
         else
           {init_fun, _} = Axon.build(model, compiler: Nx.Defn.Evaluator)
           init_fun.(input_template, params)
         end
 
-      if opts[:log_params_diff] do
+      if Keyword.get(opts, :log_params_diff, not params_complete?) do
         log_params_diff(diff)
       end
 
