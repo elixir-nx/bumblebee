@@ -114,6 +114,7 @@ defmodule Bumblebee do
     "RobertaModel" => {Bumblebee.Text.Roberta, :base},
     "T5Model" => {Bumblebee.Text.T5, :base},
     "T5ForConditionalGeneration" => {Bumblebee.Text.T5, :for_conditional_generation},
+    "T5EncoderModel" => {Bumblebee.Text.T5, :encoder},
     "ViTForImageClassification" => {Bumblebee.Vision.Vit, :for_image_classification},
     "ViTForMaskedImageModeling" => {Bumblebee.Vision.Vit, :for_masked_image_modeling},
     "ViTModel" => {Bumblebee.Vision.Vit, :base},
