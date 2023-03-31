@@ -6,8 +6,14 @@ defmodule Bumblebee.Vision do
   @typedoc """
   A term representing an image.
 
-  Either `Nx.Tensor` in HWC order or a struct implementing `Nx.Container`
-  and resolving to such tensor.
+  Either `Nx.Tensor` or a struct implementing `Nx.Container` and
+  resolving to a tensor, with the following properties:
+
+    * HWC order
+    * RGB color channels
+    * alpha channel may be present, but it's usually stripped out
+    * integer type (`:s` or `:u`)
+
   """
   @type image :: Nx.Container.t()
 
