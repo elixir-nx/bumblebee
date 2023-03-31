@@ -70,7 +70,11 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
 
     images =
       for image <- images do
-        images = image |> Image.to_batched_tensor() |> Nx.as_type(:f32)
+        images =
+          image
+          |> Image.to_batched_tensor()
+          |> Nx.as_type(:f32)
+          |> Image.normalize_channels(length(featurizer.image_mean))
 
         if featurizer.resize do
           size = Image.normalize_size(featurizer.size)
