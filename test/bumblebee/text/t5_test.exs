@@ -118,6 +118,33 @@ defmodule Bumblebee.Text.T5Test do
       )
     end
 
+    test "encoder model" do
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "t5-small"},
+                 architecture: :encoder
+               )
+
+      assert %Bumblebee.Text.T5{architecture: :encoder} = spec
+
+      input_ids = Nx.tensor([[37, 32099, 10681, 16, 32098, 2447, 1]])
+
+      inputs = %{
+        "input_ids" => input_ids
+      }
+
+      outputs = Axon.predict(model, params, inputs)
+
+      assert Nx.shape(outputs.hidden_state) == {1, 7, 512}
+
+      assert_all_close(
+        outputs.hidden_state[[0, 1..3, 1..3]],
+        Nx.tensor([
+          [[0.0713, -0.1633, -0.0978], [-0.0314, -0.3135, -0.1801], [-0.2863, 0.0751, -0.0536]]
+        ]),
+        atol: 1.0e-4
+      )
+    end
+
     test "text generation" do
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "t5-small"})
       assert {:ok, model_info} = Bumblebee.load_model({:hf, "t5-small"})

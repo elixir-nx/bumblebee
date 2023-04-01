@@ -99,6 +99,8 @@ defmodule Bumblebee.Text.T5 do
       head. The head returns logits for each token in the original
       sequence
 
+    * `:encoder` - just the encoder part of the base model
+
   ## Inputs
 
     * `"input_ids"` - `{batch_size, sequence_length}`
@@ -185,7 +187,7 @@ defmodule Bumblebee.Text.T5 do
 
   @impl true
   def architectures(),
-    do: [:base, :for_conditional_generation]
+    do: [:base, :for_conditional_generation, :encoder]
 
   @impl true
   def config(spec, opts \\ []) do
@@ -252,6 +254,38 @@ defmodule Bumblebee.Text.T5 do
     })
   end
 
+  def model(%__MODULE__{architecture: :encoder} = spec) do
+    inputs = encoder_inputs(spec)
+
+    embeddings =
+      embedder(inputs["input_ids"], inputs["input_embeddings"], spec, name: "encoder_embedder")
+
+    outputs =
+      encoder(embeddings, inputs["attention_mask"], inputs["attention_head_mask"], spec,
+        name: "encoder"
+      )
+
+    Layers.output(%{
+      hidden_state: outputs.hidden_state,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
+  end
+
+  defp encoder_inputs(spec) do
+    shape = {nil, nil}
+    hidden_shape = {nil, nil, spec.hidden_size}
+
+    attention_head_mask_shape = {spec.encoder_num_blocks, spec.encoder_num_attention_heads}
+
+    Bumblebee.Utils.Model.inputs_to_map([
+      Axon.input("input_ids", optional: true, shape: shape),
+      Axon.input("attention_mask", optional: true, shape: shape),
+      Axon.input("attention_head_mask", optional: true, shape: attention_head_mask_shape),
+      Axon.input("input_embeddings", optional: true, shape: hidden_shape)
+    ])
+  end
+
   defp encoder_decoder_inputs(spec) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, spec.hidden_size}
@@ -293,7 +327,7 @@ defmodule Bumblebee.Text.T5 do
         }
       else
         embeddings =
-          embedder(inputs["input_ids"], inputs["input_embeddings"], spec, name: "encoder")
+          embedder(inputs["input_ids"], inputs["input_embeddings"], spec, name: "encoder_embedder")
 
         embeddings
         |> encoder(inputs["attention_mask"], inputs["attention_head_mask"], spec, name: "encoder")
@@ -306,7 +340,9 @@ defmodule Bumblebee.Text.T5 do
       end
 
     embeddings =
-      embedder(decoder_input_ids, inputs["decoder_input_embeddings"], spec, name: "decoder")
+      embedder(decoder_input_ids, inputs["decoder_input_embeddings"], spec,
+        name: "decoder_embedder"
+      )
 
     decoder_outputs =
       decoder(
@@ -547,11 +583,9 @@ defmodule Bumblebee.Text.T5 do
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(spec) do
       %{
-        "encoder.token_embedding" =>
-          if(spec.tie_word_embeddings, do: "shared", else: "encoder.embed_tokens"),
-        "decoder.token_embedding" =>
-          if(spec.tie_word_embeddings, do: "shared", else: "decoder.embed_tokens"),
         # encoder
+        "encoder_embedder.token_embedding" =>
+          if(spec.tie_word_embeddings, do: "shared", else: "encoder.embed_tokens"),
         "encoder.blocks.{n}.self_attention_norm" => "encoder.block.{n}.layer.0.layer_norm",
         "encoder.blocks.{n}.self_attention.query" => "encoder.block.{n}.layer.0.SelfAttention.q",
         "encoder.blocks.{n}.self_attention.key" => "encoder.block.{n}.layer.0.SelfAttention.k",
@@ -569,6 +603,8 @@ defmodule Bumblebee.Text.T5 do
         "encoder.blocks.{n}.ffn.output" => "encoder.block.{n}.layer.1.DenseReluDense.wo",
         "encoder.output_norm" => "encoder.final_layer_norm",
         # decoder
+        "decoder_embedder.token_embedding" =>
+          if(spec.tie_word_embeddings, do: "shared", else: "decoder.embed_tokens"),
         "decoder.blocks.{n}.self_attention_norm" => "decoder.block.{n}.layer.0.layer_norm",
         "decoder.blocks.{n}.self_attention.query" => "decoder.block.{n}.layer.0.SelfAttention.q",
         "decoder.blocks.{n}.self_attention.key" => "decoder.block.{n}.layer.0.SelfAttention.k",
