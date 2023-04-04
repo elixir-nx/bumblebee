@@ -22,7 +22,7 @@ defmodule Bumblebee.Text.BertTest do
       assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[.., 1..3, 1..3]],
         Nx.tensor([[[0.4249, 0.1008, 0.7531], [0.3771, 0.1188, 0.7467], [0.4152, 0.1098, 0.7108]]]),
         atol: 1.0e-4
       )
@@ -43,7 +43,7 @@ defmodule Bumblebee.Text.BertTest do
       assert Nx.shape(outputs.logits) == {1, 9, 30522}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[.., 1..3, 1..3]],
         Nx.tensor([
           [
             [-14.7240, -14.2120, -14.6434],
@@ -97,7 +97,7 @@ defmodule Bumblebee.Text.BertTest do
       assert Nx.shape(outputs.logits) == {1, 13, 9}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[.., 1..3, 1..3]],
         Nx.tensor([
           [[-3.1215, -0.4028, -3.3213], [-2.4627, 0.0613, -3.2501], [-3.1475, -0.7705, -2.8248]]
         ]),
@@ -126,13 +126,13 @@ defmodule Bumblebee.Text.BertTest do
       assert Nx.shape(outputs.end_logits) == {1, 16}
 
       assert_all_close(
-        outputs.start_logits[[0..-1//1, 1..3]],
+        outputs.start_logits[[.., 1..3]],
         Nx.tensor([[-6.9344, -6.9556, -2.8814]]),
         atol: 1.0e-4
       )
 
       assert_all_close(
-        outputs.end_logits[[0..-1//1, 1..3]],
+        outputs.end_logits[[.., 1..3]],
         Nx.tensor([[-7.3395, -7.9609, -7.4926]]),
         atol: 1.0e-4
       )
@@ -225,7 +225,7 @@ defmodule Bumblebee.Text.BertTest do
       assert Nx.shape(outputs.logits) == {1, 8, 30522}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[.., 1..3, 1..3]],
         Nx.tensor([
           [[-6.0980, -6.1492, -6.0886], [-6.1857, -6.2198, -6.2982], [-6.3880, -6.3918, -6.3503]]
         ]),

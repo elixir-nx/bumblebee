@@ -23,7 +23,7 @@ defmodule Bumblebee.Text.BartTest do
       assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[.., 1..3, 1..3]],
         Nx.tensor([
           [[-0.3985, -1.2727, 1.8201], [1.2444, -1.5131, -0.9588], [-1.0806, -0.0743, 0.5012]]
         ]),

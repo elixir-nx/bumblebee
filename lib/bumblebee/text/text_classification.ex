@@ -1,7 +1,6 @@
 defmodule Bumblebee.Text.TextClassification do
   @moduledoc false
 
-  alias Bumblebee.Utils
   alias Bumblebee.Shared
 
   def text_classification(model_info, tokenizer, opts \\ []) do
@@ -62,7 +61,7 @@ defmodule Bumblebee.Text.TextClassification do
     |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
       for scores <- Bumblebee.Utils.Nx.batch_to_list(scores) do
         k = min(top_k, Nx.size(scores))
-        {top_scores, top_indices} = Utils.Nx.top_k(scores, k: k)
+        {top_scores, top_indices} = Nx.top_k(scores, k: k)
 
         predictions =
           Enum.zip_with(

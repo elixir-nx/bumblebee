@@ -25,7 +25,7 @@ defmodule Bumblebee.Text.BlipTextTest do
       assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[.., 1..3, 1..3]],
         Nx.tensor([
           [[-0.0219, 0.0386, -0.0164], [-0.0205, 0.0398, -0.0155], [-0.0242, 0.0405, -0.0186]]
         ]),
@@ -52,7 +52,7 @@ defmodule Bumblebee.Text.BlipTextTest do
       assert Nx.shape(outputs.logits) == {1, 11, 30524}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[.., 1..3, 1..3]],
         Nx.tensor([[[0.0525, 0.0526, 0.0525], [0.0433, 0.0434, 0.0433], [0.0833, 0.0834, 0.0833]]]),
         atol: 1.0e-4
       )

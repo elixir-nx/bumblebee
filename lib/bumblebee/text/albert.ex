@@ -266,8 +266,8 @@ defmodule Bumblebee.Text.Albert do
         name: "question_answering_head.output"
       )
 
-    start_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 0]])
-    end_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 1]])
+    start_logits = Axon.nx(logits, & &1[[.., .., 0]])
+    end_logits = Axon.nx(logits, & &1[[.., .., 1]])
 
     Layers.output(%{
       start_logits: start_logits,

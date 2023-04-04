@@ -355,42 +355,42 @@ defmodule Bumblebee.Multimodal.LayoutLm do
 
     left_position_embeddings =
       bounding_box
-      |> Axon.nx(& &1[[0..-1//1, 0..-1//1, 0]])
+      |> Axon.nx(& &1[[.., .., 0]])
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "x_position_embedding")
       )
 
     right_position_embeddings =
       bounding_box
-      |> Axon.nx(& &1[[0..-1//1, 0..-1//1, 2]])
+      |> Axon.nx(& &1[[.., .., 2]])
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "x_position_embedding")
       )
 
     upper_position_embeddings =
       bounding_box
-      |> Axon.nx(& &1[[0..-1//1, 0..-1//1, 1]])
+      |> Axon.nx(& &1[[.., .., 1]])
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "y_position_embedding")
       )
 
     lower_position_embeddings =
       bounding_box
-      |> Axon.nx(& &1[[0..-1//1, 0..-1//1, 3]])
+      |> Axon.nx(& &1[[.., .., 3]])
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "y_position_embedding")
       )
 
     h_position_embeddings =
       bounding_box
-      |> Axon.nx(fn x -> Nx.subtract(x[[0..-1//1, 0..-1//1, 3]], x[[0..-1//1, 0..-1//1, 1]]) end)
+      |> Axon.nx(fn x -> Nx.subtract(x[[.., .., 3]], x[[.., .., 1]]) end)
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "h_position_embedding")
       )
 
     w_position_embeddings =
       bounding_box
-      |> Axon.nx(fn x -> Nx.subtract(x[[0..-1//1, 0..-1//1, 2]], x[[0..-1//1, 0..-1//1, 0]]) end)
+      |> Axon.nx(fn x -> Nx.subtract(x[[.., .., 2]], x[[.., .., 0]]) end)
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "w_position_embedding")
       )

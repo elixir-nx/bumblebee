@@ -31,7 +31,7 @@ defmodule Bumblebee.Multimodal.BlipTest do
       assert Nx.shape(outputs.logits) == {2, 2, 30524}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 0..-1//1, 1..3]],
+        outputs.logits[[.., .., 1..3]],
         Nx.tensor([
           [[-3.6416, -3.6417, -3.6416], [-1.3830, -1.3830, -1.3830]],
           [[-3.4394, -3.4394, -3.4394], [-1.3444, -1.3445, -1.3444]]

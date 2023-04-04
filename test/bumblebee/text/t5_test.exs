@@ -23,7 +23,7 @@ defmodule Bumblebee.Text.T5Test do
       assert Nx.shape(outputs.hidden_state) == {1, 4, 512}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[.., 1..3, 1..3]],
         Nx.tensor([
           [[0.1380, -0.0321, 0.0281], [0.0637, 0.0025, 0.0985], [-0.0019, 0.1075, 0.1575]]
         ]),
@@ -48,7 +48,7 @@ defmodule Bumblebee.Text.T5Test do
       assert Nx.shape(outputs.hidden_state) == {1, 4, 512}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[.., 1..3, 1..3]],
         Nx.tensor([
           [[-0.1101, 0.0512, 0.1005], [0.0091, -0.0398, 0.0895], [-0.1061, -0.0152, 0.0702]]
         ]),

@@ -91,10 +91,10 @@ defmodule Bumblebee.Text.ZeroShotClassification do
     end)
     |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
       for scores <- Utils.Nx.batch_to_list(scores) do
-        scores = Axon.Layers.softmax(scores[[0..-1//1, entailment_id]])
+        scores = Axon.Layers.softmax(scores[[.., entailment_id]])
 
         k = min(top_k, Nx.size(scores))
-        {top_scores, top_indices} = Utils.Nx.top_k(scores, k: k)
+        {top_scores, top_indices} = Nx.top_k(scores, k: k)
 
         predictions =
           Enum.zip_with(

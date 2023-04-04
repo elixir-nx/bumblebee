@@ -536,8 +536,8 @@ defmodule Bumblebee.Layers do
   two nodes with shape `{batch_size, sequence_length}`.
   """
   def split_pair(%Axon{} = x) do
-    left = Axon.nx(x, & &1[[0..-1//1, 0..-1//1, 0]])
-    right = Axon.nx(x, & &1[[0..-1//1, 0..-1//1, 1]])
+    left = Axon.nx(x, & &1[[.., .., 0]])
+    right = Axon.nx(x, & &1[[.., .., 1]])
     {left, right}
   end
 
@@ -864,7 +864,7 @@ defmodule Bumblebee.Layers do
       if sequence_length == 1 do
         start_ids
       else
-        Nx.concatenate([start_ids, input_ids[[0..-1//1, 0..-2//1]]], axis: 1)
+        Nx.concatenate([start_ids, input_ids[[.., 0..-2//1]]], axis: 1)
       end
     end)
   end

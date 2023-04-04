@@ -21,7 +21,7 @@ defmodule Bumblebee.Text.RobertaTest do
       assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 0..2, 0..2]],
+        outputs.hidden_state[[.., 0..2, 0..2]],
         Nx.tensor([
           [[-0.0231, 0.0782, 0.0074], [-0.1854, 0.0540, -0.0175], [0.0548, 0.0799, 0.1687]]
         ]),
@@ -44,7 +44,7 @@ defmodule Bumblebee.Text.RobertaTest do
       assert Nx.shape(outputs.logits) == {1, 11, 50265}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 0..2, 0..2]],
+        outputs.logits[[.., 0..2, 0..2]],
         Nx.tensor([
           [[33.8802, -4.3103, 22.7761], [4.6539, -2.8098, 13.6253], [1.8228, -3.6898, 8.8600]]
         ]),
@@ -88,7 +88,7 @@ defmodule Bumblebee.Text.RobertaTest do
       assert Nx.shape(outputs.logits) == {1, 12, 5}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 0..2, 0..1]],
+        outputs.logits[[.., 0..2, 0..1]],
         Nx.tensor([[[4.1969, -2.5614], [-1.4174, -0.6959], [-1.3807, 0.1313]]]),
         atol: 1.0e-4
       )
@@ -113,13 +113,13 @@ defmodule Bumblebee.Text.RobertaTest do
       assert Nx.shape(outputs.end_logits) == {1, 17}
 
       assert_all_close(
-        outputs.start_logits[[0..-1//1, 0..2]],
+        outputs.start_logits[[.., 0..2]],
         Nx.tensor([[0.5901, -8.3490, -8.8031]]),
         atol: 1.0e-4
       )
 
       assert_all_close(
-        outputs.end_logits[[0..-1//1, 0..2]],
+        outputs.end_logits[[.., 0..2]],
         Nx.tensor([[1.1207, -7.5968, -7.6151]]),
         atol: 1.0e-4
       )
@@ -168,7 +168,7 @@ defmodule Bumblebee.Text.RobertaTest do
       assert Nx.shape(outputs.logits) == {1, 8, 50265}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[.., 1..3, 1..3]],
         Nx.tensor([
           [[-3.3435, 32.1472, -3.5083], [-3.5373, 21.8191, -3.5197], [-4.2189, 22.5419, -3.9859]]
         ]),

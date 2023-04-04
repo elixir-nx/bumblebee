@@ -336,30 +336,6 @@ defmodule Bumblebee.Utils.Nx do
   end
 
   @doc """
-  Returns top-k largest values and their indices.
-
-  ## Options
-
-    * `:axis` - the axis to compare elements along. Defaults to `0`
-
-    * `:k` - the number of largest values to return. Defaults to `1`
-
-  """
-  defn top_k(tensor, opts \\ []) do
-    opts = keyword!(opts, axis: 0, k: 1)
-    k = opts[:k]
-    axis = opts[:axis]
-
-    indices =
-      tensor
-      |> Nx.argsort(axis: axis, direction: :desc)
-      |> Nx.slice_along_axis(0, k, axis: axis)
-
-    values = Nx.take_along_axis(tensor, indices, axis: axis)
-    {values, indices}
-  end
-
-  @doc """
   Repeats tensor along the given axis, such that repeated chunks are
   adjacent to each other.
 

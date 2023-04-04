@@ -474,7 +474,7 @@ defmodule Bumblebee.Text.Mbart do
           if sequence_length == 1 do
             start_ids
           else
-            Nx.concatenate([start_ids, input_ids[[0..-1//1, 0..-2//1]]], axis: 1)
+            Nx.concatenate([start_ids, input_ids[[.., 0..-2//1]]], axis: 1)
           end
         end)
       end

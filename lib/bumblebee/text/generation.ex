@@ -579,7 +579,7 @@ defmodule Bumblebee.Text.Generation do
 
     outputs = predict_fun.(params, inputs)
 
-    logits = outputs.logits[[0..-1//1, -1]]
+    logits = outputs.logits[[.., -1]]
 
     logits =
       logits_processor_fun.(logits, %{
@@ -646,7 +646,7 @@ defmodule Bumblebee.Text.Generation do
     joint_hidden_state = Nx.broadcast(0.0, {batch_size, max_length, hidden_size})
     joint_hidden_state = Nx.put_slice(joint_hidden_state, [0, 0, 0], initial_hidden_state)
 
-    logits = outputs.logits[[0..-1//1, -1]]
+    logits = outputs.logits[[.., -1]]
 
     logits =
       logits_processor_fun.(logits, %{
@@ -697,7 +697,7 @@ defmodule Bumblebee.Text.Generation do
         {sequences, length, finished?} =
           update_sequences(sequences, length, finished?, token_id, pad_token_id, eos_token_id)
 
-        logits = outputs.logits[[0..-1//1, -1]]
+        logits = outputs.logits[[.., -1]]
         logits = Utils.Nx.chunked_take(logits, top_k, selected_idx)
 
         logits =

@@ -21,7 +21,7 @@ defmodule Bumblebee.Text.CamembertTest do
       assert Nx.shape(outputs.hidden_state) == {1, 10, 768}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 0..2, 0..2]],
+        outputs.hidden_state[[.., 0..2, 0..2]],
         Nx.tensor([
           [[0.0592, 0.0688, 0.0185], [0.0024, 0.1443, -0.1943], [0.0102, 0.2724, -0.2474]]
         ]),
@@ -44,7 +44,7 @@ defmodule Bumblebee.Text.CamembertTest do
       assert Nx.shape(outputs.logits) == {1, 10, 32005}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 0..2, 0..2]],
+        outputs.logits[[.., 0..2, 0..2]],
         Nx.tensor([
           [[18.4213, -4.5504, 6.5444], [-1.2791, -2.4822, 2.8339], [-2.5561, -4.3118, -1.3791]]
         ]),
