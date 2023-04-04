@@ -21,6 +21,10 @@ defmodule Bumblebee.Multimodal.Blip do
         doc: "the initial value for the scaling layer used to scale similarity logits"
       ]
     ] ++
+      Shared.common_options([
+        :output_hidden_states,
+        :output_attentions
+      ]) ++
       Shared.token_options(
         pad_token_id: 0,
         bos_token_id: 30522,
@@ -122,6 +126,10 @@ defmodule Bumblebee.Multimodal.Blip do
 
     vision_model =
       vision_spec
+      |> Bumblebee.configure(
+        output_hidden_states: spec.output_hidden_states,
+        output_attentions: spec.output_hidden_states
+      )
       |> Bumblebee.build_model()
       |> Bumblebee.Utils.Axon.prefix_names("vision_model.")
       |> Bumblebee.Utils.Axon.plug_inputs(%{
@@ -130,6 +138,10 @@ defmodule Bumblebee.Multimodal.Blip do
 
     text_decoder =
       text_spec
+      |> Bumblebee.configure(
+        output_hidden_states: spec.output_hidden_states,
+        output_attentions: spec.output_hidden_states
+      )
       |> Bumblebee.build_model()
       |> Bumblebee.Utils.Axon.prefix_names("text_decoder.")
       |> Bumblebee.Utils.Axon.plug_inputs(%{
@@ -173,6 +185,11 @@ defmodule Bumblebee.Multimodal.Blip do
       |> Map.reject(&match?({_, nil}, &1))
 
     text_spec.__struct__.init_cache(text_spec, batch_size, max_length, inputs)
+  end
+
+  @impl true
+  def traverse_cache(_spec, cache, fun) do
+    Layers.Decoder.traverse_cache(cache, fun)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do

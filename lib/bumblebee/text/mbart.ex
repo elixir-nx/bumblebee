@@ -431,6 +431,11 @@ defmodule Bumblebee.Text.Mbart do
     )
   end
 
+  @impl true
+  def traverse_cache(_spec, cache, fun) do
+    Layers.Decoder.traverse_cache(cache, fun)
+  end
+
   defp core(inputs, spec) do
     encoder_outputs =
       Layers.if_present inputs["encoder_hidden_state"] do
@@ -538,7 +543,7 @@ defmodule Bumblebee.Text.Mbart do
 
     %{
       hidden_state: hidden_state,
-      hidden_states: Layers.append(encoder_outputs.hidden_states, hidden_state),
+      hidden_states: Layers.replace(encoder_outputs.hidden_states, -1, hidden_state),
       attentions: encoder_outputs.attentions
     }
   end
@@ -637,7 +642,7 @@ defmodule Bumblebee.Text.Mbart do
     %{
       cache: decoder_outputs.cache,
       hidden_state: hidden_state,
-      hidden_states: Layers.append(decoder_outputs.hidden_states, hidden_state),
+      hidden_states: Layers.replace(decoder_outputs.hidden_states, -1, hidden_state),
       attentions: decoder_outputs.attentions,
       cross_attentions: decoder_outputs.cross_attentions
     }

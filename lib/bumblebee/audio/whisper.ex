@@ -248,6 +248,11 @@ defmodule Bumblebee.Audio.Whisper do
     )
   end
 
+  @impl true
+  def traverse_cache(_spec, cache, fun) do
+    Layers.Decoder.traverse_cache(cache, fun)
+  end
+
   defp inputs(spec) do
     input_length = 2 * spec.encoder_max_positions
 
