@@ -295,6 +295,11 @@ defmodule Bumblebee.Text.Gpt2 do
     )
   end
 
+  @impl true
+  def traverse_cache(_spec, cache, fun) do
+    Layers.Decoder.traverse_cache(cache, fun)
+  end
+
   defp inputs(spec) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, spec.hidden_size}
@@ -343,7 +348,7 @@ defmodule Bumblebee.Text.Gpt2 do
 
     %{
       hidden_state: hidden_state,
-      hidden_states: outputs.hidden_states,
+      hidden_states: Layers.replace(outputs.hidden_states, -1, hidden_state),
       attentions: outputs.attentions,
       cross_attentions: outputs.cross_attentions,
       cache: outputs.cache

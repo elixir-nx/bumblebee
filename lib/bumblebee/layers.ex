@@ -757,10 +757,25 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Performs `Tuple.append/1` on node results.
+  Appends tuple element to the node result.
   """
   def append(%Axon{} = tuple, %Axon{} = x) do
     Axon.layer(fn tuple, x, _ -> Tuple.append(tuple, x) end, [tuple, x], op_name: :append)
+  end
+
+  @doc """
+  Replaces tuple element in the node result.
+  """
+  def replace(%Axon{} = tuple, idx, %Axon{} = x) do
+    Axon.layer(fn tuple, x, _ -> tuple_replace(tuple, idx, x) end, [tuple, x], op_name: :replace)
+  end
+
+  defp tuple_replace(tuple, index, value) when index < 0 do
+    tuple_replace(tuple, tuple_size(tuple) + index, value)
+  end
+
+  defp tuple_replace(tuple, index, value) do
+    put_elem(tuple, index, value)
   end
 
   @doc """

@@ -96,6 +96,20 @@ defmodule Bumblebee.Layers.Decoder do
   end
 
   @doc """
+  Calls `fun` for every batched tensor in cache initialized with
+  `init_cache/3`.
+  """
+  def traverse_cache(cache, fun) do
+    %{blocks: blocks, offset: offset, attention_mask: attention_mask} = cache
+
+    %{
+      blocks: Bumblebee.Utils.Nx.map(blocks, fun),
+      offset: offset,
+      attention_mask: fun.(attention_mask)
+    }
+  end
+
+  @doc """
   Combines new attention mask with the one in cache.
 
   The function returns the full attention mask and the updated cache.

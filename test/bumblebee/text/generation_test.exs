@@ -43,5 +43,21 @@ defmodule Bumblebee.Text.GenerationTest do
       assert %{results: [%{text: "I was going to say, 'Well, I'm going back to the"}]} =
                Nx.Serving.run(serving, "I was going")
     end
+
+    test "contrastive search" do
+      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+
+      serving =
+        Bumblebee.Text.generation(model_info, tokenizer,
+          max_new_tokens: 12,
+          top_k: 4,
+          penalty_alpha: 0.6,
+          defn_options: [compiler: EXLA]
+        )
+
+      assert %{results: [%{text: "I was going to say, 'Well, I don't know what you"}]} =
+               Nx.Serving.run(serving, "I was going")
+    end
   end
 end

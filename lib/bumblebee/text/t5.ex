@@ -221,6 +221,11 @@ defmodule Bumblebee.Text.T5 do
   end
 
   @impl true
+  def traverse_cache(_spec, cache, fun) do
+    Layers.Decoder.traverse_cache(cache, fun)
+  end
+
+  @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
     inputs = encoder_decoder_inputs(spec)
 
@@ -420,7 +425,11 @@ defmodule Bumblebee.Text.T5 do
       |> Layers.rms_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
       |> Axon.dropout(rate: spec.dropout_rate)
 
-    %{encoder_outputs | hidden_state: hidden_state}
+    %{
+      hidden_state: hidden_state,
+      hidden_states: Layers.replace(encoder_outputs.hidden_states, -1, hidden_state),
+      attentions: encoder_outputs.attentions
+    }
   end
 
   defp decoder(
@@ -476,7 +485,13 @@ defmodule Bumblebee.Text.T5 do
       |> Layers.rms_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
       |> Axon.dropout(rate: spec.dropout_rate)
 
-    %{decoder_outputs | hidden_state: hidden_state}
+    %{
+      cache: decoder_outputs.cache,
+      hidden_state: hidden_state,
+      hidden_states: Layers.replace(decoder_outputs.hidden_states, -1, hidden_state),
+      attentions: decoder_outputs.attentions,
+      cross_attentions: decoder_outputs.cross_attentions
+    }
   end
 
   defp ffn(hidden_state, spec, opts) do

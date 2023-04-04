@@ -353,6 +353,11 @@ defmodule Bumblebee.Text.Roberta do
     )
   end
 
+  @impl true
+  def traverse_cache(_spec, cache, fun) do
+    Layers.Decoder.traverse_cache(cache, fun)
+  end
+
   defp inputs(spec, opts \\ []) do
     shape = Keyword.get(opts, :shape, {nil, nil})
     decoder? = Keyword.get(opts, :decoder?, false)

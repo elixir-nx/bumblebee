@@ -306,11 +306,23 @@ defmodule Bumblebee.Utils.Nx do
 
   @doc """
   Computes cosine similarity between the given tensors.
+
+  ## Options
+
+    * `:batched?` - if `true`, treats inputs as batches along the first
+      axis and computes individual similarities. Defaults to `false`
+
   """
-  defn cosine_similarity(x, y) do
+  deftransform cosine_similarity(x, y, opts \\ []) do
+    opts = Keyword.validate!(opts, batched?: false)
+    batched? = opts[:batched?]
+
     x = normalize(x)
     y = normalize(y)
-    Nx.dot(x, [-1], y, [-1])
+
+    batch_axes = if batched?, do: [0], else: []
+
+    Nx.dot(x, [-1], batch_axes, y, [-1], batch_axes)
   end
 
   defnp normalize(tensor) do
@@ -345,5 +357,78 @@ defmodule Bumblebee.Utils.Nx do
 
     values = Nx.take_along_axis(tensor, indices, axis: axis)
     {values, indices}
+  end
+
+  @doc """
+  Repeats tensor along the given axis, such that repeated chunks are
+  adjacent to each other.
+
+  ## Options
+
+    * `:axis` - the axis to repeat along. Defaults to `0`
+
+  ## Examples
+
+    iex> x = Nx.tensor([[1, 2], [3, 4]])
+    iex> Bumblebee.Utils.Nx.repeat_interleave(x, 2)
+    #Nx.Tensor<
+      s64[4][2]
+      [
+        [1, 2],
+        [1, 2],
+        [3, 4],
+        [3, 4]
+      ]
+    >
+
+  """
+  deftransform repeat_interleave(tensor, times, opts \\ []) do
+    opts = Keyword.validate!(opts, axis: 0)
+
+    axis = opts[:axis]
+
+    repetitions =
+      1
+      |> List.duplicate(Nx.rank(tensor))
+      |> List.insert_at(axis + 1, times)
+
+    tensor
+    |> Nx.new_axis(axis + 1)
+    |> Nx.tile(repetitions)
+    |> Nx.flatten(axes: [axis, axis + 1])
+  end
+
+  @doc """
+  A version of `Nx.take/3` with each index applying to a corresponding
+  chunk.
+
+  ## Options
+
+    * `:axis` - the axis to take along. Defaults to `0`
+
+  ## Examples
+
+    iex> x = Nx.tensor([[1, 1], [2, 2], [3, 3], [4, 4]])
+    iex> Bumblebee.Utils.Nx.chunked_take(x, 2, Nx.tensor([1, 0]))
+    #Nx.Tensor<
+      s64[2][2]
+      [
+        [2, 2],
+        [3, 3]
+      ]
+    >
+
+  """
+  deftransform chunked_take(tensor, chunk_size, idx, opts \\ []) do
+    opts = Keyword.validate!(opts, axis: 0)
+
+    flat_idx =
+      idx
+      |> Nx.shape()
+      |> Nx.iota()
+      |> Nx.multiply(chunk_size)
+      |> Nx.add(idx)
+
+    Nx.take(tensor, flat_idx, axis: opts[:axis])
   end
 end
