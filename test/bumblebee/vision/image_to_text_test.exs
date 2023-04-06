@@ -27,7 +27,7 @@ defmodule Bumblebee.Vision.ImageToTextTest do
       image = StbImage.read_file!(Path.join(@images_dir, "coco/39769.jpeg"))
 
       assert %{
-               results: [%{text: "two cats are laying on a pink couch"}]
+               results: [%{text: "two cats sleeping on a couch"}]
              } = Nx.Serving.run(serving, image)
     end
   end
