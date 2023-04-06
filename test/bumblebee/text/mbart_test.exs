@@ -160,16 +160,22 @@ defmodule Bumblebee.Text.MbartTest do
 
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/mbart-large-en-ro"})
 
+    {:ok, generation_config} =
+      Bumblebee.load_generation_config({:hf, "facebook/mbart-large-en-ro"})
+
     assert %Bumblebee.Text.Mbart{architecture: :for_conditional_generation} = model_info.spec
 
     english_phrase = "42 is the answer"
 
     inputs = Bumblebee.apply_tokenizer(tokenizer, english_phrase)
 
+    generation_config = Bumblebee.configure(generation_config, min_length: 0, max_length: 6)
+
     generate =
-      Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec,
-        min_length: 0,
-        max_length: 6
+      Bumblebee.Text.Generation.build_generate(
+        model_info.model,
+        model_info.spec,
+        generation_config
       )
 
     token_ids = EXLA.jit(generate).(model_info.params, inputs)

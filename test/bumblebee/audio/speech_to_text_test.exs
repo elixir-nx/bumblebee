@@ -12,10 +12,10 @@ defmodule Bumblebee.Audio.SpeechToTextTest do
       {:ok, model_info} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/whisper-tiny"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/whisper-tiny"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai/whisper-tiny"})
 
       serving =
-        Bumblebee.Audio.speech_to_text(model_info, featurizer, tokenizer,
-          max_new_tokens: 100,
+        Bumblebee.Audio.speech_to_text(model_info, featurizer, tokenizer, generation_config,
           defn_options: [compiler: EXLA]
         )
 

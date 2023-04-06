@@ -81,12 +81,7 @@ defmodule Bumblebee.Text.T5 do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++
-      Shared.token_options(
-        pad_token_id: 0,
-        eos_token_id: 1,
-        decoder_start_token_id: 0
-      )
+      ]) ++ Shared.token_options(decoder_start_token_id: 0)
 
   @moduledoc """
   T5 model family.

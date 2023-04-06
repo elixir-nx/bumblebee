@@ -133,6 +133,9 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Tokenizer,
           Bumblebee.Scheduler,
           Bumblebee.Text.Generation
+        ],
+        Other: [
+          Bumblebee.Text.GenerationConfig
         ]
       ],
       groups_for_functions: [

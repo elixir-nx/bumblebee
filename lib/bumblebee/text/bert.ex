@@ -75,8 +75,7 @@ defmodule Bumblebee.Text.Bert do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++
-      Shared.token_options(pad_token_id: 0) ++ Shared.generation_options()
+      ])
 
   @moduledoc """
   BERT model family.

@@ -87,13 +87,7 @@ defmodule Bumblebee.Audio.Whisper do
       Shared.common_options([
         :output_hidden_states,
         :output_attentions
-      ]) ++
-      Shared.token_options(
-        pad_token_id: 50256,
-        bos_token_id: 50257,
-        eos_token_id: 50256,
-        decoder_start_token_id: 50257
-      ) ++ Shared.generation_options(forced_bos_token_id: 0, forced_eos_token_id: 2)
+      ])
 
   @moduledoc """
   Whisper model family.

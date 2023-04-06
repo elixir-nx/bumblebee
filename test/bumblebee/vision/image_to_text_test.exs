@@ -16,9 +16,11 @@ defmodule Bumblebee.Vision.ImageToTextTest do
 
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Salesforce/blip-image-captioning-base"})
 
+      {:ok, generation_config} =
+        Bumblebee.load_generation_config({:hf, "Salesforce/blip-image-captioning-base"})
+
       serving =
-        Bumblebee.Vision.ImageToText.image_to_text(blip, featurizer, tokenizer,
-          max_new_tokens: 100,
+        Bumblebee.Vision.ImageToText.image_to_text(blip, featurizer, tokenizer, generation_config,
           defn_options: [compiler: EXLA]
         )
 

@@ -9,8 +9,9 @@ defmodule Bumblebee.Text.ConversationTest do
     test "generates text" do
       {:ok, model} = Bumblebee.load_model({:hf, "microsoft/DialoGPT-medium"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
 
-      serving = Bumblebee.Text.conversation(model, tokenizer, max_new_tokens: 100)
+      serving = Bumblebee.Text.conversation(model, tokenizer, generation_config)
 
       history = nil
 

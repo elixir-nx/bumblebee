@@ -84,8 +84,7 @@ defmodule Bumblebee.Text.Mbart do
         :num_labels,
         :id_to_label
       ]) ++
-      Shared.token_options(pad_token_id: 1, bos_token_id: 0, eos_token_id: 2) ++
-      Shared.generation_options(forced_eos_token_id: 2)
+      Shared.token_options(pad_token_id: 1, eos_token_id: 2)
 
   @moduledoc """
   mBART model family.

@@ -64,14 +64,7 @@ defmodule Bumblebee.Text.BlipText do
       Shared.common_options([
         :output_hidden_states,
         :output_attentions
-      ]) ++
-      Shared.token_options(
-        pad_token_id: 0,
-        bos_token_id: 30522,
-        # During generation SEP token is used as the EOS token
-        eos_token_id: 102,
-        sep_token_id: 102
-      )
+      ])
 
   @moduledoc """
   The BLIP model for text encoding.
@@ -417,12 +410,6 @@ defmodule Bumblebee.Text.BlipText do
           layer_norm_epsilon: {"layer_norm_eps", number()},
           initializer_scale: {"initializer_range", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
-
-      opts =
-        case Keyword.fetch(opts, :sep_token_id) do
-          {:ok, sep_token_id} -> Keyword.put(opts, :eos_token_id, sep_token_id)
-          :error -> opts
-        end
 
       @for.config(spec, opts)
     end

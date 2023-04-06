@@ -68,8 +68,7 @@ defmodule Bumblebee.Text.Distilbert do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++
-      Shared.token_options(pad_token_id: 0) ++ Shared.generation_options()
+      ])
 
   @moduledoc """
   DistilBERT model family.

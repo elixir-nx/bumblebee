@@ -83,7 +83,7 @@ defmodule Bumblebee.Text.Blenderbot do
         bos_token_id: 1,
         eos_token_id: 2,
         decoder_start_token_id: 1
-      ) ++ Shared.generation_options(forced_eos_token_id: 2)
+      )
 
   @moduledoc """
   Blenderbot model family.

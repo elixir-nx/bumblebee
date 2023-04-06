@@ -89,8 +89,7 @@ defmodule Bumblebee.Text.Albert do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++
-      Shared.token_options(pad_token_id: 0, bos_token_id: 2, eos_token_id: 3)
+      ])
 
   @moduledoc """
   ALBERT model family.

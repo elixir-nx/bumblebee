@@ -145,6 +145,7 @@ defmodule Bumblebee.Text.BartTest do
   test "conditional generation" do
     {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "facebook/bart-large-cnn"})
 
     assert %Bumblebee.Text.Bart{architecture: :for_conditional_generation} = model_info.spec
 
@@ -157,10 +158,13 @@ defmodule Bumblebee.Text.BartTest do
 
     inputs = Bumblebee.apply_tokenizer(tokenizer, article)
 
+    generation_config = Bumblebee.configure(generation_config, max_length: 8)
+
     generate =
-      Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec,
-        min_length: 0,
-        max_length: 8
+      Bumblebee.Text.Generation.build_generate(
+        model_info.model,
+        model_info.spec,
+        generation_config
       )
 
     token_ids = EXLA.jit(generate).(model_info.params, inputs)

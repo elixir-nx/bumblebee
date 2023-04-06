@@ -12,7 +12,9 @@ defmodule Bumblebee.Text.Conversation do
             ) :: String.t()
 
   @doc false
-  def conversation(model_info, tokenizer, opts \\ []) do
+  def conversation(model_info, tokenizer, generation_config, opts \\ []) do
+    opts = Keyword.validate!(opts, [:compile, defn_options: []])
+
     %{params: params, spec: spec} = model_info
 
     Shared.validate_architecture!(spec, [
@@ -20,8 +22,8 @@ defmodule Bumblebee.Text.Conversation do
       :for_conditional_generation
     ])
 
-    {compile, opts} = Keyword.pop(opts, :compile)
-    {defn_options, opts} = Keyword.pop(opts, :defn_options, [])
+    compile = opts[:compile]
+    defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
@@ -34,7 +36,11 @@ defmodule Bumblebee.Text.Conversation do
     encoder_decoder? = encoder_decoder?(model_info.model)
 
     generate_fun =
-      Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec, opts)
+      Bumblebee.Text.Generation.build_generate(
+        model_info.model,
+        model_info.spec,
+        generation_config
+      )
 
     Nx.Serving.new(
       fn defn_options ->
