@@ -151,13 +151,13 @@ defmodule Bumblebee.Text do
 
   ## Examples
 
-      {:ok, gpt2} = Bumblebee.load_model({:hf, "gpt2"})
+      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
 
-      serving = Bumblebee.Text.generation(gpt2, tokenizer, max_new_tokens: 15)
+      serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
 
-      prompt = "Elixir is a functional"
-      Nx.Serving.run(serving, prompt)
+      Nx.Serving.run(serving, "Elixir is a functional")
       #=> %{
       #=>   results: [
       #=>     %{
@@ -167,8 +167,14 @@ defmodule Bumblebee.Text do
       #=> }
 
   """
-  @spec generation(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
-  defdelegate generation(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.Generation
+  @spec generation(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          Bumblebee.Text.GenerationConfig.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate generation(model_info, tokenizer, generation_config, opts \\ []),
+    to: Bumblebee.Text.Generation
 
   @type conversation_input :: %{text: String.t(), history: conversation_history() | nil}
   @type conversation_output :: %{text: String.t(), history: conversation_history()}
@@ -220,7 +226,10 @@ defmodule Bumblebee.Text do
       {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/blenderbot-400M-distill"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/blenderbot-400M-distill"})
 
-      serving = Bumblebee.Text.conversation(model_info, tokenizer, max_new_tokens: 100)
+      {:ok, generation_config} =
+        Bumblebee.load_generation_config({:hf, "facebook/blenderbot-400M-distill"})
+
+      serving = Bumblebee.Text.conversation(model_info, tokenizer, generation_config)
 
       history = nil
 
@@ -233,8 +242,14 @@ defmodule Bumblebee.Text do
       #=> %{history: ..., text: "Not much ."}
 
   """
-  @spec conversation(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
-  defdelegate conversation(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.Conversation
+  @spec conversation(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          Bumblebee.Text.GenerationConfig.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate conversation(model_info, tokenizer, generation_config, opts \\ []),
+    to: Bumblebee.Text.Conversation
 
   @type text_classification_input :: String.t()
   @type text_classification_output :: %{predictions: list(text_classification_prediction())}

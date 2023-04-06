@@ -16,16 +16,18 @@ defmodule Bumblebee.Vision.ImageToTextTest do
 
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Salesforce/blip-image-captioning-base"})
 
+      {:ok, generation_config} =
+        Bumblebee.load_generation_config({:hf, "Salesforce/blip-image-captioning-base"})
+
       serving =
-        Bumblebee.Vision.ImageToText.image_to_text(blip, featurizer, tokenizer,
-          max_new_tokens: 100,
+        Bumblebee.Vision.ImageToText.image_to_text(blip, featurizer, tokenizer, generation_config,
           defn_options: [compiler: EXLA]
         )
 
       image = StbImage.read_file!(Path.join(@images_dir, "coco/39769.jpeg"))
 
       assert %{
-               results: [%{text: "two cats are laying on a pink couch"}]
+               results: [%{text: "two cats sleeping on a couch"}]
              } = Nx.Serving.run(serving, image)
     end
   end

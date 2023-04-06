@@ -3,9 +3,11 @@ defmodule Bumblebee.Audio.SpeechToText do
 
   alias Bumblebee.Shared
 
-  def speech_to_text(model_info, featurizer, tokenizer, opts \\ []) do
-    {compile, opts} = Keyword.pop(opts, :compile)
-    {defn_options, opts} = Keyword.pop(opts, :defn_options, [])
+  def speech_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []) do
+    opts = Keyword.validate!(opts, [:compile, defn_options: []])
+
+    compile = opts[:compile]
+    defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]
 
@@ -18,7 +20,7 @@ defmodule Bumblebee.Audio.SpeechToText do
 
     %{model: model, params: params, spec: spec} = model_info
 
-    generate_fun = Bumblebee.Text.Generation.build_generate(model, spec, opts)
+    generate_fun = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
 
     Nx.Serving.new(
       fn defn_options ->

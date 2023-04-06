@@ -32,6 +32,7 @@ defmodule Bumblebee do
   @featurizer_filename "preprocessor_config.json"
   @tokenizer_filename "tokenizer.json"
   @tokenizer_special_tokens_filename "special_tokens_map.json"
+  @generation_filename "generation_config.json"
   @scheduler_filename "scheduler_config.json"
   @params_filename %{pytorch: "pytorch_model.bin"}
 
@@ -688,6 +689,41 @@ defmodule Bumblebee do
         _ ->
           {:error, "could not infer tokenizer type from the model configuration"}
       end
+    end
+  end
+
+  @doc """
+  Loads generation config from a model repository.
+
+  Generation config includes a number of model-specific properties,
+  so it is usually best to load the config and further configure,
+  rather than building from scratch.
+
+  See `Bumblebee.Text.GenerationConfig` for all the available options.
+
+  ## Examples
+
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+
+      generation_config = Bumblebee.configure(generation_config, max_new_tokens: 10)
+
+  """
+  @spec load_generation_config(repository()) ::
+          {:ok, Bumblebee.Text.GenerationConfig.t()} | {:error, String.t()}
+  def load_generation_config(repository) do
+    repository = normalize_repository!(repository)
+
+    file_result =
+      with {:error, _} <- download(repository, @generation_filename) do
+        download(repository, @config_filename)
+      end
+
+    with {:ok, path} <- file_result,
+         {:ok, generation_data} <- decode_config(path) do
+      config = struct!(Bumblebee.Text.GenerationConfig)
+      config = HuggingFace.Transformers.Config.load(config, generation_data)
+
+      {:ok, config}
     end
   end
 

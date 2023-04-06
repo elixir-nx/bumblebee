@@ -50,7 +50,9 @@ defmodule Bumblebee.Text.Generation do
   end
 
   @doc false
-  def generation(model_info, tokenizer, opts \\ []) do
+  def generation(model_info, tokenizer, generation_config, opts \\ []) do
+    opts = Keyword.validate!(opts, [:compile, defn_options: []])
+
     %{params: params, spec: spec} = model_info
 
     Shared.validate_architecture!(spec, [
@@ -58,8 +60,8 @@ defmodule Bumblebee.Text.Generation do
       :for_causal_language_modeling
     ])
 
-    {compile, opts} = Keyword.pop(opts, :compile)
-    {defn_options, opts} = Keyword.pop(opts, :defn_options, [])
+    compile = opts[:compile]
+    defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
@@ -69,7 +71,7 @@ defmodule Bumblebee.Text.Generation do
             "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
     end
 
-    generate_fun = build_generate(model_info.model, model_info.spec, opts)
+    generate_fun = build_generate(model_info.model, model_info.spec, generation_config)
 
     Nx.Serving.new(
       fn defn_options ->
@@ -123,100 +125,18 @@ defmodule Bumblebee.Text.Generation do
   In case of encoder-decoder models, the corresponding encoder is run
   only once and the intermediate state is reused during all iterations.
 
-  The length of the generated sequence is not fixed, however it can be
-  controlled via several options.
-
-  Note that either `:max_new_tokens` or `:max_length` must be specified.
-
-  ## Strategies
-
-    * **Greedy search** - the most straightforward approach, where in
-      every iteration the most probable token (as given by the model)
-      is taken.
-
-    * **Contrastive search** - state-of-the-art decoding method, capable
-      of producing high quality, coherent sequences. Note that this
-      method gives deterministic results. See [this article](https://huggingface.co/blog/introducing-csearch)
-      for more details. To enable this method, set `:top_k` and
-      `:penalty_alpha` options.
-
-  ## Options
-
-    * `:max_new_tokens` - the maximum number of tokens to be generated,
-      ignoring the number of tokens in the prompt
-
-    * `:min_new_tokens` - the minimum number of tokens to be generated,
-      ignoring the number of tokens in the prompt
-
-    * `:max_length` - the maximum length of the sequence to be generated.
-      Note that this length includes the length of the input prompt
-      (including padding). In general, prefer `:max_new_tokens`, which
-      ignores the number of tokens in the prompt
-
-    * `:min_length` - the minimum length of the sequence to be generated.
-      Note that this length includes the length of the input prompt
-      (including padding). In general, prefer `:min_new_tokens`, which
-      ignores the number of tokens in the prompt
-
-    * `:decoder_start_token_id` - the id of the initial token when
-      generating from scratch, in case of encoder-decoder models
-
-    * `:bos_token_id` - the id of the beginning-of-sequence token
-
-    * `:eos_token_id` - the id of the end-of-sequence token
-
-    * `:pad_token_id` - the id of the padding token
-
-    * `:forced_bos_token_id` - the id of the token to force as the first
-      generated token
-
-    * `:forced_eos_token_id` - the id of the token to force as the last
-      generated token when `:max_length` is reached
-
-    * `:no_repeat_ngram_length` - when set, n-grams of the given length
-      can occur only once in the generated sequence
-
-    * `:top_k` - the number of highest probability vocabulary tokens
-      considered as a continuation
-
-    * `:penalty_alpha` - balances the model confidence and the degeneration
-      penalty in contrastive search
-
-  The default token option values are taken from the given model specification
-  when available.
+  The generation is controlled by a number of options given as
+  `%Bumblebee.Text.GenerationConfig{}`, see the corresponding docs
+  for more details.
   """
-  @spec build_generate(Axon.t(), Bumblebee.ModelSpec.t(), keyword()) ::
+  @spec build_generate(Axon.t(), Bumblebee.ModelSpec.t(), Bumblebee.Text.GenerationConfig.t()) ::
           (params :: map(), inputs :: map() -> Nx.t())
-  def build_generate(model, spec, opts \\ []) do
-    opts =
-      Keyword.validate!(opts,
-        max_new_tokens: nil,
-        min_new_tokens: nil,
-        max_length: nil,
-        min_length: nil,
-        decoder_start_token_id: Map.get(spec, :decoder_start_token_id),
-        bos_token_id: Map.get(spec, :bos_token_id),
-        eos_token_id: Map.get(spec, :eos_token_id),
-        pad_token_id: Map.get(spec, :pad_token_id),
-        forced_bos_token_id: Map.get(spec, :forced_bos_token_id),
-        forced_eos_token_id: Map.get(spec, :forced_eos_token_id),
-        forced_token_ids: Map.get(spec, :forced_token_ids),
-        no_repeat_ngram_length: Map.get(spec, :no_repeat_ngram_length),
-        top_k: nil,
-        penalty_alpha: nil
-      )
+  def build_generate(model, spec, config) do
+    decoder_start_token_id = config.decoder_start_token_id || config.bos_token_id
+    eos_token_id = config.eos_token_id
+    pad_token_id = config.pad_token_id || config.eos_token_id
 
-    decoder_start_token_id = opts[:decoder_start_token_id] || opts[:bos_token_id]
-    eos_token_id = opts[:eos_token_id]
-    pad_token_id = opts[:pad_token_id]
-    forced_bos_token_id = opts[:forced_bos_token_id]
-    forced_eos_token_id = opts[:forced_eos_token_id]
-    forced_token_ids = opts[:forced_token_ids]
-    no_repeat_ngram_length = opts[:no_repeat_ngram_length]
-    top_k = opts[:top_k]
-    penalty_alpha = opts[:penalty_alpha]
-
-    {max_length_fun, min_length_fun} = lazy_lengths_from_opts(opts)
+    {max_length_fun, min_length_fun} = lazy_lengths_from_opts(config)
 
     {prepare_inputs_fun, update_inputs_fun} =
       input_callbacks(model, spec, max_length_fun, decoder_start_token_id)
@@ -224,7 +144,7 @@ defmodule Bumblebee.Text.Generation do
     traverse_cache_fun = &traverse_cache(spec, &1, &2)
 
     model =
-      if not spec.output_hidden_states and contrastive_search?(opts) do
+      if not spec.output_hidden_states and config.strategy.type == :contrastive_search do
         spec
         |> Bumblebee.configure(output_hidden_states: true)
         |> Bumblebee.build_model()
@@ -234,15 +154,7 @@ defmodule Bumblebee.Text.Generation do
 
     {_init_fun, predict_fun} = Axon.build(model)
 
-    logits_processor_fun =
-      get_logits_processor(
-        min_length_fun,
-        eos_token_id,
-        forced_bos_token_id,
-        forced_eos_token_id,
-        forced_token_ids,
-        no_repeat_ngram_length
-      )
+    logits_processor_fun = get_logits_processor(min_length_fun, eos_token_id, config)
 
     &generate_impl(
       &2,
@@ -254,18 +166,13 @@ defmodule Bumblebee.Text.Generation do
       traverse_cache_fun,
       pad_token_id: pad_token_id,
       eos_token_id: eos_token_id,
-      top_k: top_k,
-      penalty_alpha: penalty_alpha
+      strategy: config.strategy
     )
-  end
-
-  defp contrastive_search?(opts) do
-    opts[:top_k] && opts[:top_k] > 1 && opts[:penalty_alpha] && opts[:penalty_alpha] > 0
   end
 
   defp lazy_lengths_from_opts(opts) do
     max_length_fun =
-      case {opts[:max_new_tokens], opts[:max_length]} do
+      case {opts.max_new_tokens, opts.max_length} do
         {nil, nil} ->
           raise ArgumentError,
                 "expected either :max_new_tokens or :max_length option, but neither was given"
@@ -275,14 +182,10 @@ defmodule Bumblebee.Text.Generation do
 
         {nil, max_length} ->
           fn _ -> max_length end
-
-        _ ->
-          raise ArgumentError,
-                "only one of :max_new_tokens or :max_length options must be given, but got both"
       end
 
     min_length_fun =
-      case {opts[:min_new_tokens], opts[:min_length]} do
+      case {opts.min_new_tokens, opts.min_length} do
         {nil, nil} ->
           nil
 
@@ -291,10 +194,6 @@ defmodule Bumblebee.Text.Generation do
 
         {nil, min_length} ->
           fn _ -> min_length end
-
-        _ ->
-          raise ArgumentError,
-                "only one of :min_new_tokens or :min_length options must be given, but got both"
       end
 
     {max_length_fun, min_length_fun}
@@ -404,17 +303,10 @@ defmodule Bumblebee.Text.Generation do
     |> Map.replace!("cache", cache)
   end
 
-  defp get_logits_processor(
-         min_length_fun,
-         eos_token_id,
-         forced_bos_token_id,
-         forced_eos_token_id,
-         forced_token_ids,
-         no_repeat_ngram_length
-       ) do
+  defp get_logits_processor(min_length_fun, eos_token_id, config) do
     processors = [
-      if no_repeat_ngram_length do
-        &no_repeat_ngram_logits_processor(&1, &2, ngram_length: no_repeat_ngram_length)
+      if config.no_repeat_ngram_length && config.no_repeat_ngram_length > 0 do
+        &no_repeat_ngram_logits_processor(&1, &2, ngram_length: config.no_repeat_ngram_length)
       end,
       if min_length_fun && eos_token_id do
         &min_length_logits_processor(&1, &2,
@@ -422,14 +314,14 @@ defmodule Bumblebee.Text.Generation do
           eos_token_id: eos_token_id
         )
       end,
-      if forced_bos_token_id do
-        &bos_token_logits_processor(&1, &2, bos_token_id: forced_bos_token_id)
+      if config.forced_bos_token_id do
+        &bos_token_logits_processor(&1, &2, bos_token_id: config.forced_bos_token_id)
       end,
-      if forced_eos_token_id do
-        &eos_token_logits_processor(&1, &2, eos_token_id: forced_eos_token_id)
+      if config.forced_eos_token_id do
+        &eos_token_logits_processor(&1, &2, eos_token_id: config.forced_eos_token_id)
       end,
-      if forced_token_ids do
-        &forced_tokens_logits_processor(&1, &2, forced_token_ids: forced_token_ids)
+      if config.forced_token_ids do
+        &forced_tokens_logits_processor(&1, &2, forced_token_ids: config.forced_token_ids)
       end
     ]
 
@@ -460,20 +352,10 @@ defmodule Bumblebee.Text.Generation do
               " Consider increasing :max_new_tokens (or :max_length), or padding the input to a shorter length"
     end
 
-    cond do
-      contrastive_search?(opts) ->
-        contrastive(
-          decoder_inputs,
-          decoder_input_ids,
-          predict_fun,
-          params,
-          logits_processor_fun,
-          update_inputs_fun,
-          traverse_cache_fun,
-          [max_length: max_length] ++ opts
-        )
+    strategy = opts[:strategy]
 
-      true ->
+    case strategy.type do
+      :greedy_search ->
         greedy(
           decoder_inputs,
           decoder_input_ids,
@@ -482,6 +364,18 @@ defmodule Bumblebee.Text.Generation do
           logits_processor_fun,
           update_inputs_fun,
           [max_length: max_length] ++ opts
+        )
+
+      :contrastive_search ->
+        contrastive(
+          decoder_inputs,
+          decoder_input_ids,
+          predict_fun,
+          params,
+          logits_processor_fun,
+          update_inputs_fun,
+          traverse_cache_fun,
+          [max_length: max_length, top_k: strategy.top_k, penalty_alpha: strategy.alpha] ++ opts
         )
     end
   end

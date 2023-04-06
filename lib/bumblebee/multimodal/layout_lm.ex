@@ -83,8 +83,7 @@ defmodule Bumblebee.Multimodal.LayoutLm do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++
-      Shared.token_options(pad_token_id: 0)
+      ])
 
   @moduledoc """
   LayoutLM Model family.

@@ -10,6 +10,9 @@ defmodule Bumblebee.Text.GenerationTest do
       {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})
 
+      {:ok, generation_config} =
+        Bumblebee.load_generation_config({:hf, "facebook/bart-large-cnn"})
+
       article = """
       PG&E stated it scheduled the blackouts in response to forecasts for high \
       winds amid dry conditions. The aim is to reduce the risk of wildfires. \
@@ -17,9 +20,10 @@ defmodule Bumblebee.Text.GenerationTest do
       which were expected to last through at least midday tomorrow.
       """
 
+      generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
+
       serving =
-        Bumblebee.Text.generation(model_info, tokenizer,
-          max_new_tokens: 8,
+        Bumblebee.Text.generation(model_info, tokenizer, generation_config,
           defn_options: [compiler: EXLA]
         )
 
@@ -29,11 +33,13 @@ defmodule Bumblebee.Text.GenerationTest do
     test "with :no_repeat_ngram_length" do
       {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+
+      generation_config =
+        Bumblebee.configure(generation_config, max_new_tokens: 12, no_repeat_ngram_length: 2)
 
       serving =
-        Bumblebee.Text.generation(model_info, tokenizer,
-          max_new_tokens: 12,
-          no_repeat_ngram_length: 2,
+        Bumblebee.Text.generation(model_info, tokenizer, generation_config,
           defn_options: [compiler: EXLA]
         )
 
@@ -47,12 +53,16 @@ defmodule Bumblebee.Text.GenerationTest do
     test "contrastive search" do
       {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+
+      generation_config =
+        Bumblebee.configure(generation_config,
+          max_new_tokens: 12,
+          strategy: %{type: :contrastive_search, top_k: 4, alpha: 0.6}
+        )
 
       serving =
-        Bumblebee.Text.generation(model_info, tokenizer,
-          max_new_tokens: 12,
-          top_k: 4,
-          penalty_alpha: 0.6,
+        Bumblebee.Text.generation(model_info, tokenizer, generation_config,
           defn_options: [compiler: EXLA]
         )
 

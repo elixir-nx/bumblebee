@@ -73,12 +73,7 @@ defmodule Bumblebee.Text.Gpt2 do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++
-      Shared.token_options(
-        bos_token_id: 50256,
-        eos_token_id: 50256,
-        pad_token_id: 50256
-      ) ++ Shared.generation_options()
+      ]) ++ Shared.token_options(pad_token_id: 50256)
 
   @moduledoc """
   GPT-2 model family.

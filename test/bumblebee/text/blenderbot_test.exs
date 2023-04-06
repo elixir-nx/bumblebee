@@ -57,16 +57,22 @@ defmodule Bumblebee.Text.BlenderbotTest do
     {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/blenderbot-400M-distill"})
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/blenderbot-400M-distill"})
 
+    {:ok, generation_config} =
+      Bumblebee.load_generation_config({:hf, "facebook/blenderbot-400M-distill"})
+
     assert %Bumblebee.Text.Blenderbot{architecture: :for_conditional_generation} = model_info.spec
 
     english_phrase = " Hey, how are you?"
 
     inputs = Bumblebee.apply_tokenizer(tokenizer, english_phrase)
 
+    generation_config = Bumblebee.configure(generation_config, min_length: 0, max_length: 6)
+
     generate =
-      Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec,
-        min_length: 0,
-        max_length: 6
+      Bumblebee.Text.Generation.build_generate(
+        model_info.model,
+        model_info.spec,
+        generation_config
       )
 
     token_ids = EXLA.jit(generate).(model_info.params, inputs)

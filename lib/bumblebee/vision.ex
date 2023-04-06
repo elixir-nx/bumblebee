@@ -114,9 +114,11 @@ defmodule Bumblebee.Vision do
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "Salesforce/blip-image-captioning-base"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Salesforce/blip-image-captioning-base"})
 
+      {:ok, generation_config} =
+        Bumblebee.load_generation_config({:hf, "Salesforce/blip-image-captioning-base"})
+
       serving =
-        Bumblebee.Vision.image_to_text(blip, featurizer, tokenizer,
-          max_new_tokens: 100,
+        Bumblebee.Vision.image_to_text(blip, featurizer, tokenizer, generation_config,
           defn_options: [compiler: EXLA]
         )
 
@@ -129,8 +131,9 @@ defmodule Bumblebee.Vision do
           Bumblebee.model_info(),
           Bumblebee.Featurizer.t(),
           Bumblebee.Tokenizer.t(),
+          Bumblebee.Text.GenerationConfig.t(),
           keyword()
         ) :: Nx.Serving.t()
-  defdelegate image_to_text(model_info, featurizer, tokenizer, opts \\ []),
+  defdelegate image_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []),
     to: Bumblebee.Vision.ImageToText
 end

@@ -85,11 +85,9 @@ defmodule Bumblebee.Text.Bart do
         :id_to_label
       ]) ++
       Shared.token_options(
-        pad_token_id: 1,
-        bos_token_id: 0,
         eos_token_id: 2,
         decoder_start_token_id: 2
-      ) ++ Shared.generation_options(forced_bos_token_id: 0, forced_eos_token_id: 2)
+      )
 
   @moduledoc """
   BART model family.

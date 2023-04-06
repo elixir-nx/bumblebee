@@ -148,15 +148,19 @@ defmodule Bumblebee.Text.T5Test do
     test "text generation" do
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "t5-small"})
       assert {:ok, model_info} = Bumblebee.load_model({:hf, "t5-small"})
+      assert {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "t5-small"})
 
       text = "translate English to German: How old are you?"
 
       inputs = Bumblebee.apply_tokenizer(tokenizer, text)
 
+      generation_config = Bumblebee.configure(generation_config, min_length: 0, max_length: 10)
+
       generate =
-        Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec,
-          min_length: 0,
-          max_length: 10
+        Bumblebee.Text.Generation.build_generate(
+          model_info.model,
+          model_info.spec,
+          generation_config
         )
 
       token_ids = EXLA.jit(generate).(model_info.params, inputs)
@@ -168,14 +172,20 @@ defmodule Bumblebee.Text.T5Test do
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google/flan-t5-small"})
       assert {:ok, model_info} = Bumblebee.load_model({:hf, "google/flan-t5-small"})
 
+      assert {:ok, generation_config} =
+               Bumblebee.load_generation_config({:hf, "google/flan-t5-small"})
+
       text = "translate English to German: How old are you?"
 
       inputs = Bumblebee.apply_tokenizer(tokenizer, text)
 
+      generation_config = Bumblebee.configure(generation_config, min_length: 0, max_length: 10)
+
       generate =
-        Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec,
-          min_length: 0,
-          max_length: 10
+        Bumblebee.Text.Generation.build_generate(
+          model_info.model,
+          model_info.spec,
+          generation_config
         )
 
       token_ids = EXLA.jit(generate).(model_info.params, inputs)
