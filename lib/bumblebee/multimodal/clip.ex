@@ -86,7 +86,7 @@ defmodule Bumblebee.Multimodal.Clip do
     vision_shape = {1, vision_spec.image_size, vision_spec.image_size, vision_spec.num_channels}
 
     %{
-      "input_ids" => Nx.template({1, 1}, :s64),
+      "input_ids" => Nx.template({1, 1}, :u32),
       "pixel_values" => Nx.template(vision_shape, :f32)
     }
   end

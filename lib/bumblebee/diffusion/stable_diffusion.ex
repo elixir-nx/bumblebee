@@ -228,7 +228,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     image_fun =
       Shared.compile_or_jit(image_fun, defn_options, compile?, fn ->
         text_inputs = %{
-          "input_ids" => Nx.template({batch_size, sequence_length}, :s64)
+          "input_ids" => Nx.template({batch_size, sequence_length}, :u32)
         }
 
         inputs = %{"unconditional" => text_inputs, "conditional" => text_inputs}

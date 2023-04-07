@@ -194,7 +194,7 @@ defmodule Bumblebee.Text.T5 do
   @impl true
   def input_template(_spec) do
     %{
-      "input_ids" => Nx.template({1, 1}, :s64)
+      "input_ids" => Nx.template({1, 1}, :u32)
     }
   end
 
