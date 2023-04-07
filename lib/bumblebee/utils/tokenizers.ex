@@ -46,9 +46,9 @@ defmodule Bumblebee.Utils.Tokenizers do
         |> Encoding.truncate(length, direction: opts[:truncate_direction])
       end)
 
-    input_ids = Enum.map(encodings, &Encoding.get_ids/1)
+    input_ids = encodings |> Enum.map(&Encoding.get_u32_ids/1) |> u32_binaries_to_tensor()
 
-    encoded = %{"input_ids" => Nx.tensor(input_ids)}
+    encoded = %{"input_ids" => input_ids}
 
     encoded
     |> maybe_put_attention_mask(encodings, opts[:return_attention_mask])
@@ -59,8 +59,12 @@ defmodule Bumblebee.Utils.Tokenizers do
 
   defp maybe_put_attention_mask(encoded, encodings, return_attention_mask) do
     if return_attention_mask do
-      attention_mask = Enum.map(encodings, &Encoding.get_attention_mask/1)
-      Map.put(encoded, "attention_mask", Nx.tensor(attention_mask))
+      attention_mask =
+        encodings
+        |> Enum.map(&Encoding.get_u32_attention_mask/1)
+        |> u32_binaries_to_tensor()
+
+      Map.put(encoded, "attention_mask", attention_mask)
     else
       encoded
     end
@@ -68,8 +72,12 @@ defmodule Bumblebee.Utils.Tokenizers do
 
   defp maybe_put_token_type_ids(encoded, encodings, return_token_type_ids) do
     if return_token_type_ids do
-      token_type_ids = Enum.map(encodings, &Encoding.get_type_ids/1)
-      Map.put(encoded, "token_type_ids", Nx.tensor(token_type_ids))
+      token_type_ids =
+        encodings
+        |> Enum.map(&Encoding.get_u32_type_ids/1)
+        |> u32_binaries_to_tensor()
+
+      Map.put(encoded, "token_type_ids", token_type_ids)
     else
       encoded
     end
@@ -77,8 +85,12 @@ defmodule Bumblebee.Utils.Tokenizers do
 
   defp maybe_put_return_special_tokens_mask(encoded, encodings, return_special_tokens_mask) do
     if return_special_tokens_mask do
-      special_tokens_mask = Enum.map(encodings, &Encoding.get_special_tokens_mask/1)
-      Map.put(encoded, "special_tokens_mask", Nx.tensor(special_tokens_mask))
+      special_tokens_mask =
+        encodings
+        |> Enum.map(&Encoding.get_u32_special_tokens_mask/1)
+        |> u32_binaries_to_tensor()
+
+      Map.put(encoded, "special_tokens_mask", special_tokens_mask)
     else
       encoded
     end
@@ -99,6 +111,13 @@ defmodule Bumblebee.Utils.Tokenizers do
     else
       encoded
     end
+  end
+
+  defp u32_binaries_to_tensor(list) do
+    list
+    |> IO.iodata_to_binary()
+    |> Nx.from_binary(:u32)
+    |> Nx.reshape({length(list), :auto})
   end
 
   def decode(tokenizer, ids) do

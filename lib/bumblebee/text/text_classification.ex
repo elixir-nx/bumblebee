@@ -32,8 +32,8 @@ defmodule Bumblebee.Text.TextClassification do
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
-              "input_ids" => Nx.template({batch_size, sequence_length}, :s64),
-              "attention_mask" => Nx.template({batch_size, sequence_length}, :s64)
+              "input_ids" => Nx.template({batch_size, sequence_length}, :u32),
+              "attention_mask" => Nx.template({batch_size, sequence_length}, :u32)
             }
 
             [params, inputs]

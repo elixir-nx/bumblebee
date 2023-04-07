@@ -31,7 +31,7 @@ defmodule Bumblebee.MixProject do
   defp deps do
     [
       {:axon, "~> 0.5.0", axon_opts()},
-      {:tokenizers, "~> 0.2.0 or ~> 0.3.0"},
+      {:tokenizers, "~> 0.3.1"},
       {:nx, "~> 0.5.0"},
       {:exla, "~> 0.5.0", only: [:dev, :test]},
       {:torchx, "~> 0.5.0", only: [:dev, :test]},
