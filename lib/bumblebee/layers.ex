@@ -899,37 +899,39 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Prepends a single parameterized embedding to the given embeddings.
+  Concatenates sequence embeddings, automatically broadcasting batch
+  dimension when necessary.
 
-  This is usually useful when adding embeddings for special tokens,
-  such as CLS, in transformer models where the input is different
-  than text, hence the token is not a part of the input.
+  ## Options
+
+    * `:name` - layer name
+
   """
-  def prepend_embedding(embeddings, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, initializer: :zeros])
+  def concatenate_embeddings(inputs, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name])
 
     name = opts[:name]
 
-    embedding =
-      Axon.param("embedding", fn embeddings -> {elem(embeddings, 2)} end,
-        initializer: opts[:initializer]
-      )
-
     Axon.layer(
-      fn embeddings, embedding, _opts ->
-        batch_size = Nx.axis_size(embeddings, 0)
-        embedding_size = Nx.axis_size(embeddings, -1)
+      fn inputs, _opts ->
+        inputs = Tuple.to_list(inputs)
 
-        embedding =
-          embedding
-          |> Nx.reshape({1, 1, embedding_size})
-          |> Nx.broadcast({batch_size, 1, embedding_size})
+        batch_size =
+          inputs
+          |> Enum.map(&Nx.axis_size(&1, 0))
+          |> Enum.max()
 
-        Nx.concatenate([embedding, embeddings], axis: 1)
+        inputs =
+          Enum.map(inputs, fn input ->
+            new_shape = input |> Nx.shape() |> put_elem(0, batch_size)
+            Nx.broadcast(input, new_shape)
+          end)
+
+        Nx.concatenate(inputs, axis: 1)
       end,
-      [embeddings, embedding],
+      [Axon.container(List.to_tuple(inputs))],
       name: name,
-      op_name: :prepend_embedding
+      op_name: :concatenate_embeddings
     )
   end
 

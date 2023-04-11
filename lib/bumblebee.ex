@@ -119,6 +119,8 @@ defmodule Bumblebee do
     "ViTForImageClassification" => {Bumblebee.Vision.Vit, :for_image_classification},
     "ViTForMaskedImageModeling" => {Bumblebee.Vision.Vit, :for_masked_image_modeling},
     "ViTModel" => {Bumblebee.Vision.Vit, :base},
+    "WhisperModel" => {Bumblebee.Audio.Whisper, :base},
+    "WhisperForConditionalGeneration" => {Bumblebee.Audio.Whisper, :for_conditional_generation},
     # These models are just RoBERTa models, but the config will list them as XLM-RoBERTa
     "XLMRobertaForCausalLM" => {Bumblebee.Text.Roberta, :for_causal_language_modeling},
     "XLMRobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
@@ -128,8 +130,6 @@ defmodule Bumblebee do
       {Bumblebee.Text.Roberta, :for_sequence_classification},
     "XLMRobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
     "XLMRobertaModel" => {Bumblebee.Text.Roberta, :base},
-    "WhisperModel" => {Bumblebee.Audio.Whisper, :base},
-    "WhisperForConditionalGeneration" => {Bumblebee.Audio.Whisper, :for_conditional_generation},
     # Diffusers
     "AutoencoderKL" => {Bumblebee.Diffusion.VaeKl, :base},
     "StableDiffusionSafetyChecker" => {Bumblebee.Diffusion.StableDiffusion.SafetyChecker, :base},

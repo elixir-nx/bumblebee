@@ -221,8 +221,10 @@ defmodule Bumblebee.Vision.Vit do
       |> patch_embedding(spec, name: join(name, "patch_embedding"))
       |> Layers.apply_vision_patch_mask(patch_mask, name: join(name, "mask_tokens"))
 
-    input_embeddings =
-      Layers.prepend_embedding(patch_embeddings, name: join(name, "class_embedding"))
+    class_embedding =
+      Layers.learned_embeddings(1, spec.hidden_size, name: join(name, "class_embedding"))
+
+    input_embeddings = Layers.concatenate_embeddings([class_embedding, patch_embeddings])
 
     num_patches = div(spec.image_size, spec.patch_size) ** 2
 
@@ -323,9 +325,9 @@ defmodule Bumblebee.Vision.Vit do
       %{
         "embedder.patch_embedding.projection" => "vit.embeddings.patch_embeddings.projection",
         "embedder.class_embedding" => %{
-          "embedding" => {
+          "embeddings" => {
             [{"vit.embeddings", "cls_token"}],
-            fn [value] -> Nx.squeeze(value, axes: [0, 1]) end
+            fn [value] -> Nx.squeeze(value, axes: [0]) end
           }
         },
         "embedder.position_embedding" => %{

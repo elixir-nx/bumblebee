@@ -141,11 +141,13 @@ defmodule Bumblebee.Vision.BlipVision do
 
     patch_embeddings = patch_embedding(pixel_values, spec, name: join(name, "patch_embedding"))
 
-    input_embeddings =
-      Layers.prepend_embedding(patch_embeddings,
+    class_embedding =
+      Layers.learned_embeddings(1, spec.hidden_size,
         name: join(name, "class_embedding"),
         initializer: Axon.Initializers.normal()
       )
+
+    input_embeddings = Layers.concatenate_embeddings([class_embedding, patch_embeddings])
 
     num_patches = div(spec.image_size, spec.patch_size) ** 2
     num_positions = num_patches + 1
@@ -233,9 +235,9 @@ defmodule Bumblebee.Vision.BlipVision do
       %{
         "embedder.patch_embedding" => "vision_model.embeddings.patch_embedding",
         "embedder.class_embedding" => %{
-          "embedding" => {
+          "embeddings" => {
             [{"vision_model.embeddings", "class_embedding"}],
-            fn [value] -> Nx.squeeze(value, axes: [0, 1]) end
+            fn [value] -> Nx.squeeze(value, axes: [0]) end
           }
         },
         "embedder.position_embedding" => %{
