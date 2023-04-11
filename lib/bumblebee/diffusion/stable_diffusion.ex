@@ -202,11 +202,14 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
       {safety_checker?, safety_checker[:spec], safety_checker[:params]},
       safety_checker_featurizer,
       {compile != nil, batch_size, sequence_length},
-      num_images_per_prompt,
-      defn_options
+      num_images_per_prompt
     ]
 
-    Nx.Serving.new(fn -> apply(&init/9, init_args) end, batch_size: batch_size)
+    Nx.Serving.new(
+      fn defn_options -> apply(&init/9, init_args ++ [defn_options]) end,
+      defn_options
+    )
+    |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(&client_preprocessing(&1, tokenizer, sequence_length))
     |> Nx.Serving.client_postprocessing(&client_postprocessing(&1, &2, &3, safety_checker))
   end
@@ -225,7 +228,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     image_fun =
       Shared.compile_or_jit(image_fun, defn_options, compile?, fn ->
         text_inputs = %{
-          "input_ids" => Nx.template({batch_size, sequence_length}, :s64)
+          "input_ids" => Nx.template({batch_size, sequence_length}, :u32)
         }
 
         inputs = %{"unconditional" => text_inputs, "conditional" => text_inputs}

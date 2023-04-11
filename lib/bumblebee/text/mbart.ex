@@ -84,8 +84,7 @@ defmodule Bumblebee.Text.Mbart do
         :num_labels,
         :id_to_label
       ]) ++
-      Shared.token_options(pad_token_id: 1, bos_token_id: 0, eos_token_id: 2) ++
-      Shared.generation_options(forced_eos_token_id: 2)
+      Shared.token_options(pad_token_id: 1, eos_token_id: 2)
 
   @moduledoc """
   mBART model family.
@@ -230,7 +229,7 @@ defmodule Bumblebee.Text.Mbart do
   @impl true
   def input_template(_spec) do
     %{
-      "input_ids" => Nx.template({1, 1}, :s64)
+      "input_ids" => Nx.template({1, 1}, :u32)
     }
   end
 
@@ -247,7 +246,10 @@ defmodule Bumblebee.Text.Mbart do
     inputs = encoder_decoder_inputs(spec)
     outputs = core(inputs, spec)
 
-    logits = language_modeling_head(outputs.hidden_state, spec, name: "language_modeling_head")
+    logits =
+      outputs.hidden_state
+      |> language_modeling_head(spec, name: "language_modeling_head")
+      |> Axon.bias(name: "language_modeling_head.logits_bias", bias_initializer: :zeros)
 
     Layers.output(%{
       logits: logits,
@@ -428,6 +430,11 @@ defmodule Bumblebee.Text.Mbart do
     )
   end
 
+  @impl true
+  def traverse_cache(_spec, cache, fun) do
+    Layers.Decoder.traverse_cache(cache, fun)
+  end
+
   defp core(inputs, spec) do
     encoder_outputs =
       Layers.if_present inputs["encoder_hidden_state"] do
@@ -466,7 +473,7 @@ defmodule Bumblebee.Text.Mbart do
           if sequence_length == 1 do
             start_ids
           else
-            Nx.concatenate([start_ids, input_ids[[0..-1//1, 0..-2//1]]], axis: 1)
+            Nx.concatenate([start_ids, input_ids[[.., 0..-2//1]]], axis: 1)
           end
         end)
       end
@@ -518,7 +525,9 @@ defmodule Bumblebee.Text.Mbart do
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.dropout_rate,
         attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm_epsilon: 1.0e-5,
+        layer_norm: [
+          epsilon: 1.0e-5
+        ],
         norm_placement: :first,
         ffn: [
           intermediate_size: spec.encoder_intermediate_size,
@@ -533,7 +542,7 @@ defmodule Bumblebee.Text.Mbart do
 
     %{
       hidden_state: hidden_state,
-      hidden_states: Layers.append(encoder_outputs.hidden_states, hidden_state),
+      hidden_states: Layers.replace(encoder_outputs.hidden_states, -1, hidden_state),
       attentions: encoder_outputs.attentions
     }
   end
@@ -614,7 +623,9 @@ defmodule Bumblebee.Text.Mbart do
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.dropout_rate,
         attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm_epsilon: 1.0e-5,
+        layer_norm: [
+          epsilon: 1.0e-5
+        ],
         norm_placement: :first,
         ffn: [
           intermediate_size: spec.decoder_intermediate_size,
@@ -630,7 +641,7 @@ defmodule Bumblebee.Text.Mbart do
     %{
       cache: decoder_outputs.cache,
       hidden_state: hidden_state,
-      hidden_states: Layers.append(decoder_outputs.hidden_states, hidden_state),
+      hidden_states: Layers.replace(decoder_outputs.hidden_states, -1, hidden_state),
       attentions: decoder_outputs.attentions,
       cross_attentions: decoder_outputs.cross_attentions
     }
@@ -720,6 +731,9 @@ defmodule Bumblebee.Text.Mbart do
         "decoder.blocks.{n}.output_norm" => "model.decoder.layers.{n}.final_layer_norm",
         "decoder.norm" => "model.decoder.layer_norm",
         "language_modeling_head.output" => "model.shared",
+        "language_modeling_head.logits_bias" => %{
+          "bias" => {[{"model", "final_logits_bias"}], fn [value] -> Nx.squeeze(value) end}
+        },
         "sequence_classification_head.dense" => "classification_head.dense",
         "sequence_classification_head.output" => "classification_head.out_proj",
         "question_answering_head.output" => "qa_outputs"

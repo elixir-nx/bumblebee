@@ -32,6 +32,7 @@ defmodule Bumblebee do
   @featurizer_filename "preprocessor_config.json"
   @tokenizer_filename "tokenizer.json"
   @tokenizer_special_tokens_filename "special_tokens_map.json"
+  @generation_filename "generation_config.json"
   @scheduler_filename "scheduler_config.json"
   @params_filename %{pytorch: "pytorch_model.bin"}
 
@@ -57,6 +58,10 @@ defmodule Bumblebee do
     "BertForTokenClassification" => {Bumblebee.Text.Bert, :for_token_classification},
     "BertLMHeadModel" => {Bumblebee.Text.Bert, :for_causal_language_modeling},
     "BertModel" => {Bumblebee.Text.Bert, :base},
+    "BlenderbotForConditionalGeneration" =>
+      {Bumblebee.Text.Blenderbot, :for_conditional_generation},
+    "BlenderbotModel" => {Bumblebee.Text.Blenderbot, :base},
+    "BlipForConditionalGeneration" => {Bumblebee.Multimodal.Blip, :for_conditional_generation},
     # These models are just RoBERTa models, but the config will list them as CamemBERT
     "CamembertModel" => {Bumblebee.Text.Roberta, :base},
     "CamembertForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
@@ -75,6 +80,12 @@ defmodule Bumblebee do
       {Bumblebee.Vision.Deit, :for_image_classification_with_teacher},
     "DeiTForMaskedImageModeling" => {Bumblebee.Vision.Deit, :for_masked_image_modeling},
     "DeiTModel" => {Bumblebee.Vision.Deit, :base},
+    "DistilBertModel" => {Bumblebee.Text.Distilbert, :base},
+    "DistilBertForMaskedLM" => {Bumblebee.Text.Distilbert, :for_masked_language_modeling},
+    "DistilBertForSequenceClassification" =>
+      {Bumblebee.Text.Distilbert, :for_sequence_classification},
+    "DistilBertForQuestionAnswering" => {Bumblebee.Text.Distilbert, :for_question_answering},
+    "DistilBertForTokenClassification" => {Bumblebee.Text.Distilbert, :for_token_classification},
     "GPT2ForSequenceClassification" => {Bumblebee.Text.Gpt2, :for_sequence_classification},
     "GPT2ForTokenClassification" => {Bumblebee.Text.Gpt2, :for_token_classification},
     "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling},
@@ -102,9 +113,14 @@ defmodule Bumblebee do
     "RobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
     "RobertaForCausalLM" => {Bumblebee.Text.Roberta, :for_causal_language_modeling},
     "RobertaModel" => {Bumblebee.Text.Roberta, :base},
+    "T5Model" => {Bumblebee.Text.T5, :base},
+    "T5ForConditionalGeneration" => {Bumblebee.Text.T5, :for_conditional_generation},
+    "T5EncoderModel" => {Bumblebee.Text.T5, :encoder},
     "ViTForImageClassification" => {Bumblebee.Vision.Vit, :for_image_classification},
     "ViTForMaskedImageModeling" => {Bumblebee.Vision.Vit, :for_masked_image_modeling},
     "ViTModel" => {Bumblebee.Vision.Vit, :base},
+    "WhisperModel" => {Bumblebee.Audio.Whisper, :base},
+    "WhisperForConditionalGeneration" => {Bumblebee.Audio.Whisper, :for_conditional_generation},
     # These models are just RoBERTa models, but the config will list them as XLM-RoBERTa
     "XLMRobertaForCausalLM" => {Bumblebee.Text.Roberta, :for_causal_language_modeling},
     "XLMRobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
@@ -114,8 +130,6 @@ defmodule Bumblebee do
       {Bumblebee.Text.Roberta, :for_sequence_classification},
     "XLMRobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
     "XLMRobertaModel" => {Bumblebee.Text.Roberta, :base},
-    "WhisperModel" => {Bumblebee.Audio.Whisper, :base},
-    "WhisperForConditionalGeneration" => {Bumblebee.Audio.Whisper, :for_conditional_generation},
     # Diffusers
     "AutoencoderKL" => {Bumblebee.Diffusion.VaeKl, :base},
     "StableDiffusionSafetyChecker" => {Bumblebee.Diffusion.StableDiffusion.SafetyChecker, :base},
@@ -130,6 +144,10 @@ defmodule Bumblebee do
     "WhisperFeatureExtractor" => Bumblebee.Audio.WhisperFeaturizer
   }
 
+  @transformers_image_processor_type_to_featurizer %{
+    "BlipImageProcessor" => Bumblebee.Vision.BlipFeaturizer
+  }
+
   @model_type_to_featurizer %{
     "convnext" => Bumblebee.Vision.ConvNextFeaturizer,
     "deit" => Bumblebee.Vision.DeitFeaturizer,
@@ -142,12 +160,16 @@ defmodule Bumblebee do
     "albert" => Bumblebee.Text.AlbertTokenizer,
     "bart" => Bumblebee.Text.BartTokenizer,
     "bert" => Bumblebee.Text.BertTokenizer,
+    "blenderbot" => Bumblebee.Text.BlenderbotTokenizer,
+    "blip" => Bumblebee.Text.BertTokenizer,
+    "distilbert" => Bumblebee.Text.DistilbertTokenizer,
     "camembert" => Bumblebee.Text.CamembertTokenizer,
     "clip" => Bumblebee.Text.ClipTokenizer,
     "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
     "layoutlm" => Bumblebee.Text.LayoutLmTokenizer,
     "mbart" => Bumblebee.Text.MbartTokenizer,
     "roberta" => Bumblebee.Text.RobertaTokenizer,
+    "t5" => Bumblebee.Text.T5Tokenizer,
     "whisper" => Bumblebee.Text.WhisperTokenizer,
     "xlm-roberta" => Bumblebee.Text.XlmRobertaTokenizer
   }
@@ -173,6 +195,11 @@ defmodule Bumblebee do
           in. Defaults to the standard cache location for the given
           operating system. You can also configure it globally by
           setting the `BUMBLEBEE_CACHE_DIR` environment variable
+
+        * `:offline` - if `true`, only cached files are accessed and
+          missing files result in an error. You can also configure it
+          globally by setting the `BUMBLEBEE_OFFLINE` environment
+          variable to `true`
 
         * `:auth_token` - the token to use as HTTP bearer authorization
           for remote files
@@ -354,7 +381,8 @@ defmodule Bumblebee do
     * `:params_filename` - the file with the model parameters to be loaded
 
     * `:log_params_diff` - whether to log missing, mismatched and unused
-      parameters. Defaults to `true`
+      parameters. By default diff is logged only if some parameters
+      cannot be loaded
 
     * `:backend` - the backend to allocate the tensors on. It is either
       an atom or a tuple in the shape `{backend, options}`
@@ -391,7 +419,7 @@ defmodule Bumblebee do
         :architecture,
         :params_filename,
         :backend,
-        log_params_diff: true
+        :log_params_diff
       ])
 
     spec_response =
@@ -419,8 +447,6 @@ defmodule Bumblebee do
     # TODO: support format: :auto | :axon | :pytorch
     format = :pytorch
     filename = opts[:params_filename] || @params_filename[format]
-    log_params_diff = opts[:log_params_diff]
-    backend = opts[:backend]
 
     input_template = module.input_template(spec)
 
@@ -428,10 +454,11 @@ defmodule Bumblebee do
 
     with {:ok, path} <- download(repository, filename) do
       params =
-        Bumblebee.Conversion.PyTorch.load_params!(model, input_template, path,
-          log_params_diff: log_params_diff,
-          backend: backend,
-          params_mapping: params_mapping
+        Bumblebee.Conversion.PyTorch.load_params!(
+          model,
+          input_template,
+          path,
+          [params_mapping: params_mapping] ++ Keyword.take(opts, [:backend, :log_params_diff])
         )
 
       {:ok, params}
@@ -500,6 +527,17 @@ defmodule Bumblebee do
 
   defp infer_featurizer_type(%{"feature_extractor_type" => class_name}, _repository) do
     case @transformers_class_to_featurizer[class_name] do
+      nil ->
+        {:error,
+         "could not match the class name #{inspect(class_name)} to any of the supported featurizers"}
+
+      module ->
+        {:ok, module}
+    end
+  end
+
+  defp infer_featurizer_type(%{"image_processor_type" => class_name}, _repository) do
+    case @transformers_image_processor_type_to_featurizer[class_name] do
       nil ->
         {:error,
          "could not match the class name #{inspect(class_name)} to any of the supported featurizers"}
@@ -655,6 +693,41 @@ defmodule Bumblebee do
   end
 
   @doc """
+  Loads generation config from a model repository.
+
+  Generation config includes a number of model-specific properties,
+  so it is usually best to load the config and further configure,
+  rather than building from scratch.
+
+  See `Bumblebee.Text.GenerationConfig` for all the available options.
+
+  ## Examples
+
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+
+      generation_config = Bumblebee.configure(generation_config, max_new_tokens: 10)
+
+  """
+  @spec load_generation_config(repository()) ::
+          {:ok, Bumblebee.Text.GenerationConfig.t()} | {:error, String.t()}
+  def load_generation_config(repository) do
+    repository = normalize_repository!(repository)
+
+    file_result =
+      with {:error, _} <- download(repository, @generation_filename) do
+        download(repository, @config_filename)
+      end
+
+    with {:ok, path} <- file_result,
+         {:ok, generation_data} <- decode_config(path) do
+      config = struct!(Bumblebee.Text.GenerationConfig)
+      config = HuggingFace.Transformers.Config.load(config, generation_data)
+
+      {:ok, config}
+    end
+  end
+
+  @doc """
   Initializes state for a new scheduler loop.
 
   Returns a pair of `{state, timesteps}`, where `state` is an opaque
@@ -766,6 +839,7 @@ defmodule Bumblebee do
   defp download({:hf, repository_id, opts}, filename) do
     revision = opts[:revision]
     cache_dir = opts[:cache_dir]
+    offline = opts[:offline]
     auth_token = opts[:auth_token]
     subdir = opts[:subdir]
 
@@ -773,7 +847,11 @@ defmodule Bumblebee do
 
     url = HuggingFace.Hub.file_url(repository_id, filename, revision)
 
-    HuggingFace.Hub.cached_download(url, cache_dir: cache_dir, auth_token: auth_token)
+    HuggingFace.Hub.cached_download(url,
+      cache_dir: cache_dir,
+      offline: offline,
+      auth_token: auth_token
+    )
   end
 
   defp normalize_repository!({:hf, repository_id}) when is_binary(repository_id) do
@@ -781,7 +859,7 @@ defmodule Bumblebee do
   end
 
   defp normalize_repository!({:hf, repository_id, opts}) when is_binary(repository_id) do
-    opts = Keyword.validate!(opts, [:revision, :cache_dir, :auth_token, :subdir])
+    opts = Keyword.validate!(opts, [:revision, :cache_dir, :offline, :auth_token, :subdir])
     {:hf, repository_id, opts}
   end
 

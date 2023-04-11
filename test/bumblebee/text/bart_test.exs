@@ -23,7 +23,7 @@ defmodule Bumblebee.Text.BartTest do
       assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[.., 1..3, 1..3]],
         Nx.tensor([
           [[-0.3985, -1.2727, 1.8201], [1.2444, -1.5131, -0.9588], [-1.0806, -0.0743, 0.5012]]
         ]),
@@ -145,6 +145,7 @@ defmodule Bumblebee.Text.BartTest do
   test "conditional generation" do
     {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "facebook/bart-large-cnn"})
 
     assert %Bumblebee.Text.Bart{architecture: :for_conditional_generation} = model_info.spec
 
@@ -157,15 +158,16 @@ defmodule Bumblebee.Text.BartTest do
 
     inputs = Bumblebee.apply_tokenizer(tokenizer, article)
 
+    generation_config = Bumblebee.configure(generation_config, max_length: 8)
+
     generate =
-      Bumblebee.Text.Generation.build_generate(model_info.model, model_info.spec,
-        min_length: 0,
-        max_length: 8
+      Bumblebee.Text.Generation.build_generate(
+        model_info.model,
+        model_info.spec,
+        generation_config
       )
 
-    token_ids = generate.(model_info.params, inputs)
-
-    assert_equal(token_ids, Nx.tensor([[2, 0, 8332, 947, 717, 1768, 5, 2]]))
+    token_ids = EXLA.jit(generate).(model_info.params, inputs)
 
     assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["PG&E scheduled the"]
   end

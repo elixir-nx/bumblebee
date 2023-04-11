@@ -23,7 +23,7 @@ defmodule Bumblebee.Text.Gpt2Test do
       assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[.., 1..3, 1..3]],
         Nx.tensor([
           [
             [-0.0436, 0.0046, -0.1025],
@@ -50,7 +50,7 @@ defmodule Bumblebee.Text.Gpt2Test do
       assert Nx.shape(outputs.logits) == {1, 6, 50257}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[.., 1..3, 1..3]],
         Nx.tensor([
           [
             [-114.5832, -116.5725, -116.0830],
@@ -77,7 +77,7 @@ defmodule Bumblebee.Text.Gpt2Test do
       assert Nx.shape(outputs.logits) == {1, 6, 7}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[.., 1..3, 1..3]],
         Nx.tensor([
           [[0.4187, 3.4156, -2.8762], [2.9556, 0.9153, -1.0290], [1.3047, 1.0234, -1.2765]]
         ]),

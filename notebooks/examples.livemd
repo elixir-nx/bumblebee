@@ -2,10 +2,10 @@
 
 ```elixir
 Mix.install([
-  {:bumblebee, "~> 0.1.2"},
-  {:nx, "~> 0.4.1"},
-  {:exla, "~> 0.4.1"},
-  {:axon, "~> 0.3.1"},
+  {:bumblebee, github: "elixir-nx/bumblebee"},
+  {:nx, "~> 0.5.1"},
+  {:exla, "~> 0.5.1"},
+  {:axon, "~> 0.5.1"},
   {:kino, "~> 0.8.0"}
 ])
 
@@ -156,8 +156,9 @@ Generation generally is an iterative process, where the model predicts the sente
 ```elixir
 {:ok, gpt2} = Bumblebee.load_model({:hf, "gpt2"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+{:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
 
-serving = Bumblebee.Text.generation(gpt2, tokenizer, max_new_tokens: 10)
+serving = Bumblebee.Text.generation(gpt2, tokenizer, generation_config)
 
 text_input = Kino.Input.text("Text", default: "Yesterday, I was reading a book and")
 ```

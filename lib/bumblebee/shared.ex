@@ -46,31 +46,13 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
-  Returns options for generation.
-
-  Default option values can be overridden through `defaults`.
-  """
-  @spec generation_options(keyword()) :: keyword()
-  def generation_options(defaults \\ []) do
-    defaults =
-      Keyword.validate!(defaults,
-        forced_bos_token_id: nil,
-        forced_eos_token_id: nil,
-        forced_token_ids: nil
-      )
-
-    for {key, default} <- defaults do
-      {key, [default: default, doc: nil]}
-    end
-  end
-
-  @doc """
   Generates documentation string for the given options specification.
   """
   @spec options_doc(keyword()) :: String.t()
   def options_doc(options) do
     items =
       for {key, info} <- options, doc = info[:doc] do
+        doc = String.replace(doc, "\n", "\n    ")
         item = "  * `#{inspect(key)}` - #{doc}"
 
         case info[:default] do
@@ -109,11 +91,7 @@ defmodule Bumblebee.Shared do
       pad_token_id: {"pad_token_id", number()},
       bos_token_id: {"bos_token_id", number()},
       eos_token_id: {"eos_token_id", number()},
-      decoder_start_token_id: {"decoder_start_token_id", number()},
-      # Generation
-      forced_bos_token_id: {"forced_bos_token_id", number()},
-      forced_eos_token_id: {"forced_eos_token_id", number()},
-      forced_token_ids: {"forced_decoder_ids", list(tuple([number(), number()]))}
+      decoder_start_token_id: {"decoder_start_token_id", number()}
     ]
 
     converters =

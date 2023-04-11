@@ -6,7 +6,9 @@ defmodule Bumblebee.TestHelpers do
   defmacro assert_equal(left, right) do
     # Assert against binary backend tensors to show diff on failure
     quote do
-      assert unquote(left) |> to_binary_backend() == unquote(right) |> to_binary_backend()
+      left = unquote(left) |> to_binary_backend()
+      right = unquote(right) |> Nx.as_type(Nx.type(left)) |> to_binary_backend()
+      assert left == right
     end
   end
 

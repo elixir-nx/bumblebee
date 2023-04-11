@@ -6,8 +6,14 @@ defmodule Bumblebee.Vision do
   @typedoc """
   A term representing an image.
 
-  Either `Nx.Tensor` in HWC order or a struct implementing `Nx.Container`
-  and resolving to such tensor.
+  Either `Nx.Tensor` or a struct implementing `Nx.Container` and
+  resolving to a tensor, with the following properties:
+
+    * HWC order
+    * RGB color channels
+    * alpha channel may be present, but it's usually stripped out
+    * integer type (`:s` or `:u`)
+
   """
   @type image :: Nx.Container.t()
 
@@ -47,7 +53,7 @@ defmodule Bumblebee.Vision do
 
       serving = Bumblebee.Vision.image_classification(resnet, featurizer)
 
-      image = ...
+      image = StbImage.read_file!(path)
       Nx.Serving.run(serving, image)
       #=> %{
       #=>   predictions: [
@@ -67,4 +73,61 @@ defmodule Bumblebee.Vision do
         ) :: Nx.Serving.t()
   defdelegate image_classification(model_info, featurizer, opts \\ []),
     to: Bumblebee.Vision.ImageClassification
+
+  @type image_to_text_input :: image()
+  @type image_to_text_output :: %{results: list(image_to_text_result())}
+  @type image_to_text_result :: %{text: String.t()}
+
+  @doc """
+  Builds serving for image-to-text generation.
+
+  The serving accepts `t:image_to_text_input/0` and returns
+  `t:image_to_text_output/0`. A list of inputs is also supported.
+
+  ## Options
+
+    * `:seed` - random seed to use when sampling. By default the current
+      timestamp is used
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  ## Examples
+
+      {:ok, blip} = Bumblebee.load_model({:hf, "Salesforce/blip-image-captioning-base"})
+      {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "Salesforce/blip-image-captioning-base"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Salesforce/blip-image-captioning-base"})
+
+      {:ok, generation_config} =
+        Bumblebee.load_generation_config({:hf, "Salesforce/blip-image-captioning-base"})
+
+      serving =
+        Bumblebee.Vision.image_to_text(blip, featurizer, tokenizer, generation_config,
+          defn_options: [compiler: EXLA]
+        )
+
+      image = StbImage.read_file!(path)
+      Nx.Serving.run(serving, image)
+      #=> %{results: [%{text: "a cat sitting on a chair"}]}
+
+  """
+  @spec image_to_text(
+          Bumblebee.model_info(),
+          Bumblebee.Featurizer.t(),
+          Bumblebee.Tokenizer.t(),
+          Bumblebee.Text.GenerationConfig.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate image_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []),
+    to: Bumblebee.Vision.ImageToText
 end

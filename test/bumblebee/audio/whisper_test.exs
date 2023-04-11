@@ -25,7 +25,7 @@ defmodule Bumblebee.Text.WhisperTest do
       assert Nx.shape(outputs.hidden_state) == {1, 4, 384}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 0..-1//1, 1..3]],
+        outputs.hidden_state[[.., .., 1..3]],
         Nx.tensor([
           [
             [9.1349, 0.5695, 8.7758],
@@ -57,7 +57,7 @@ defmodule Bumblebee.Text.WhisperTest do
       assert Nx.shape(outputs.logits) == {1, 4, 51865}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 0..-1//1, 1..3]],
+        outputs.logits[[.., .., 1..3]],
         Nx.tensor([
           [
             [2.0805, 6.0644, 7.0570],

@@ -22,7 +22,7 @@ defmodule Bumblebee.Text.AlbertTest do
       assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[.., 1..3, 1..3]],
         Nx.tensor([
           [[-0.6513, 1.5035, -0.2766], [-0.6515, 1.5046, -0.2780], [-0.6512, 1.5049, -0.2784]]
         ]),
@@ -46,7 +46,7 @@ defmodule Bumblebee.Text.AlbertTest do
       assert Nx.shape(outputs.logits) == {1, 9, 30000}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[.., 1..3, 1..3]],
         Nx.tensor([
           [[1.0450, -2.2835, -3.8152], [1.0635, -2.3124, -3.8890], [1.2576, -2.4207, -3.9500]]
         ]),
@@ -121,7 +121,7 @@ defmodule Bumblebee.Text.AlbertTest do
       assert Nx.shape(outputs.logits) == {1, 9, 2}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 1..3//1, 0..-1//1]],
+        outputs.logits[[.., 1..3//1, ..]],
         Nx.tensor([[[0.1364, -0.0437], [0.0360, -0.0786], [-0.1296, 0.0436]]]),
         atol: 1.0e-4
       )
@@ -143,13 +143,13 @@ defmodule Bumblebee.Text.AlbertTest do
       assert Nx.shape(outputs.end_logits) == {1, 9}
 
       assert_all_close(
-        outputs.start_logits[[0..-1//1, 1..3]],
+        outputs.start_logits[[.., 1..3]],
         Nx.tensor([[-0.2464, -0.1028, -0.2076]]),
         atol: 1.0e-4
       )
 
       assert_all_close(
-        outputs.end_logits[[0..-1//1, 1..3]],
+        outputs.end_logits[[.., 1..3]],
         Nx.tensor([[-1.3742, -1.3609, -1.3454]]),
         atol: 1.0e-4
       )

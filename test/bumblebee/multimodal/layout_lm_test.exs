@@ -30,7 +30,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
       assert Nx.shape(outputs.hidden_state) == {1, 4, 768}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[.., 1..3, 1..3]],
         Nx.tensor([
           [[-0.0126, 0.2175, 0.1398], [0.0240, 0.5338, -0.1337], [-0.0190, 0.5194, 0.0706]]
         ]),
@@ -62,7 +62,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
       assert Nx.shape(outputs.logits) == {1, 4, 30522}
 
       assert_all_close(
-        outputs.logits[[0..-1//1, 1..3, 1..3]],
+        outputs.logits[[.., 1..3, 1..3]],
         Nx.tensor([
           [[-0.9018, -0.7695, 1.1371], [0.1485, -0.1378, 1.6499], [-0.5236, -0.4974, -0.6739]]
         ]),

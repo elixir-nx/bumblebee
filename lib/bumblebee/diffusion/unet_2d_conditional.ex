@@ -148,7 +148,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
     %{
       "sample" => Nx.template(sample_shape, :f32),
-      "timestep" => Nx.template(timestep_shape, :s64),
+      "timestep" => Nx.template(timestep_shape, :u32),
       "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)
     }
   end

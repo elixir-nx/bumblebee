@@ -8,12 +8,12 @@ Application.put_env(:sample, PhoenixDemo.Endpoint,
 Mix.install([
   {:plug_cowboy, "~> 2.6"},
   {:jason, "~> 1.4"},
-  {:phoenix, "~> 1.7.0-rc.0", override: true},
+  {:phoenix, "~> 1.7.0"},
   {:phoenix_live_view, "~> 0.18.3"},
   # Bumblebee and friends
-  {:bumblebee, "~> 0.1.2"},
-  {:nx, "~> 0.4.1"},
-  {:exla, "~> 0.4.1"}
+  {:bumblebee, "~> 0.2.0"},
+  {:nx, "~> 0.5.1"},
+  {:exla, "~> 0.5.1"}
 ])
 
 Application.put_env(:nx, :default_backend, EXLA.Backend)
@@ -49,7 +49,7 @@ defmodule PhoenixDemo.SampleLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, text: "", label: nil, running: false, task_ref: nil)}
+    {:ok, assign(socket, text: "", label: nil, task: nil)}
   end
 
   @impl true
@@ -67,14 +67,14 @@ defmodule PhoenixDemo.SampleLive do
           <button
             class="px-5 py-2.5 text-center mr-2 inline-flex items-center text-white bg-blue-700 font-medium rounded-lg text-sm hover:bg-blue-800 focus:ring-4 focus:ring-blue-300"
             type="submit"
-            disabled={@running}
+            disabled={@task != nil}
           >
             Predict
           </button>
         </form>
         <div class="mt-2 flex space-x-1.5 items-center text-gray-600 text-lg">
           <span>Emotion:</span>
-          <%= if @running do %>
+          <%= if @task do %>
             <.spinner />
           <% else %>
             <span class="text-gray-900 font-medium"><%= @label || "?" %></span>
@@ -108,14 +108,14 @@ defmodule PhoenixDemo.SampleLive do
   @impl true
   def handle_event("predict", %{"text" => text}, socket) do
     task = Task.async(fn -> Nx.Serving.batched_run(PhoenixDemo.Serving, text) end)
-    {:noreply, assign(socket, text: text, running: true, task_ref: task.ref)}
+    {:noreply, assign(socket, text: text, task: task)}
   end
 
   @impl true
-  def handle_info({ref, result}, %{assigns: %{task_ref: ref}} = socket) do
+  def handle_info({ref, result}, socket) when socket.assigns.task.ref == ref do
     Process.demonitor(ref, [:flush])
     %{predictions: [%{label: label}]} = result
-    {:noreply, assign(socket, label: label, running: false)}
+    {:noreply, assign(socket, label: label, task: nil)}
   end
 end
 
@@ -157,8 +157,8 @@ serving =
 {:ok, _} =
   Supervisor.start_link(
     [
-      PhoenixDemo.Endpoint,
-      {Nx.Serving, serving: serving, name: PhoenixDemo.Serving, batch_timeout: 100}
+      {Nx.Serving, serving: serving, name: PhoenixDemo.Serving, batch_timeout: 100},
+      PhoenixDemo.Endpoint
     ],
     strategy: :one_for_one
   )

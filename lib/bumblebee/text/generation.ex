@@ -3,6 +3,8 @@ defmodule Bumblebee.Text.Generation do
   An interface for language models supporting sequence generation.
   """
 
+  @type cache :: Nx.Tensor.t() | Nx.Container.t()
+
   @doc """
   Initializes an opaque cache input for iterative inference.
   """
@@ -11,22 +13,46 @@ defmodule Bumblebee.Text.Generation do
               batch_size :: pos_integer(),
               max_length :: pos_integer(),
               inputs :: map()
-            ) :: Nx.Tensor.t() | Nx.Container.t()
+            ) :: cache()
+
+  @doc """
+  Traverses all batched tensors in the cache.
+
+  This function is used when the cache needs to be inflated or
+  deflated for a different batch size.
+  """
+  @callback traverse_cache(
+              spec :: Bumblebee.ModelSpec.t(),
+              cache(),
+              (Nx.Tensor.t() -> Nx.Tensor.t())
+            ) :: cache()
 
   import Nx.Defn
 
   alias Bumblebee.Shared
+  alias Bumblebee.Utils
 
   @doc """
   Initializes an opaque cache input for iterative inference.
   """
-  @spec init_cache(Bumblebee.ModelSpec.t(), pos_integer(), pos_integer(), map()) :: Nx.t()
+  @spec init_cache(Bumblebee.ModelSpec.t(), pos_integer(), pos_integer(), map()) :: cache()
   def init_cache(%module{} = spec, batch_size, max_length, inputs) do
     module.init_cache(spec, batch_size, max_length, inputs)
   end
 
+  @doc """
+  Calls `fun` for every batched tensor in the cache.
+  """
+  @spec traverse_cache(Bumblebee.ModelSpec.t(), cache, (Nx.Tensor.t() -> Nx.Tensor.t())) ::
+          cache()
+  def traverse_cache(%module{} = spec, cache, fun) do
+    module.traverse_cache(spec, cache, fun)
+  end
+
   @doc false
-  def generation(model_info, tokenizer, opts \\ []) do
+  def generation(model_info, tokenizer, generation_config, opts \\ []) do
+    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
+
     %{params: params, spec: spec} = model_info
 
     Shared.validate_architecture!(spec, [
@@ -34,8 +60,8 @@ defmodule Bumblebee.Text.Generation do
       :for_causal_language_modeling
     ])
 
-    {compile, opts} = Keyword.pop(opts, :compile)
-    {defn_options, opts} = Keyword.pop(opts, :defn_options, [])
+    compile = opts[:compile]
+    defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
@@ -45,15 +71,21 @@ defmodule Bumblebee.Text.Generation do
             "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
     end
 
-    generate_fun = build_generate(model_info.model, model_info.spec, opts)
+    generate_fun =
+      build_generate(
+        model_info.model,
+        model_info.spec,
+        generation_config,
+        Keyword.take(opts, [:seed])
+      )
 
     Nx.Serving.new(
       fn defn_options ->
         generate_fun =
           Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
             inputs = %{
-              "input_ids" => Nx.template({batch_size, sequence_length}, :s64),
-              "attention_mask" => Nx.template({batch_size, sequence_length}, :s64)
+              "input_ids" => Nx.template({batch_size, sequence_length}, :u32),
+              "attention_mask" => Nx.template({batch_size, sequence_length}, :u32)
             }
 
             [params, inputs]
@@ -64,8 +96,9 @@ defmodule Bumblebee.Text.Generation do
           generate_fun.(params, inputs)
         end
       end,
-      [batch_size: batch_size] ++ defn_options
+      defn_options
     )
+    |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
@@ -98,96 +131,49 @@ defmodule Bumblebee.Text.Generation do
   In case of encoder-decoder models, the corresponding encoder is run
   only once and the intermediate state is reused during all iterations.
 
-  The length of the generated sequence is not fixed, however it can be
-  controlled via several options.
-
-  Note that either `:max_new_tokens` or `:max_length` must be specified.
+  The generation is controlled by a number of options given as
+  `%Bumblebee.Text.GenerationConfig{}`, see the corresponding docs
+  for more details.
 
   ## Options
 
-    * `:max_new_tokens` - the maximum number of tokens to be generated,
-      ignoring the number of tokens in the prompt
+    * `:seed` - random seed to use when sampling. By default the current
+      timestamp is used
 
-    * `:min_new_tokens` - the minimum number of tokens to be generated,
-      ignoring the number of tokens in the prompt
-
-    * `:max_length` - the maximum length of the sequence to be generated.
-      Note that this length includes the length of the input prompt
-      (including padding). In general, prefer `:max_new_tokens`, which
-      ignores the number of tokens in the prompt
-
-    * `:min_length` - the minimum length of the sequence to be generated.
-      Note that this length includes the length of the input prompt
-      (including padding). In general, prefer `:min_new_tokens`, which
-      ignores the number of tokens in the prompt
-
-    * `:sample` - whether or not to use random sampling. Defaults to `false`
-
-    * `:seed` - random seed to use when sampling. Defaults to `nil`
-
-    * `:decoder_start_token_id` - the id of the initial token when
-      generating from scratch, in case of encoder-decoder models
-
-    * `:bos_token_id` - the id of the beginning-of-sequence token
-
-    * `:eos_token_id` - the id of the end-of-sequence token
-
-    * `:pad_token_id` - the id of the padding token
-
-    * `:forced_bos_token_id` - the id of the token to force as the first
-      generated token
-
-    * `:forced_eos_token_id` - the id of the token to force as the last
-      generated token when `:max_length` is reached
-
-  The default token option values are taken from the given model specification
-  when available.
   """
-  @spec build_generate(Axon.t(), Bumblebee.ModelSpec.t(), keyword()) ::
-          (params :: map(), inputs :: map() -> Nx.t())
-  def build_generate(model, spec, opts \\ []) do
-    opts =
-      Keyword.validate!(opts,
-        max_new_tokens: nil,
-        min_new_tokens: nil,
-        max_length: nil,
-        min_length: nil,
-        sample: false,
-        seed: nil,
-        decoder_start_token_id: Map.get(spec, :decoder_start_token_id),
-        bos_token_id: Map.get(spec, :bos_token_id),
-        eos_token_id: Map.get(spec, :eos_token_id),
-        pad_token_id: Map.get(spec, :pad_token_id),
-        forced_bos_token_id: Map.get(spec, :forced_bos_token_id),
-        forced_eos_token_id: Map.get(spec, :forced_eos_token_id),
-        forced_token_ids: Map.get(spec, :forced_token_ids)
-      )
+  @spec build_generate(
+          Axon.t(),
+          Bumblebee.ModelSpec.t(),
+          Bumblebee.Text.GenerationConfig.t(),
+          keyword()
+        ) :: (params :: map(), inputs :: map() -> Nx.t())
+  def build_generate(model, spec, config, opts \\ []) do
+    opts = Keyword.validate!(opts, [:seed])
+    seed = Keyword.get_lazy(opts, :seed, &:erlang.system_time/0)
 
-    decoder_start_token_id = opts[:decoder_start_token_id] || opts[:bos_token_id]
-    eos_token_id = opts[:eos_token_id]
-    pad_token_id = opts[:pad_token_id]
-    forced_bos_token_id = opts[:forced_bos_token_id]
-    forced_eos_token_id = opts[:forced_eos_token_id]
-    forced_token_ids = opts[:forced_token_ids]
+    decoder_start_token_id = config.decoder_start_token_id || config.bos_token_id
+    eos_token_id = config.eos_token_id
+    pad_token_id = config.pad_token_id || config.eos_token_id
 
-    sample = opts[:sample]
-    seed = opts[:seed]
-
-    {max_length_fun, min_length_fun} = lazy_lengths_from_opts(opts)
+    {max_length_fun, min_length_fun} = lazy_lengths_from_opts(config)
 
     {prepare_inputs_fun, update_inputs_fun} =
       input_callbacks(model, spec, max_length_fun, decoder_start_token_id)
 
+    traverse_cache_fun = &traverse_cache(spec, &1, &2)
+
+    model =
+      if not spec.output_hidden_states and config.strategy.type == :contrastive_search do
+        spec
+        |> Bumblebee.configure(output_hidden_states: true)
+        |> Bumblebee.build_model()
+      else
+        model
+      end
+
     {_init_fun, predict_fun} = Axon.build(model)
 
-    logits_processor_fun =
-      get_logits_processor(
-        min_length_fun,
-        eos_token_id,
-        forced_bos_token_id,
-        forced_eos_token_id,
-        forced_token_ids
-      )
+    logits_processor_fun = get_logits_processor(min_length_fun, eos_token_id, config)
 
     &generate_impl(
       &2,
@@ -196,16 +182,17 @@ defmodule Bumblebee.Text.Generation do
       logits_processor_fun,
       prepare_inputs_fun,
       update_inputs_fun,
+      traverse_cache_fun,
       pad_token_id: pad_token_id,
       eos_token_id: eos_token_id,
-      sample: sample,
-      seed: seed
+      seed: seed,
+      strategy: config.strategy
     )
   end
 
   defp lazy_lengths_from_opts(opts) do
     max_length_fun =
-      case {opts[:max_new_tokens], opts[:max_length]} do
+      case {opts.max_new_tokens, opts.max_length} do
         {nil, nil} ->
           raise ArgumentError,
                 "expected either :max_new_tokens or :max_length option, but neither was given"
@@ -215,14 +202,10 @@ defmodule Bumblebee.Text.Generation do
 
         {nil, max_length} ->
           fn _ -> max_length end
-
-        _ ->
-          raise ArgumentError,
-                "only one of :max_new_tokens or :max_length options must be given, but got both"
       end
 
     min_length_fun =
-      case {opts[:min_new_tokens], opts[:min_length]} do
+      case {opts.min_new_tokens, opts.min_length} do
         {nil, nil} ->
           nil
 
@@ -231,10 +214,6 @@ defmodule Bumblebee.Text.Generation do
 
         {nil, min_length} ->
           fn _ -> min_length end
-
-        _ ->
-          raise ArgumentError,
-                "only one of :min_new_tokens or :min_length options must be given, but got both"
       end
 
     {max_length_fun, min_length_fun}
@@ -287,7 +266,7 @@ defmodule Bumblebee.Text.Generation do
         {inputs, inputs["decoder_input_ids"], max_length}
       end
 
-      update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "decoder_")
+      update_inputs_fun = &update_decoder_inputs("decoder_", &1, &2, &3)
 
       {prepare_inputs_fun, update_inputs_fun}
     else
@@ -298,7 +277,7 @@ defmodule Bumblebee.Text.Generation do
         {inputs, inputs["input_ids"], max_length}
       end
 
-      update_inputs_fun = &update_decoder_inputs(&1, &2, &3, "")
+      update_inputs_fun = &update_decoder_inputs("", &1, &2, &3)
 
       {prepare_inputs_fun, update_inputs_fun}
     end
@@ -310,7 +289,7 @@ defmodule Bumblebee.Text.Generation do
   end
 
   defp encoder_input(inputs) do
-    inputs["input_ids"] || inputs["input_features"]
+    inputs["input_ids"] || inputs["input_features"] || inputs["pixel_values"]
   end
 
   defp prepare_decoder_inputs(inputs, prefix, spec, max_length) do
@@ -332,7 +311,7 @@ defmodule Bumblebee.Text.Generation do
     Map.put(inputs, "cache", cache)
   end
 
-  defp update_decoder_inputs(inputs, outputs, token_ids, prefix) do
+  defp update_decoder_inputs(prefix, inputs, cache, token_ids) do
     inputs
     |> Map.replace!(prefix <> "input_ids", token_ids)
     |> Map.replace!(prefix <> "attention_mask", Nx.broadcast(1.0, token_ids))
@@ -341,31 +320,28 @@ defmodule Bumblebee.Text.Generation do
       |> Nx.slice_along_axis(Nx.axis_size(position_ids, -1) - 1, 1, axis: -1)
       |> Nx.add(1)
     end)
-    |> Map.replace!("cache", outputs.cache)
+    |> Map.replace!("cache", cache)
   end
 
-  defp get_logits_processor(
-         min_length_fun,
-         eos_token_id,
-         forced_bos_token_id,
-         forced_eos_token_id,
-         forced_token_ids
-       ) do
+  defp get_logits_processor(min_length_fun, eos_token_id, config) do
     processors = [
+      if config.no_repeat_ngram_length && config.no_repeat_ngram_length > 0 do
+        &no_repeat_ngram_logits_processor(&1, &2, ngram_length: config.no_repeat_ngram_length)
+      end,
       if min_length_fun && eos_token_id do
         &min_length_logits_processor(&1, &2,
           min_length_fun: min_length_fun,
           eos_token_id: eos_token_id
         )
       end,
-      if forced_bos_token_id do
-        &bos_token_logits_processor(&1, &2, bos_token_id: forced_bos_token_id)
+      if config.forced_bos_token_id do
+        &bos_token_logits_processor(&1, &2, bos_token_id: config.forced_bos_token_id)
       end,
-      if forced_eos_token_id do
-        &eos_token_logits_processor(&1, &2, eos_token_id: forced_eos_token_id)
+      if config.forced_eos_token_id do
+        &eos_token_logits_processor(&1, &2, eos_token_id: config.forced_eos_token_id)
       end,
-      if forced_token_ids do
-        &forced_tokens_logits_processor(&1, &2, forced_token_ids: forced_token_ids)
+      if config.forced_token_ids do
+        &forced_tokens_logits_processor(&1, &2, forced_token_ids: config.forced_token_ids)
       end
     ]
 
@@ -383,16 +359,47 @@ defmodule Bumblebee.Text.Generation do
                   logits_processor_fun,
                   prepare_inputs_fun,
                   update_inputs_fun,
+                  traverse_cache_fun,
                   opts \\ []
                 ) do
-    {sample, opts} = Keyword.pop!(opts, :sample)
-    {seed, opts} = Keyword.pop!(opts, :seed)
-
     {decoder_inputs, decoder_input_ids, max_length} = prepare_inputs_fun.(inputs, params)
 
-    cond do
-      sample ->
-        seed = seed || :erlang.system_time()
+    length = Nx.axis_size(decoder_input_ids, 1)
+
+    if length >= max_length do
+      raise ArgumentError,
+            "the input sequence has #{length} tokens, but max_length is set to #{max_length}." <>
+              " Consider increasing :max_new_tokens (or :max_length), or padding the input to a shorter length"
+    end
+
+    strategy = opts[:strategy]
+    seed = opts[:seed]
+
+    case strategy.type do
+      :greedy_search ->
+        greedy(
+          decoder_inputs,
+          decoder_input_ids,
+          predict_fun,
+          params,
+          logits_processor_fun,
+          update_inputs_fun,
+          [max_length: max_length] ++ opts
+        )
+
+      :contrastive_search ->
+        contrastive(
+          decoder_inputs,
+          decoder_input_ids,
+          predict_fun,
+          params,
+          logits_processor_fun,
+          update_inputs_fun,
+          traverse_cache_fun,
+          [max_length: max_length, top_k: strategy.top_k, penalty_alpha: strategy.alpha] ++ opts
+        )
+
+      :multinomial_sampling ->
         prng_key = Nx.Random.key(seed)
 
         sample(
@@ -404,21 +411,10 @@ defmodule Bumblebee.Text.Generation do
           update_inputs_fun,
           [max_length: max_length, prng_key: prng_key] ++ opts
         )
-
-      true ->
-        greedy(
-          decoder_inputs,
-          decoder_input_ids,
-          predict_fun,
-          params,
-          logits_processor_fun,
-          update_inputs_fun,
-          [max_length: max_length] ++ opts
-        )
     end
   end
 
-  ## Greedy Generation
+  # Greedy search
 
   defnp greedy(
           inputs,
@@ -433,18 +429,8 @@ defmodule Bumblebee.Text.Generation do
     pad_token_id = opts[:pad_token_id]
     eos_token_id = opts[:eos_token_id]
 
-    {batch_size, length} = Nx.shape(decoder_input_ids)
-
-    if length > max_length do
-      raise ArgumentError, "expected the input to be at most #{max_length} tokens, got: #{length}"
-    end
-
-    sequences = Nx.broadcast(pad_token_id, {batch_size, max_length})
-    sequences = Nx.put_slice(sequences, [0, 0], decoder_input_ids)
-
-    finished? = Nx.broadcast(Nx.tensor(0, type: :u8), {batch_size})
-
-    input_length = length
+    {sequences, length = input_length, finished?} =
+      init_sequences(decoder_input_ids, max_length, pad_token_id)
 
     # The loop works with inputs of length 1, so if the initial input
     # is longer, we make the initial pass outside
@@ -469,7 +455,7 @@ defmodule Bumblebee.Text.Generation do
 
     {sequences, _length, _finished?, _inputs, _params} =
       while {sequences, length, finished?, inputs, params},
-            greedy_condition(finished?, length, max_length) do
+            continue?(finished?, length, max_length) do
         {sequences, length, finished?, inputs} =
           greedy_step(
             sequences,
@@ -491,7 +477,22 @@ defmodule Bumblebee.Text.Generation do
     sequences
   end
 
-  defnp greedy_condition(finished?, length, max_length) do
+  defnp init_sequences(decoder_input_ids, max_length, pad_token_id) do
+    {batch_size, length} = Nx.shape(decoder_input_ids)
+
+    if length > max_length do
+      raise ArgumentError, "expected the input to be at most #{max_length} tokens, got: #{length}"
+    end
+
+    sequences = Nx.broadcast(pad_token_id, {batch_size, max_length})
+    sequences = Nx.put_slice(sequences, [0, 0], decoder_input_ids)
+
+    finished? = Nx.broadcast(Nx.tensor(0, type: :u8), {batch_size})
+
+    {sequences, length, finished?}
+  end
+
+  defnp continue?(finished?, length, max_length) do
     not Nx.all(finished?) and length < max_length
   end
 
@@ -512,7 +513,7 @@ defmodule Bumblebee.Text.Generation do
 
     outputs = predict_fun.(params, inputs)
 
-    logits = outputs.logits[[0..-1//1, -1]]
+    logits = outputs.logits[[.., -1]]
 
     logits =
       logits_processor_fun.(logits, %{
@@ -523,6 +524,15 @@ defmodule Bumblebee.Text.Generation do
 
     token_id = Nx.argmax(logits, axis: -1)
 
+    {sequences, length, finished?} =
+      update_sequences(sequences, length, finished?, token_id, pad_token_id, eos_token_id)
+
+    inputs = update_inputs_fun.(inputs, outputs.cache, Nx.new_axis(token_id, -1))
+
+    {sequences, length, finished?, inputs}
+  end
+
+  defnp update_sequences(sequences, length, finished?, token_id, pad_token_id, eos_token_id) do
     token_id = Nx.select(finished?, pad_token_id, token_id)
 
     finished? =
@@ -531,16 +541,189 @@ defmodule Bumblebee.Text.Generation do
         eos_token_id -> finished? or token_id == eos_token_id
       end
 
-    token_id = Nx.new_axis(token_id, -1)
+    token_ids = Nx.new_axis(token_id, -1)
+    sequences = Nx.put_slice(sequences, [0, length], token_ids)
 
-    sequences = Nx.put_slice(sequences, [0, length], token_id)
-
-    inputs = update_inputs_fun.(inputs, outputs, token_id)
-
-    {sequences, length + 1, finished?, inputs}
+    {sequences, length + 1, finished?}
   end
 
-  ## Sampling
+  # Contrastive search
+
+  defnp contrastive(
+          inputs,
+          decoder_input_ids,
+          predict_fun,
+          params,
+          logits_processor_fun,
+          update_inputs_fun,
+          traverse_cache_fun,
+          opts \\ []
+        ) do
+    max_length = opts[:max_length]
+    pad_token_id = opts[:pad_token_id]
+    eos_token_id = opts[:eos_token_id]
+    top_k = opts[:top_k]
+    penalty_alpha = opts[:penalty_alpha]
+
+    {sequences, length = input_length, finished?} =
+      init_sequences(decoder_input_ids, max_length, pad_token_id)
+
+    # Step (1)
+    # Initial pass to obtain hidden state and expand inputs to top-k
+
+    outputs = predict_fun.(params, inputs)
+
+    # Later, we feed model a single token at a time and reuse previous
+    # results using cache. Here we need the final hidden state, so we
+    # need to keep track of it in a similar way
+    initial_hidden_state = decoder_hidden_state(outputs)
+    batch_size = Nx.axis_size(initial_hidden_state, 0)
+    hidden_size = Nx.axis_size(initial_hidden_state, -1)
+    joint_hidden_state = Nx.broadcast(0.0, {batch_size, max_length, hidden_size})
+    joint_hidden_state = Nx.put_slice(joint_hidden_state, [0, 0, 0], initial_hidden_state)
+
+    logits = outputs.logits[[.., -1]]
+
+    logits =
+      logits_processor_fun.(logits, %{
+        sequences: sequences,
+        length: length,
+        input_length: input_length
+      })
+
+    scores = Axon.Activations.softmax(logits, axis: -1)
+    {top_k_scores, top_k_token_ids} = Nx.top_k(scores, k: top_k)
+
+    # For subsequent model passes we consider several (top-k) paths
+    # for each batch item, so we duplicate inputs and cache accordingly
+    inputs = expand_inputs(inputs, top_k)
+    cache = expand_cache(outputs.cache, top_k, traverse_cache_fun)
+    inputs = update_inputs_fun.(inputs, cache, Nx.reshape(top_k_token_ids, {:auto, 1}))
+
+    # Step (2)
+    # In the loop we make prediction for top-k continuation tokens and
+    # pick the best one using the contrastive rank. From the same model
+    # pass we also get the next top-k continuation tokens
+
+    {sequences, _length, _finished?, _inputs, _params, _joint_hidden_state, _top_k_values} =
+      while {sequences, length, finished?, inputs, params, joint_hidden_state,
+             {top_k_scores, top_k_token_ids}},
+            continue?(finished?, length, max_length) do
+        outputs = predict_fun.(params, inputs)
+
+        hidden_state = decoder_hidden_state(outputs)
+
+        context_hidden_state = Utils.Nx.repeat_interleave(joint_hidden_state, top_k)
+
+        selected_idx =
+          contrastive_rank(
+            context_hidden_state,
+            hidden_state,
+            length,
+            top_k_scores,
+            penalty_alpha,
+            top_k
+          )
+
+        hidden_state = Utils.Nx.chunked_take(hidden_state, top_k, selected_idx)
+        joint_hidden_state = Nx.put_slice(joint_hidden_state, [0, length, 0], hidden_state)
+
+        token_id = top_k_token_ids |> Nx.flatten() |> Utils.Nx.chunked_take(top_k, selected_idx)
+
+        {sequences, length, finished?} =
+          update_sequences(sequences, length, finished?, token_id, pad_token_id, eos_token_id)
+
+        logits = outputs.logits[[.., -1]]
+        logits = Utils.Nx.chunked_take(logits, top_k, selected_idx)
+
+        logits =
+          logits_processor_fun.(logits, %{
+            sequences: sequences,
+            length: length,
+            input_length: input_length
+          })
+
+        scores = Axon.Activations.softmax(logits, axis: -1)
+        {top_k_scores, top_k_token_ids} = Nx.top_k(scores, k: top_k)
+
+        # Mirror the selected idx to other entries within each chunk
+        cache = reflect_cache(outputs.cache, top_k, selected_idx, traverse_cache_fun)
+        inputs = update_inputs_fun.(inputs, cache, Nx.reshape(top_k_token_ids, {:auto, 1}))
+
+        {sequences, length, finished?, inputs, params, joint_hidden_state,
+         {top_k_scores, top_k_token_ids}}
+      end
+
+    sequences
+  end
+
+  deftransformp decoder_hidden_state(outputs) do
+    hidden_states =
+      case outputs do
+        %{decoder_hidden_states: hidden_states} -> hidden_states
+        %{hidden_states: hidden_states} -> hidden_states
+      end
+
+    elem(hidden_states, tuple_size(hidden_states) - 1)
+  end
+
+  deftransformp expand_inputs(inputs, times) do
+    Map.new(inputs, fn
+      {key, value} when key in ["cache"] ->
+        {key, value}
+
+      {key, %Nx.Tensor{} = value} ->
+        {key, Utils.Nx.repeat_interleave(value, times)}
+    end)
+  end
+
+  deftransformp expand_cache(cache, times, traverse_cache_fun) do
+    traverse_cache_fun.(cache, &Utils.Nx.repeat_interleave(&1, times))
+  end
+
+  deftransformp reflect_cache(cache, times, idx, traverse_cache_fun) do
+    traverse_cache_fun.(
+      cache,
+      &(&1
+        |> Utils.Nx.chunked_take(times, idx)
+        |> Utils.Nx.repeat_interleave(times))
+    )
+  end
+
+  defnp contrastive_rank(
+          context_hidden_state,
+          hidden_state,
+          length,
+          top_k_scores,
+          penalty_alpha,
+          top_k
+        ) do
+    similarity_matrix =
+      context_hidden_state
+      |> Bumblebee.Utils.Nx.cosine_similarity(hidden_state, batched?: true)
+      # hidden_state has sequence length of 1, so the batch of similarity
+      # matrices has shape {batch_size * top_k, max_length, 1} and we
+      # flatten out the last dimension
+      |> Nx.squeeze(axes: [-1])
+
+    # context_hidden_state includes placeholder values for tokens up
+    # to max_length, so we need to ignore these
+    current_sequence? = Nx.iota(Nx.shape(similarity_matrix), axis: -1) < length
+
+    degeneration_penalty =
+      current_sequence?
+      |> Nx.select(similarity_matrix, Nx.Constants.neg_infinity())
+      |> Nx.reduce_max(axes: [-1])
+
+    contrastive_score =
+      (1.0 - penalty_alpha) * Nx.flatten(top_k_scores) - penalty_alpha * degeneration_penalty
+
+    contrastive_score
+    |> Nx.reshape({:auto, top_k})
+    |> Nx.argmax(axis: -1)
+  end
+
+  # Multinomial sampling
 
   defnp sample(
           inputs,
@@ -556,18 +739,8 @@ defmodule Bumblebee.Text.Generation do
     eos_token_id = opts[:eos_token_id]
     prng_key = opts[:prng_key]
 
-    {batch_size, length} = Nx.shape(decoder_input_ids)
-
-    if length > max_length do
-      raise ArgumentError, "expected the input to be at most #{max_length} tokens, got: #{length}"
-    end
-
-    sequences = Nx.broadcast(pad_token_id, {batch_size, max_length})
-    sequences = Nx.put_slice(sequences, [0, 0], decoder_input_ids)
-
-    finished? = Nx.broadcast(Nx.tensor(0, type: :u8), {batch_size})
-
-    input_length = length
+    {sequences, length = input_length, finished?} =
+      init_sequences(decoder_input_ids, max_length, pad_token_id)
 
     # The loop works with inputs of length 1, so if the initial input
     # is longer, we make the initial pass outside
@@ -593,7 +766,7 @@ defmodule Bumblebee.Text.Generation do
 
     {sequences, _length, _finished?, _inputs, _params, _key} =
       while {sequences, length, finished?, inputs, params, prng_key},
-            sample_condition(finished?, length, max_length) do
+            continue?(finished?, length, max_length) do
         {sequences, length, finished?, inputs, prng_key} =
           sample_step(
             sequences,
@@ -616,10 +789,6 @@ defmodule Bumblebee.Text.Generation do
     sequences
   end
 
-  defnp sample_condition(finished?, length, max_length) do
-    not (Nx.all(finished?) or length == max_length)
-  end
-
   defnp sample_step(
           sequences,
           length,
@@ -637,11 +806,11 @@ defmodule Bumblebee.Text.Generation do
     eos_token_id = opts[:eos_token_id]
 
     key = Nx.Random.split(prng_key)
-    {key, key_next} = {key[1], key[0]}
+    {key, prng_key} = {key[1], key[0]}
 
-    model_outputs = predict_fun.(params, inputs)
+    outputs = predict_fun.(params, inputs)
 
-    logits = model_outputs.logits[[0..-1//1, -1]]
+    logits = outputs.logits[[.., -1]]
 
     logits =
       logits_processor_fun.(logits, %{
@@ -652,34 +821,51 @@ defmodule Bumblebee.Text.Generation do
 
     # TODO: logits warper
 
-    vocab = Nx.iota(Nx.shape(logits), axis: -1)
-    probabilities = Axon.Activations.softmax(logits)
-    next_token = batched_choice(key, vocab, probabilities)
+    scores = Axon.Activations.softmax(logits)
+    token_id = batched_choice(key, scores)
 
-    next_finished? = Nx.logical_or(finished?, Nx.equal(next_token, eos_token_id))
-    next_token = next_token * Nx.logical_not(next_finished?) + pad_token_id * next_finished?
+    {sequences, length, finished?} =
+      update_sequences(sequences, length, finished?, token_id, pad_token_id, eos_token_id)
 
-    sequences = Nx.put_slice(sequences, [0, length], next_token)
-    inputs = update_inputs_fun.(inputs, model_outputs, next_token)
+    inputs = update_inputs_fun.(inputs, outputs.cache, Nx.new_axis(token_id, -1))
 
-    {sequences, length + 1, next_finished?, inputs, key_next}
+    {sequences, length, finished?, inputs, prng_key}
   end
 
-  deftransformp batched_choice(key, vocab, probabilities) do
-    {batch_size, _} = Nx.shape(vocab)
+  deftransformp batched_choice(key, scores) do
+    {batch_size, vocab_size} = Nx.shape(scores)
+
+    vocab = Nx.iota({vocab_size})
+
+    keys = Nx.Random.split(key, parts: batch_size)
 
     tokens =
       for i <- 0..(batch_size - 1) do
-        candidate_tokens = vocab[[i, 0..-1//1]]
-        candidate_probs = probabilities[[i, 0..-1//1]]
-        {token, _} = Nx.Random.choice(key, candidate_tokens, candidate_probs, samples: 1)
-        Nx.new_axis(token, 0)
+        probabilities = scores[i]
+        {token, _} = Nx.Random.choice(keys[i], vocab, probabilities, samples: 1)
+        token
       end
 
     Nx.concatenate(tokens, axis: 0)
   end
 
-  ## Beam Search
+  # TODO: once vectorization is in
+  # deftransformp batched_choice(key, scores) do
+  #   {batch_size, vocab_size} = Nx.shape(scores)
+
+  #   vocab = Nx.iota({vocab_size})
+
+  #   keys = Nx.Random.split(key, parts: batch_size)
+
+  #   key = Nx.vectorize(keys, :batch)
+  #   probabilities = Nx.vectorize(scores, :batch)
+
+  #   {tokens, _} = Nx.Random.choice(key, vocab, probabilities, samples: 1)
+
+  #   tokens
+  #   |> Nx.squeeze()
+  #   |> Nx.devectorize()
+  # end
 
   # Logit processors
 
@@ -731,6 +917,51 @@ defmodule Bumblebee.Text.Generation do
     if context.length < min_length do
       ignore_token_id(logits, token_id: eos_token_id)
     else
+      logits
+    end
+  end
+
+  defnp no_repeat_ngram_logits_processor(logits, context, opts \\ []) do
+    opts = keyword!(opts, [:ngram_length])
+    ngram_length = opts[:ngram_length]
+
+    if context.length + 1 < ngram_length do
+      logits
+    else
+      # Given a sequence of last {ngram_length - 1} tokens, we look
+      # for prior occurrences of that sequence and we want to make the
+      # subsequent token ignored. This way the n-gram is not repeated
+      # this time around
+
+      ngram_but_one_length = ngram_length - 1
+
+      last_ngram_but_one =
+        Nx.slice_along_axis(
+          context.sequences,
+          context.length - ngram_but_one_length,
+          ngram_but_one_length,
+          axis: 1
+        )
+
+      {_, _, _, _, logits} =
+        while {i = 0, last_ngram_but_one, sequences = context.sequences, length = context.length,
+               logits},
+              i + ngram_but_one_length < length do
+          ngram_but_one = Nx.slice_along_axis(sequences, i, ngram_but_one_length, axis: 1)
+
+          batch_size = Nx.axis_size(logits, 0)
+
+          token_id = sequences[[.., i + ngram_but_one_length]]
+          indices = Nx.stack([Nx.iota({batch_size}), token_id], axis: -1)
+
+          match? = Nx.all(ngram_but_one == last_ngram_but_one, axes: [1])
+          updates = Nx.select(match?, Nx.Constants.neg_infinity(), 0)
+
+          logits = Nx.indexed_add(logits, indices, updates)
+
+          {i + 1, last_ngram_but_one, sequences, length, logits}
+        end
+
       logits
     end
   end

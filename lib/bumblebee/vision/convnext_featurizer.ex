@@ -65,7 +65,11 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
 
     images =
       for image <- images do
-        images = image |> Image.to_batched_tensor() |> Nx.as_type(:f32)
+        images =
+          image
+          |> Image.to_batched_tensor()
+          |> Nx.as_type(:f32)
+          |> Image.normalize_channels(length(featurizer.image_mean))
 
         cond do
           not featurizer.resize ->

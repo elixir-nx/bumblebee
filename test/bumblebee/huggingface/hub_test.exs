@@ -152,6 +152,35 @@ defmodule Bumblebee.HuggingFace.HubTest do
 
       assert {:error, "repository not found"} = Hub.cached_download(url, cache_dir: tmp_dir)
     end
+
+    @tag :tmp_dir
+    test "returns cached without checking etag when :offline is enabled",
+         %{bypass: bypass, tmp_dir: tmp_dir} do
+      Bypass.expect_once(bypass, "HEAD", "/file.json", fn conn ->
+        serve_with_etag(conn, ~s/"hash"/, "")
+      end)
+
+      Bypass.expect_once(bypass, "GET", "/file.json", fn conn ->
+        serve_with_etag(conn, ~s/"hash"/, "{}")
+      end)
+
+      url = url(bypass.port) <> "/file.json"
+
+      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir)
+      assert File.read!(path) == "{}"
+
+      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir, offline: true)
+      assert File.read!(path) == "{}"
+    end
+
+    @tag :tmp_dir
+    test "returns an error when :offline is enabled and file not in cache",
+         %{bypass: bypass, tmp_dir: tmp_dir} do
+      url = url(bypass.port) <> "/file.json"
+
+      assert {:error, "could not find file in local cache and outgoing traffic is disabled"} =
+               Hub.cached_download(url, cache_dir: tmp_dir, offline: true)
+    end
   end
 
   defp url(port), do: "http://localhost:#{port}"

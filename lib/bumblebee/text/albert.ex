@@ -89,8 +89,7 @@ defmodule Bumblebee.Text.Albert do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++
-      Shared.token_options(pad_token_id: 0, bos_token_id: 2, eos_token_id: 3)
+      ])
 
   @moduledoc """
   ALBERT model family.
@@ -189,11 +188,11 @@ defmodule Bumblebee.Text.Albert do
 
   @impl true
   def input_template(%{architecture: :for_multiple_choice}) do
-    %{"input_ids" => Nx.template({1, 1, 1}, :s64)}
+    %{"input_ids" => Nx.template({1, 1, 1}, :u32)}
   end
 
   def input_template(_spec) do
-    %{"input_ids" => Nx.template({1, 1}, :s64)}
+    %{"input_ids" => Nx.template({1, 1}, :u32)}
   end
 
   @impl true
@@ -266,8 +265,8 @@ defmodule Bumblebee.Text.Albert do
         name: "question_answering_head.output"
       )
 
-    start_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 0]])
-    end_logits = Axon.nx(logits, & &1[[0..-1//1, 0..-1//1, 1]])
+    start_logits = Axon.nx(logits, & &1[[.., .., 0]])
+    end_logits = Axon.nx(logits, & &1[[.., .., 1]])
 
     Layers.output(%{
       start_logits: start_logits,
@@ -402,7 +401,7 @@ defmodule Bumblebee.Text.Albert do
         name = name |> join("groups") |> join(group_idx) |> join("blocks") |> join(inner_idx)
 
         # TODO: wrap encoder block in a layer_drop combinator
-        {hidden_state, attention, _cross_attention, _block_cache} =
+        {hidden_state, attention, _cross_attention, _block_cache, _position_bias} =
           Layers.Transformer.block(hidden_state,
             attention_mask: attention_mask,
             num_attention_heads: spec.num_attention_heads,
@@ -410,7 +409,9 @@ defmodule Bumblebee.Text.Albert do
             kernel_initializer: kernel_initializer(spec),
             dropout_rate: spec.dropout_rate,
             attention_dropout_rate: spec.attention_dropout_rate,
-            layer_norm_epsilon: spec.layer_norm_epsilon,
+            layer_norm: [
+              epsilon: spec.layer_norm_epsilon
+            ],
             ffn: [
               intermediate_size: spec.intermediate_size,
               activation: spec.activation

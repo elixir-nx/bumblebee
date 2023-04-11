@@ -36,10 +36,6 @@ defmodule Bumblebee.Vision.ClipVision do
         default: :quick_gelu,
         doc: "the activation function"
       ],
-      dropout_rate: [
-        default: 0.0,
-        doc: "the dropout rate for encoder"
-      ],
       attention_dropout_rate: [
         default: 0.0,
         doc: "the dropout rate for attention weights"
@@ -51,9 +47,7 @@ defmodule Bumblebee.Vision.ClipVision do
     ] ++
       Shared.common_options([
         :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
+        :output_attentions
       ])
 
   @moduledoc """
@@ -88,9 +82,7 @@ defmodule Bumblebee.Vision.ClipVision do
 
   @impl true
   def config(spec, opts \\ []) do
-    spec
-    |> Shared.put_config_attrs(opts)
-    |> Shared.validate_label_options()
+    Shared.put_config_attrs(spec, opts)
   end
 
   @impl true
@@ -144,11 +136,13 @@ defmodule Bumblebee.Vision.ClipVision do
 
     patch_embeddings = patch_embedding(pixel_values, spec, name: join(name, "patch_embedding"))
 
-    input_embeddings =
-      Layers.prepend_embedding(patch_embeddings,
+    class_embedding =
+      Layers.learned_embeddings(1, spec.hidden_size,
         name: join(name, "class_embedding"),
         initializer: Axon.Initializers.normal()
       )
+
+    input_embeddings = Layers.concatenate_embeddings([class_embedding, patch_embeddings])
 
     num_patches = div(spec.image_size, spec.patch_size) ** 2
     num_positions = num_patches + 1
@@ -195,7 +189,9 @@ defmodule Bumblebee.Vision.ClipVision do
       kernel_initializer: Axon.Initializers.normal(scale: 0.01),
       dropout_rate: 0.0,
       attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm_epsilon: spec.layer_norm_epsilon,
+      layer_norm: [
+        epsilon: spec.layer_norm_epsilon
+      ],
       norm_placement: :first,
       ffn: [
         intermediate_size: spec.intermediate_size,
@@ -225,7 +221,6 @@ defmodule Bumblebee.Vision.ClipVision do
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", atom()},
-          dropout_rate: {"dropout", number()},
           attention_dropout_rate: {"attention_dropout", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
@@ -239,9 +234,9 @@ defmodule Bumblebee.Vision.ClipVision do
       %{
         "embedder.patch_embedding" => "vision_model.embeddings.patch_embedding",
         "embedder.class_embedding" => %{
-          "embedding" => {
+          "embeddings" => {
             [{"vision_model.embeddings", "class_embedding"}],
-            fn [value] -> value end
+            fn [value] -> Nx.new_axis(value, 0) end
           }
         },
         "embedder.position_embedding" => "vision_model.embeddings.position_embedding",

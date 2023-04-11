@@ -10,6 +10,9 @@ defmodule Bumblebee.Text.GenerationTest do
       {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})
 
+      {:ok, generation_config} =
+        Bumblebee.load_generation_config({:hf, "facebook/bart-large-cnn"})
+
       article = """
       PG&E stated it scheduled the blackouts in response to forecasts for high \
       winds amid dry conditions. The aim is to reduce the risk of wildfires. \
@@ -17,31 +20,78 @@ defmodule Bumblebee.Text.GenerationTest do
       which were expected to last through at least midday tomorrow.
       """
 
-      serving = Bumblebee.Text.generation(model_info, tokenizer, max_new_tokens: 8)
+      generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
+
+      serving =
+        Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+          defn_options: [compiler: EXLA]
+        )
 
       assert %{results: [%{text: "PG&E scheduled the black"}]} = Nx.Serving.run(serving, article)
     end
 
-    test "generates text with sampling" do
+    test "with :no_repeat_ngram_length" do
       {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+
+      generation_config =
+        Bumblebee.configure(generation_config, max_new_tokens: 12, no_repeat_ngram_length: 2)
 
       serving =
-        Bumblebee.Text.generation(model_info, tokenizer,
-          max_new_tokens: 8,
-          sample: true,
-          seed: 0
+        Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+          defn_options: [compiler: EXLA]
         )
 
-      prompt = """
-      I enjoy walking with my cute dog
-      """
+      # Without :no_repeat_ngram_length we get
+      # %{results: [%{text: "I was going to say, 'Well, I'm going to say,"}]}
+
+      assert %{results: [%{text: "I was going to say, 'Well, I'm going back to the"}]} =
+               Nx.Serving.run(serving, "I was going")
+    end
+
+    test "sampling" do
+      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+
+      generation_config =
+        Bumblebee.configure(generation_config,
+          max_new_tokens: 12,
+          strategy: %{type: :multinomial_sampling}
+        )
+
+      serving =
+        Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+          seed: 0,
+          defn_options: [compiler: EXLA]
+        )
 
       assert %{
                results: [
-                 %{text: "I enjoy walking with my cute dog\n\nThey are always there for me\n"}
+                 %{text: "I was going to fall asleep.\"\n\nThis is not Wallace's fifth"}
                ]
-             } = Nx.Serving.run(serving, prompt)
+             } = Nx.Serving.run(serving, "I was going")
+    end
+
+    test "contrastive search" do
+      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+
+      generation_config =
+        Bumblebee.configure(generation_config,
+          max_new_tokens: 12,
+          strategy: %{type: :contrastive_search, top_k: 4, alpha: 0.6}
+        )
+
+      serving =
+        Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+          defn_options: [compiler: EXLA]
+        )
+
+      assert %{results: [%{text: "I was going to say, 'Well, I don't know what you"}]} =
+               Nx.Serving.run(serving, "I was going")
     end
   end
 end

@@ -24,14 +24,10 @@ defmodule Bumblebee.Audio do
   The serving accepts `t:speech_to_text_input/0` and returns
   `t:speech_to_text_output/0`. A list of inputs is also supported.
 
-  Note that either `:max_new_tokens` or `:max_length` must be specified.
-  The generation should generally finish based on the audio input,
-  however you still need to specify the upper limit.
-
   ## Options
 
-    * `:max_new_tokens` - the maximum number of tokens to be generated,
-      ignoring the number of tokens in the prompt
+    * `:seed` - random seed to use when sampling. By default the current
+      timestamp is used
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
@@ -46,17 +42,15 @@ defmodule Bumblebee.Audio do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
-  Also accepts all the other options of `Bumblebee.Text.Generation.build_generate/3`.
-
   ## Examples
 
       {:ok, whisper} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/whisper-tiny"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/whisper-tiny"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai/whisper-tiny"})
 
       serving =
-        Bumblebee.Audio.speech_to_text(whisper, featurizer, tokenizer,
-          max_new_tokens: 100,
+        Bumblebee.Audio.speech_to_text(whisper, featurizer, tokenizer, generation_config,
           defn_options: [compiler: EXLA]
         )
 
@@ -68,8 +62,9 @@ defmodule Bumblebee.Audio do
           Bumblebee.model_info(),
           Bumblebee.Featurizer.t(),
           Bumblebee.Tokenizer.t(),
+          Bumblebee.Text.GenerationConfig.t(),
           keyword()
         ) :: Nx.Serving.t()
-  defdelegate speech_to_text(model_info, featurizer, tokenizer, opts \\ []),
+  defdelegate speech_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []),
     to: Bumblebee.Audio.SpeechToText
 end

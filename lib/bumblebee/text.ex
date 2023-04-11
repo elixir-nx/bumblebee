@@ -49,6 +49,21 @@ defmodule Bumblebee.Text do
           boundaries are respected and the prefix is omitted in the
           output labels
 
+        * `:word_first` - uses `:same` strategy except that word tokens
+          cannot end up with different labels. With this strategy word
+          gets the label of the first token of that word when there
+          is ambiguity. Note that this works only on word based models
+
+        * `:word_average` - uses `:same` strategy except that word tokens
+          cannot end up with different labels. With this strategy scores
+          are averaged across word tokens and then the maximum label
+          is taken. Note that this works only on word based models
+
+        * `:word_max` - uses `:same` strategy except that word tokens
+          cannot end up with different labels. With this strategy word
+          gets the label of the token with the maximum score. Note that
+          this works only on word based models
+
     * `:ignored_labels` - the labels to ignore in the final output.
       The labels should be specified without BIO prefix. Defaults to
       `["O"]`
@@ -106,19 +121,10 @@ defmodule Bumblebee.Text do
   The serving accepts `t:generation_input/0` and returns `t:generation_output/0`.
   A list of inputs is also supported.
 
-  Note that either `:max_new_tokens` or `:max_length` must be specified.
-
   ## Options
 
-    * `:max_new_tokens` - the maximum number of tokens to be generated,
-      ignoring the number of tokens in the prompt
-
-    * `:min_new_tokens` - the minimum number of tokens to be generated,
-      ignoring the number of tokens in the prompt
-
-    * `:sample` - whether or not to use random sampling. Defaults to `false`
-
-    * `:seed` - random seed to use when sampling. Defaults to `nil`
+    * `:seed` - random seed to use when sampling. By default the current
+      timestamp is used
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
@@ -136,17 +142,15 @@ defmodule Bumblebee.Text do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
-  Also accepts all the other options of `Bumblebee.Text.Generation.build_generate/3`.
-
   ## Examples
 
-      {:ok, gpt2} = Bumblebee.load_model({:hf, "gpt2"})
+      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
 
-      serving = Bumblebee.Text.generation(gpt2, tokenizer, max_new_tokens: 15)
+      serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
 
-      prompt = "Elixir is a functional"
-      Nx.Serving.run(serving, prompt)
+      Nx.Serving.run(serving, "Elixir is a functional")
       #=> %{
       #=>   results: [
       #=>     %{
@@ -156,8 +160,84 @@ defmodule Bumblebee.Text do
       #=> }
 
   """
-  @spec generation(Bumblebee.model_info(), Bumblebee.Tokenizer.t(), keyword()) :: Nx.Serving.t()
-  defdelegate generation(model_info, tokenizer, opts \\ []), to: Bumblebee.Text.Generation
+  @spec generation(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          Bumblebee.Text.GenerationConfig.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate generation(model_info, tokenizer, generation_config, opts \\ []),
+    to: Bumblebee.Text.Generation
+
+  @type conversation_input :: %{text: String.t(), history: conversation_history() | nil}
+  @type conversation_output :: %{text: String.t(), history: conversation_history()}
+
+  @type conversation_history :: list({:user | :generated, String.t()})
+
+  @doc """
+  Builds serving for conversational generation.
+
+  The serving accepts `t:conversation_input/0` and returns
+  `t:conversation_output/0`. A list of inputs is also supported.
+
+  Each call to serving returns the conversation history, which can be
+  fed into the next run to maintain the context.
+
+  Note that either `:max_new_tokens` or `:max_length` must be specified.
+
+  ## Options
+
+    * `:seed` - random seed to use when sampling. By default the current
+      timestamp is used
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length.
+          Note that in this case, the whole conversation history is the
+          input, so this value should be relatively large to allow long
+          history (though the supported upper limit depends on the model)
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  ## Examples
+
+      {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/blenderbot-400M-distill"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/blenderbot-400M-distill"})
+
+      {:ok, generation_config} =
+        Bumblebee.load_generation_config({:hf, "facebook/blenderbot-400M-distill"})
+
+      serving = Bumblebee.Text.conversation(model_info, tokenizer, generation_config)
+
+      history = nil
+
+      message = "Hey!"
+      %{text: text, history: history} = Nx.Serving.run(serving, %{text: message, history: history})
+      #=> %{history: ..., text: "Hey !"}
+
+      message = "What's up?"
+      %{text: text, history: history} = Nx.Serving.run(serving, %{text: message, history: history})
+      #=> %{history: ..., text: "Not much ."}
+
+  """
+  @spec conversation(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          Bumblebee.Text.GenerationConfig.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate conversation(model_info, tokenizer, generation_config, opts \\ []),
+    to: Bumblebee.Text.Conversation
 
   @type text_classification_input :: String.t()
   @type text_classification_output :: %{predictions: list(text_classification_prediction())}

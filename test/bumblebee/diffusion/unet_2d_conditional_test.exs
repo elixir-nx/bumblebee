@@ -25,7 +25,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
       assert Nx.shape(outputs.sample) == {1, 32, 32, 4}
 
       assert_all_close(
-        to_channels_first(outputs.sample)[[0..-1//1, 0..-1//1, 1..3, 1..3]],
+        to_channels_first(outputs.sample)[[.., .., 1..3, 1..3]],
         Nx.tensor([
           [
             [[0.0283, -0.0525, 0.0433], [-0.1055, -0.1024, -0.0299], [-0.0498, -0.0391, 0.0032]],

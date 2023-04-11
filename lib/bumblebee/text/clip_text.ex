@@ -53,7 +53,7 @@ defmodule Bumblebee.Text.ClipText do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++ Shared.token_options(pad_token_id: 1, bos_token_id: 0, eos_token_id: 2)
+      ])
 
   @moduledoc """
   The CLIP model for text encoding.
@@ -107,7 +107,7 @@ defmodule Bumblebee.Text.ClipText do
   @impl true
   def input_template(_spec) do
     %{
-      "input_ids" => Nx.template({1, 1}, :s64)
+      "input_ids" => Nx.template({1, 1}, :u32)
     }
   end
 
@@ -191,7 +191,9 @@ defmodule Bumblebee.Text.ClipText do
       kernel_initializer: Axon.Initializers.normal(scale: 0.01),
       dropout_rate: 0.0,
       attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm_epsilon: spec.layer_norm_epsilon,
+      layer_norm: [
+        epsilon: spec.layer_norm_epsilon
+      ],
       norm_placement: :first,
       ffn: [
         intermediate_size: spec.intermediate_size,

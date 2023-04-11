@@ -37,12 +37,12 @@ defmodule Bumblebee.Text.TokenClassification do
     end
 
     Nx.Serving.new(
-      fn ->
+      fn defn_options ->
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
-              "input_ids" => Nx.template({batch_size, sequence_length}, :s64),
-              "attention_mask" => Nx.template({batch_size, sequence_length}, :s64)
+              "input_ids" => Nx.template({batch_size, sequence_length}, :u32),
+              "attention_mask" => Nx.template({batch_size, sequence_length}, :u32)
             }
 
             [params, inputs]
@@ -53,8 +53,9 @@ defmodule Bumblebee.Text.TokenClassification do
           scores_fun.(params, inputs)
         end
       end,
-      batch_size: batch_size
+      defn_options
     )
+    |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
@@ -146,6 +147,14 @@ defmodule Bumblebee.Text.TokenClassification do
     |> group_entities(tokenizer)
   end
 
+  defp aggregate(entities, spec, tokenizer, strategy)
+       when strategy in [:word_max, :word_average, :word_first] do
+    entities
+    |> add_token_labels(spec)
+    |> override_token_labels(spec, strategy)
+    |> group_entities(tokenizer)
+  end
+
   defp aggregate(_, _, _, strategy) do
     raise ArgumentError,
           "unrecognized aggregation strategy #{inspect(strategy)}," <>
@@ -166,6 +175,60 @@ defmodule Bumblebee.Text.TokenClassification do
       label = spec.id_to_label[entity_idx]
       Map.merge(entity, %{label: label, score: score})
     end)
+  end
+
+  defp override_token_labels([entity | entities], spec, strategy) do
+    {final_group, word_entities} =
+      Enum.reduce(entities, {[entity], []}, fn entity, {word_group, word_entities} ->
+        if entity.is_subword do
+          {[entity | word_group], word_entities}
+        else
+          {[entity], [Enum.reverse(word_group) | word_entities]}
+        end
+      end)
+
+    [final_group | word_entities]
+    |> Enum.reverse()
+    |> Enum.flat_map(fn group ->
+      {idx, score} = aggregate_word(group, strategy)
+      label = spec.id_to_label[idx]
+
+      Enum.with_index(group, fn entity, idx ->
+        label =
+          if idx == 0 do
+            label
+          else
+            force_inside_label(label)
+          end
+
+        %{entity | label: label, score: score}
+      end)
+    end)
+  end
+
+  defp aggregate_word([first_entity | _], :word_first) do
+    idx = Nx.argmax(first_entity.scores) |> Nx.to_number()
+    score = Nx.to_number(Nx.squeeze(first_entity.scores[[idx]]))
+    {idx, score}
+  end
+
+  defp aggregate_word(group, :word_max) do
+    max_entity = Enum.max_by(group, &Nx.to_number(Nx.argmax(&1.scores)))
+    idx = Nx.argmax(max_entity.scores) |> Nx.to_number()
+    score = Nx.to_number(Nx.squeeze(max_entity.scores[[idx]]))
+    {idx, score}
+  end
+
+  defp aggregate_word(group, :word_average) do
+    scores =
+      group
+      |> Enum.map(& &1.scores)
+      |> Nx.stack()
+      |> Nx.mean(axes: [0])
+
+    idx = Nx.argmax(scores) |> Nx.to_number()
+    score = Nx.to_number(Nx.squeeze(scores[[idx]]))
+    {idx, score}
   end
 
   defp group_entities([entity | entities], tokenizer) do
@@ -206,4 +269,7 @@ defmodule Bumblebee.Text.TokenClassification do
   defp parse_label("B-" <> label), do: {:b, label}
   defp parse_label("I-" <> label), do: {:i, label}
   defp parse_label(label), do: {:i, label}
+
+  defp force_inside_label("B-" <> label), do: "I-" <> label
+  defp force_inside_label(label), do: label
 end

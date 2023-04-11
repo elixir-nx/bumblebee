@@ -247,22 +247,7 @@ defmodule Bumblebee.Utils.Nx do
 
   """
   defn batched_take(tensor, idx) do
-    {batch_size, axis_size, flat_shape, final_shape} =
-      transform({tensor, idx}, fn {tensor, idx} ->
-        tensor_shape = Nx.shape(tensor)
-        idx_shape = Nx.shape(idx)
-
-        unless Elixir.Kernel.==(elem(tensor_shape, 0), elem(idx_shape, 0)) do
-          raise ArgumentError,
-                "expected tensor and indices with the same leading axis size, got: #{inspect(tensor_shape)} and #{inspect(idx_shape)}"
-        end
-
-        [batch_size, axis_size | inner_sizes] = Tuple.to_list(tensor_shape)
-
-        flat_shape = List.to_tuple([batch_size * axis_size | inner_sizes])
-        final_shape = List.to_tuple(Tuple.to_list(idx_shape) ++ inner_sizes)
-        {batch_size, axis_size, flat_shape, final_shape}
-      end)
+    {batch_size, axis_size, flat_shape, final_shape} = get_batched_take_shapes(tensor, idx)
 
     flat_idx =
       idx
@@ -274,6 +259,22 @@ defmodule Bumblebee.Utils.Nx do
     |> Nx.reshape(flat_shape)
     |> Nx.take(flat_idx)
     |> Nx.reshape(final_shape)
+  end
+
+  deftransformp get_batched_take_shapes(tensor, idx) do
+    tensor_shape = Nx.shape(tensor)
+    idx_shape = Nx.shape(idx)
+
+    unless Elixir.Kernel.==(elem(tensor_shape, 0), elem(idx_shape, 0)) do
+      raise ArgumentError,
+            "expected tensor and indices with the same leading axis size, got: #{inspect(tensor_shape)} and #{inspect(idx_shape)}"
+    end
+
+    [batch_size, axis_size | inner_sizes] = Tuple.to_list(tensor_shape)
+
+    flat_shape = List.to_tuple([batch_size * axis_size | inner_sizes])
+    final_shape = List.to_tuple(Tuple.to_list(idx_shape) ++ inner_sizes)
+    {batch_size, axis_size, flat_shape, final_shape}
   end
 
   @doc """
@@ -305,17 +306,29 @@ defmodule Bumblebee.Utils.Nx do
 
   @doc """
   Computes cosine similarity between the given tensors.
+
+  ## Options
+
+    * `:batched?` - if `true`, treats inputs as batches along the first
+      axis and computes individual similarities. Defaults to `false`
+
   """
-  defn cosine_similarity(x, y) do
+  deftransform cosine_similarity(x, y, opts \\ []) do
+    opts = Keyword.validate!(opts, batched?: false)
+    batched? = opts[:batched?]
+
     x = normalize(x)
     y = normalize(y)
-    Nx.dot(x, [-1], y, [-1])
+
+    batch_axes = if batched?, do: [0], else: []
+
+    Nx.dot(x, [-1], batch_axes, y, [-1], batch_axes)
   end
 
   defnp normalize(tensor) do
     norm =
       tensor
-      |> Nx.power(2)
+      |> Nx.pow(2)
       |> Nx.sum(axes: [-1], keep_axes: true)
       |> Nx.sqrt()
 
@@ -323,26 +336,75 @@ defmodule Bumblebee.Utils.Nx do
   end
 
   @doc """
-  Returns top-k largest values and their indices.
+  Repeats tensor along the given axis, such that repeated chunks are
+  adjacent to each other.
 
   ## Options
 
-    * `:axis` - the axis to compare elements along. Defaults to `0`
+    * `:axis` - the axis to repeat along. Defaults to `0`
 
-    * `:k` - the number of largest values to return. Defaults to `1`
+  ## Examples
+
+    iex> x = Nx.tensor([[1, 2], [3, 4]])
+    iex> Bumblebee.Utils.Nx.repeat_interleave(x, 2)
+    #Nx.Tensor<
+      s64[4][2]
+      [
+        [1, 2],
+        [1, 2],
+        [3, 4],
+        [3, 4]
+      ]
+    >
 
   """
-  defn top_k(tensor, opts \\ []) do
-    opts = keyword!(opts, axis: 0, k: 1)
-    k = opts[:k]
+  deftransform repeat_interleave(tensor, times, opts \\ []) do
+    opts = Keyword.validate!(opts, axis: 0)
+
     axis = opts[:axis]
 
-    indices =
-      tensor
-      |> Nx.argsort(axis: axis, direction: :desc)
-      |> Nx.slice_along_axis(0, k, axis: axis)
+    repetitions =
+      1
+      |> List.duplicate(Nx.rank(tensor))
+      |> List.insert_at(axis + 1, times)
 
-    values = Nx.take_along_axis(tensor, indices, axis: axis)
-    {values, indices}
+    tensor
+    |> Nx.new_axis(axis + 1)
+    |> Nx.tile(repetitions)
+    |> Nx.flatten(axes: [axis, axis + 1])
+  end
+
+  @doc """
+  A version of `Nx.take/3` with each index applying to a corresponding
+  chunk.
+
+  ## Options
+
+    * `:axis` - the axis to take along. Defaults to `0`
+
+  ## Examples
+
+    iex> x = Nx.tensor([[1, 1], [2, 2], [3, 3], [4, 4]])
+    iex> Bumblebee.Utils.Nx.chunked_take(x, 2, Nx.tensor([1, 0]))
+    #Nx.Tensor<
+      s64[2][2]
+      [
+        [2, 2],
+        [3, 3]
+      ]
+    >
+
+  """
+  deftransform chunked_take(tensor, chunk_size, idx, opts \\ []) do
+    opts = Keyword.validate!(opts, axis: 0)
+
+    flat_idx =
+      idx
+      |> Nx.shape()
+      |> Nx.iota()
+      |> Nx.multiply(chunk_size)
+      |> Nx.add(idx)
+
+    Nx.take(tensor, flat_idx, axis: opts[:axis])
   end
 end

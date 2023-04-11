@@ -9,12 +9,12 @@ Application.put_env(:sample, PhoenixDemo.Endpoint,
 Mix.install([
   {:plug_cowboy, "~> 2.6"},
   {:jason, "~> 1.4"},
-  {:phoenix, "~> 1.7.0-rc.0", override: true},
+  {:phoenix, "~> 1.7.0"},
   {:phoenix_live_view, "~> 0.18.3"},
   # Bumblebee and friends
-  {:bumblebee, "~> 0.1.2"},
-  {:nx, "~> 0.4.1"},
-  {:exla, "~> 0.4.1"}
+  {:bumblebee, "~> 0.2.0"},
+  {:nx, "~> 0.5.1"},
+  {:exla, "~> 0.5.1"}
 ])
 
 Application.put_env(:nx, :default_backend, EXLA.Backend)
@@ -189,13 +189,8 @@ defmodule PhoenixDemo.SampleLive do
   def mount(_params, _session, socket) do
     {:ok,
      socket
-     |> assign(label: nil, running: false, task_ref: nil)
-     |> allow_upload(:image,
-       accept: :any,
-       max_entries: 1,
-       progress: &handle_progress/3,
-       auto_upload: true
-     )}
+     |> assign(label: nil, task: nil)
+     |> allow_upload(:image, accept: :any, progress: &handle_progress/3, auto_upload: true)}
   end
 
   @impl true
@@ -208,7 +203,7 @@ defmodule PhoenixDemo.SampleLive do
         </form>
         <div class="mt-6 flex space-x-1.5 items-center text-gray-600 text-lg">
           <span>Label:</span>
-          <%= if @running do %>
+          <%= if @task do %>
             <.spinner />
           <% else %>
             <span class="text-gray-900 font-medium"><%= @label || "?" %></span>
@@ -264,25 +259,18 @@ defmodule PhoenixDemo.SampleLive do
     """
   end
 
-  def handle_progress(:image, entry, socket) do
-    if entry.done? do
-      socket
-      |> consume_uploaded_entries(:image, fn %{path: path}, _entry ->
+  def handle_progress(:image, entry, socket) when entry.done? do
+    binary =
+      consume_uploaded_entry(socket, entry, fn %{path: path} ->
         {:ok, File.read!(path)}
       end)
-      |> case do
-        [binary] ->
-          image = decode_as_tensor(binary)
-          task = Task.async(fn -> Nx.Serving.batched_run(PhoenixDemo.Serving, image) end)
-          {:noreply, assign(socket, running: true, task_ref: task.ref)}
 
-        [] ->
-          {:noreply, socket}
-      end
-    else
-      {:noreply, socket}
-    end
+    image = decode_as_tensor(binary)
+    task = Task.async(fn -> Nx.Serving.batched_run(PhoenixDemo.Serving, image) end)
+    {:noreply, assign(socket, task: task)}
   end
+
+  def handle_progress(_name, _entry, socket), do: {:noreply, socket}
 
   defp decode_as_tensor(<<height::32-integer, width::32-integer, data::binary>>) do
     data |> Nx.from_binary(:u8) |> Nx.reshape({height, width, 3})
@@ -297,10 +285,10 @@ defmodule PhoenixDemo.SampleLive do
   end
 
   @impl true
-  def handle_info({ref, result}, %{assigns: %{task_ref: ref}} = socket) do
+  def handle_info({ref, result}, socket) when socket.assigns.task.ref == ref do
     Process.demonitor(ref, [:flush])
     %{predictions: [%{label: label}]} = result
-    {:noreply, assign(socket, label: label, running: false)}
+    {:noreply, assign(socket, label: label, task: nil)}
   end
 end
 
@@ -343,8 +331,8 @@ serving =
   Supervisor.start_link(
     [
       {Phoenix.PubSub, name: PhoenixDemo.PubSub},
-      PhoenixDemo.Endpoint,
-      {Nx.Serving, serving: serving, name: PhoenixDemo.Serving, batch_timeout: 100}
+      {Nx.Serving, serving: serving, name: PhoenixDemo.Serving, batch_timeout: 100},
+      PhoenixDemo.Endpoint
     ],
     strategy: :one_for_one
   )

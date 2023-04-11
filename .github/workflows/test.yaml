@@ -13,7 +13,7 @@ jobs:
       matrix:
         include:
           - pair:
-              elixir: 1.13.0
+              elixir: 1.14.0
               otp: 24.0
             lint: true
     env:

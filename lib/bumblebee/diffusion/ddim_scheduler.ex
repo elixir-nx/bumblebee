@@ -112,7 +112,11 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
   end
 
   @impl true
-  def init(scheduler, num_steps, _sample_shape) do
+  def init(scheduler, num_steps, _sample_shape, opts \\ []) do
+    opts = Keyword.validate!(opts, [:seed])
+
+    seed = Keyword.get_lazy(opts, :seed, fn -> :erlang.system_time() end)
+
     timesteps =
       SchedulerUtils.ddim_timesteps(
         scheduler.num_train_steps,
@@ -120,13 +124,14 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
         scheduler.timesteps_offset
       )
 
-    alpha_bars = init_parameters(scheduler: scheduler)
+    {alpha_bars, prng_key} = init_parameters(scheduler: scheduler, seed: seed)
 
     state = %{
       timesteps: timesteps,
       timestep_gap: div(scheduler.num_train_steps, num_steps),
       alpha_bars: alpha_bars,
-      iteration: 0
+      iteration: 0,
+      prng_key: prng_key
     }
 
     {state, timesteps}
@@ -140,6 +145,9 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
       num_train_steps: num_train_steps
     } = opts[:scheduler]
 
+    seed = opts[:seed]
+    prng_key = Nx.Random.key(seed)
+
     betas =
       SchedulerUtils.beta_schedule(beta_schedule, num_train_steps,
         start: beta_start,
@@ -148,7 +156,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
 
     alphas = 1 - betas
 
-    Nx.cumulative_product(alphas)
+    {Nx.cumulative_product(alphas), prng_key}
   end
 
   @impl true
@@ -216,18 +224,20 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
         noise
       end
 
-    pred_sample_direction = Nx.sqrt(1 - alpha_bar_t_prev - Nx.power(sigma_t, 2)) * noise
+    pred_sample_direction = Nx.sqrt(1 - alpha_bar_t_prev - Nx.pow(sigma_t, 2)) * noise
 
     prev_sample = Nx.sqrt(alpha_bar_t_prev) * pred_denoised_sample + pred_sample_direction
 
-    prev_sample =
+    {prev_sample, next_key} =
       if scheduler.eta > 0 do
-        prev_sample + sigma_t * Nx.random_normal(prev_sample)
+        {rand, next_key} = Nx.Random.normal(state.prng_key, prev_sample)
+        out = prev_sample + sigma_t * rand
+        {out, next_key}
       else
-        prev_sample
+        {prev_sample, state.prng_key}
       end
 
-    state = %{state | iteration: state.iteration + 1}
+    state = %{state | iteration: state.iteration + 1, prng_key: next_key}
 
     {state, prev_sample}
   end

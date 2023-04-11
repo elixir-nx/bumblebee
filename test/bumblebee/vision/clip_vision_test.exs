@@ -24,7 +24,7 @@ defmodule Bumblebee.Vision.ClipVisionTest do
       assert Nx.shape(outputs.hidden_state) == {1, 50, 768}
 
       assert_all_close(
-        outputs.hidden_state[[0..-1//1, 1..3, 1..3]],
+        outputs.hidden_state[[.., 1..3, 1..3]],
         Nx.tensor([
           [[0.3465, -0.3939, -0.5297], [0.3588, -0.2529, -0.5606], [0.3958, -0.2688, -0.5367]]
         ]),
@@ -32,7 +32,7 @@ defmodule Bumblebee.Vision.ClipVisionTest do
       )
 
       assert_all_close(
-        outputs.pooled_state[[0..-1//1, 1..3]],
+        outputs.pooled_state[[.., 1..3]],
         Nx.tensor([[0.3602, 0.3658, -0.2337]]),
         atol: 1.0e-4
       )

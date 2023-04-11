@@ -206,7 +206,7 @@ defmodule Bumblebee.Vision.Deit do
     logits =
       outputs.hidden_state
       |> Axon.nx(fn x ->
-        x = x[[0..-1//1, 1..-2//1]]
+        x = x[[.., 1..-2//1]]
         {batch_size, sequence_length, channels} = Nx.shape(x)
         height = width = sequence_length |> :math.sqrt() |> floor()
         Nx.reshape(x, {batch_size, height, width, channels})
@@ -267,10 +267,14 @@ defmodule Bumblebee.Vision.Deit do
       |> patch_embedding(spec, name: join(name, "patch_embedding"))
       |> Layers.apply_vision_patch_mask(patch_mask, name: join(name, "mask_tokens"))
 
+    class_embedding =
+      Layers.learned_embeddings(1, spec.hidden_size, name: join(name, "class_embedding"))
+
+    distillation_embedding =
+      Layers.learned_embeddings(1, spec.hidden_size, name: join(name, "distillation_embedding"))
+
     input_embeddings =
-      patch_embeddings
-      |> Layers.prepend_embedding(name: join(name, "distillation_embedding"))
-      |> Layers.prepend_embedding(name: join(name, "class_embedding"))
+      Layers.concatenate_embeddings([class_embedding, distillation_embedding, patch_embeddings])
 
     num_patches = div(spec.image_size, spec.patch_size) ** 2
 
@@ -311,7 +315,9 @@ defmodule Bumblebee.Vision.Deit do
       query_use_bias: spec.use_qkv_bias,
       key_use_bias: spec.use_qkv_bias,
       value_use_bias: spec.use_qkv_bias,
-      layer_norm_epsilon: spec.layer_norm_epsilon,
+      layer_norm: [
+        epsilon: spec.layer_norm_epsilon
+      ],
       norm_placement: :first,
       ffn: [
         intermediate_size: spec.intermediate_size,
@@ -369,15 +375,15 @@ defmodule Bumblebee.Vision.Deit do
       %{
         "embedder.patch_embedding.projection" => "deit.embeddings.patch_embeddings.projection",
         "embedder.distillation_embedding" => %{
-          "embedding" => {
+          "embeddings" => {
             [{"deit.embeddings", "distillation_token"}],
-            fn [value] -> Nx.squeeze(value, axes: [0, 1]) end
+            fn [value] -> Nx.squeeze(value, axes: [0]) end
           }
         },
         "embedder.class_embedding" => %{
-          "embedding" => {
+          "embeddings" => {
             [{"deit.embeddings", "cls_token"}],
-            fn [value] -> Nx.squeeze(value, axes: [0, 1]) end
+            fn [value] -> Nx.squeeze(value, axes: [0]) end
           }
         },
         "embedder.position_embedding" => %{

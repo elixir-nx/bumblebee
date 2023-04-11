@@ -52,14 +52,14 @@ defmodule Bumblebee.Text.ZeroShotClassification do
     end
 
     Nx.Serving.new(
-      fn ->
+      fn defn_options ->
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
               "input_ids" =>
-                Nx.template({batch_size, sequences_per_batch, sequence_length}, :s64),
+                Nx.template({batch_size, sequences_per_batch, sequence_length}, :u32),
               "attention_mask" =>
-                Nx.template({batch_size, sequences_per_batch, sequence_length}, :s64)
+                Nx.template({batch_size, sequences_per_batch, sequence_length}, :u32)
             }
 
             [params, inputs]
@@ -71,8 +71,9 @@ defmodule Bumblebee.Text.ZeroShotClassification do
           Utils.Nx.composite_unflatten_batch(scores, inputs.size)
         end
       end,
-      batch_size: batch_size
+      defn_options
     )
+    |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
@@ -90,10 +91,10 @@ defmodule Bumblebee.Text.ZeroShotClassification do
     end)
     |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
       for scores <- Utils.Nx.batch_to_list(scores) do
-        scores = Axon.Layers.softmax(scores[[0..-1//1, entailment_id]])
+        scores = Axon.Layers.softmax(scores[[.., entailment_id]])
 
         k = min(top_k, Nx.size(scores))
-        {top_scores, top_indices} = Utils.Nx.top_k(scores, k: k)
+        {top_scores, top_indices} = Nx.top_k(scores, k: k)
 
         predictions =
           Enum.zip_with(

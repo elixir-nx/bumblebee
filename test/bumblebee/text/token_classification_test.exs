@@ -60,6 +60,54 @@ defmodule Bumblebee.Text.TokenClassificationTest do
              } = Nx.Serving.run(serving, text)
     end
 
+    for aggregation <- [:word_first, :word_max, :word_average] do
+      test "correctly extracts entities with :#{aggregation} aggregation" do
+        assert {:ok, model_info} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
+        assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+
+        serving =
+          Bumblebee.Text.TokenClassification.token_classification(model_info, tokenizer,
+            aggregation: unquote(aggregation)
+          )
+
+        text = "I went with Janine Doe to Atlanta and we talked to John Smith about Microsoft"
+
+        assert %{entities: [jane, atlanta, john, microsoft]} = Nx.Serving.run(serving, text)
+
+        assert %{
+                 label: "PER",
+                 score: _janine_score,
+                 phrase: "Janine Doe",
+                 start: 12,
+                 end: 22
+               } = jane
+
+        assert %{
+                 label: "LOC",
+                 score: _atlanta_score,
+                 phrase: "Atlanta",
+                 start: 26,
+                 end: 33
+               } = atlanta
+
+        assert %{
+                 label: "PER",
+                 score: _john_score,
+                 phrase: "John Smith",
+                 start: 51,
+                 end: 61
+               } = john
+
+        assert %{
+                 label: "ORG",
+                 score: _microsoft_score,
+                 phrase: "Microsoft",
+                 start: 68,
+                 end: 77
+               } = microsoft
+      end
+    end
+
     test "correctly extracts entities with simple aggregation on batched input" do
       assert {:ok, model_info} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
@@ -70,7 +118,7 @@ defmodule Bumblebee.Text.TokenClassificationTest do
         )
 
       texts = [
-        "I went with Jane Doe to Atlanta and we talked to John Smith about Microsoft",
+        "I went with Janine Doe to Atlanta and we talked to John Smith about Microsoft",
         "John went to Philadelphia"
       ]
 

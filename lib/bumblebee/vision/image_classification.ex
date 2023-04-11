@@ -1,7 +1,6 @@
 defmodule Bumblebee.Vision.ImageClassification do
   @moduledoc false
 
-  alias Bumblebee.Utils
   alias Bumblebee.Shared
 
   def image_classification(model_info, featurizer, opts \\ []) do
@@ -33,7 +32,7 @@ defmodule Bumblebee.Vision.ImageClassification do
     end
 
     Nx.Serving.new(
-      fn ->
+      fn defn_options ->
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
@@ -48,8 +47,9 @@ defmodule Bumblebee.Vision.ImageClassification do
           scores_fun.(params, inputs)
         end
       end,
-      batch_size: batch_size
+      defn_options
     )
+    |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       {images, multi?} = Shared.validate_serving_input!(input, &Shared.validate_image/1)
       inputs = Bumblebee.apply_featurizer(featurizer, images)
@@ -58,7 +58,7 @@ defmodule Bumblebee.Vision.ImageClassification do
     |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
       for scores <- Bumblebee.Utils.Nx.batch_to_list(scores) do
         k = min(top_k, Nx.size(scores))
-        {top_scores, top_indices} = Utils.Nx.top_k(scores, k: k)
+        {top_scores, top_indices} = Nx.top_k(scores, k: k)
 
         predictions =
           Enum.zip_with(

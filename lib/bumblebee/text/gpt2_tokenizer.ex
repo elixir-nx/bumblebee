@@ -3,6 +3,8 @@ defmodule Bumblebee.Text.Gpt2Tokenizer do
   GPT-2 tokenizer.
   """
 
+  @behaviour Bumblebee.Text.Conversation
+
   import Bumblebee.Shared
 
   tokenizer_impl(
@@ -15,4 +17,13 @@ defmodule Bumblebee.Text.Gpt2Tokenizer do
       pad: "<|endoftext|>"
     }
   )
+
+  @impl true
+  def conversation_history_to_text(tokenizer, history) do
+    eos_token = tokenizer.special_tokens.eos
+
+    history
+    |> Enum.reverse()
+    |> Enum.map_join(&(elem(&1, 1) <> eos_token))
+  end
 end

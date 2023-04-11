@@ -87,13 +87,7 @@ defmodule Bumblebee.Audio.Whisper do
       Shared.common_options([
         :output_hidden_states,
         :output_attentions
-      ]) ++
-      Shared.token_options(
-        pad_token_id: 50256,
-        bos_token_id: 50257,
-        eos_token_id: 50256,
-        decoder_start_token_id: 50257
-      ) ++ Shared.generation_options(forced_bos_token_id: 0, forced_eos_token_id: 2)
+      ])
 
   @moduledoc """
   Whisper model family.
@@ -197,7 +191,7 @@ defmodule Bumblebee.Audio.Whisper do
 
     %{
       "input_features" => Nx.template({1, input_length, spec.feature_size}, :f32),
-      "decoder_input_ids" => Nx.template({1, 1}, :s64)
+      "decoder_input_ids" => Nx.template({1, 1}, :u32)
     }
   end
 
@@ -246,6 +240,11 @@ defmodule Bumblebee.Audio.Whisper do
       decoder_num_blocks: spec.decoder_num_blocks,
       encoder_sequence_length: encoder_sequence_length
     )
+  end
+
+  @impl true
+  def traverse_cache(_spec, cache, fun) do
+    Layers.Decoder.traverse_cache(cache, fun)
   end
 
   defp inputs(spec) do
@@ -426,7 +425,9 @@ defmodule Bumblebee.Audio.Whisper do
         dropout_rate: spec.dropout_rate,
         attention_dropout_rate: spec.attention_dropout_rate,
         key_use_bias: false,
-        layer_norm_epsilon: 1.0e-5,
+        layer_norm: [
+          epsilon: 1.0e-5
+        ],
         norm_placement: :first,
         ffn: [
           intermediate_size: spec.encoder_intermediate_size,
@@ -473,7 +474,9 @@ defmodule Bumblebee.Audio.Whisper do
         dropout_rate: spec.dropout_rate,
         attention_dropout_rate: spec.attention_dropout_rate,
         key_use_bias: false,
-        layer_norm_epsilon: 1.0e-5,
+        layer_norm: [
+          epsilon: 1.0e-5
+        ],
         norm_placement: :first,
         ffn: [
           intermediate_size: spec.decoder_intermediate_size,

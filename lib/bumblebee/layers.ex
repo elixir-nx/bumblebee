@@ -34,7 +34,7 @@ defmodule Bumblebee.Layers do
   """
   defn gelu_new(input, _opts \\ []) do
     0.5 * input *
-      (1.0 + Nx.tanh(Nx.sqrt(2.0 / @pi) * (input + 0.044715 * Nx.power(input, 3.0))))
+      (1.0 + Nx.tanh(Nx.sqrt(2.0 / @pi) * (input + 0.044715 * Nx.pow(input, 3.0))))
   end
 
   @doc """
@@ -72,20 +72,140 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Computes attention weights.
+  Computes relative attention bias.
   """
-  def attention_weights(query, key, bias) do
-    Axon.layer(&attention_weights_impl/4, [query, key, bias])
+  def relative_attention_bias(query, key, attention_cache, offset, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [
+        :name,
+        bidirectional: true,
+        num_heads: 8,
+        num_buckets: 32,
+        max_distance: 128
+      ])
+
+    name = opts[:name]
+
+    relative_position_buckets =
+      Axon.layer(
+        &compute_relative_position_buckets/4,
+        [query, key, Axon.optional(attention_cache)],
+        bidirectional: opts[:bidirectional],
+        num_buckets: opts[:num_buckets],
+        max_distance: opts[:max_distance]
+      )
+
+    bias =
+      relative_position_buckets
+      |> Axon.embedding(opts[:num_buckets], opts[:num_heads], name: name)
+      |> Axon.transpose([2, 0, 1])
+      |> Axon.nx(&Nx.new_axis(&1, 0))
+
+    Axon.layer(
+      fn bias, query, offset, _opts ->
+        case offset do
+          %Axon.None{} ->
+            bias
+
+          offset ->
+            mask_shift = Nx.as_type(offset, {:s, 64})
+            query_length = Nx.axis_size(query, 1)
+            Nx.slice_along_axis(bias, mask_shift, query_length, axis: 2)
+        end
+      end,
+      [bias, query, Axon.optional(offset)]
+    )
   end
 
-  defnp attention_weights_impl(query, key, bias, _opts \\ []) do
+  defnp compute_relative_position_buckets(query, key, attention_cache, opts \\ []) do
+    opts = keyword!(opts, mode: :train, bidirectional: true, num_buckets: 32, max_distance: 128)
+
+    {key_length, query_length} = key_query_lengths(query, key, attention_cache)
+
+    context_position = Nx.iota({query_length, 1})
+    memory_position = Nx.iota({1, key_length})
+    relative_position = memory_position - context_position
+
+    {num_buckets, relative_buckets, relative_position} =
+      bidirectional_buckets(relative_position, opts[:num_buckets], opts[:bidirectional])
+
+    max_exact = Nx.quotient(num_buckets, 2)
+    is_small = Nx.less(relative_position, max_exact)
+
+    relative_position_if_large =
+      max_exact +
+        Nx.log(relative_position / max_exact) / Nx.log(opts[:max_distance] / max_exact) *
+          (num_buckets - max_exact)
+
+    relative_position_if_large =
+      Nx.min(
+        relative_position_if_large,
+        Nx.broadcast(num_buckets - 1, Nx.shape(relative_position_if_large))
+      )
+      |> Nx.as_type(:s64)
+
+    relative_buckets + Nx.select(is_small, relative_position, relative_position_if_large)
+  end
+
+  deftransformp key_query_lengths(query, key, attention_cache) do
+    case attention_cache do
+      %Axon.None{} ->
+        {Nx.axis_size(key, 1), Nx.axis_size(query, 1)}
+
+      attention_cache ->
+        key_length = Nx.axis_size(attention_cache.key, 1)
+        {key_length, key_length}
+    end
+  end
+
+  deftransformp bidirectional_buckets(relative_position, num_buckets, bidirectional) do
+    relative_buckets = 0
+
+    if bidirectional do
+      num_buckets = div(num_buckets, 2)
+
+      relative_buckets =
+        Nx.add(relative_buckets, Nx.multiply(Nx.greater(relative_position, 0), num_buckets))
+
+      relative_position = Nx.abs(relative_position)
+      {num_buckets, relative_buckets, relative_position}
+    else
+      relative_position =
+        relative_position
+        |> Nx.min(Nx.broadcast(0, Nx.shape(relative_position)))
+        |> Nx.negate()
+
+      {num_buckets, relative_buckets, relative_position}
+    end
+  end
+
+  @doc """
+  Computes attention weights.
+
+  ## Options
+
+    * `:scale_query?` - whether to scale the query. Defaults to `true`
+
+  """
+  def attention_weights(query, key, bias, opts \\ []) do
+    Axon.layer(&attention_weights_impl/4, [query, key, bias], opts)
+  end
+
+  defnp attention_weights_impl(query, key, bias, opts \\ []) do
+    opts = keyword!(opts, mode: :train, scale_query?: true)
+
     key = Nx.transpose(key, axes: [0, 2, 1, 3])
     query = Nx.transpose(query, axes: [0, 2, 1, 3])
 
-    depth = Nx.axis_size(query, -1)
-    scaled_query = query / Nx.sqrt(depth)
+    query =
+      if opts[:scale_query?] do
+        depth = Nx.axis_size(query, -1)
+        query / Nx.sqrt(depth)
+      else
+        query
+      end
 
-    weights = Nx.dot(scaled_query, [3], [0, 1], key, [3], [0, 1])
+    weights = Nx.dot(query, [3], [0, 1], key, [3], [0, 1])
     weights = weights + bias
     Axon.Activations.softmax(weights, axis: -1)
   end
@@ -273,10 +393,17 @@ defmodule Bumblebee.Layers do
 
   """
   def drop_path(%Axon{} = input, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, rate: 0.0])
+    opts = Keyword.validate!(opts, [:name, :seed, rate: 0.0])
+    seed = Keyword.get_lazy(opts, :seed, fn -> :erlang.system_time() end)
+
+    key_state =
+      Axon.param("key", fn _ -> {2} end,
+        type: {:u, 32},
+        initializer: fn _, _ -> Nx.Random.key(seed) end
+      )
 
     if opts[:rate] > 0.0 do
-      Axon.layer(&drop_path_impl/2, [input],
+      Axon.layer(&drop_path_impl/3, [input, key_state],
         name: opts[:name],
         op_name: :drop_path,
         rate: opts[:rate]
@@ -286,24 +413,32 @@ defmodule Bumblebee.Layers do
     end
   end
 
-  defnp drop_path_impl(x, opts \\ []) do
-    opts = keyword!(opts, rate: 0.0, mode: :train)
+  deftransformp drop_path_impl(x, prng_key, opts \\ []) do
+    opts = Keyword.validate!(opts, rate: 0.0, mode: :train)
+    rate = opts[:rate]
 
-    transform({x, opts[:rate], opts[:mode]}, fn
-      {x, rate, :train} when Elixir.Kernel.!=(rate, 0.0) ->
+    case opts[:mode] do
+      :train ->
         keep_prob = 1 - rate
         shape = Tuple.duplicate(1, Nx.rank(x)) |> put_elem(0, Nx.axis_size(x, 0))
 
+        {rand, next_key} = Nx.Random.uniform(prng_key, shape: shape)
+
         bernoulli_noise =
           keep_prob
-          |> Nx.add(Nx.random_uniform(shape))
+          |> Nx.add(rand)
           |> Nx.floor()
 
-        x |> Nx.divide(keep_prob) |> Nx.multiply(bernoulli_noise)
+        out =
+          x
+          |> Nx.divide(keep_prob)
+          |> Nx.multiply(bernoulli_noise)
 
-      {x, _rate, _mode} ->
+        %Axon.StatefulOutput{output: out, state: %{"key" => next_key}}
+
+      _mode ->
         x
-    end)
+    end
   end
 
   @doc """
@@ -401,8 +536,8 @@ defmodule Bumblebee.Layers do
   two nodes with shape `{batch_size, sequence_length}`.
   """
   def split_pair(%Axon{} = x) do
-    left = Axon.nx(x, & &1[[0..-1//1, 0..-1//1, 0]])
-    right = Axon.nx(x, & &1[[0..-1//1, 0..-1//1, 1]])
+    left = Axon.nx(x, & &1[[.., .., 0]])
+    right = Axon.nx(x, & &1[[.., .., 1]])
     {left, right}
   end
 
@@ -464,38 +599,37 @@ defmodule Bumblebee.Layers do
     )
   end
 
-  defnp pixel_shuffle_impl(input, opts \\ []) do
-    opts = keyword!(opts, [:upscale_factor, mode: :inference])
+  deftransformp pixel_shuffle_impl(input, opts \\ []) do
+    opts = Keyword.validate!(opts, [:upscale_factor, mode: :inference])
+    upscale_factor = opts[:upscale_factor]
 
-    transform({input, opts[:upscale_factor]}, fn {input, upscale_factor} ->
-      {batch, [height, width, channels]} =
-        input
-        |> Nx.shape()
-        |> Tuple.to_list()
-        |> Enum.split(-3)
+    {batch, [height, width, channels]} =
+      input
+      |> Nx.shape()
+      |> Tuple.to_list()
+      |> Enum.split(-3)
 
-      out_height = height * upscale_factor
-      out_width = width * upscale_factor
-      out_channels = div(channels, upscale_factor * upscale_factor)
+    out_height = height * upscale_factor
+    out_width = width * upscale_factor
+    out_channels = div(channels, upscale_factor * upscale_factor)
 
-      x =
-        Nx.reshape(
-          input,
-          List.to_tuple(batch ++ [height, width, out_channels, upscale_factor, upscale_factor])
-        )
-
-      {batch_axes, [height_axis, width_axis, out_channels_axis, upscale_axis1, upscale_axis2]} =
-        x
-        |> Nx.axes()
-        |> Enum.split(-5)
-
-      x
-      |> Nx.transpose(
-        axes:
-          batch_axes ++ [height_axis, upscale_axis1, width_axis, upscale_axis2, out_channels_axis]
+    x =
+      Nx.reshape(
+        input,
+        List.to_tuple(batch ++ [height, width, out_channels, upscale_factor, upscale_factor])
       )
-      |> Nx.reshape(List.to_tuple(batch ++ [out_height, out_width, out_channels]))
-    end)
+
+    {batch_axes, [height_axis, width_axis, out_channels_axis, upscale_axis1, upscale_axis2]} =
+      x
+      |> Nx.axes()
+      |> Enum.split(-5)
+
+    x
+    |> Nx.transpose(
+      axes:
+        batch_axes ++ [height_axis, upscale_axis1, width_axis, upscale_axis2, out_channels_axis]
+    )
+    |> Nx.reshape(List.to_tuple(batch ++ [out_height, out_width, out_channels]))
   end
 
   @doc """
@@ -623,10 +757,25 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Performs `Tuple.append/1` on node results.
+  Appends tuple element to the node result.
   """
   def append(%Axon{} = tuple, %Axon{} = x) do
     Axon.layer(fn tuple, x, _ -> Tuple.append(tuple, x) end, [tuple, x], op_name: :append)
+  end
+
+  @doc """
+  Replaces tuple element in the node result.
+  """
+  def replace(%Axon{} = tuple, idx, %Axon{} = x) do
+    Axon.layer(fn tuple, x, _ -> tuple_replace(tuple, idx, x) end, [tuple, x], op_name: :replace)
+  end
+
+  defp tuple_replace(tuple, index, value) when index < 0 do
+    tuple_replace(tuple, tuple_size(tuple) + index, value)
+  end
+
+  defp tuple_replace(tuple, index, value) do
+    put_elem(tuple, index, value)
   end
 
   @doc """
@@ -715,7 +864,7 @@ defmodule Bumblebee.Layers do
       if sequence_length == 1 do
         start_ids
       else
-        Nx.concatenate([start_ids, input_ids[[0..-1//1, 0..-2//1]]], axis: 1)
+        Nx.concatenate([start_ids, input_ids[[.., 0..-2//1]]], axis: 1)
       end
     end)
   end
@@ -750,37 +899,70 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Prepends a single parameterized embedding to the given embeddings.
+  Concatenates sequence embeddings, automatically broadcasting batch
+  dimension when necessary.
 
-  This is usually useful when adding embeddings for special tokens,
-  such as CLS, in transformer models where the input is different
-  than text, hence the token is not a part of the input.
+  ## Options
+
+    * `:name` - layer name
+
   """
-  def prepend_embedding(embeddings, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, initializer: :zeros])
+  def concatenate_embeddings(inputs, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name])
 
     name = opts[:name]
 
-    embedding =
-      Axon.param("embedding", fn embeddings -> {elem(embeddings, 2)} end,
+    Axon.layer(
+      fn inputs, _opts ->
+        inputs = Tuple.to_list(inputs)
+
+        batch_size =
+          inputs
+          |> Enum.map(&Nx.axis_size(&1, 0))
+          |> Enum.max()
+
+        inputs =
+          Enum.map(inputs, fn input ->
+            new_shape = input |> Nx.shape() |> put_elem(0, batch_size)
+            Nx.broadcast(input, new_shape)
+          end)
+
+        Nx.concatenate(inputs, axis: 1)
+      end,
+      [Axon.container(List.to_tuple(inputs))],
+      name: name,
+      op_name: :concatenate_embeddings
+    )
+  end
+
+  @doc """
+  Adds an RMS Normalization layer to the network.
+  """
+  # TODO: Add to Axon
+  def rms_norm(input, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [:name, channel_index: -1, epsilon: 1.0e-6, initializer: :ones])
+
+    weight =
+      Axon.param("weight", &Axon.Shape.norm_param(&1, opts[:channel_index]),
         initializer: opts[:initializer]
       )
 
-    Axon.layer(
-      fn embeddings, embedding, _opts ->
-        batch_size = Nx.axis_size(embeddings, 0)
-        embedding_size = Nx.axis_size(embeddings, -1)
+    Axon.layer(&rms_norm_impl/3, [input, weight], name: opts[:name], epsilon: opts[:epsilon])
+  end
 
-        embedding =
-          embedding
-          |> Nx.reshape({1, 1, embedding_size})
-          |> Nx.broadcast({batch_size, 1, embedding_size})
+  defnp rms_norm_impl(input, weight, opts \\ []) do
+    opts = keyword!(opts, epsilon: 1.0e-6, channel_index: -1, mode: :train)
 
-        Nx.concatenate([embedding, embeddings], axis: 1)
-      end,
-      [embeddings, embedding],
-      name: name,
-      op_name: :prepend_embedding
-    )
+    variance =
+      input
+      |> Nx.pow(2)
+      |> Nx.mean(axes: [opts[:channel_index]], keep_axes: true)
+
+    x =
+      input
+      |> Nx.multiply(Nx.rsqrt(variance + opts[:epsilon]))
+
+    x * weight
   end
 end

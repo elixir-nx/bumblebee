@@ -3,9 +3,11 @@ defmodule Bumblebee.Audio.SpeechToText do
 
   alias Bumblebee.Shared
 
-  def speech_to_text(model_info, featurizer, tokenizer, opts \\ []) do
-    {compile, opts} = Keyword.pop(opts, :compile)
-    {defn_options, opts} = Keyword.pop(opts, :defn_options, [])
+  def speech_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []) do
+    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
+
+    compile = opts[:compile]
+    defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]
 
@@ -18,10 +20,16 @@ defmodule Bumblebee.Audio.SpeechToText do
 
     %{model: model, params: params, spec: spec} = model_info
 
-    generate_fun = Bumblebee.Text.Generation.build_generate(model, spec, opts)
+    generate_fun =
+      Bumblebee.Text.Generation.build_generate(
+        model,
+        spec,
+        generation_config,
+        Keyword.take(opts, [:seed])
+      )
 
     Nx.Serving.new(
-      fn ->
+      fn defn_options ->
         generate_fun =
           Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
             inputs = %{
@@ -36,8 +44,9 @@ defmodule Bumblebee.Audio.SpeechToText do
           generate_fun.(params, inputs)
         end
       end,
-      batch_size: batch_size
+      defn_options
     )
+    |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       {inputs, multi?} =
         Shared.validate_serving_input!(input, fn

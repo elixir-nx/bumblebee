@@ -154,7 +154,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
       Axon.cond(
         sample_posterior,
         &Nx.equal(&1, Nx.tensor(1)),
-        sample(posterior),
+        sample(posterior, name: "sample"),
         mode(posterior)
       )
 
@@ -357,7 +357,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
       |> Axon.group_norm(32, epsilon: 1.0e-6, name: join(name, "norm"))
       |> Axon.reshape({:batch, :auto, channels})
 
-    {hidden_state, _attention, _self_attention_cache} =
+    {hidden_state, _attention, _self_attention_cache, _position_bias} =
       Layers.Transformer.multi_head_attention(hidden_state, hidden_state, hidden_state,
         num_heads: num_heads,
         hidden_size: channels,
@@ -383,8 +383,33 @@ defmodule Bumblebee.Diffusion.VaeKl do
     %{mean: mean, logvar: logvar, std: std, var: var}
   end
 
-  defp sample(posterior) do
-    z = Axon.nx(posterior.mean, &Nx.random_normal(Nx.shape(&1)))
+  defp sample(posterior, opts) do
+    name = opts[:name]
+
+    key_state =
+      Axon.param("key", fn _ -> {2} end,
+        type: {:u, 32},
+        initializer: fn _, _ -> Nx.Random.key(:erlang.system_time()) end
+      )
+
+    z =
+      Axon.layer(
+        fn mean, prng_key, opts ->
+          mode = opts[:mode]
+
+          case mode do
+            :train ->
+              {rand, next_key} = Nx.Random.normal(prng_key, shape: Nx.shape(mean))
+              %Axon.StatefulOutput{output: rand, state: %{"key" => next_key}}
+
+            :inference ->
+              {rand, _next_key} = Nx.Random.normal(prng_key, shape: Nx.shape(mean))
+              rand
+          end
+        end,
+        [posterior.mean, key_state],
+        name: name
+      )
 
     z
     |> Axon.multiply(posterior.std)
@@ -453,7 +478,9 @@ defmodule Bumblebee.Diffusion.VaeKl do
         "decoder.post_quantization_conv" => "post_quant_conv",
         "decoder.input_conv" => "decoder.conv_in",
         "decoder.output_norm" => "decoder.conv_norm_out",
-        "decoder.output_conv" => "decoder.conv_out"
+        "decoder.output_conv" => "decoder.conv_out",
+        # TODO: this is never loaded, add support for :ignored source name
+        "sample" => "sample"
       }
       |> Map.merge(blocks_mapping)
     end

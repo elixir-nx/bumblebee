@@ -1,7 +1,7 @@
 defmodule Bumblebee.MixProject do
   use Mix.Project
 
-  @version "0.1.2"
+  @version "0.2.0"
   @description "Pre-trained and transformer Neural Network models in Axon"
 
   def project do
@@ -10,7 +10,7 @@ defmodule Bumblebee.MixProject do
       version: @version,
       description: @description,
       name: "Bumblebee",
-      elixir: "~> 1.13",
+      elixir: "~> 1.14",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -30,21 +30,21 @@ defmodule Bumblebee.MixProject do
 
   defp deps do
     [
-      {:axon, "~> 0.3.1", axon_opts()},
-      {:tokenizers, "~> 0.2.0"},
-      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-      {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
-      {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
+      {:axon, "~> 0.5.0", axon_opts()},
+      {:tokenizers, "~> 0.3.1"},
+      {:nx, "~> 0.5.0"},
+      {:exla, "~> 0.5.0", only: [:dev, :test]},
+      {:torchx, "~> 0.5.0", only: [:dev, :test]},
       {:nx_image, "~> 0.1.0"},
       {:unpickler, "~> 0.1.0"},
-      {:castore, "~> 0.1.0"},
+      {:castore, "~> 0.1 or ~> 1.0"},
       {:jason, "~> 1.4.0"},
       {:unzip, "0.8.0"},
       {:progress_bar, "~> 2.0"},
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
-      {:nx_signal, github: "polvalente/nx-signal", branch: "main"}
+      {:nx_signal, "~> 0.1.0"}
     ]
   end
 
@@ -79,15 +79,21 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Diffusion.StableDiffusion.SafetyChecker,
           Bumblebee.Diffusion.UNet2DConditional,
           Bumblebee.Diffusion.VaeKl,
+          Bumblebee.Multimodal.Blip,
           Bumblebee.Multimodal.Clip,
           Bumblebee.Multimodal.LayoutLm,
           Bumblebee.Text.Albert,
           Bumblebee.Text.Bart,
           Bumblebee.Text.Bert,
+          Bumblebee.Text.Blenderbot,
+          Bumblebee.Text.BlipText,
           Bumblebee.Text.ClipText,
+          Bumblebee.Text.Distilbert,
           Bumblebee.Text.Gpt2,
           Bumblebee.Text.Mbart,
           Bumblebee.Text.Roberta,
+          Bumblebee.Text.T5,
+          Bumblebee.Vision.BlipVision,
           Bumblebee.Vision.ClipVision,
           Bumblebee.Vision.ConvNext,
           Bumblebee.Vision.Deit,
@@ -99,14 +105,18 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.AlbertTokenizer,
           Bumblebee.Text.BartTokenizer,
           Bumblebee.Text.BertTokenizer,
+          Bumblebee.Text.BlenderbotTokenizer,
           Bumblebee.Text.CamembertTokenizer,
           Bumblebee.Text.ClipTokenizer,
+          Bumblebee.Text.DistilbertTokenizer,
           Bumblebee.Text.Gpt2Tokenizer,
           Bumblebee.Text.LayoutLmTokenizer,
           Bumblebee.Text.MbartTokenizer,
           Bumblebee.Text.RobertaTokenizer,
+          Bumblebee.Text.T5Tokenizer,
           Bumblebee.Text.WhisperTokenizer,
           Bumblebee.Text.XlmRobertaTokenizer,
+          Bumblebee.Vision.BlipFeaturizer,
           Bumblebee.Vision.ClipFeaturizer,
           Bumblebee.Vision.ConvNextFeaturizer,
           Bumblebee.Vision.DeitFeaturizer,
@@ -123,6 +133,9 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Tokenizer,
           Bumblebee.Scheduler,
           Bumblebee.Text.Generation
+        ],
+        Other: [
+          Bumblebee.Text.GenerationConfig
         ]
       ],
       groups_for_functions: [

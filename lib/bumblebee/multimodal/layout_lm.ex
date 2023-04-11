@@ -83,8 +83,7 @@ defmodule Bumblebee.Multimodal.LayoutLm do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++
-      Shared.token_options(pad_token_id: 0)
+      ])
 
   @moduledoc """
   LayoutLM Model family.
@@ -178,11 +177,11 @@ defmodule Bumblebee.Multimodal.LayoutLm do
 
   @impl true
   def input_template(%{architecture: :for_multiple_choice}) do
-    %{"input_ids" => Nx.template({1, 1, 1}, :s64)}
+    %{"input_ids" => Nx.template({1, 1, 1}, :u32)}
   end
 
   def input_template(_spec) do
-    %{"input_ids" => Nx.template({1, 1}, :s64)}
+    %{"input_ids" => Nx.template({1, 1}, :u32)}
   end
 
   @impl true
@@ -355,42 +354,42 @@ defmodule Bumblebee.Multimodal.LayoutLm do
 
     left_position_embeddings =
       bounding_box
-      |> Axon.nx(& &1[[0..-1//1, 0..-1//1, 0]])
+      |> Axon.nx(& &1[[.., .., 0]])
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "x_position_embedding")
       )
 
     right_position_embeddings =
       bounding_box
-      |> Axon.nx(& &1[[0..-1//1, 0..-1//1, 2]])
+      |> Axon.nx(& &1[[.., .., 2]])
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "x_position_embedding")
       )
 
     upper_position_embeddings =
       bounding_box
-      |> Axon.nx(& &1[[0..-1//1, 0..-1//1, 1]])
+      |> Axon.nx(& &1[[.., .., 1]])
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "y_position_embedding")
       )
 
     lower_position_embeddings =
       bounding_box
-      |> Axon.nx(& &1[[0..-1//1, 0..-1//1, 3]])
+      |> Axon.nx(& &1[[.., .., 3]])
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "y_position_embedding")
       )
 
     h_position_embeddings =
       bounding_box
-      |> Axon.nx(fn x -> Nx.subtract(x[[0..-1//1, 0..-1//1, 3]], x[[0..-1//1, 0..-1//1, 1]]) end)
+      |> Axon.nx(fn x -> Nx.subtract(x[[.., .., 3]], x[[.., .., 1]]) end)
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "h_position_embedding")
       )
 
     w_position_embeddings =
       bounding_box
-      |> Axon.nx(fn x -> Nx.subtract(x[[0..-1//1, 0..-1//1, 2]], x[[0..-1//1, 0..-1//1, 0]]) end)
+      |> Axon.nx(fn x -> Nx.subtract(x[[.., .., 2]], x[[.., .., 0]]) end)
       |> Axon.embedding(spec.max_spatial_positions, spec.hidden_size,
         name: join(name, "w_position_embedding")
       )
@@ -425,7 +424,9 @@ defmodule Bumblebee.Multimodal.LayoutLm do
       kernel_initializer: kernel_initializer(spec),
       dropout_rate: spec.dropout_rate,
       attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm_epsilon: spec.layer_norm_epsilon,
+      layer_norm: [
+        epsilon: spec.layer_norm_epsilon
+      ],
       ffn: [
         intermediate_size: spec.intermediate_size,
         activation: spec.activation
@@ -524,15 +525,15 @@ defmodule Bumblebee.Multimodal.LayoutLm do
         "encoder.blocks.{n}.self_attention_norm" =>
           "layoutlm.encoder.layer.{n}.attention.output.LayerNorm",
         "encoder.blocks.{n}.cross_attention.query" =>
-          "layoutlm.encoder.layer.{n}.attention.self.query",
+          "layoutlm.encoder.layer.{n}.crossattention.self.query",
         "encoder.blocks.{n}.cross_attention.key" =>
-          "layoutlm.encoder.layer.{n}.attention.self.key",
+          "layoutlm.encoder.layer.{n}.crossattention.self.key",
         "encoder.blocks.{n}.cross_attention.value" =>
-          "layoutlm.encoder.layer.{n}.attention.self.value",
+          "layoutlm.encoder.layer.{n}.crossattention.self.value",
         "encoder.blocks.{n}.cross_attention.output" =>
-          "layoutlm.encoder.layer.{n}.attention.output.dense",
+          "layoutlm.encoder.layer.{n}.crossattention.output.dense",
         "encoder.blocks.{n}.cross_attention_norm" =>
-          "layoutlm.encoder.layer.{n}.attention.output.LayerNorm",
+          "layoutlm.encoder.layer.{n}.crossattention.output.LayerNorm",
         "encoder.blocks.{n}.ffn.intermediate" => "layoutlm.encoder.layer.{n}.intermediate.dense",
         "encoder.blocks.{n}.ffn.output" => "layoutlm.encoder.layer.{n}.output.dense",
         "encoder.blocks.{n}.output_norm" => "layoutlm.encoder.layer.{n}.output.LayerNorm",

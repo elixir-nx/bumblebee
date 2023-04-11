@@ -1,7 +1,6 @@
 defmodule Bumblebee.Text.FillMask do
   @moduledoc false
 
-  alias Bumblebee.Utils
   alias Bumblebee.Shared
 
   def fill_mask(model_info, tokenizer, opts \\ []) do
@@ -48,12 +47,12 @@ defmodule Bumblebee.Text.FillMask do
     end
 
     Nx.Serving.new(
-      fn ->
+      fn defn_options ->
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             inputs = %{
-              "input_ids" => Nx.template({batch_size, sequence_length}, :s64),
-              "attention_mask" => Nx.template({batch_size, sequence_length}, :s64)
+              "input_ids" => Nx.template({batch_size, sequence_length}, :u32),
+              "attention_mask" => Nx.template({batch_size, sequence_length}, :u32)
             }
 
             [params, inputs]
@@ -64,8 +63,9 @@ defmodule Bumblebee.Text.FillMask do
           scores_fun.(params, inputs)
         end
       end,
-      batch_size: batch_size
+      defn_options
     )
+    |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
@@ -82,7 +82,7 @@ defmodule Bumblebee.Text.FillMask do
     |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
       for scores <- Bumblebee.Utils.Nx.batch_to_list(scores) do
         k = min(top_k, Nx.size(scores))
-        {top_scores, top_indices} = Utils.Nx.top_k(scores, k: k)
+        {top_scores, top_indices} = Nx.top_k(scores, k: k)
 
         predictions =
           Enum.zip_with(

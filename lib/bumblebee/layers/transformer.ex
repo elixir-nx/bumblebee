@@ -17,6 +17,10 @@ defmodule Bumblebee.Layers.Transformer do
     * `:num_blocks` (required) - the number of consecutive transformer
       blocks to add
 
+    * `:share_attention_relative_bias` - when attention relative bias
+      is configured, this option controls whether the bias from the
+      first block is used for all other blocks. Defaults to `false`
+
     * `:output_hidden_states` - when `true`, the output includes a
       tuple with intermediate hidden states from each transformer
       block. Defaults to `false`
@@ -42,13 +46,17 @@ defmodule Bumblebee.Layers.Transformer do
       :hidden_size,
       :ffn,
       :kernel_initializer,
+      :attention_head_size,
       :dropout_rate,
       :attention_dropout_rate,
       :query_use_bias,
       :key_use_bias,
       :value_use_bias,
-      :layer_norm_epsilon,
-      :norm_placement
+      :output_use_bias,
+      :layer_norm,
+      :norm_placement,
+      :output_shortcut,
+      :scale_query?
     ]
 
     opts =
@@ -60,6 +68,8 @@ defmodule Bumblebee.Layers.Transformer do
             :num_blocks,
             attention_mask: Layers.none(),
             attention_head_mask: Layers.none(),
+            attention_relative_bias: nil,
+            share_attention_relative_bias: false,
             cross_hidden_state: nil,
             cross_attention_mask: Layers.none(),
             cross_attention_head_mask: Layers.none(),
@@ -91,7 +101,8 @@ defmodule Bumblebee.Layers.Transformer do
       hidden_states: Layers.maybe_container({hidden_state}, output_hidden_states),
       attentions: Layers.maybe_container({}, output_attentions),
       cross_attentions: Layers.maybe_container({}, output_attentions),
-      cache: cache
+      cache: cache,
+      attention_relative_bias: Layers.none()
     }
 
     outputs =
@@ -101,12 +112,20 @@ defmodule Bumblebee.Layers.Transformer do
           block_cross_attention_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
           block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
 
-          {hidden_state, attention, cross_attention, block_cache} =
+          attention_relative_bias =
+            if opts[:share_attention_relative_bias] and idx > 0 do
+              state.attention_relative_bias
+            else
+              opts[:attention_relative_bias] || Layers.none()
+            end
+
+          {hidden_state, attention, cross_attention, block_cache, attention_relative_bias} =
             block(
               state.hidden_state,
               [
                 attention_mask: attention_mask,
                 attention_head_mask: block_attention_head_mask,
+                attention_relative_bias: attention_relative_bias,
                 cross_hidden_state: cross_hidden_state,
                 cross_attention_mask: cross_attention_mask,
                 cross_attention_head_mask: block_cross_attention_head_mask,
@@ -123,6 +142,7 @@ defmodule Bumblebee.Layers.Transformer do
             hidden_states: Layers.append(state.hidden_states, hidden_state),
             attentions: Layers.append(state.attentions, attention),
             cross_attentions: Layers.append(state.cross_attentions, cross_attention),
+            attention_relative_bias: attention_relative_bias,
             cache: cache
           }
       end
@@ -166,6 +186,20 @@ defmodule Bumblebee.Layers.Transformer do
 
     * `:attention_head_mask` - a mask to nullify selected attention heads
 
+    * `:attention_relative_bias` - configuration of relative bias. If set,
+      will apply relative attention bias with the given options. Valid
+      options are:
+
+        * `:num_buckets` (required) - number of relative attention buckets
+
+        * `:max_distance` (required) - maximum distance of the relative attention
+          bias
+
+        * `:bidirectional` (required) - whether to apply the relative attention
+          bias bidirectionally
+
+      Alternatively an `Axon` node may be given with the computed bias.
+
     * `:cross_hidden_state` - the second input for the the cross-attention
       block. The cross-attention block is added only when this is specified.
       Defaults to `nil`
@@ -187,6 +221,9 @@ defmodule Bumblebee.Layers.Transformer do
     * `:kernel_initializer` - initializer for kernel weights. Defaults
       to `:glorot_uniform`
 
+    * `:attention_head_size` - the projection size for key, value,
+      and query states per-head. Defaults to `div(hidden_size, num_attention_heads)`
+
     * `:dropout_rate` - the dropout rate for dropout layers. Defaults
       to `0.0`
 
@@ -202,12 +239,26 @@ defmodule Bumblebee.Layers.Transformer do
     * `:value_use_bias` - whether to use bias in the value projection.
       Defaults to `true`
 
-    * `:layer_norm_epsilon` - the epsilon used by the layer normalization
-      layers. Defaults to `1.0e-5`
+    * `:output_use_bias` - whether to use bias in the output projection.
+      Defaults to `true`
+
+    * `:layer_norm` - configuration of the layer norm operation
+      at the end of the transformer block. By default the network uses regular
+      layer normalization configured with the following options:
+
+        * `:epsilon` - the epsilon used by the layer normalization
+          layers. Defaults to `1.0e-5`
+
+      Alternatively a custom 2-arity function may be given. The function
+      should add a normalization node to the given Axon node. The function
+      also receives layer name prefix as the second argument.
 
     * `:norm_placement` - controls whether normalization layers should
       be placed before each group of layers (:first) or after each group
       of layers (:last). Defaults to `:last`
+
+    * `:scale_query?` - whether to scale query in the traditional style of
+      multi-headed attention. Defaults to `true`
 
     * `:name` - the prefix for layer names
 
@@ -227,6 +278,7 @@ defmodule Bumblebee.Layers.Transformer do
         :ffn,
         attention_mask: Layers.none(),
         attention_head_mask: Layers.none(),
+        attention_relative_bias: Layers.none(),
         cross_hidden_state: nil,
         cross_attention_mask: Layers.none(),
         cross_attention_head_mask: Layers.none(),
@@ -234,13 +286,17 @@ defmodule Bumblebee.Layers.Transformer do
         offset: Layers.none(),
         causal?: false,
         kernel_initializer: :glorot_uniform,
+        attention_head_size: nil,
         dropout_rate: 0.0,
         attention_dropout_rate: 0.0,
         query_use_bias: true,
         key_use_bias: true,
         value_use_bias: true,
-        layer_norm_epsilon: 1.0e-5,
-        norm_placement: :last
+        output_use_bias: true,
+        norm_placement: :last,
+        layer_norm: [],
+        output_shortcut: true,
+        scale_query?: true
       ])
 
     name = opts[:name]
@@ -249,20 +305,25 @@ defmodule Bumblebee.Layers.Transformer do
     ffn = opts[:ffn]
     causal? = opts[:causal?]
     kernel_initializer = opts[:kernel_initializer]
+    attention_head_size = opts[:attention_head_size]
     dropout_rate = opts[:dropout_rate]
     attention_dropout_rate = opts[:attention_dropout_rate]
     query_use_bias = opts[:query_use_bias]
     key_use_bias = opts[:key_use_bias]
     value_use_bias = opts[:value_use_bias]
-    layer_norm_epsilon = opts[:layer_norm_epsilon]
+    output_use_bias = opts[:output_use_bias]
     attention_mask = opts[:attention_mask]
     attention_head_mask = opts[:attention_head_mask]
+    attention_relative_bias = opts[:attention_relative_bias]
     cross_hidden_state = opts[:cross_hidden_state]
     cross_attention_mask = opts[:cross_attention_mask]
     cross_attention_head_mask = opts[:cross_attention_head_mask]
     block_cache = opts[:block_cache]
     offset = opts[:offset]
+    layer_norm = opts[:layer_norm]
     norm_placement = opts[:norm_placement]
+    output_shortcut = opts[:output_shortcut]
+    scale_query? = opts[:scale_query?]
 
     ffn_fun =
       case ffn do
@@ -281,6 +342,17 @@ defmodule Bumblebee.Layers.Transformer do
           fun
       end
 
+    layer_norm_fun =
+      case layer_norm do
+        opts when is_list(opts) ->
+          opts = Keyword.validate!(opts, epsilon: 1.0e-5)
+
+          &Axon.layer_norm(&1, epsilon: opts[:epsilon], name: &2)
+
+        fun when is_function(fun) ->
+          fun
+      end
+
     {self_attention_cache, cross_attention_cache} =
       Layers.Decoder.get_attention_caches(block_cache)
 
@@ -291,26 +363,27 @@ defmodule Bumblebee.Layers.Transformer do
     hidden_state =
       hidden_state
       |> maybe(norm_placement == :first, fn hidden_state ->
-        Axon.layer_norm(hidden_state,
-          epsilon: layer_norm_epsilon,
-          name: join(name, "self_attention_norm")
-        )
+        layer_norm_fun.(hidden_state, join(name, "self_attention_norm"))
       end)
 
-    {hidden_state, attention, self_attention_cache} =
+    {hidden_state, attention, self_attention_cache, attention_relative_bias} =
       multi_head_attention(hidden_state, hidden_state, hidden_state,
         attention_mask: attention_mask,
         attention_head_mask: attention_head_mask,
+        attention_relative_bias: attention_relative_bias,
         attention_cache: self_attention_cache,
         offset: offset,
         causal?: causal?,
         num_heads: num_attention_heads,
         hidden_size: hidden_size,
         kernel_initializer: kernel_initializer,
+        attention_head_size: attention_head_size,
         dropout_rate: attention_dropout_rate,
         query_use_bias: query_use_bias,
         key_use_bias: key_use_bias,
         value_use_bias: value_use_bias,
+        output_use_bias: output_use_bias,
+        scale_query?: scale_query?,
         name: join(name, "self_attention")
       )
 
@@ -319,10 +392,7 @@ defmodule Bumblebee.Layers.Transformer do
       |> Axon.dropout(rate: dropout_rate, name: join(name, "self_attention_dropout"))
       |> Axon.add(shortcut)
       |> maybe(norm_placement == :last, fn hidden_state ->
-        Axon.layer_norm(hidden_state,
-          epsilon: layer_norm_epsilon,
-          name: join(name, "self_attention_norm")
-        )
+        layer_norm_fun.(hidden_state, join(name, "self_attention_norm"))
       end)
 
     # Cross-attention, shortcut connection, normalization and dropout
@@ -335,13 +405,10 @@ defmodule Bumblebee.Layers.Transformer do
           hidden_state =
             hidden_state
             |> maybe(norm_placement == :first, fn hidden_state ->
-              Axon.layer_norm(hidden_state,
-                epsilon: layer_norm_epsilon,
-                name: join(name, "cross_attention_norm")
-              )
+              layer_norm_fun.(hidden_state, join(name, "cross_attention_norm"))
             end)
 
-          {hidden_state, cross_attention, cross_attention_cache} =
+          {hidden_state, cross_attention, cross_attention_cache, _cross_attention_relative_bias} =
             multi_head_attention(hidden_state, cross_hidden_state, cross_hidden_state,
               attention_mask: cross_attention_mask,
               attention_head_mask: cross_attention_head_mask,
@@ -350,10 +417,13 @@ defmodule Bumblebee.Layers.Transformer do
               num_heads: num_attention_heads,
               hidden_size: hidden_size,
               kernel_initializer: kernel_initializer,
+              attention_head_size: attention_head_size,
               dropout_rate: attention_dropout_rate,
               query_use_bias: query_use_bias,
               key_use_bias: key_use_bias,
               value_use_bias: value_use_bias,
+              output_use_bias: output_use_bias,
+              scale_query?: scale_query?,
               name: join(name, "cross_attention")
             )
 
@@ -362,10 +432,7 @@ defmodule Bumblebee.Layers.Transformer do
             |> Axon.dropout(rate: dropout_rate, name: join(name, "cross_attention_dropout"))
             |> Axon.add(shortcut)
             |> maybe(norm_placement == :last, fn hidden_state ->
-              Axon.layer_norm(hidden_state,
-                epsilon: layer_norm_epsilon,
-                name: join(name, "cross_attention_norm")
-              )
+              layer_norm_fun.(hidden_state, join(name, "cross_attention_norm"))
             end)
 
           {hidden_state, cross_attention, cross_attention_cache}
@@ -383,12 +450,14 @@ defmodule Bumblebee.Layers.Transformer do
     hidden_state =
       hidden_state
       |> maybe(norm_placement == :first, fn hidden_state ->
-        Axon.layer_norm(hidden_state, epsilon: layer_norm_epsilon, name: join(name, "output_norm"))
+        layer_norm_fun.(hidden_state, join(name, "output_norm"))
       end)
       |> ffn_fun.(join(name, "ffn"))
-      |> Axon.add(shortcut)
+      |> maybe(output_shortcut, fn hidden_state ->
+        Axon.add(hidden_state, shortcut)
+      end)
       |> maybe(norm_placement == :last, fn hidden_state ->
-        Axon.layer_norm(hidden_state, epsilon: layer_norm_epsilon, name: join(name, "output_norm"))
+        layer_norm_fun.(hidden_state, join(name, "output_norm"))
       end)
 
     block_cache =
@@ -398,7 +467,7 @@ defmodule Bumblebee.Layers.Transformer do
         cross_attention_cache
       )
 
-    {hidden_state, attention, cross_attention, block_cache}
+    {hidden_state, attention, cross_attention, block_cache, attention_relative_bias}
   end
 
   defp basic_ffn(x, intermediate_size, output_size, opts) do
@@ -437,6 +506,20 @@ defmodule Bumblebee.Layers.Transformer do
 
     * `:attention_head_mask` - a mask to nullify selected attention heads
 
+    * `:attention_relative_bias` - configuration of relative bias. If set,
+      will apply relative attention bias with the given options. Valid
+      options are:
+
+        * `:num_buckets` (required) - number of relative attention buckets
+
+        * `:max_distance` (required) - maximum distance of the relative attention
+          bias
+
+        * `:bidirectional` (required) - whether to apply the relative attention
+          bias bidirectionally
+
+      Alternatively an `Axon` node may be given with the computed bias.
+
     * `:attention_cache` - cache with accumulated key/values useful for
       iterative decoding
 
@@ -451,6 +534,9 @@ defmodule Bumblebee.Layers.Transformer do
     * `:dropout_rate` - the dropout rate for attention weights dropout.
       Defaults to `0.0`
 
+    * `:attention_head_size` - the projection size for key, value,
+      and query states per-head. Defaults to `div(hidden_size, num_attention_heads)`
+
     * `:query_use_bias` - whether to use bias in the query projection.
       Defaults to `true`
 
@@ -458,6 +544,9 @@ defmodule Bumblebee.Layers.Transformer do
       Defaults to `true`
 
     * `:value_use_bias` - whether to use bias in the value projection.
+      Defaults to `true`
+
+    * `:output_use_bias` - whether to use bias in the output projection.
       Defaults to `true`
 
     * `:name` - the prefix for layer names
@@ -477,14 +566,18 @@ defmodule Bumblebee.Layers.Transformer do
         :hidden_size,
         attention_mask: Layers.none(),
         attention_head_mask: Layers.none(),
+        attention_relative_bias: Layers.none(),
         attention_cache: Layers.none(),
         offset: Layers.none(),
         causal?: false,
+        scale_query?: true,
         kernel_initializer: :glorot_uniform,
         dropout_rate: 0.0,
+        attention_head_size: nil,
         query_use_bias: true,
         key_use_bias: true,
-        value_use_bias: true
+        value_use_bias: true,
+        output_use_bias: true
       ])
 
     attention_mask = opts[:attention_mask]
@@ -497,15 +590,26 @@ defmodule Bumblebee.Layers.Transformer do
     hidden_size = opts[:hidden_size]
     kernel_initializer = opts[:kernel_initializer]
     causal? = opts[:causal?]
+    scale_query? = opts[:scale_query?]
     dropout_rate = opts[:dropout_rate]
 
     query_use_bias = opts[:query_use_bias]
     key_use_bias = opts[:key_use_bias]
     value_use_bias = opts[:value_use_bias]
+    output_use_bias = opts[:output_use_bias]
+
+    attention_relative_bias = opts[:attention_relative_bias]
+
+    inner_size =
+      if attention_head_size = opts[:attention_head_size] do
+        num_heads * attention_head_size
+      else
+        hidden_size
+      end
 
     query =
       query
-      |> Axon.dense(hidden_size,
+      |> Axon.dense(inner_size,
         kernel_initializer: kernel_initializer,
         name: join(name, "query"),
         use_bias: query_use_bias
@@ -514,7 +618,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     key =
       key
-      |> Axon.dense(hidden_size,
+      |> Axon.dense(inner_size,
         kernel_initializer: kernel_initializer,
         name: join(name, "key"),
         use_bias: key_use_bias
@@ -523,7 +627,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     value =
       value
-      |> Axon.dense(hidden_size,
+      |> Axon.dense(inner_size,
         kernel_initializer: kernel_initializer,
         name: join(name, "value"),
         use_bias: value_use_bias
@@ -544,8 +648,33 @@ defmodule Bumblebee.Layers.Transformer do
 
     attention_bias = Layers.attention_bias(attention_mask)
 
+    attention_relative_bias =
+      case attention_relative_bias do
+        %Axon{} ->
+          attention_relative_bias
+
+        bias_opts when is_list(bias_opts) ->
+          validate_required_keys!(bias_opts, [:num_buckets, :max_distance, :bidirectional])
+          bias_opts = Keyword.validate!(bias_opts, [:num_buckets, :max_distance, :bidirectional])
+
+          Layers.relative_attention_bias(query, key, attention_cache, offset,
+            num_buckets: bias_opts[:num_buckets],
+            max_distance: bias_opts[:max_distance],
+            bidirectional: bias_opts[:bidirectional],
+            num_heads: num_heads,
+            name: join(name, "relative_attention_bias")
+          )
+      end
+
+    attention_bias =
+      Layers.if_present attention_relative_bias do
+        Axon.add(attention_bias, attention_relative_bias)
+      else
+        attention_bias
+      end
+
     attention_weights =
-      Layers.attention_weights(query, key, attention_bias)
+      Layers.attention_weights(query, key, attention_bias, scale_query?: scale_query?)
       |> Axon.dropout(rate: dropout_rate)
       |> Layers.apply_attention_head_mask(attention_head_mask)
 
@@ -555,10 +684,11 @@ defmodule Bumblebee.Layers.Transformer do
       |> Layers.flatten_trailing()
       |> Axon.dense(hidden_size,
         kernel_initializer: kernel_initializer,
-        name: join(name, "output")
+        name: join(name, "output"),
+        use_bias: output_use_bias
       )
 
-    {attention_output, attention_weights, attention_cache}
+    {attention_output, attention_weights, attention_cache, attention_relative_bias}
   end
 
   defp maybe(term, false, _fun), do: term
