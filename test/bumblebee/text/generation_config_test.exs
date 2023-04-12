@@ -58,10 +58,23 @@ defmodule Bumblebee.Text.GenerationConfigTest do
                    end
 
       assert_raise ArgumentError,
-                   "expected :contrastive_search strategy to have keys [:type], but got: [:alpha, :top_k, :type]",
+                   "missing keys [:alpha, :top_k] for strategy :contrastive_search",
                    fn ->
                      GenerationConfig.config(%GenerationConfig{},
                        strategy: %{type: :contrastive_search}
+                     )
+                   end
+
+      assert_raise ArgumentError,
+                   "unexpected keys [:unexpected] for strategy :contrastive_search",
+                   fn ->
+                     GenerationConfig.config(%GenerationConfig{},
+                       strategy: %{
+                         type: :contrastive_search,
+                         top_k: 4,
+                         alpha: 0.6,
+                         unexpected: true
+                       }
                      )
                    end
     end

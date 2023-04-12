@@ -44,18 +44,27 @@ defmodule Bumblebee.Text.GenerationConfig do
           Example: `%{type: :greedy_search}`.
 
         * `:contrastive_search` - state-of-the-art decoding method, capable
-          of producing high quality, coherent sequences. This method gives
-          deterministic results. See [this article](https://huggingface.co/blog/introducing-csearch)
+          of producing high quality, coherent sequences. The results are
+          deterministic. See [this article](https://huggingface.co/blog/introducing-csearch)
           for more details.
 
-            * `:top_k` - the number of highest probability vocabulary tokens considered as a continuation
+            * `:top_k` (required) - the number of highest probability vocabulary tokens considered
+              as a continuation
 
-            * `:alpha` - the weight of degeneration penalty. It balances the model confidence
-              and the penalty
+            * `:alpha` (required) - the weight of degeneration penalty. It balances the model
+              confidence and the penalty
 
           Example: `%{type: :contrastive_search, top_k: 4, penalty_alpha: 0.6}`.
 
-      All strategy options must be present in the map\
+        * `:multinomial_sampling` - this method samples tokens according to the probability
+          distribution given by the model. The results are nondeterministic, unless a seed
+          is specified.
+
+            * `:top_k` (optional) - when specified, restricts sampling to top-k most probable
+              candidates
+
+            * `:top_p` (optional) - when specified, restricts sampling to tokens which probabilities
+              add up to top-p
       """
     ]
   ]
@@ -175,15 +184,15 @@ defmodule Bumblebee.Text.GenerationConfig do
   end
 
   defp validate_strategy!(%{type: :greedy_search} = strategy) do
-    validate_strategy_keys!(strategy, [:type])
+    validate_strategy_keys!(strategy, [:type], [])
   end
 
   defp validate_strategy!(%{type: :contrastive_search} = strategy) do
-    validate_strategy_keys!(strategy, [:type, :top_k, :alpha])
+    validate_strategy_keys!(strategy, [:type, :top_k, :alpha], [])
   end
 
   defp validate_strategy!(%{type: :multinomial_sampling} = strategy) do
-    validate_strategy_keys!(strategy, [:type])
+    validate_strategy_keys!(strategy, [:type], [:top_k, :top_p])
   end
 
   defp validate_strategy!(%{type: type}) do
@@ -200,14 +209,21 @@ defmodule Bumblebee.Text.GenerationConfig do
     raise ArgumentError, "expected strategy to be a map, but got: #{inspect(other)}"
   end
 
-  defp validate_strategy_keys!(strategy, keys) do
-    case {Enum.sort(Map.keys(strategy)), Enum.sort(keys)} do
-      {keys, keys} ->
-        :ok
+  defp validate_strategy_keys!(strategy, required_keys, optional_keys) do
+    actual = strategy |> Map.keys() |> Enum.sort()
 
-      {expected, actual} ->
-        raise ArgumentError,
-              "expected #{inspect(strategy.type)} strategy to have keys #{inspect(expected)}, but got: #{inspect(actual)}"
+    missing_keys = Enum.sort(required_keys -- actual)
+
+    if missing_keys != [] do
+      raise ArgumentError,
+            "missing keys #{inspect(missing_keys)} for strategy #{inspect(strategy.type)}"
+    end
+
+    extra_keys = Enum.sort((actual -- required_keys) -- optional_keys)
+
+    if extra_keys != [] do
+      raise ArgumentError,
+            "unexpected keys #{inspect(extra_keys)} for strategy #{inspect(strategy.type)}"
     end
   end
 
@@ -264,11 +280,23 @@ defmodule Bumblebee.Text.GenerationConfig do
       strategy_opts =
         data
         |> convert!(
+          sample: {"do_sample", boolean()},
           top_k: {"top_k", number()},
+          top_p: {"top_p", number()},
           alpha: {"penalty_alpha", number()}
         )
         |> Map.new()
         |> case do
+          %{sample: true} = opts ->
+            options =
+              Map.filter(opts, fn
+                {:top_k, k} when k > 0 -> true
+                {:top_p, p} when p < 1.0 -> true
+                _ -> false
+              end)
+
+            [strategy: Map.merge(%{type: :multinomial_sampling}, options)]
+
           %{top_k: top_k, alpha: alpha} when top_k > 1 and alpha > 0 ->
             [strategy: %{type: :contrastive_search, top_k: top_k, alpha: alpha}]
 
