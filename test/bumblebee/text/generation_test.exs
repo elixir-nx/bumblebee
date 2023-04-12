@@ -67,6 +67,9 @@ defmodule Bumblebee.Text.GenerationTest do
           defn_options: [compiler: EXLA]
         )
 
+      # Note that this is just a snapshot test, we do not use any
+      # reference value, because of PRNG difference
+
       assert %{
                results: [
                  %{text: "I was going to fall asleep.\"\n\nThis is not Wallace's fifth"}
