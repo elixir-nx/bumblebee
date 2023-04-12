@@ -4,7 +4,7 @@ defmodule Bumblebee.Vision.ImageToText do
   alias Bumblebee.Shared
 
   def image_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []) do
-    opts = Keyword.validate!(opts, [:compile, defn_options: []])
+    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
 
     compile = opts[:compile]
     defn_options = opts[:defn_options]
@@ -18,7 +18,13 @@ defmodule Bumblebee.Vision.ImageToText do
 
     %{model: model, params: params, spec: spec} = model_info
 
-    generate_fun = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
+    generate_fun =
+      Bumblebee.Text.Generation.build_generate(
+        model,
+        spec,
+        generation_config,
+        Keyword.take(opts, [:seed])
+      )
 
     Nx.Serving.new(
       fn defn_options ->

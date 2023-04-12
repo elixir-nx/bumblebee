@@ -121,15 +121,10 @@ defmodule Bumblebee.Text do
   The serving accepts `t:generation_input/0` and returns `t:generation_output/0`.
   A list of inputs is also supported.
 
-  Note that either `:max_new_tokens` or `:max_length` must be specified.
-
   ## Options
 
-    * `:max_new_tokens` - the maximum number of tokens to be generated,
-      ignoring the number of tokens in the prompt
-
-    * `:min_new_tokens` - the minimum number of tokens to be generated,
-      ignoring the number of tokens in the prompt
+    * `:seed` - random seed to use when sampling. By default the current
+      timestamp is used
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
@@ -146,8 +141,6 @@ defmodule Bumblebee.Text do
       time.
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
-
-  Also accepts all the other options of `Bumblebee.Text.Generation.build_generate/3`.
 
   ## Examples
 
@@ -194,11 +187,8 @@ defmodule Bumblebee.Text do
 
   ## Options
 
-    * `:max_new_tokens` - the maximum number of tokens to be generated,
-      ignoring the number of tokens in the prompt
-
-    * `:min_new_tokens` - the minimum number of tokens to be generated,
-      ignoring the number of tokens in the prompt
+    * `:seed` - random seed to use when sampling. By default the current
+      timestamp is used
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
@@ -218,8 +208,6 @@ defmodule Bumblebee.Text do
       time.
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
-
-  Also accepts all the other options of `Bumblebee.Text.Generation.build_generate/3`.
 
   ## Examples
 

@@ -6,7 +6,7 @@ defmodule Bumblebee.Text.GenerationTest do
   @moduletag model_test_tags()
 
   describe "integration" do
-    test "generates text" do
+    test "generates text with greedy generation" do
       {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})
 
@@ -48,6 +48,33 @@ defmodule Bumblebee.Text.GenerationTest do
 
       assert %{results: [%{text: "I was going to say, 'Well, I'm going back to the"}]} =
                Nx.Serving.run(serving, "I was going")
+    end
+
+    test "sampling" do
+      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+
+      generation_config =
+        Bumblebee.configure(generation_config,
+          max_new_tokens: 12,
+          strategy: %{type: :multinomial_sampling}
+        )
+
+      serving =
+        Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+          seed: 0,
+          defn_options: [compiler: EXLA]
+        )
+
+      # Note that this is just a snapshot test, we do not use any
+      # reference value, because of PRNG difference
+
+      assert %{
+               results: [
+                 %{text: "I was going to fall asleep.\"\n\nThis is not Wallace's fifth"}
+               ]
+             } = Nx.Serving.run(serving, "I was going")
     end
 
     test "contrastive search" do

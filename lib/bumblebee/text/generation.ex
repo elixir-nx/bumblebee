@@ -51,7 +51,7 @@ defmodule Bumblebee.Text.Generation do
 
   @doc false
   def generation(model_info, tokenizer, generation_config, opts \\ []) do
-    opts = Keyword.validate!(opts, [:compile, defn_options: []])
+    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
 
     %{params: params, spec: spec} = model_info
 
@@ -71,7 +71,13 @@ defmodule Bumblebee.Text.Generation do
             "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
     end
 
-    generate_fun = build_generate(model_info.model, model_info.spec, generation_config)
+    generate_fun =
+      build_generate(
+        model_info.model,
+        model_info.spec,
+        generation_config,
+        Keyword.take(opts, [:seed])
+      )
 
     Nx.Serving.new(
       fn defn_options ->
@@ -128,10 +134,23 @@ defmodule Bumblebee.Text.Generation do
   The generation is controlled by a number of options given as
   `%Bumblebee.Text.GenerationConfig{}`, see the corresponding docs
   for more details.
+
+  ## Options
+
+    * `:seed` - random seed to use when sampling. By default the current
+      timestamp is used
+
   """
-  @spec build_generate(Axon.t(), Bumblebee.ModelSpec.t(), Bumblebee.Text.GenerationConfig.t()) ::
-          (params :: map(), inputs :: map() -> Nx.t())
-  def build_generate(model, spec, config) do
+  @spec build_generate(
+          Axon.t(),
+          Bumblebee.ModelSpec.t(),
+          Bumblebee.Text.GenerationConfig.t(),
+          keyword()
+        ) :: (params :: map(), inputs :: map() -> Nx.t())
+  def build_generate(model, spec, config, opts \\ []) do
+    opts = Keyword.validate!(opts, [:seed])
+    seed = Keyword.get_lazy(opts, :seed, &:erlang.system_time/0)
+
     decoder_start_token_id = config.decoder_start_token_id || config.bos_token_id
     eos_token_id = config.eos_token_id
     pad_token_id = config.pad_token_id || config.eos_token_id
@@ -166,6 +185,7 @@ defmodule Bumblebee.Text.Generation do
       traverse_cache_fun,
       pad_token_id: pad_token_id,
       eos_token_id: eos_token_id,
+      seed: seed,
       strategy: config.strategy
     )
   end
@@ -304,26 +324,41 @@ defmodule Bumblebee.Text.Generation do
   end
 
   defp get_logits_processor(min_length_fun, eos_token_id, config) do
-    processors = [
-      if config.no_repeat_ngram_length && config.no_repeat_ngram_length > 0 do
-        &no_repeat_ngram_logits_processor(&1, &2, ngram_length: config.no_repeat_ngram_length)
-      end,
-      if min_length_fun && eos_token_id do
-        &min_length_logits_processor(&1, &2,
-          min_length_fun: min_length_fun,
-          eos_token_id: eos_token_id
-        )
-      end,
-      if config.forced_bos_token_id do
-        &bos_token_logits_processor(&1, &2, bos_token_id: config.forced_bos_token_id)
-      end,
-      if config.forced_eos_token_id do
-        &eos_token_logits_processor(&1, &2, eos_token_id: config.forced_eos_token_id)
-      end,
-      if config.forced_token_ids do
-        &forced_tokens_logits_processor(&1, &2, forced_token_ids: config.forced_token_ids)
-      end
-    ]
+    import Bumblebee.Text.Generation.LogitsProcessing
+
+    processors =
+      [
+        if config.no_repeat_ngram_length && config.no_repeat_ngram_length > 0 do
+          &no_repeat_ngram_processor(&1, &2, ngram_length: config.no_repeat_ngram_length)
+        end,
+        if min_length_fun && eos_token_id do
+          &min_length_processor(&1, &2,
+            min_length_fun: min_length_fun,
+            eos_token_id: eos_token_id
+          )
+        end,
+        if config.forced_bos_token_id do
+          &bos_token_processor(&1, &2, bos_token_id: config.forced_bos_token_id)
+        end,
+        if config.forced_eos_token_id do
+          &eos_token_processor(&1, &2, eos_token_id: config.forced_eos_token_id)
+        end,
+        if config.forced_token_ids do
+          &forced_tokens_processor(&1, &2, forced_token_ids: config.forced_token_ids)
+        end
+      ] ++
+        if config.strategy.type == :multinomial_sampling do
+          [
+            if top_k = config.strategy[:top_k] do
+              &top_k_processor(&1, &2, top_k: top_k)
+            end,
+            if top_p = config.strategy[:top_p] do
+              &top_p_processor(&1, &2, top_p: top_p)
+            end
+          ]
+        else
+          []
+        end
 
     fn logits, context ->
       for processor <- processors, processor, reduce: logits do
@@ -353,6 +388,7 @@ defmodule Bumblebee.Text.Generation do
     end
 
     strategy = opts[:strategy]
+    seed = opts[:seed]
 
     case strategy.type do
       :greedy_search ->
@@ -377,8 +413,23 @@ defmodule Bumblebee.Text.Generation do
           traverse_cache_fun,
           [max_length: max_length, top_k: strategy.top_k, penalty_alpha: strategy.alpha] ++ opts
         )
+
+      :multinomial_sampling ->
+        prng_key = Nx.Random.key(seed)
+
+        sampling(
+          decoder_inputs,
+          decoder_input_ids,
+          predict_fun,
+          params,
+          logits_processor_fun,
+          update_inputs_fun,
+          [max_length: max_length, prng_key: prng_key] ++ opts
+        )
     end
   end
+
+  # Greedy search
 
   defnp greedy(
           inputs,
@@ -444,6 +495,10 @@ defmodule Bumblebee.Text.Generation do
   defnp init_sequences(decoder_input_ids, max_length, pad_token_id) do
     {batch_size, length} = Nx.shape(decoder_input_ids)
 
+    if length > max_length do
+      raise ArgumentError, "expected the input to be at most #{max_length} tokens, got: #{length}"
+    end
+
     sequences = Nx.broadcast(pad_token_id, {batch_size, max_length})
     sequences = Nx.put_slice(sequences, [0, 0], decoder_input_ids)
 
@@ -506,6 +561,8 @@ defmodule Bumblebee.Text.Generation do
 
     {sequences, length + 1, finished?}
   end
+
+  # Contrastive search
 
   defnp contrastive(
           inputs,
@@ -681,124 +738,145 @@ defmodule Bumblebee.Text.Generation do
     |> Nx.argmax(axis: -1)
   end
 
-  # Logit processors
+  # Multinomial sampling
 
-  defnp bos_token_logits_processor(logits, context, opts \\ []) do
-    opts = keyword!(opts, [:bos_token_id])
-    bos_token_id = opts[:bos_token_id]
-
-    if context.length == 1 do
-      force_token_id(logits, token_id: bos_token_id)
-    else
-      logits
-    end
-  end
-
-  defnp eos_token_logits_processor(logits, context, opts \\ []) do
-    opts = keyword!(opts, [:eos_token_id])
+  defnp sampling(
+          inputs,
+          decoder_input_ids,
+          predict_fun,
+          params,
+          logits_processor_fun,
+          update_inputs_fun,
+          opts \\ []
+        ) do
+    max_length = opts[:max_length]
+    pad_token_id = opts[:pad_token_id]
     eos_token_id = opts[:eos_token_id]
+    prng_key = opts[:prng_key]
 
-    max_length = Nx.axis_size(context.sequences, 1)
+    {sequences, length = input_length, finished?} =
+      init_sequences(decoder_input_ids, max_length, pad_token_id)
 
-    if context.length == max_length - 1 do
-      force_token_id(logits, token_id: eos_token_id)
-    else
-      logits
-    end
-  end
-
-  deftransformp forced_tokens_logits_processor(logits, context, opts \\ []) do
-    opts = Keyword.validate!(opts, [:forced_token_ids])
-    forced_token_ids = opts[:forced_token_ids]
-
-    clauses =
-      for {idx, token_id} <- forced_token_ids do
-        {Nx.equal(context.length, idx), force_token_id(logits, token_id: token_id)}
+    # The loop works with inputs of length 1, so if the initial input
+    # is longer, we make the initial pass outside
+    {sequences, length, finished?, inputs, prng_key} =
+      if length > 1 do
+        sampling_step(
+          sequences,
+          length,
+          finished?,
+          inputs,
+          input_length,
+          predict_fun,
+          params,
+          prng_key,
+          logits_processor_fun,
+          update_inputs_fun,
+          pad_token_id: pad_token_id,
+          eos_token_id: eos_token_id
+        )
+      else
+        {sequences, length, finished?, inputs, prng_key}
       end
 
-    # Note that we can't use defn ifs inside transform, so we build
-    # the expression directly
-    Nx.Defn.Expr.cond(clauses, logits)
+    {sequences, _length, _finished?, _inputs, _params, _key} =
+      while {sequences, length, finished?, inputs, params, prng_key},
+            continue?(finished?, length, max_length) do
+        {sequences, length, finished?, inputs, prng_key} =
+          sampling_step(
+            sequences,
+            length,
+            finished?,
+            inputs,
+            input_length,
+            predict_fun,
+            params,
+            prng_key,
+            logits_processor_fun,
+            update_inputs_fun,
+            pad_token_id: pad_token_id,
+            eos_token_id: eos_token_id
+          )
+
+        {sequences, length, finished?, inputs, params, prng_key}
+      end
+
+    sequences
   end
 
-  defnp min_length_logits_processor(logits, context, opts \\ []) do
-    opts = keyword!(opts, [:eos_token_id, :min_length_fun])
+  defnp sampling_step(
+          sequences,
+          length,
+          finished?,
+          inputs,
+          input_length,
+          predict_fun,
+          params,
+          prng_key,
+          logits_processor_fun,
+          update_inputs_fun,
+          opts \\ []
+        ) do
+    pad_token_id = opts[:pad_token_id]
     eos_token_id = opts[:eos_token_id]
-    min_length_fun = opts[:min_length_fun]
 
-    min_length = min_length_fun.(context.input_length)
+    key = Nx.Random.split(prng_key)
+    {key, prng_key} = {key[1], key[0]}
 
-    if context.length < min_length do
-      ignore_token_id(logits, token_id: eos_token_id)
-    else
-      logits
-    end
+    outputs = predict_fun.(params, inputs)
+
+    logits = outputs.logits[[.., -1]]
+
+    logits =
+      logits_processor_fun.(logits, %{
+        sequences: sequences,
+        length: length,
+        input_length: input_length
+      })
+
+    scores = Axon.Activations.softmax(logits)
+    token_id = batched_choice(key, scores)
+
+    {sequences, length, finished?} =
+      update_sequences(sequences, length, finished?, token_id, pad_token_id, eos_token_id)
+
+    inputs = update_inputs_fun.(inputs, outputs.cache, Nx.new_axis(token_id, -1))
+
+    {sequences, length, finished?, inputs, prng_key}
   end
 
-  defnp no_repeat_ngram_logits_processor(logits, context, opts \\ []) do
-    opts = keyword!(opts, [:ngram_length])
-    ngram_length = opts[:ngram_length]
+  deftransformp batched_choice(key, scores) do
+    {batch_size, vocab_size} = Nx.shape(scores)
 
-    if context.length + 1 < ngram_length do
-      logits
-    else
-      # Given a sequence of last {ngram_length - 1} tokens, we look
-      # for prior occurrences of that sequence and we want to make the
-      # subsequent token ignored. This way the n-gram is not repeated
-      # this time around
+    vocab = Nx.iota({vocab_size})
 
-      ngram_but_one_length = ngram_length - 1
+    keys = Nx.Random.split(key, parts: batch_size)
 
-      last_ngram_but_one =
-        Nx.slice_along_axis(
-          context.sequences,
-          context.length - ngram_but_one_length,
-          ngram_but_one_length,
-          axis: 1
-        )
+    tokens =
+      for i <- 0..(batch_size - 1) do
+        probabilities = scores[i]
+        {token, _} = Nx.Random.choice(keys[i], vocab, probabilities, samples: 1)
+        token
+      end
 
-      {_, _, _, _, logits} =
-        while {i = 0, last_ngram_but_one, sequences = context.sequences, length = context.length,
-               logits},
-              i + ngram_but_one_length < length do
-          ngram_but_one = Nx.slice_along_axis(sequences, i, ngram_but_one_length, axis: 1)
-
-          batch_size = Nx.axis_size(logits, 0)
-
-          token_id = sequences[[.., i + ngram_but_one_length]]
-          indices = Nx.stack([Nx.iota({batch_size}), token_id], axis: -1)
-
-          match? = Nx.all(ngram_but_one == last_ngram_but_one, axes: [1])
-          updates = Nx.select(match?, Nx.Constants.neg_infinity(), 0)
-
-          logits = Nx.indexed_add(logits, indices, updates)
-
-          {i + 1, last_ngram_but_one, sequences, length, logits}
-        end
-
-      logits
-    end
+    Nx.concatenate(tokens, axis: 0)
   end
 
-  defnp force_token_id(logits, opts \\ []) do
-    token_id = opts[:token_id]
+  # TODO: once vectorization is in
+  # deftransformp batched_choice(key, scores) do
+  #   {batch_size, vocab_size} = Nx.shape(scores)
 
-    batch_size = Nx.axis_size(logits, 0)
+  #   vocab = Nx.iota({vocab_size})
 
-    Nx.Constants.neg_infinity()
-    |> Nx.broadcast(logits)
-    |> Nx.put_slice([0, token_id], Nx.broadcast(0, {batch_size, 1}))
-  end
+  #   keys = Nx.Random.split(key, parts: batch_size)
 
-  defnp ignore_token_id(logits, opts \\ []) do
-    token_id = opts[:token_id]
+  #   key = Nx.vectorize(keys, :batch)
+  #   probabilities = Nx.vectorize(scores, :batch)
 
-    batch_size = Nx.axis_size(logits, 0)
+  #   {tokens, _} = Nx.Random.choice(key, vocab, probabilities, samples: 1)
 
-    Nx.put_slice(
-      logits,
-      [0, token_id],
-      Nx.broadcast(Nx.Constants.neg_infinity(), {batch_size, 1})
-    )
-  end
+  #   tokens
+  #   |> Nx.squeeze()
+  #   |> Nx.devectorize()
+  # end
 end

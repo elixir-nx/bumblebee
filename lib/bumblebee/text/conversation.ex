@@ -13,7 +13,7 @@ defmodule Bumblebee.Text.Conversation do
 
   @doc false
   def conversation(model_info, tokenizer, generation_config, opts \\ []) do
-    opts = Keyword.validate!(opts, [:compile, defn_options: []])
+    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
 
     %{params: params, spec: spec} = model_info
 
@@ -39,7 +39,8 @@ defmodule Bumblebee.Text.Conversation do
       Bumblebee.Text.Generation.build_generate(
         model_info.model,
         model_info.spec,
-        generation_config
+        generation_config,
+        Keyword.take(opts, [:seed])
       )
 
     Nx.Serving.new(
