@@ -2,8 +2,15 @@ defmodule Bumblebee.Audio.SpeechToText do
   @moduledoc false
 
   alias Bumblebee.Shared
+  alias Bumblebee.Text
 
-  def speech_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []) do
+  def speech_to_text(
+        model_info,
+        featurizer,
+        tokenizer,
+        %Text.GenerationConfig{} = generation_config,
+        opts \\ []
+      ) do
     opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
 
     compile = opts[:compile]
@@ -21,12 +28,7 @@ defmodule Bumblebee.Audio.SpeechToText do
     %{model: model, params: params, spec: spec} = model_info
 
     generate_fun =
-      Bumblebee.Text.Generation.build_generate(
-        model,
-        spec,
-        generation_config,
-        Keyword.take(opts, [:seed])
-      )
+      Text.Generation.build_generate(model, spec, generation_config, Keyword.take(opts, [:seed]))
 
     Nx.Serving.new(
       fn defn_options ->

@@ -31,6 +31,7 @@ defmodule Bumblebee.Text.Generation do
 
   alias Bumblebee.Shared
   alias Bumblebee.Utils
+  alias Bumblebee.Text
 
   @doc """
   Initializes an opaque cache input for iterative inference.
@@ -50,10 +51,10 @@ defmodule Bumblebee.Text.Generation do
   end
 
   @doc false
-  def generation(model_info, tokenizer, generation_config, opts \\ []) do
+  def generation(model_info, tokenizer, %Text.GenerationConfig{} = generation_config, opts \\ []) do
     opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
 
-    %{params: params, spec: spec} = model_info
+    %{model: model, params: params, spec: spec} = model_info
 
     Shared.validate_architecture!(spec, [
       :for_conditional_generation,
@@ -71,13 +72,7 @@ defmodule Bumblebee.Text.Generation do
             "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
     end
 
-    generate_fun =
-      build_generate(
-        model_info.model,
-        model_info.spec,
-        generation_config,
-        Keyword.take(opts, [:seed])
-      )
+    generate_fun = build_generate(model, spec, generation_config, Keyword.take(opts, [:seed]))
 
     Nx.Serving.new(
       fn defn_options ->

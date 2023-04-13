@@ -2,6 +2,7 @@ defmodule Bumblebee.Text.Conversation do
   @moduledoc false
 
   alias Bumblebee.Shared
+  alias Bumblebee.Text
 
   @doc """
   Converts conversation history into a continuous text.
@@ -12,10 +13,15 @@ defmodule Bumblebee.Text.Conversation do
             ) :: String.t()
 
   @doc false
-  def conversation(model_info, tokenizer, generation_config, opts \\ []) do
+  def conversation(
+        model_info,
+        tokenizer,
+        %Text.GenerationConfig{} = generation_config,
+        opts \\ []
+      ) do
     opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
 
-    %{params: params, spec: spec} = model_info
+    %{model: model, params: params, spec: spec} = model_info
 
     Shared.validate_architecture!(spec, [
       :for_causal_language_modeling,
@@ -33,15 +39,10 @@ defmodule Bumblebee.Text.Conversation do
             "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
     end
 
-    encoder_decoder? = encoder_decoder?(model_info.model)
+    encoder_decoder? = encoder_decoder?(model)
 
     generate_fun =
-      Bumblebee.Text.Generation.build_generate(
-        model_info.model,
-        model_info.spec,
-        generation_config,
-        Keyword.take(opts, [:seed])
-      )
+      Text.Generation.build_generate(model, spec, generation_config, Keyword.take(opts, [:seed]))
 
     Nx.Serving.new(
       fn defn_options ->
