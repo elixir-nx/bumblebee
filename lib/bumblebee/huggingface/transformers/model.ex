@@ -2,7 +2,7 @@ defprotocol Bumblebee.HuggingFace.Transformers.Model do
   @moduledoc false
 
   # This protocol defines details related to loading Bumblebee model
-  # from hugginface/transformers model.
+  # from huggingface/transformers model.
 
   @type params_mapping :: %{
           layer_name() => layer_name() | params_source()
@@ -20,7 +20,7 @@ defprotocol Bumblebee.HuggingFace.Transformers.Model do
 
   @doc """
   Returns a map describing layers/parameters relationship between an
-  Axon model and a corresponding hugginface/transformers model.
+  Axon model and a corresponding huggingface/transformers model.
 
   ## Mapping format
 

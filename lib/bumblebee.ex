@@ -10,15 +10,42 @@ defmodule Bumblebee do
 
   You can load one of the supported models by specifying the model repository:
 
-      {:ok, bert} = Bumblebee.load_model({:hf, "bert-base-uncased"})
+      {:ok, model_info} = Bumblebee.load_model({:hf, "bert-base-uncased"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
 
   Then you are ready to make predictions:
 
       inputs = Bumblebee.apply_tokenizer(tokenizer, "Hello Bumblebee!")
-      outputs = Axon.predict(bert.model, bert.params, inputs)
+      outputs = Axon.predict(model_info.model, model_info.params, inputs)
 
-  For complete examples see the [Examples](examples.livemd) notebook.
+  ### Tasks
+
+  On top of bare models, Bumblebee provides a number of **"servings"**
+  that act as end-to-end pipelines for specific tasks.
+
+      serving = Bumblebee.Text.fill_mask(model_info, tokenizer)
+      Nx.Serving.run(serving, "The capital of [MASK] is Paris.")
+      #=> %{
+      #=>   predictions: [
+      #=>     %{score: 0.9279842972755432, token: "france"},
+      #=>     %{score: 0.008412551134824753, token: "brittany"},
+      #=>     %{score: 0.007433671969920397, token: "algeria"},
+      #=>     %{score: 0.004957548808306456, token: "department"},
+      #=>     %{score: 0.004369721747934818, token: "reunion"}
+      #=>   ]
+      #=> }
+
+  As you can see the **serving** takes care of pre-processing the
+  text input, runs the model and also post-processes its output into
+  more structured data. In the above example we `run` serving on the
+  fly, however for production usage you can start serving as a process
+  and it will automatically batch requests from multiple clients.
+  Processing inputs in batches is usually much more efficient, since
+  it can take advantage of parallel capabilities of the target device,
+  which is particularly relevant in case of GPU. For more details read
+  the `Nx.Serving` docs.
+
+  For more examples see the [Examples](examples.livemd) notebook.
 
   > #### Note {: .info}
   >
