@@ -13,6 +13,10 @@ defmodule Bumblebee.Vision.ImageToText do
       ) do
     opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
 
+    %{model: model, params: params, spec: spec} = model_info
+
+    Shared.validate_architecture!(spec, [:for_conditional_generation])
+
     compile = opts[:compile]
     defn_options = opts[:defn_options]
 
@@ -22,8 +26,6 @@ defmodule Bumblebee.Vision.ImageToText do
       raise ArgumentError,
             "expected :compile to be a keyword list specifying :batch_size, got: #{inspect(compile)}"
     end
-
-    %{model: model, params: params, spec: spec} = model_info
 
     generate_fun =
       Text.Generation.build_generate(model, spec, generation_config, Keyword.take(opts, [:seed]))
