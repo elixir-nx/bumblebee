@@ -965,4 +965,77 @@ defmodule Bumblebee.Layers do
 
     x * weight
   end
+
+  @doc """
+  Adds a rotary embedding layer to the network.
+  """
+  def rotary_embedding(query, key, value, position_ids, dim, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, max_position_embeddings: 2048])
+
+    inv_freq = Axon.param("inv_freq", fn _ -> {div(dim, 2)} end)
+
+    out = Axon.layer(&rotary_embedding_impl/3, [value, inv_freq], opts)
+    {sin, cos} = {Axon.nx(out, &elem(&1, 0)), Axon.nx(out, &elem(&1, 1))}
+
+    out = Axon.layer(&apply_rotary_embedding/6, [query, key, cos, sin, position_ids])
+    {Axon.nx(out, &elem(&1, 0)), Axon.nx(out, &elem(&1, 1))}
+  end
+
+  defnp rotary_embedding_impl(value, inv_freq, opts \\ []) do
+    opts = keyword!(opts, mode: :inference, max_position_embeddings: 2048)
+    seq_len = Nx.axis_size(value, 1)
+
+    t = Nx.iota({opts[:max_position_embeddings]})
+    freqs = Nx.outer(t, inv_freq)
+
+    emb = Nx.concatenate([freqs, freqs], axis: -1)
+    cos =
+      emb
+      |> Nx.cos()
+      |> Nx.new_axis(0)
+      |> Nx.new_axis(0)
+
+    sin =
+      emb
+      |> Nx.sin()
+      |> Nx.new_axis(0)
+      |> Nx.new_axis(0)
+
+    {cos[[.., .., 0..(seq_len - 1), ..]], sin[[.., .., 0..(seq_len - 1), ..]]}
+  end
+
+  defnp apply_rotary_embedding(query, key, cos, sin, position_ids, _opts) do
+    {bsz, seq} = Nx.shape(position_ids)
+
+    query = Nx.transpose(query, axes: [0, 2, 1, 3])
+    key = Nx.transpose(key, axes: [0, 2, 1, 3])
+
+    gather_indices =
+      position_ids
+      |> Nx.reshape({bsz, 1, seq, 1})
+      |> Nx.broadcast({bsz, Nx.axis_size(cos, 1), seq, Nx.axis_size(cos, 3)})
+      |> Nx.as_type(:s64)
+
+    cos =
+      cos
+      |> Nx.broadcast({bsz, Nx.axis_size(cos, 1), Nx.axis_size(cos, 2), Nx.axis_size(cos, 3)})
+      |> Nx.take_along_axis(gather_indices, axis: 2)
+
+    sin =
+      sin
+      |> Nx.broadcast({bsz, Nx.axis_size(sin, 1), Nx.axis_size(sin, 2), Nx.axis_size(sin, 3)})
+      |> Nx.take_along_axis(gather_indices, axis: 2)
+
+    q_embed = (query * cos) + (rotate_half(query) * sin)
+    k_embed = (key * cos) + (rotate_half(key) * sin)
+
+    {Nx.transpose(q_embed, axes: [0, 2, 1, 3]), Nx.transpose(k_embed, axes: [0, 2, 1, 3])}
+  end
+
+  defnp rotate_half(x) do
+    i = div(Nx.axis_size(x, -1), 2)
+    x1 = x[[.., .., .., 0..(i - 1)//1]]
+    x2 = x[[.., .., .., i..-1//1]]
+    Nx.concatenate([-x2, x1], axis: -1)
+  end
 end

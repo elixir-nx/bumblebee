@@ -56,7 +56,8 @@ defmodule Bumblebee.Layers.Transformer do
       :layer_norm,
       :norm_placement,
       :output_shortcut,
-      :scale_query?
+      :scale_query?,
+      :use_rotary_embedding?
     ]
 
     opts =
@@ -66,6 +67,7 @@ defmodule Bumblebee.Layers.Transformer do
           [
             :name,
             :num_blocks,
+            position_ids: Layers.none(),
             attention_mask: Layers.none(),
             attention_head_mask: Layers.none(),
             attention_relative_bias: nil,
@@ -84,6 +86,7 @@ defmodule Bumblebee.Layers.Transformer do
     output_hidden_states = opts[:output_hidden_states]
     output_attentions = opts[:output_attentions]
 
+    position_ids = opts[:position_ids]
     attention_mask = opts[:attention_mask]
     attention_head_mask = opts[:attention_head_mask]
     cross_hidden_state = opts[:cross_hidden_state]
@@ -123,6 +126,7 @@ defmodule Bumblebee.Layers.Transformer do
             block(
               state.hidden_state,
               [
+                position_ids: position_ids,
                 attention_mask: attention_mask,
                 attention_head_mask: block_attention_head_mask,
                 attention_relative_bias: attention_relative_bias,
@@ -276,6 +280,7 @@ defmodule Bumblebee.Layers.Transformer do
         :num_attention_heads,
         :hidden_size,
         :ffn,
+        position_ids: Layers.none(),
         attention_mask: Layers.none(),
         attention_head_mask: Layers.none(),
         attention_relative_bias: Layers.none(),
@@ -296,7 +301,8 @@ defmodule Bumblebee.Layers.Transformer do
         norm_placement: :last,
         layer_norm: [],
         output_shortcut: true,
-        scale_query?: true
+        scale_query?: true,
+        use_rotary_embedding?: false
       ])
 
     name = opts[:name]
@@ -312,6 +318,7 @@ defmodule Bumblebee.Layers.Transformer do
     key_use_bias = opts[:key_use_bias]
     value_use_bias = opts[:value_use_bias]
     output_use_bias = opts[:output_use_bias]
+    position_ids = opts[:position_ids]
     attention_mask = opts[:attention_mask]
     attention_head_mask = opts[:attention_head_mask]
     attention_relative_bias = opts[:attention_relative_bias]
@@ -324,6 +331,7 @@ defmodule Bumblebee.Layers.Transformer do
     norm_placement = opts[:norm_placement]
     output_shortcut = opts[:output_shortcut]
     scale_query? = opts[:scale_query?]
+    use_rotary_embedding? = opts[:use_rotary_embedding?]
 
     ffn_fun =
       case ffn do
@@ -368,6 +376,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     {hidden_state, attention, self_attention_cache, attention_relative_bias} =
       multi_head_attention(hidden_state, hidden_state, hidden_state,
+        position_ids: position_ids,
         attention_mask: attention_mask,
         attention_head_mask: attention_head_mask,
         attention_relative_bias: attention_relative_bias,
@@ -384,6 +393,7 @@ defmodule Bumblebee.Layers.Transformer do
         value_use_bias: value_use_bias,
         output_use_bias: output_use_bias,
         scale_query?: scale_query?,
+        use_rotary_embedding?: use_rotary_embedding?,
         name: join(name, "self_attention")
       )
 
@@ -410,6 +420,7 @@ defmodule Bumblebee.Layers.Transformer do
 
           {hidden_state, cross_attention, cross_attention_cache, _cross_attention_relative_bias} =
             multi_head_attention(hidden_state, cross_hidden_state, cross_hidden_state,
+              position_ids: position_ids,
               attention_mask: cross_attention_mask,
               attention_head_mask: cross_attention_head_mask,
               attention_cache: cross_attention_cache,
@@ -424,6 +435,7 @@ defmodule Bumblebee.Layers.Transformer do
               value_use_bias: value_use_bias,
               output_use_bias: output_use_bias,
               scale_query?: scale_query?,
+              use_rotary_embedding?: use_rotary_embedding?,
               name: join(name, "cross_attention")
             )
 
@@ -569,6 +581,7 @@ defmodule Bumblebee.Layers.Transformer do
         attention_relative_bias: Layers.none(),
         attention_cache: Layers.none(),
         offset: Layers.none(),
+        position_ids: Layers.none(),
         causal?: false,
         scale_query?: true,
         kernel_initializer: :glorot_uniform,
@@ -577,9 +590,11 @@ defmodule Bumblebee.Layers.Transformer do
         query_use_bias: true,
         key_use_bias: true,
         value_use_bias: true,
-        output_use_bias: true
+        output_use_bias: true,
+        use_rotary_embedding?: false
       ])
 
+    position_ids = opts[:position_ids]
     attention_mask = opts[:attention_mask]
     attention_head_mask = opts[:attention_head_mask]
     attention_cache = opts[:attention_cache]
@@ -592,6 +607,7 @@ defmodule Bumblebee.Layers.Transformer do
     causal? = opts[:causal?]
     scale_query? = opts[:scale_query?]
     dropout_rate = opts[:dropout_rate]
+    use_rotary_embedding? = opts[:use_rotary_embedding?]
 
     query_use_bias = opts[:query_use_bias]
     key_use_bias = opts[:key_use_bias]
@@ -633,6 +649,20 @@ defmodule Bumblebee.Layers.Transformer do
         use_bias: value_use_bias
       )
       |> Layers.split_heads(num_heads)
+
+    {query, key} =
+      if use_rotary_embedding? do
+        Layers.rotary_embedding(
+          query,
+          key,
+          value,
+          position_ids,
+          div(hidden_size, num_heads),
+          name: join(name, "rotary_embedding")
+        )
+      else
+        {query, key}
+      end
 
     {key, value, attention_cache} =
       Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset)
