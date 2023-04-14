@@ -21,6 +21,7 @@ for fmt in ["zip", "legacy"]:
         torch.tensor([-1, 1], dtype=torch.int16),
         torch.tensor([-1, 1], dtype=torch.int8),
         torch.tensor([0, 1], dtype=torch.uint8),
+        torch.tensor([0, 1, 0, 1], dtype=torch.bool),
         torch.tensor([-1.0, 1.0], dtype=torch.bfloat16),
         torch.tensor([1 - 1j, 1 + 1j], dtype=torch.complex128),
         torch.tensor([1 - 1j, 1 + 1j], dtype=torch.complex64)
@@ -38,7 +39,7 @@ for fmt in ["zip", "legacy"]:
         np.array([0, 1], dtype=np.uint32),
         np.array([0, 1], dtype=np.uint16),
         np.array([0, 1], dtype=np.uint8),
-        np.array([0, 1], dtype=np.bool8),
+        np.array([0, 1], dtype=np.bool_),
         np.array([1 - 1j, 1 + 1j], dtype=np.complex128),
         np.array([1 - 1j, 1 + 1j], dtype=np.complex64)
     ])

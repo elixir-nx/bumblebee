@@ -26,6 +26,7 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
                  Nx.tensor([-1, 1], type: :s16),
                  Nx.tensor([-1, 1], type: :s8),
                  Nx.tensor([0, 1], type: :u8),
+                 Nx.tensor([0, 1, 0, 1], type: :u8),
                  Nx.tensor([-1.0, 1.0], type: :bf16),
                  Nx.tensor([Complex.new(1, -1), Complex.new(1, 1)], type: :c128),
                  Nx.tensor([Complex.new(1, -1), Complex.new(1, 1)], type: :c64)
