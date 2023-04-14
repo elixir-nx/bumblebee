@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.0](https://github.com/elixir-nx/bumblebee/tree/v0.3.0) (2023-04-14)
+
+In this release we moved all generation options to a new `%Bumblebee.Text.GenerationConfig{}` struct, which needs to be explicitly loaded and configured. A number of generation options is model-specific and they used to be a part of model specification, but encapsulating everything in a single struct improves the transparency of options origin and reconfiguration. The text generation servings (generation, speech-to-text and conversation) need to be adjusted as follows:
+
+```diff
+{:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
++{:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+
++generation_config = Bumblebee.configure(generation_config, max_new_tokens: 100)
++serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
+-serving = Bumblebee.Text.generation(model_info, tokenizer, max_new_tokens: 100)
+```
+
+### Added
+
+* Word-based aggregations for token classification ([#174](https://github.com/elixir-nx/bumblebee/pull/174))
+* BLIP model ([#181](https://github.com/elixir-nx/bumblebee/pull/181))
+* Text-to-image serving ([#181](https://github.com/elixir-nx/bumblebee/pull/181))
+* Generation option to avoid repeated n-grams ([#182](https://github.com/elixir-nx/bumblebee/pull/182))
+* Blenderbot model ([#177](https://github.com/elixir-nx/bumblebee/pull/177))
+* Option to load models from cache without outgoing traffic ([#183](https://github.com/elixir-nx/bumblebee/pull/183))
+* Whisper Phoenix demo ([#184](https://github.com/elixir-nx/bumblebee/pull/184))
+* Image channels normalization in featurizers ([#189](https://github.com/elixir-nx/bumblebee/pull/189))
+* T5 encoder model ([#190](https://github.com/elixir-nx/bumblebee/pull/190))
+* Contrastive search for sequence generation ([#192](https://github.com/elixir-nx/bumblebee/pull/192))
+* Multinomial sampling for sequence generation ([#161](https://github.com/elixir-nx/bumblebee/pull/161))
+* Support for loading sharded params checkpoints ([#200](https://github.com/elixir-nx/bumblebee/pull/200))
+
+### Changed
+
+* Model loading to not log params diff if everything is loaded correctly ([#186](https://github.com/elixir-nx/bumblebee/pull/186))
+* Moved all generation options to a new `%Bumblebee.Text.GenerationConfig{}` struct ([#193](https://github.com/elixir-nx/bumblebee/pull/193))
+
 ## [v0.2.0](https://github.com/elixir-nx/bumblebee/tree/v0.2.0) (2023-03-16)
 
 ### Added
