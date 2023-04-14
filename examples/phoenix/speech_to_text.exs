@@ -12,7 +12,7 @@ Mix.install([
   {:phoenix, "~> 1.7.0"},
   {:phoenix_live_view, "~> 0.18.3"},
   # Bumblebee and friends
-  {:bumblebee, "~> 0.2.0"},
+  {:bumblebee, "~> 0.3.0"},
   {:nx, "~> 0.5.1"},
   {:exla, "~> 0.5.1"}
 ])
@@ -312,10 +312,10 @@ end
 {:ok, model_info} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
 {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/whisper-tiny"})
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/whisper-tiny"})
+{:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai/whisper-tiny"})
 
 serving =
-  Bumblebee.Audio.speech_to_text(model_info, featurizer, tokenizer,
-    max_new_tokens: 100,
+  Bumblebee.Audio.speech_to_text(model_info, featurizer, tokenizer, generation_config,
     compile: [batch_size: 10],
     defn_options: [compiler: EXLA]
   )
