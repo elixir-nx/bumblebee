@@ -129,6 +129,7 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
       "ShortStorage" => {:s, 16},
       "CharStorage" => {:s, 8},
       "ByteStorage" => {:u, 8},
+      "BoolStorage" => {:u, 8},
       "BFloat16Storage" => {:bf, 16},
       "ComplexDoubleStorage" => {:c, 128},
       "ComplexFloatStorage" => {:c, 64}

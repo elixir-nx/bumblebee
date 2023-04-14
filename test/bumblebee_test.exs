@@ -9,5 +9,15 @@ defmodule BumblebeeTest do
                      Bumblebee.load_model("repo-id")
                    end
     end
+
+    @tag :capture_log
+    test "supports sharded models" do
+      assert {:ok, %{params: params}} = Bumblebee.load_model({:hf, "sshleifer/tiny-gpt2"})
+
+      assert {:ok, %{params: sharded_params}} =
+               Bumblebee.load_model({:hf, "jonatanklosko/test-tiny-gpt2-sharded"})
+
+      assert Enum.sort(Map.keys(params)) == Enum.sort(Map.keys(sharded_params))
+    end
   end
 end

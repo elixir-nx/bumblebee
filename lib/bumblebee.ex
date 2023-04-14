@@ -479,16 +479,40 @@ defmodule Bumblebee do
 
     params_mapping = Bumblebee.HuggingFace.Transformers.Model.params_mapping(spec)
 
-    with {:ok, path} <- download(repository, filename) do
+    with {:ok, paths} <- download_params_files(repository, filename) do
       params =
         Bumblebee.Conversion.PyTorch.load_params!(
           model,
           input_template,
-          path,
+          paths,
           [params_mapping: params_mapping] ++ Keyword.take(opts, [:backend, :log_params_diff])
         )
 
       {:ok, params}
+    end
+  end
+
+  defp download_params_files(repository, filename) do
+    case download(repository, filename) do
+      {:ok, path} ->
+        {:ok, [path]}
+
+      error ->
+        # Check for sharded params
+        with {:ok, path} <- download(repository, filename <> ".index.json"),
+             {:ok, sharded_metadata} <- decode_config(path) do
+          filenames =
+            for {_layer, filename} <- sharded_metadata["weight_map"], uniq: true, do: filename
+
+          Enum.reduce_while(filenames, {:ok, []}, fn filename, {:ok, paths} ->
+            case download(repository, filename) do
+              {:ok, path} -> {:cont, {:ok, [path | paths]}}
+              error -> {:halt, error}
+            end
+          end)
+        else
+          _ -> error
+        end
     end
   end
 

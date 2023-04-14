@@ -13,6 +13,10 @@ defmodule Bumblebee.Audio.SpeechToText do
       ) do
     opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
 
+    %{model: model, params: params, spec: spec} = model_info
+
+    Shared.validate_architecture!(spec, [:for_conditional_generation])
+
     compile = opts[:compile]
     defn_options = opts[:defn_options]
 
@@ -24,8 +28,6 @@ defmodule Bumblebee.Audio.SpeechToText do
     end
 
     sampling_rate = featurizer.sampling_rate
-
-    %{model: model, params: params, spec: spec} = model_info
 
     generate_fun =
       Text.Generation.build_generate(model, spec, generation_config, Keyword.take(opts, [:seed]))
