@@ -8,7 +8,7 @@ defmodule Bumblebee.Text.LlamaTest do
   describe "integration" do
     test "base model" do
       assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:local, "test/fixtures/models/llama"}, architecture: :base)
+               Bumblebee.load_model({:hf, "seanmor5/tiny-llama-test"}, architecture: :base)
 
       assert %Bumblebee.Text.Llama{architecture: :base} = spec
 

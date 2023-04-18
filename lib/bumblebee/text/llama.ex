@@ -192,6 +192,7 @@ defmodule Bumblebee.Text.Llama do
         Layers.default_position_ids(embeddings)
       end
 
+
     decoder_outputs =
       decoder(
         embeddings,
@@ -245,6 +246,7 @@ defmodule Bumblebee.Text.Llama do
       hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
       layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
+      norm_placement: :first,
       ffn: &gated_ffn(&1, spec.intermediate_size, spec.hidden_size, name: &2, activation: spec.activation),
       use_rotary_embedding?: true,
       query_use_bias: false,
