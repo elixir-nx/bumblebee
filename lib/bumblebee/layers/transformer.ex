@@ -264,6 +264,9 @@ defmodule Bumblebee.Layers.Transformer do
     * `:scale_query?` - whether to scale query in the traditional style of
       multi-headed attention. Defaults to `true`
 
+    * `:use_rotary_embedding?` - whether or not to use rotary position embedding
+      in multi-headed attention. Defaults to `false`
+
     * `:name` - the prefix for layer names
 
   ## References
