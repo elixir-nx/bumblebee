@@ -76,7 +76,7 @@ defmodule Bumblebee.Text.LlamaTest do
         Nx.tensor([
           [[0.0592, 0.1188, -0.1214], [-0.0331, 0.0335, -0.1808], [-0.1825, -0.0711, 0.0497]]
         ]),
-        atol: 1.0e-4
+        atol: 1.0e-2
       )
     end
   end

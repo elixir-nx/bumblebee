@@ -333,19 +333,19 @@ defmodule Bumblebee.Text.Llama do
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(_spec) do
       %{
-        "embedder.token_embedding" => "embed_tokens",
-        "decoder.blocks.{n}.self_attention.query" => "layers.{n}.self_attn.q_proj",
-        "decoder.blocks.{n}.self_attention.key" => "layers.{n}.self_attn.k_proj",
-        "decoder.blocks.{n}.self_attention.value" => "layers.{n}.self_attn.v_proj",
-        "decoder.blocks.{n}.self_attention.output" => "layers.{n}.self_attn.o_proj",
-        "decoder.blocks.{n}.self_attention_norm" => "layers.{n}.input_layernorm",
+        "embedder.token_embedding" => "model.embed_tokens",
+        "decoder.blocks.{n}.self_attention.query" => "model.layers.{n}.self_attn.q_proj",
+        "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
+        "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
+        "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.o_proj",
+        "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
         "decoder.blocks.{n}.self_attention.rotary_embedding" =>
-          "layers.{n}.self_attn.rotary_emb",
-        "decoder.blocks.{n}.ffn.gate" => "layers.{n}.mlp.gate_proj",
-        "decoder.blocks.{n}.ffn.down" => "layers.{n}.mlp.down_proj",
-        "decoder.blocks.{n}.ffn.up" => "layers.{n}.mlp.up_proj",
-        "decoder.blocks.{n}.output_norm" => "layers.{n}.post_attention_layernorm",
-        "output_norm" => "norm",
+          "model.layers.{n}.self_attn.rotary_emb",
+        "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
+        "decoder.blocks.{n}.ffn.down" => "model.layers.{n}.mlp.down_proj",
+        "decoder.blocks.{n}.ffn.up" => "model.layers.{n}.mlp.up_proj",
+        "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
+        "output_norm" => "model.norm",
         "language_modeling_head.output" => "lm_head"
       }
     end
