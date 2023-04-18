@@ -970,20 +970,23 @@ defmodule Bumblebee.Layers do
   Adds a rotary embedding layer to the network.
   """
   def rotary_embedding(query, key, value, position_ids, dim, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, max_position_embeddings: 2048])
+    opts = Keyword.validate!(opts, [:name, max_position_embeddings: 2048, base: 10_000])
 
-    inv_freq = Axon.param("inv_freq", fn _ -> {div(dim, 2)} end)
-
-    out = Axon.layer(&rotary_embedding_impl/3, [value, inv_freq], opts)
+    out = Axon.layer(&rotary_embedding_impl/2, [value], [{:dim, dim} | opts])
     {sin, cos} = {Axon.nx(out, &elem(&1, 0)), Axon.nx(out, &elem(&1, 1))}
 
     out = Axon.layer(&apply_rotary_embedding/6, [query, key, cos, sin, position_ids])
     {Axon.nx(out, &elem(&1, 0)), Axon.nx(out, &elem(&1, 1))}
   end
 
-  defnp rotary_embedding_impl(value, inv_freq, opts \\ []) do
-    opts = keyword!(opts, mode: :inference, max_position_embeddings: 2048)
+  defnp rotary_embedding_impl(value, opts \\ []) do
+    opts = keyword!(opts, [:dim, mode: :inference, max_position_embeddings: 2048, base: 10_000])
+    base = opts[:base]
+    dim = opts[:dim]
+
     seq_len = Nx.axis_size(value, 1)
+
+    inv_freq = compute_inv_freq(base, dim)
 
     t = Nx.iota({opts[:max_position_embeddings]})
     freqs = Nx.outer(t, inv_freq)
@@ -1003,6 +1006,12 @@ defmodule Bumblebee.Layers do
       |> Nx.new_axis(0)
 
     {cos[[.., .., 0..(seq_len - 1), ..]], sin[[.., .., 0..(seq_len - 1), ..]]}
+  end
+
+  deftransformp compute_inv_freq(base, dim) do
+    dim = div(dim, 2)
+    range = Nx.multiply(Nx.iota({dim}), 2)
+    Nx.divide(1.0, Nx.pow(base, range))
   end
 
   defnp apply_rotary_embedding(query, key, cos, sin, position_ids, _opts) do
