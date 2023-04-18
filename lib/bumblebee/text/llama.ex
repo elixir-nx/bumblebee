@@ -135,7 +135,7 @@ defmodule Bumblebee.Text.Llama do
     do: [
       :base,
       :for_causal_language_modeling,
-      :for_sequence_classification,
+      :for_sequence_classification
     ]
 
   @impl true
@@ -161,12 +161,25 @@ defmodule Bumblebee.Text.Llama do
     |> Layers.output()
   end
 
+  def model(%__MODULE__{architecture: :for_causal_language_modeling} = spec) do
+    inputs = inputs(spec)
+
+    outputs = core(inputs, spec)
+    logits = language_modeling_head(outputs.hidden_state, spec, name: "language_modeling_head")
+
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions,
+      cache: outputs.cache
+    })
+  end
+
   defp inputs(spec) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, spec.hidden_size}
 
-    attention_head_mask_shape =
-      {spec.num_blocks, spec.num_attention_heads}
+    attention_head_mask_shape = {spec.num_blocks, spec.num_attention_heads}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("input_ids", optional: true, shape: shape),
@@ -192,7 +205,6 @@ defmodule Bumblebee.Text.Llama do
         Layers.default_position_ids(embeddings)
       end
 
-
     decoder_outputs =
       decoder(
         embeddings,
@@ -204,8 +216,12 @@ defmodule Bumblebee.Text.Llama do
         name: "decoder"
       )
 
-    hidden_state = Layers.rms_norm(decoder_outputs.hidden_state, name: "output_norm", epsilon: spec.layer_norm_epsilon)
-    
+    hidden_state =
+      Layers.rms_norm(decoder_outputs.hidden_state,
+        name: "output_norm",
+        epsilon: spec.layer_norm_epsilon
+      )
+
     %{
       hidden_state: hidden_state,
       hidden_states: Layers.append(decoder_outputs.hidden_states, hidden_state),
@@ -247,7 +263,11 @@ defmodule Bumblebee.Text.Llama do
       kernel_initializer: kernel_initializer(spec),
       layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
       norm_placement: :first,
-      ffn: &gated_ffn(&1, spec.intermediate_size, spec.hidden_size, name: &2, activation: spec.activation),
+      ffn:
+        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
+          name: &2,
+          activation: spec.activation
+        ),
       causal?: true,
       use_rotary_embedding?: true,
       query_use_bias: false,
@@ -267,7 +287,9 @@ defmodule Bumblebee.Text.Llama do
     hidden_state
     |> Axon.dense(intermediate_size, name: join(name, "gate"), use_bias: false)
     |> Axon.activation(activation)
-    |> Axon.multiply(Axon.dense(hidden_state, intermediate_size, name: join(name, "up"), use_bias: false))
+    |> Axon.multiply(
+      Axon.dense(hidden_state, intermediate_size, name: join(name, "up"), use_bias: false)
+    )
     |> Axon.dense(output_size, name: join(name, "down"), use_bias: false)
   end
 
@@ -311,26 +333,20 @@ defmodule Bumblebee.Text.Llama do
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(_spec) do
       %{
-        "embedder.token_embedding" => "model.embed_tokens",
-        "decoder.blocks.{n}.self_attention.query" => "model.layers.{n}.self_attn.q_proj",
-        "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
-        "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
-        "decoder.blocks.{n}.self_attention.output" =>
-          "model.layers.{n}.self_attn.o_proj",
-        "decoder.blocks.{n}.self_attention_norm" =>
-          "model.layers.{n}.input_layernorm",
-        "decoder.blocks.{n}.self_attention.rotary_embedding" => "model.layers.{n}.self_attn.rotary_emb",
-        "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
-        "decoder.blocks.{n}.ffn.down" => "model.layers.{n}.mlp.down_proj",
-        "decoder.blocks.{n}.ffn.up" => "model.layers.{n}.mlp.up_proj",
-        "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
+        "embedder.token_embedding" => "embed_tokens",
+        "decoder.blocks.{n}.self_attention.query" => "layers.{n}.self_attn.q_proj",
+        "decoder.blocks.{n}.self_attention.key" => "layers.{n}.self_attn.k_proj",
+        "decoder.blocks.{n}.self_attention.value" => "layers.{n}.self_attn.v_proj",
+        "decoder.blocks.{n}.self_attention.output" => "layers.{n}.self_attn.o_proj",
+        "decoder.blocks.{n}.self_attention_norm" => "layers.{n}.input_layernorm",
+        "decoder.blocks.{n}.self_attention.rotary_embedding" =>
+          "layers.{n}.self_attn.rotary_emb",
+        "decoder.blocks.{n}.ffn.gate" => "layers.{n}.mlp.gate_proj",
+        "decoder.blocks.{n}.ffn.down" => "layers.{n}.mlp.down_proj",
+        "decoder.blocks.{n}.ffn.up" => "layers.{n}.mlp.up_proj",
+        "decoder.blocks.{n}.output_norm" => "layers.{n}.post_attention_layernorm",
         "output_norm" => "norm",
-        "language_modeling_head.output" => "model.shared",
-        "language_modeling_head.logits_bias" => %{
-          "bias" => {[{"model", "final_logits_bias"}], fn [value] -> Nx.squeeze(value) end}
-        },
-        "sequence_classification_head.dense" => "classification_head.dense",
-        "sequence_classification_head.output" => "classification_head.out_proj"
+        "language_modeling_head.output" => "lm_head"
       }
     end
   end

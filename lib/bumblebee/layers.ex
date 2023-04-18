@@ -989,6 +989,7 @@ defmodule Bumblebee.Layers do
     freqs = Nx.outer(t, inv_freq)
 
     emb = Nx.concatenate([freqs, freqs], axis: -1)
+
     cos =
       emb
       |> Nx.cos()
@@ -1026,8 +1027,8 @@ defmodule Bumblebee.Layers do
       |> Nx.broadcast({bsz, Nx.axis_size(sin, 1), Nx.axis_size(sin, 2), Nx.axis_size(sin, 3)})
       |> Nx.take_along_axis(gather_indices, axis: 2)
 
-    q_embed = (query * cos) + (rotate_half(query) * sin)
-    k_embed = (key * cos) + (rotate_half(key) * sin)
+    q_embed = query * cos + rotate_half(query) * sin
+    k_embed = key * cos + rotate_half(key) * sin
 
     {Nx.transpose(q_embed, axes: [0, 2, 1, 3]), Nx.transpose(k_embed, axes: [0, 2, 1, 3])}
   end
