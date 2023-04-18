@@ -49,7 +49,7 @@ defmodule Bumblebee.Text.Llama do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++
+      ])
       Shared.token_options(
         pad_token_id: 0,
         bos_token_id: 1,
