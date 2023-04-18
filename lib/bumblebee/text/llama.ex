@@ -248,6 +248,7 @@ defmodule Bumblebee.Text.Llama do
       layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
       norm_placement: :first,
       ffn: &gated_ffn(&1, spec.intermediate_size, spec.hidden_size, name: &2, activation: spec.activation),
+      causal?: true,
       use_rotary_embedding?: true,
       query_use_bias: false,
       key_use_bias: false,
