@@ -5,12 +5,12 @@ defmodule Bumblebee.Text.LlamaTokenizerTest do
 
   describe "integration" do
     test "encoding model input" do
-      assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "hf-internal-testing/llama-tokenizer"})
+      assert {:ok, tokenizer} =
+               Bumblebee.load_tokenizer({:hf, "hf-internal-testing/llama-tokenizer"})
 
       assert %Bumblebee.Text.LlamaTokenizer{} = tokenizer
 
-      inputs =
-        Bumblebee.apply_tokenizer(tokenizer, ["Hello everyobdy, how are you?"])
+      inputs = Bumblebee.apply_tokenizer(tokenizer, ["Hello everyobdy, how are you?"])
 
       assert_equal(
         inputs["input_ids"],

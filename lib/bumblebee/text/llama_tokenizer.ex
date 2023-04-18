@@ -9,7 +9,7 @@ defmodule Bumblebee.Text.LlamaTokenizer do
     special_tokens: %{
       eos: "</s>",
       unk: "<unk>",
-      sep: "</s>",
+      sep: "</s>"
     }
   )
 end
