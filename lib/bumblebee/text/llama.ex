@@ -153,6 +153,20 @@ defmodule Bumblebee.Text.Llama do
   end
 
   @impl true
+  def init_cache(spec, batch_size, max_length, _inputs) do
+    Layers.Decoder.init_cache(batch_size, max_length,
+      hidden_size: spec.hidden_size,
+      decoder_num_attention_heads: spec.num_attention_heads,
+      decoder_num_blocks: spec.num_blocks
+    )
+  end
+
+  @impl true
+  def traverse_cache(_spec, cache, fun) do
+    Layers.Decoder.traverse_cache(cache, fun)
+  end
+
+  @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
     inputs = inputs(spec)
 

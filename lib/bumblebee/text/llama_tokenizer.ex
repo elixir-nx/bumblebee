@@ -9,7 +9,10 @@ defmodule Bumblebee.Text.LlamaTokenizer do
     special_tokens: %{
       eos: "</s>",
       unk: "<unk>",
-      sep: "</s>"
+      sep: "</s>",
+      # Llama doesn't originally have a pad token, however when necessary
+      # we pad with the EOS token
+      pad: "</s>"
     }
   )
 end
