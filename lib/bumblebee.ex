@@ -117,6 +117,8 @@ defmodule Bumblebee do
     "GPT2ForTokenClassification" => {Bumblebee.Text.Gpt2, :for_token_classification},
     "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling},
     "GPT2Model" => {BumbleBee.Text.Gpt2, :base},
+    "GPTNeoXModel" => {Bumblebee.Text.GptNeoX, :base},
+    "GPTNeoXForCausalLM" => {Bumblebee.Text.GptNeoX, :for_causal_language_modeling},
     "LayoutLMForMaskedLanguageModeling" =>
       {Bumblebee.Multimodal.LayoutLm, :for_masked_language_modeling},
     "LayoutLMForQuestionAnswering" => {Bumblebee.Multimodal.LayoutLm, :for_question_answering},

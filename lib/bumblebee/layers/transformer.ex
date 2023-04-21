@@ -270,6 +270,12 @@ defmodule Bumblebee.Layers.Transformer do
 
         * `:max_positions` - the maximum number of distinct positions
 
+    * `:rotary_embedding_base` - base for computing rotary embedding frequency. Defaults
+      to `10_000`.
+
+    * `:rotary_percentage` - percentage of hidden dimensions to allocate to rotary embeddings.
+      Defaults to `1.0`.
+
     * `:name` - the prefix for layer names
 
   ## References
@@ -665,8 +671,30 @@ defmodule Bumblebee.Layers.Transformer do
       case rotary_embedding do
         opts when is_list(opts) ->
           validate_required_keys!(opts, [:position_ids])
-          opts = Keyword.validate!(opts, [:position_ids, :max_positions])
+
+          opts =
+            Keyword.validate!(opts, [:position_ids, :max_positions, base: 10_000, percentage: 1.0])
+
           {position_ids, opts} = Keyword.pop(opts, :position_ids)
+          {rotary_percentage, opts} = Keyword.pop(opts, :rotary_percentage)
+
+          size = trunc(div(hidden_size, num_heads) * rotary_percentage)
+
+          query_rot = Axon.nx(query, &Nx.slice_along_axis(&1, 0, size, axis: -1))
+
+          query_pass =
+            Axon.nx(
+              query,
+              &Nx.slice_along_axis(&1, size + 1, Nx.axis_size(&1, -1) - size, axis: -1)
+            )
+
+          key_rot = Axon.nx(key, &Nx.slice_along_axis(&1, 0, size, axis: -1))
+
+          key_pass =
+            Axon.nx(
+              key,
+              &Nx.slice_along_axis(&1, size + 1, Nx.axis_size(&1, -1) - size, axis: -1)
+            )
 
           Layers.rotary_embedding(
             query,
@@ -675,6 +703,9 @@ defmodule Bumblebee.Layers.Transformer do
             head_size,
             [name: join(name, "rotary_embedding")] ++ opts
           )
+
+          {Axon.concatenate([query_rot, query_pass], axis: -1),
+           Axon.concatenate([key_rot, key_pass], axis: -1)}
 
         nil ->
           {query, key}
