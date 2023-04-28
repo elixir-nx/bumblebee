@@ -30,7 +30,7 @@ defmodule Bumblebee.Text.GptNeoX do
         default: :silu,
         doc: "the activation function"
       ],
-      rotary_percentage: [
+      rotary_embedding_percentage: [
         default: 0.25,
         doc: "percentage of hidden dimensions to allocate to rotary embeddings"
       ],
@@ -271,7 +271,6 @@ defmodule Bumblebee.Text.GptNeoX do
     name = opts[:name]
 
     Layers.Transformer.blocks(hidden_state,
-      position_ids: position_ids,
       attention_mask: attention_mask,
       attention_head_mask: attention_head_mask,
       cache: cache,
@@ -287,9 +286,11 @@ defmodule Bumblebee.Text.GptNeoX do
         intermediate_size: spec.intermediate_size
       ],
       causal?: true,
-      use_rotary_embedding?: true,
-      rotary_embedding_base: spec.rotary_embedding_base,
-      rotary_percentage: spec.rotary_percentage,
+      rotary_embedding: [
+        position_ids: position_ids,
+        percentage: spec.rotary_embedding_percentage,
+        base: spec.rotary_embedding_base
+      ],
       query_use_bias: true,
       key_use_bias: true,
       value_use_bias: true,
@@ -327,6 +328,8 @@ defmodule Bumblebee.Text.GptNeoX do
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", atom()},
+          rotary_embedding_percentage: {"rotary_pct", number()},
+          rotary_embedding_base: {"rotary_emb_base", number()},
           dropout_rate: {"dropout", number()},
           initializer_scale: {"init_std", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()}
@@ -337,15 +340,30 @@ defmodule Bumblebee.Text.GptNeoX do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(_spec) do
+    def params_mapping(spec) do
       %{
         "embedder.token_embedding" => "gpt_neox.embed_in",
         "decoder.blocks.{n}.self_attention.query" =>
-          sliced_dense("gpt_neox.layers.{n}.attention.query_key_value", 3, 0),
+          sliced_dense(
+            "gpt_neox.layers.{n}.attention.query_key_value",
+            0,
+            spec.num_attention_heads,
+            spec.hidden_size
+          ),
         "decoder.blocks.{n}.self_attention.key" =>
-          sliced_dense("gpt_neox.layers.{n}.attention.query_key_value", 3, 1),
+          sliced_dense(
+            "gpt_neox.layers.{n}.attention.query_key_value",
+            1,
+            spec.num_attention_heads,
+            spec.hidden_size
+          ),
         "decoder.blocks.{n}.self_attention.value" =>
-          sliced_dense("gpt_neox.layers.{n}.attention.query_key_value", 3, 2),
+          sliced_dense(
+            "gpt_neox.layers.{n}.attention.query_key_value",
+            2,
+            spec.num_attention_heads,
+            spec.hidden_size
+          ),
         "decoder.blocks.{n}.self_attention.output" => "gpt_neox.layers.{n}.attention.dense",
         "decoder.blocks.{n}.self_attention_norm" => "gpt_neox.layers.{n}.input_layernorm",
         "decoder.blocks.{n}.self_attention.rotary_embedding" =>
@@ -358,15 +376,16 @@ defmodule Bumblebee.Text.GptNeoX do
       }
     end
 
-    defp sliced_dense(source_layer_name, num_chunks, idx) do
+    defp sliced_dense(source_layer_name, idx, num_attention_heads, hidden_size) do
       %{
         "kernel" => {
           [{source_layer_name, "weight"}],
           fn [kernel] ->
             # Slice units
-            size = Nx.axis_size(kernel, 0)
-            step = div(size, num_chunks)
-            kernel = Nx.slice_along_axis(kernel, idx * step, step, axis: 0)
+            head_size = div(hidden_size, num_attention_heads)
+            kernel = Nx.reshape(kernel, {num_attention_heads, 3, head_size, :auto})
+            kernel = kernel[[.., idx, .., ..]] |> Nx.flatten(axes: [0, 1])
+
             # Transpose the kernel
             [out_features, in_features] = Nx.axes(kernel)
             Nx.transpose(kernel, axes: [in_features, out_features])
@@ -375,9 +394,11 @@ defmodule Bumblebee.Text.GptNeoX do
         "bias" => {
           [{source_layer_name, "bias"}],
           fn [bias] ->
-            size = Nx.axis_size(bias, 0)
-            step = div(size, num_chunks)
-            Nx.slice_along_axis(bias, idx * step, step)
+            head_size = div(hidden_size, num_attention_heads)
+            bias = Nx.reshape(bias, {num_attention_heads, 3, head_size})
+            bias = bias[[.., idx, ..]] |> Nx.flatten()
+
+            bias
           end
         }
       }

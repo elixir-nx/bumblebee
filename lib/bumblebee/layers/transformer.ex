@@ -676,36 +676,27 @@ defmodule Bumblebee.Layers.Transformer do
             Keyword.validate!(opts, [:position_ids, :max_positions, base: 10_000, percentage: 1.0])
 
           {position_ids, opts} = Keyword.pop(opts, :position_ids)
-          {rotary_percentage, opts} = Keyword.pop(opts, :rotary_percentage)
+          {percentage, opts} = Keyword.pop(opts, :percentage)
 
-          size = trunc(div(hidden_size, num_heads) * rotary_percentage)
+          size = trunc(head_size * percentage)
 
-          query_rot = Axon.nx(query, &Nx.slice_along_axis(&1, 0, size, axis: -1))
+          rotary_opts = [name: join(name, "rotary_embedding")] ++ opts
 
-          query_pass =
-            Axon.nx(
-              query,
-              &Nx.slice_along_axis(&1, size + 1, Nx.axis_size(&1, -1) - size, axis: -1)
-            )
+          if size == head_size do
+            Layers.rotary_embedding(query, key, position_ids, size, rotary_opts)
+          else
+            query_rotary = Axon.nx(query, & &1[[.., .., .., 0..(size - 1)//1]])
+            query_pass = Axon.nx(query, & &1[[.., .., .., size..-1//1]])
 
-          key_rot = Axon.nx(key, &Nx.slice_along_axis(&1, 0, size, axis: -1))
+            key_rotary = Axon.nx(key, & &1[[.., .., .., 0..(size - 1)//1]])
+            key_pass = Axon.nx(key, & &1[[.., .., .., size..-1//1]])
 
-          key_pass =
-            Axon.nx(
-              key,
-              &Nx.slice_along_axis(&1, size + 1, Nx.axis_size(&1, -1) - size, axis: -1)
-            )
+            {query_rotary, key_rotary} =
+              Layers.rotary_embedding(query_rotary, key_rotary, position_ids, size, rotary_opts)
 
-          Layers.rotary_embedding(
-            query,
-            key,
-            position_ids,
-            head_size,
-            [name: join(name, "rotary_embedding")] ++ opts
-          )
-
-          {Axon.concatenate([query_rot, query_pass], axis: -1),
-           Axon.concatenate([key_rot, key_pass], axis: -1)}
+            {Axon.concatenate([query_rotary, query_pass], axis: -1),
+             Axon.concatenate([key_rotary, key_pass], axis: -1)}
+          end
 
         nil ->
           {query, key}
