@@ -127,7 +127,6 @@ defmodule Bumblebee do
     "LayoutLMModel" => {Bumblebee.Multimodal.LayoutLm, :base},
     "LlamaModel" => {Bumblebee.Text.Llama, :base},
     "LlamaForCausalLM" => {Bumblebee.Text.Llama, :for_causal_language_modeling},
-    "LLaMAForCausalLM" => {Bumblebee.Text.Llama, :for_causal_language_modeling},
     "LlamaForSequenceClassification" => {Bumblebee.Text.Llama, :for_sequence_classification},
     "MBartForCausalLM" => {Bumblebee.Text.Mbart, :for_causal_language_modeling},
     "MBartForConditionalGeneration" => {Bumblebee.Text.Mbart, :for_conditional_generation},
