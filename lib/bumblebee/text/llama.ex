@@ -304,7 +304,6 @@ defmodule Bumblebee.Text.Llama do
     name = opts[:name]
 
     Layers.Transformer.blocks(hidden_state,
-      position_ids: position_ids,
       attention_mask: attention_mask,
       attention_head_mask: attention_head_mask,
       cache: cache,
@@ -320,7 +319,7 @@ defmodule Bumblebee.Text.Llama do
           activation: spec.activation
         ),
       causal?: true,
-      use_rotary_embedding?: true,
+      rotary_embedding: [position_ids: position_ids, max_positions: spec.max_positions],
       query_use_bias: false,
       key_use_bias: false,
       value_use_bias: false,

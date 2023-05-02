@@ -57,8 +57,7 @@ defmodule Bumblebee.Layers.Transformer do
       :norm_placement,
       :output_shortcut,
       :scale_query?,
-      :use_rotary_embedding?,
-      :position_ids
+      :rotary_embedding
     ]
 
     opts =
@@ -262,10 +261,14 @@ defmodule Bumblebee.Layers.Transformer do
     * `:scale_query?` - whether to scale query in the traditional style of
       multi-headed attention. Defaults to `true`
 
-    * `:use_rotary_embedding?` - whether or not to use rotary position embedding
-      in multi-headed attention. Defaults to `false`
+    * `:rotary_embedding` - configuration of rotary embedding. If set,
+      will apply rotary position embedding with the given options. Valid
+      options are:
 
-    * `:position_ids` - input position ids used for rotary embedding
+        * `:position_ids` (required) - input position ids used for the
+          embedding
+
+        * `:max_positions` - the maximum number of distinct positions
 
     * `:name` - the prefix for layer names
 
@@ -304,8 +307,7 @@ defmodule Bumblebee.Layers.Transformer do
         layer_norm: [],
         output_shortcut: true,
         scale_query?: true,
-        use_rotary_embedding?: false,
-        position_ids: Layers.none()
+        rotary_embedding: []
       ])
 
     name = opts[:name]
@@ -333,8 +335,7 @@ defmodule Bumblebee.Layers.Transformer do
     norm_placement = opts[:norm_placement]
     output_shortcut = opts[:output_shortcut]
     scale_query? = opts[:scale_query?]
-    use_rotary_embedding? = opts[:use_rotary_embedding?]
-    position_ids = opts[:position_ids]
+    rotary_embedding = opts[:rotary_embedding]
 
     ffn_fun =
       case ffn do
@@ -395,8 +396,7 @@ defmodule Bumblebee.Layers.Transformer do
         value_use_bias: value_use_bias,
         output_use_bias: output_use_bias,
         scale_query?: scale_query?,
-        use_rotary_embedding?: use_rotary_embedding?,
-        position_ids: position_ids,
+        rotary_embedding: rotary_embedding,
         name: join(name, "self_attention")
       )
 
@@ -437,8 +437,7 @@ defmodule Bumblebee.Layers.Transformer do
               value_use_bias: value_use_bias,
               output_use_bias: output_use_bias,
               scale_query?: scale_query?,
-              use_rotary_embedding?: use_rotary_embedding?,
-              position_ids: position_ids,
+              rotary_embedding: rotary_embedding,
               name: join(name, "cross_attention")
             )
 
@@ -564,10 +563,14 @@ defmodule Bumblebee.Layers.Transformer do
     * `:output_use_bias` - whether to use bias in the output projection.
       Defaults to `true`
 
-    * `:use_rotary_embedding?` - whether or not to use rotary position embedding
-      in multi-headed attention. Defaults to `false`
+    * `:rotary_embedding` - configuration of rotary embedding. If set,
+      will apply rotary position embedding with the given options. Valid
+      options are:
 
-    * `:position_ids` - input position ids used for rotary embedding
+        * `:position_ids` (required) - input position ids used for the
+          embedding
+
+        * `:max_positions` - the maximum number of distinct positions
 
     * `:name` - the prefix for layer names
 
@@ -598,8 +601,7 @@ defmodule Bumblebee.Layers.Transformer do
         key_use_bias: true,
         value_use_bias: true,
         output_use_bias: true,
-        use_rotary_embedding?: false,
-        position_ids: Layers.none()
+        rotary_embedding: []
       ])
 
     attention_mask = opts[:attention_mask]
@@ -614,8 +616,7 @@ defmodule Bumblebee.Layers.Transformer do
     causal? = opts[:causal?]
     scale_query? = opts[:scale_query?]
     dropout_rate = opts[:dropout_rate]
-    use_rotary_embedding? = opts[:use_rotary_embedding?]
-    position_ids = opts[:position_ids]
+    rotary_embedding = opts[:rotary_embedding]
 
     query_use_bias = opts[:query_use_bias]
     key_use_bias = opts[:key_use_bias]
@@ -630,6 +631,8 @@ defmodule Bumblebee.Layers.Transformer do
       else
         hidden_size
       end
+
+    head_size = div(hidden_size, num_heads)
 
     query =
       query
@@ -659,17 +662,22 @@ defmodule Bumblebee.Layers.Transformer do
       |> Layers.split_heads(num_heads)
 
     {query, key} =
-      if use_rotary_embedding? do
-        Layers.rotary_embedding(
-          query,
-          key,
-          value,
-          position_ids,
-          div(hidden_size, num_heads),
-          name: join(name, "rotary_embedding")
-        )
-      else
-        {query, key}
+      case rotary_embedding do
+        opts when is_list(opts) ->
+          validate_required_keys!(opts, [:position_ids])
+          opts = Keyword.validate!(opts, [:position_ids, :max_positions])
+          {position_ids, opts} = Keyword.pop(opts, :position_ids)
+
+          Layers.rotary_embedding(
+            query,
+            key,
+            position_ids,
+            head_size,
+            [name: join(name, "rotary_embedding")] ++ opts
+          )
+
+        nil ->
+          {query, key}
       end
 
     {key, value, attention_cache} =
