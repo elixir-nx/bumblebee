@@ -307,7 +307,7 @@ defmodule Bumblebee.Layers.Transformer do
         layer_norm: [],
         output_shortcut: true,
         scale_query?: true,
-        rotary_embedding: []
+        rotary_embedding: nil
       ])
 
     name = opts[:name]
@@ -601,7 +601,7 @@ defmodule Bumblebee.Layers.Transformer do
         key_use_bias: true,
         value_use_bias: true,
         output_use_bias: true,
-        rotary_embedding: []
+        rotary_embedding: nil
       ])
 
     attention_mask = opts[:attention_mask]
