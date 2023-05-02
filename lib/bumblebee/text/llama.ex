@@ -335,13 +335,17 @@ defmodule Bumblebee.Text.Llama do
     name = opts[:name]
     activation = opts[:activation]
 
-    hidden_state
-    |> Axon.dense(intermediate_size, name: join(name, "gate"), use_bias: false)
-    |> Axon.activation(activation)
-    |> Axon.multiply(
-      Axon.dense(hidden_state, intermediate_size, name: join(name, "up"), use_bias: false)
-    )
-    |> Axon.dense(output_size, name: join(name, "down"), use_bias: false)
+    intermediate =
+      Axon.dense(hidden_state, intermediate_size,
+        name: join(name, "intermediate"),
+        use_bias: false
+      )
+
+    gate = Axon.dense(hidden_state, intermediate_size, name: join(name, "gate"), use_bias: false)
+
+    hidden_state = Axon.multiply(intermediate, Axon.activation(gate, activation))
+
+    Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do
@@ -391,8 +395,8 @@ defmodule Bumblebee.Text.Llama do
         "decoder.blocks.{n}.self_attention.rotary_embedding" =>
           "model.layers.{n}.self_attn.rotary_emb",
         "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
-        "decoder.blocks.{n}.ffn.down" => "model.layers.{n}.mlp.down_proj",
-        "decoder.blocks.{n}.ffn.up" => "model.layers.{n}.mlp.up_proj",
+        "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.up_proj",
+        "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",
         "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
         "output_norm" => "model.norm",
         "language_modeling_head.output" => "lm_head",
