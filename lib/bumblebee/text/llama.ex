@@ -42,10 +42,6 @@ defmodule Bumblebee.Text.Llama do
         default: 1.0e-12,
         doc: "the epsilon used by RMS normalization layers"
       ],
-      tie_word_embeddings: [
-        default: false,
-        doc: "whether to tie word embeddings"
-      ],
       initializer_scale: [
         default: 0.02,
         doc:
@@ -374,11 +370,9 @@ defmodule Bumblebee.Text.Llama do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
-          activation: {"activation_function", atom()},
-          dropout_rate: {"dropout", number()},
-          initializer_scale: {"init_std", number()},
-          layer_norm_epsilon: {"rms_norm_eps", number()},
-          tie_word_embeddings: {"tie_word_embeddings", boolean()}
+          activation: {"hidden_act", atom()},
+          initializer_scale: {"initializer_range", number()},
+          layer_norm_epsilon: {"rms_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
