@@ -31,27 +31,29 @@ defmodule Bumblebee.Text.LlamaTest do
       )
     end
 
-    # test "sequence classification model" do
-    #   assert {:ok, %{model: model, params: params, spec: spec}} =
-    #            Bumblebee.load_model({:hf, "valhalla/bart-large-sst2"})
+    test "sequence classification model" do
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model(
+                 {:hf, "HuggingFaceH4/tiny-random-LlamaForSequenceClassification"}
+               )
 
-    #   assert %Bumblebee.Text.Bart{architecture: :for_sequence_classification} = spec
-    #   input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+      assert %Bumblebee.Text.Llama{architecture: :for_sequence_classification} = spec
+      input_ids = Nx.tensor([[1, 15043, 3186, 825, 29915, 29879, 701]])
 
-    #   inputs = %{
-    #     "input_ids" => input_ids
-    #   }
+      inputs = %{
+        "input_ids" => input_ids
+      }
 
-    #   outputs = Axon.predict(model, params, inputs)
+      outputs = Axon.predict(model, params, inputs)
 
-    #   assert Nx.shape(outputs.logits) == {1, 2}
+      assert Nx.shape(outputs.logits) == {1, 1}
 
-    #   assert_all_close(
-    #     outputs.logits,
-    #     Nx.tensor([[-0.1599, -0.0090]]),
-    #     atol: 1.0e-4
-    #   )
-    # end
+      assert_all_close(
+        outputs.logits,
+        Nx.tensor([[-0.0977]]),
+        atol: 1.0e-4
+      )
+    end
 
     test "causal language model" do
       assert {:ok, %{model: model, params: params, spec: spec}} =

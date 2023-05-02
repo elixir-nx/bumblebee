@@ -10,6 +10,14 @@ defmodule Bumblebee.Text.Llama do
         tokens that can be represented in model input and output
         """
       ],
+      max_positions: [
+        default: 1024,
+        doc: """
+        the vocabulary size of the position embedding. This corresponds to the maximum sequence
+        length that this model can process. Typically this is set to a large value just in case,
+        such as 512, 1024 or 2048
+        """
+      ],
       hidden_size: [
         default: 4096,
         doc: "the dimensionality of hidden layers"
@@ -49,7 +57,7 @@ defmodule Bumblebee.Text.Llama do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ])
+      ]) ++ Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
   Llama model family.
@@ -178,6 +186,44 @@ defmodule Bumblebee.Text.Llama do
 
     Layers.output(%{
       logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions,
+      cache: outputs.cache
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_sequence_classification} = spec) do
+    inputs = inputs(spec)
+
+    outputs = core(inputs, spec)
+
+    logits =
+      Axon.dense(outputs.hidden_state, spec.num_labels,
+        kernel_initializer: kernel_initializer(spec),
+        name: "sequence_classification_head.output"
+      )
+
+    pooled_logits =
+      Layers.if_present inputs["input_ids"] do
+        Axon.layer(
+          fn logits, input_ids, _opts ->
+            indices =
+              input_ids
+              |> Nx.not_equal(spec.pad_token_id)
+              |> Nx.sum(axes: [-1])
+              |> Nx.subtract(1)
+              |> Nx.as_type({:s, 64})
+
+            Bumblebee.Utils.Nx.batched_take(logits, indices)
+          end,
+          [logits, inputs["input_ids"]]
+        )
+      else
+        Layers.take_token(logits, axis: 1, index: -1)
+      end
+
+    Layers.output(%{
+      logits: pooled_logits,
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions,
       cache: outputs.cache
@@ -355,7 +401,8 @@ defmodule Bumblebee.Text.Llama do
         "decoder.blocks.{n}.ffn.up" => "model.layers.{n}.mlp.up_proj",
         "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
         "output_norm" => "model.norm",
-        "language_modeling_head.output" => "lm_head"
+        "language_modeling_head.output" => "lm_head",
+        "sequence_classification_head.output" => "score"
       }
     end
   end
