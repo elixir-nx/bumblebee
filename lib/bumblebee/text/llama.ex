@@ -56,17 +56,17 @@ defmodule Bumblebee.Text.Llama do
       ]) ++ Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
-  Llama model family.
+  LLaMA model family.
 
   ## Architectures
 
-    * `:base` - plain Llama without any head on top
+    * `:base` - plain LLaMA without any head on top
 
-    * `:for_causal_language_modeling` - Llama with a language modeling
+    * `:for_causal_language_modeling` - LLaMA with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - Llama with a sequence
+    * `:for_sequence_classification` - LLaMA with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
