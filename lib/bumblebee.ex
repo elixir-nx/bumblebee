@@ -125,6 +125,9 @@ defmodule Bumblebee do
     "LayoutLMForTokenClassification" =>
       {Bumblebee.Multimodal.LayoutLm, :for_token_classification},
     "LayoutLMModel" => {Bumblebee.Multimodal.LayoutLm, :base},
+    "LlamaModel" => {Bumblebee.Text.Llama, :base},
+    "LlamaForCausalLM" => {Bumblebee.Text.Llama, :for_causal_language_modeling},
+    "LlamaForSequenceClassification" => {Bumblebee.Text.Llama, :for_sequence_classification},
     "MBartForCausalLM" => {Bumblebee.Text.Mbart, :for_causal_language_modeling},
     "MBartForConditionalGeneration" => {Bumblebee.Text.Mbart, :for_conditional_generation},
     "MBartForQuestionAnswering" => {Bumblebee.Text.Mbart, :for_question_answering},
@@ -194,6 +197,7 @@ defmodule Bumblebee do
     "clip" => Bumblebee.Text.ClipTokenizer,
     "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
     "layoutlm" => Bumblebee.Text.LayoutLmTokenizer,
+    "llama" => Bumblebee.Text.LlamaTokenizer,
     "mbart" => Bumblebee.Text.MbartTokenizer,
     "roberta" => Bumblebee.Text.RobertaTokenizer,
     "t5" => Bumblebee.Text.T5Tokenizer,

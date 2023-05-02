@@ -31,7 +31,7 @@ defmodule Bumblebee.MixProject do
   defp deps do
     [
       {:axon, "~> 0.5.0", axon_opts()},
-      {:tokenizers, "~> 0.3.1"},
+      {:tokenizers, "~> 0.3"},
       {:nx, "~> 0.5.0"},
       {:exla, "~> 0.5.0", only: [:dev, :test]},
       {:torchx, "~> 0.5.0", only: [:dev, :test]},
@@ -90,6 +90,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.ClipText,
           Bumblebee.Text.Distilbert,
           Bumblebee.Text.Gpt2,
+          Bumblebee.Text.Llama,
           Bumblebee.Text.Mbart,
           Bumblebee.Text.Roberta,
           Bumblebee.Text.T5,
@@ -111,6 +112,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.DistilbertTokenizer,
           Bumblebee.Text.Gpt2Tokenizer,
           Bumblebee.Text.LayoutLmTokenizer,
+          Bumblebee.Text.LlamaTokenizer,
           Bumblebee.Text.MbartTokenizer,
           Bumblebee.Text.RobertaTokenizer,
           Bumblebee.Text.T5Tokenizer,

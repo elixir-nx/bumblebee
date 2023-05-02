@@ -965,4 +965,51 @@ defmodule Bumblebee.Layers do
 
     x * weight
   end
+
+  @doc """
+  Adds a rotary embedding layer to the network.
+  """
+  def rotary_embedding(query, key, position_ids, size, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, max_positions: 2048, base: 10_000])
+
+    output =
+      Axon.layer(&apply_rotary_embedding/4, [query, key, position_ids], [size: size] ++ opts)
+
+    unwrap_tuple(output, 2)
+  end
+
+  deftransformp create_sinusoidal_positions(max_positions, size, base) do
+    range = Nx.multiply(Nx.iota({div(size, 2)}), 2)
+    inv_frequency = Nx.divide(1.0, Nx.pow(base, range))
+
+    position = Nx.iota({max_positions})
+    angle = Nx.outer(position, inv_frequency)
+
+    angle = Nx.concatenate([angle, angle], axis: -1)
+
+    {Nx.cos(angle), Nx.sin(angle)}
+  end
+
+  defnp apply_rotary_embedding(query, key, position_ids, opts \\ []) do
+    opts = keyword!(opts, [:size, mode: :inference, max_positions: 2048, base: 10_000])
+
+    {cos, sin} = create_sinusoidal_positions(opts[:max_positions], opts[:size], opts[:base])
+
+    position_ids = Nx.as_type(position_ids, :s64)
+
+    cos = cos |> Nx.take(position_ids) |> Nx.new_axis(2)
+    sin = sin |> Nx.take(position_ids) |> Nx.new_axis(2)
+
+    rotated_query = query * cos + rotate_half(query) * sin
+    rotated_key = key * cos + rotate_half(key) * sin
+
+    {rotated_query, rotated_key}
+  end
+
+  defnp rotate_half(x) do
+    size = div(Nx.axis_size(x, -1), 2)
+    x1 = x[[.., .., .., 0..(size - 1)//1]]
+    x2 = x[[.., .., .., size..-1//1]]
+    Nx.concatenate([-x2, x1], axis: -1)
+  end
 end

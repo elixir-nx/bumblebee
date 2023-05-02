@@ -56,7 +56,8 @@ defmodule Bumblebee.Layers.Transformer do
       :layer_norm,
       :norm_placement,
       :output_shortcut,
-      :scale_query?
+      :scale_query?,
+      :rotary_embedding
     ]
 
     opts =
@@ -260,6 +261,15 @@ defmodule Bumblebee.Layers.Transformer do
     * `:scale_query?` - whether to scale query in the traditional style of
       multi-headed attention. Defaults to `true`
 
+    * `:rotary_embedding` - configuration of rotary embedding. If set,
+      will apply rotary position embedding with the given options. Valid
+      options are:
+
+        * `:position_ids` (required) - input position ids used for the
+          embedding
+
+        * `:max_positions` - the maximum number of distinct positions
+
     * `:name` - the prefix for layer names
 
   ## References
@@ -296,7 +306,8 @@ defmodule Bumblebee.Layers.Transformer do
         norm_placement: :last,
         layer_norm: [],
         output_shortcut: true,
-        scale_query?: true
+        scale_query?: true,
+        rotary_embedding: nil
       ])
 
     name = opts[:name]
@@ -324,6 +335,7 @@ defmodule Bumblebee.Layers.Transformer do
     norm_placement = opts[:norm_placement]
     output_shortcut = opts[:output_shortcut]
     scale_query? = opts[:scale_query?]
+    rotary_embedding = opts[:rotary_embedding]
 
     ffn_fun =
       case ffn do
@@ -384,6 +396,7 @@ defmodule Bumblebee.Layers.Transformer do
         value_use_bias: value_use_bias,
         output_use_bias: output_use_bias,
         scale_query?: scale_query?,
+        rotary_embedding: rotary_embedding,
         name: join(name, "self_attention")
       )
 
@@ -424,6 +437,7 @@ defmodule Bumblebee.Layers.Transformer do
               value_use_bias: value_use_bias,
               output_use_bias: output_use_bias,
               scale_query?: scale_query?,
+              rotary_embedding: rotary_embedding,
               name: join(name, "cross_attention")
             )
 
@@ -549,6 +563,15 @@ defmodule Bumblebee.Layers.Transformer do
     * `:output_use_bias` - whether to use bias in the output projection.
       Defaults to `true`
 
+    * `:rotary_embedding` - configuration of rotary embedding. If set,
+      will apply rotary position embedding with the given options. Valid
+      options are:
+
+        * `:position_ids` (required) - input position ids used for the
+          embedding
+
+        * `:max_positions` - the maximum number of distinct positions
+
     * `:name` - the prefix for layer names
 
   ## References
@@ -577,7 +600,8 @@ defmodule Bumblebee.Layers.Transformer do
         query_use_bias: true,
         key_use_bias: true,
         value_use_bias: true,
-        output_use_bias: true
+        output_use_bias: true,
+        rotary_embedding: nil
       ])
 
     attention_mask = opts[:attention_mask]
@@ -592,6 +616,7 @@ defmodule Bumblebee.Layers.Transformer do
     causal? = opts[:causal?]
     scale_query? = opts[:scale_query?]
     dropout_rate = opts[:dropout_rate]
+    rotary_embedding = opts[:rotary_embedding]
 
     query_use_bias = opts[:query_use_bias]
     key_use_bias = opts[:key_use_bias]
@@ -606,6 +631,8 @@ defmodule Bumblebee.Layers.Transformer do
       else
         hidden_size
       end
+
+    head_size = div(hidden_size, num_heads)
 
     query =
       query
@@ -633,6 +660,25 @@ defmodule Bumblebee.Layers.Transformer do
         use_bias: value_use_bias
       )
       |> Layers.split_heads(num_heads)
+
+    {query, key} =
+      case rotary_embedding do
+        opts when is_list(opts) ->
+          validate_required_keys!(opts, [:position_ids])
+          opts = Keyword.validate!(opts, [:position_ids, :max_positions])
+          {position_ids, opts} = Keyword.pop(opts, :position_ids)
+
+          Layers.rotary_embedding(
+            query,
+            key,
+            position_ids,
+            head_size,
+            [name: join(name, "rotary_embedding")] ++ opts
+          )
+
+        nil ->
+          {query, key}
+      end
 
     {key, value, attention_cache} =
       Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset)
