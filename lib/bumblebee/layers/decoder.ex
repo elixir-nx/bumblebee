@@ -59,14 +59,14 @@ defmodule Bumblebee.Layers.Decoder do
     decoder_head_size =
       opts[:attention_head_size] || div(hidden_size, decoder_num_attention_heads)
 
-    encoder_head_size =
-      opts[:attention_head_size] || div(hidden_size, encoder_num_attention_heads)
-
     self_attention =
       attention_cache(batch_size, max_length, decoder_num_attention_heads, decoder_head_size)
 
     cross_attention =
       if encoder_sequence_length do
+        encoder_head_size =
+          opts[:attention_head_size] || div(hidden_size, encoder_num_attention_heads)
+
         attention_cache(
           batch_size,
           encoder_sequence_length,

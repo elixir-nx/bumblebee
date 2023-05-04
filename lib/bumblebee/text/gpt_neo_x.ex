@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.Llama do
+defmodule Bumblebee.Text.GptNeoX do
   alias Bumblebee.Shared
 
   options =
@@ -8,14 +8,6 @@ defmodule Bumblebee.Text.Llama do
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
-        """
-      ],
-      max_positions: [
-        default: 1024,
-        doc: """
-        the vocabulary size of the position embedding. This corresponds to the maximum sequence
-        length that this model can process. Typically this is set to a large value just in case,
-        such as 512, 1024 or 2048
         """
       ],
       hidden_size: [
@@ -38,6 +30,18 @@ defmodule Bumblebee.Text.Llama do
         default: :silu,
         doc: "the activation function"
       ],
+      rotary_embedding_percentage: [
+        default: 0.25,
+        doc: "percentage of hidden dimensions to allocate to rotary embeddings"
+      ],
+      rotary_embedding_base: [
+        default: 10_000,
+        doc: "base for computing rotary embedding frequency"
+      ],
+      classifier_dropout_rate: [
+        default: 0.1,
+        doc: "the dropout rate for the classification head"
+      ],
       layer_norm_epsilon: [
         default: 1.0e-12,
         doc: "the epsilon used by RMS normalization layers"
@@ -46,6 +50,11 @@ defmodule Bumblebee.Text.Llama do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ],
+      use_parallel_transformer_block: [
+        default: true,
+        doc:
+          "whether to use the parallel formulation of the Transformer block, where attention and FFN is computed independently"
       ]
     ] ++
       Shared.common_options([
@@ -53,22 +62,26 @@ defmodule Bumblebee.Text.Llama do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++ Shared.token_options(pad_token_id: 0)
+      ]) ++ Shared.token_options(pad_token_id: nil)
 
   @moduledoc """
-  LLaMA model family.
+  GPT-NeoX model family.
 
   ## Architectures
 
-    * `:base` - plain LLaMA without any head on top
+    * `:base` - plain GPT-NeoX without any head on top
 
-    * `:for_causal_language_modeling` - LLaMA with a language modeling
+    * `:for_causal_language_modeling` - GPT-NeoX with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - LLaMA with a sequence
+    * `:for_sequence_classification` - GPT-NeoX with a sequence
       classification head. The head returns logits corresponding to
       possible classes
+
+    * `:for_token_classification` - GPT-NeoX with a token classification
+      head. The head returns logits for each token in the original
+      sequence
 
   ## Inputs
 
@@ -127,7 +140,8 @@ defmodule Bumblebee.Text.Llama do
     do: [
       :base,
       :for_causal_language_modeling,
-      :for_sequence_classification
+      :for_sequence_classification,
+      :for_token_classification
     ]
 
   @impl true
@@ -219,6 +233,30 @@ defmodule Bumblebee.Text.Llama do
     })
   end
 
+  def model(%__MODULE__{architecture: :for_token_classification} = spec) do
+    inputs = inputs(spec)
+
+    outputs = core(inputs, spec)
+
+    logits =
+      outputs.hidden_state
+      |> Axon.dropout(
+        rate: spec.classifier_dropout_rate,
+        name: "token_classification_head.dropout"
+      )
+      |> Axon.dense(spec.num_labels,
+        kernel_initializer: kernel_initializer(spec),
+        name: "token_classification_head.output"
+      )
+
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions,
+      cache: outputs.cache
+    })
+  end
+
   defp inputs(spec) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, spec.hidden_size}
@@ -261,7 +299,7 @@ defmodule Bumblebee.Text.Llama do
       )
 
     hidden_state =
-      Layers.rms_norm(decoder_outputs.hidden_state,
+      Axon.layer_norm(decoder_outputs.hidden_state,
         name: "output_norm",
         epsilon: spec.layer_norm_epsilon
       )
@@ -304,40 +342,27 @@ defmodule Bumblebee.Text.Llama do
       num_attention_heads: spec.num_attention_heads,
       hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
-      layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
-      ffn:
-        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
-          name: &2,
-          activation: spec.activation
-        ),
-      block_type: :norm_first,
+      layer_norm: [
+        epsilon: spec.layer_norm_epsilon
+      ],
+      ffn: [
+        intermediate_size: spec.intermediate_size
+      ],
+      block_type: if(spec.use_parallel_transformer_block, do: :parallel, else: :norm_first),
       causal?: true,
-      rotary_embedding: [position_ids: position_ids, max_positions: spec.max_positions],
-      query_use_bias: false,
-      key_use_bias: false,
-      value_use_bias: false,
-      output_use_bias: false,
+      rotary_embedding: [
+        position_ids: position_ids,
+        percentage: spec.rotary_embedding_percentage,
+        base: spec.rotary_embedding_base
+      ],
+      query_use_bias: true,
+      key_use_bias: true,
+      value_use_bias: true,
+      output_use_bias: true,
       output_hidden_states: spec.output_hidden_states,
       output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
-  end
-
-  defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
-    name = opts[:name]
-    activation = opts[:activation]
-
-    intermediate =
-      Axon.dense(hidden_state, intermediate_size,
-        name: join(name, "intermediate"),
-        use_bias: false
-      )
-
-    gate = Axon.dense(hidden_state, intermediate_size, name: join(name, "gate"), use_bias: false)
-
-    hidden_state = Axon.multiply(intermediate, Axon.activation(gate, activation))
-
-    Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do
@@ -361,14 +386,18 @@ defmodule Bumblebee.Text.Llama do
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
-          max_positions: {"max_position_embeddings", number()},
+          max_positions: {"max_positions", number()},
           hidden_size: {"hidden_size", number()},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", atom()},
-          initializer_scale: {"initializer_range", number()},
-          layer_norm_epsilon: {"rms_norm_eps", number()}
+          rotary_embedding_percentage: {"rotary_pct", number()},
+          rotary_embedding_base: {"rotary_emb_base", number()},
+          classifier_dropout_rate: {"classifier_dropout", number()},
+          layer_norm_epsilon: {"layer_norm_eps", number()},
+          initializer_scale: {"init_std", number()},
+          use_parallel_transformer_block: {"use_parallel_residual", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -376,23 +405,69 @@ defmodule Bumblebee.Text.Llama do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(_spec) do
+    def params_mapping(spec) do
       %{
-        "embedder.token_embedding" => "model.embed_tokens",
-        "decoder.blocks.{n}.self_attention.query" => "model.layers.{n}.self_attn.q_proj",
-        "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
-        "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
-        "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.o_proj",
-        "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
+        "embedder.token_embedding" => "gpt_neox.embed_in",
+        "decoder.blocks.{n}.self_attention.query" =>
+          sliced_dense(
+            "gpt_neox.layers.{n}.attention.query_key_value",
+            0,
+            spec.num_attention_heads,
+            spec.hidden_size
+          ),
+        "decoder.blocks.{n}.self_attention.key" =>
+          sliced_dense(
+            "gpt_neox.layers.{n}.attention.query_key_value",
+            1,
+            spec.num_attention_heads,
+            spec.hidden_size
+          ),
+        "decoder.blocks.{n}.self_attention.value" =>
+          sliced_dense(
+            "gpt_neox.layers.{n}.attention.query_key_value",
+            2,
+            spec.num_attention_heads,
+            spec.hidden_size
+          ),
+        "decoder.blocks.{n}.self_attention.output" => "gpt_neox.layers.{n}.attention.dense",
+        "decoder.blocks.{n}.self_attention_norm" => "gpt_neox.layers.{n}.input_layernorm",
         "decoder.blocks.{n}.self_attention.rotary_embedding" =>
-          "model.layers.{n}.self_attn.rotary_emb",
-        "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
-        "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.up_proj",
-        "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",
-        "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
-        "output_norm" => "model.norm",
-        "language_modeling_head.output" => "lm_head",
-        "sequence_classification_head.output" => "score"
+          "gpt_neox.layers.{n}.self_attn.rotary_emb",
+        "decoder.blocks.{n}.ffn.intermediate" => "gpt_neox.layers.{n}.mlp.dense_h_to_4h",
+        "decoder.blocks.{n}.ffn.output" => "gpt_neox.layers.{n}.mlp.dense_4h_to_h",
+        "decoder.blocks.{n}.output_norm" => "gpt_neox.layers.{n}.post_attention_layernorm",
+        "output_norm" => "gpt_neox.final_layer_norm",
+        "language_modeling_head.output" => "embed_out",
+        "sequence_classification_head.output" => "score",
+        "token_classification_head.output" => "classifier"
+      }
+    end
+
+    defp sliced_dense(source_layer_name, idx, num_attention_heads, hidden_size) do
+      %{
+        "kernel" => {
+          [{source_layer_name, "weight"}],
+          fn [kernel] ->
+            # Slice units
+            head_size = div(hidden_size, num_attention_heads)
+            kernel = Nx.reshape(kernel, {num_attention_heads, 3, head_size, :auto})
+            kernel = kernel[[.., idx, .., ..]] |> Nx.flatten(axes: [0, 1])
+
+            # Transpose the kernel
+            [out_features, in_features] = Nx.axes(kernel)
+            Nx.transpose(kernel, axes: [in_features, out_features])
+          end
+        },
+        "bias" => {
+          [{source_layer_name, "bias"}],
+          fn [bias] ->
+            head_size = div(hidden_size, num_attention_heads)
+            bias = Nx.reshape(bias, {num_attention_heads, 3, head_size})
+            bias = bias[[.., idx, ..]] |> Nx.flatten()
+
+            bias
+          end
+        }
       }
     end
   end

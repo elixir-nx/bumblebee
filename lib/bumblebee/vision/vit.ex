@@ -268,11 +268,11 @@ defmodule Bumblebee.Vision.Vit do
       layer_norm: [
         epsilon: spec.layer_norm_epsilon
       ],
-      norm_placement: :first,
       ffn: [
         intermediate_size: spec.intermediate_size,
         activation: spec.activation
       ],
+      block_type: :norm_first,
       output_hidden_states: spec.output_hidden_states,
       output_attentions: spec.output_attentions,
       name: join(name, "blocks")

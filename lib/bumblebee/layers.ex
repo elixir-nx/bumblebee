@@ -979,7 +979,7 @@ defmodule Bumblebee.Layers do
   end
 
   deftransformp create_sinusoidal_positions(max_positions, size, base) do
-    range = Nx.multiply(Nx.iota({div(size, 2)}), 2)
+    range = Nx.iota({div(size, 2)}) |> Nx.multiply(2) |> Nx.divide(size)
     inv_frequency = Nx.divide(1.0, Nx.pow(base, range))
 
     position = Nx.iota({max_positions})

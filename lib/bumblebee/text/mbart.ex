@@ -528,7 +528,7 @@ defmodule Bumblebee.Text.Mbart do
         layer_norm: [
           epsilon: 1.0e-5
         ],
-        norm_placement: :first,
+        block_type: :norm_first,
         ffn: [
           intermediate_size: spec.encoder_intermediate_size,
           activation: spec.activation
@@ -626,7 +626,7 @@ defmodule Bumblebee.Text.Mbart do
         layer_norm: [
           epsilon: 1.0e-5
         ],
-        norm_placement: :first,
+        block_type: :norm_first,
         ffn: [
           intermediate_size: spec.decoder_intermediate_size,
           activation: spec.activation
