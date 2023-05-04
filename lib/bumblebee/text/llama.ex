@@ -53,7 +53,7 @@ defmodule Bumblebee.Text.Llama do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++ Shared.token_options(pad_token_id: nil)
+      ]) ++ Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
   LLaMA model family.
@@ -106,13 +106,6 @@ defmodule Bumblebee.Text.Llama do
       taken from the cache, rather than recomputed on every decoding
       pass. The cache should be treated as opaque and initialized with
       `Bumblebee.Text.Generation.init_cache/4`.
-
-  ### Exceptions
-
-  The `:for_causal_language_modeling` model is just the decoder part and
-  accepts the following inputs instead: `"input_ids"`, `"attention_mask"`,
-  `"position_ids"`, `"attention_head_mask"`, `"input_embeddings"`, `"encoder_hidden_state"`,
-  `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache"`.
 
   ## Configuration
 

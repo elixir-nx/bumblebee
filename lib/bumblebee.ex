@@ -199,6 +199,7 @@ defmodule Bumblebee do
     "distilbert" => Bumblebee.Text.DistilbertTokenizer,
     "camembert" => Bumblebee.Text.CamembertTokenizer,
     "clip" => Bumblebee.Text.ClipTokenizer,
+    "gpt_neox" => Bumblebee.Text.GptNeoXTokenizer,
     "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
     "layoutlm" => Bumblebee.Text.LayoutLmTokenizer,
     "llama" => Bumblebee.Text.LlamaTokenizer,
