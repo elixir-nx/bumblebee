@@ -47,7 +47,7 @@ defmodule Bumblebee.Utils.Axon do
         {fun.(left, right), right_leaves}
 
       {left, right} ->
-        {do_zip_with(left, right, fun), right_leaves}
+        {container_zip_with(left, right, fun), right_leaves}
     end
   end
 

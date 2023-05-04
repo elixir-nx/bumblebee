@@ -323,8 +323,8 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
         epsilon: 1.0e-5
       ],
       dropout_rate: dropout,
-      norm_placement: :first,
       ffn: &ffn_geglu(&1, hidden_size, dropout: dropout, name: &2),
+      block_type: :norm_first,
       name: join(name, "blocks")
     )
     |> then(fn %{hidden_state: hidden_state} ->

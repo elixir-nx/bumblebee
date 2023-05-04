@@ -54,8 +54,7 @@ defmodule Bumblebee.Layers.Transformer do
       :value_use_bias,
       :output_use_bias,
       :layer_norm,
-      :norm_placement,
-      :output_shortcut,
+      :block_type,
       :scale_query?,
       :rotary_embedding
     ]
@@ -254,9 +253,16 @@ defmodule Bumblebee.Layers.Transformer do
       should add a normalization node to the given Axon node. The function
       also receives layer name prefix as the second argument.
 
-    * `:norm_placement` - controls whether normalization layers should
-      be placed before each group of layers (:first) or after each group
-      of layers (:last). Defaults to `:last`
+    * `:block_type` - controls which configuration of the block to use,
+      one of:
+
+        * `:standard` (default) - the original transformer block
+
+        * `:norm_first` - same as `:standard`, but with normalization layers
+          placed before each group of layers, rather than after
+
+        * `:parallel` - block with attention and FFN independently (in parallel).
+          This type doesn't support cross-attention
 
     * `:scale_query?` - whether to scale query in the traditional style of
       multi-headed attention. Defaults to `true`
@@ -309,9 +315,8 @@ defmodule Bumblebee.Layers.Transformer do
         key_use_bias: true,
         value_use_bias: true,
         output_use_bias: true,
-        norm_placement: :last,
+        block_type: :standard,
         layer_norm: [],
-        output_shortcut: true,
         scale_query?: true,
         rotary_embedding: nil
       ])
@@ -338,8 +343,7 @@ defmodule Bumblebee.Layers.Transformer do
     block_cache = opts[:block_cache]
     offset = opts[:offset]
     layer_norm = opts[:layer_norm]
-    norm_placement = opts[:norm_placement]
-    output_shortcut = opts[:output_shortcut]
+    block_type = opts[:block_type]
     scale_query? = opts[:scale_query?]
     rotary_embedding = opts[:rotary_embedding]
 
@@ -376,109 +380,101 @@ defmodule Bumblebee.Layers.Transformer do
 
     # Self-attention, shortcut connection, normalization and dropout
 
-    shortcut = hidden_state
+    self_attention_norm = &layer_norm_fun.(&1, join(name, "self_attention_norm"))
 
-    hidden_state =
-      hidden_state
-      |> maybe(norm_placement == :first, fn hidden_state ->
-        layer_norm_fun.(hidden_state, join(name, "self_attention_norm"))
-      end)
+    self_attention = fn hidden_state ->
+      {hidden_state, attention, self_attention_cache, attention_relative_bias} =
+        multi_head_attention(hidden_state, hidden_state, hidden_state,
+          attention_mask: attention_mask,
+          attention_head_mask: attention_head_mask,
+          attention_relative_bias: attention_relative_bias,
+          attention_cache: self_attention_cache,
+          offset: offset,
+          causal?: causal?,
+          num_heads: num_attention_heads,
+          hidden_size: hidden_size,
+          kernel_initializer: kernel_initializer,
+          attention_head_size: attention_head_size,
+          dropout_rate: attention_dropout_rate,
+          query_use_bias: query_use_bias,
+          key_use_bias: key_use_bias,
+          value_use_bias: value_use_bias,
+          output_use_bias: output_use_bias,
+          scale_query?: scale_query?,
+          rotary_embedding: rotary_embedding,
+          name: join(name, "self_attention")
+        )
 
-    {hidden_state, attention, self_attention_cache, attention_relative_bias} =
-      multi_head_attention(hidden_state, hidden_state, hidden_state,
-        attention_mask: attention_mask,
-        attention_head_mask: attention_head_mask,
-        attention_relative_bias: attention_relative_bias,
-        attention_cache: self_attention_cache,
-        offset: offset,
-        causal?: causal?,
-        num_heads: num_attention_heads,
-        hidden_size: hidden_size,
-        kernel_initializer: kernel_initializer,
-        attention_head_size: attention_head_size,
-        dropout_rate: attention_dropout_rate,
-        query_use_bias: query_use_bias,
-        key_use_bias: key_use_bias,
-        value_use_bias: value_use_bias,
-        output_use_bias: output_use_bias,
-        scale_query?: scale_query?,
-        rotary_embedding: rotary_embedding,
-        name: join(name, "self_attention")
-      )
+      hidden_state =
+        Axon.dropout(hidden_state, rate: dropout_rate, name: join(name, "self_attention_dropout"))
 
-    hidden_state =
-      hidden_state
-      |> Axon.dropout(rate: dropout_rate, name: join(name, "self_attention_dropout"))
-      |> Axon.add(shortcut)
-      |> maybe(norm_placement == :last, fn hidden_state ->
-        layer_norm_fun.(hidden_state, join(name, "self_attention_norm"))
-      end)
+      {hidden_state, {attention, self_attention_cache, attention_relative_bias}}
+    end
 
     # Cross-attention, shortcut connection, normalization and dropout
 
-    {hidden_state, cross_attention, cross_attention_cache} =
+    cross_attention_maybe = fn hidden_state, fun ->
       if cross_hidden_state do
         Layers.if_present cross_hidden_state do
-          shortcut = hidden_state
-
-          hidden_state =
-            hidden_state
-            |> maybe(norm_placement == :first, fn hidden_state ->
-              layer_norm_fun.(hidden_state, join(name, "cross_attention_norm"))
-            end)
-
-          {hidden_state, cross_attention, cross_attention_cache, _cross_attention_relative_bias} =
-            multi_head_attention(hidden_state, cross_hidden_state, cross_hidden_state,
-              attention_mask: cross_attention_mask,
-              attention_head_mask: cross_attention_head_mask,
-              attention_cache: cross_attention_cache,
-              offset: offset,
-              num_heads: num_attention_heads,
-              hidden_size: hidden_size,
-              kernel_initializer: kernel_initializer,
-              attention_head_size: attention_head_size,
-              dropout_rate: attention_dropout_rate,
-              query_use_bias: query_use_bias,
-              key_use_bias: key_use_bias,
-              value_use_bias: value_use_bias,
-              output_use_bias: output_use_bias,
-              scale_query?: scale_query?,
-              rotary_embedding: rotary_embedding,
-              name: join(name, "cross_attention")
-            )
-
-          hidden_state =
-            hidden_state
-            |> Axon.dropout(rate: dropout_rate, name: join(name, "cross_attention_dropout"))
-            |> Axon.add(shortcut)
-            |> maybe(norm_placement == :last, fn hidden_state ->
-              layer_norm_fun.(hidden_state, join(name, "cross_attention_norm"))
-            end)
-
-          {hidden_state, cross_attention, cross_attention_cache}
+          fun.(hidden_state)
         else
-          {hidden_state, Layers.none(), cross_attention_cache}
+          {hidden_state, {Layers.none(), cross_attention_cache}}
         end
       else
-        {hidden_state, Layers.none(), cross_attention_cache}
+        {hidden_state, {Layers.none(), cross_attention_cache}}
       end
+    end
+
+    cross_attention_norm = &layer_norm_fun.(&1, join(name, "cross_attention_norm"))
+
+    cross_attention = fn hidden_state ->
+      {hidden_state, cross_attention, cross_attention_cache, _cross_attention_relative_bias} =
+        multi_head_attention(hidden_state, cross_hidden_state, cross_hidden_state,
+          attention_mask: cross_attention_mask,
+          attention_head_mask: cross_attention_head_mask,
+          attention_cache: cross_attention_cache,
+          offset: offset,
+          num_heads: num_attention_heads,
+          hidden_size: hidden_size,
+          kernel_initializer: kernel_initializer,
+          attention_head_size: attention_head_size,
+          dropout_rate: attention_dropout_rate,
+          query_use_bias: query_use_bias,
+          key_use_bias: key_use_bias,
+          value_use_bias: value_use_bias,
+          output_use_bias: output_use_bias,
+          scale_query?: scale_query?,
+          rotary_embedding: rotary_embedding,
+          name: join(name, "cross_attention")
+        )
+
+      hidden_state =
+        Axon.dropout(hidden_state, rate: dropout_rate, name: join(name, "cross_attention_dropout"))
+
+      {hidden_state, {cross_attention, cross_attention_cache}}
+    end
 
     # Output feed-forward network, shortcut connection, normalization and dropout
 
-    shortcut = hidden_state
+    output_norm = &layer_norm_fun.(&1, join(name, "output_norm"))
 
-    hidden_state =
-      hidden_state
-      |> maybe(norm_placement == :first, fn hidden_state ->
-        layer_norm_fun.(hidden_state, join(name, "output_norm"))
-      end)
-      |> ffn_fun.(join(name, "ffn"))
-      |> maybe(output_shortcut, fn hidden_state ->
-        Axon.add(hidden_state, shortcut)
-      end)
-      |> maybe(norm_placement == :last, fn hidden_state ->
-        layer_norm_fun.(hidden_state, join(name, "output_norm"))
-      end)
+    ffn = &ffn_fun.(&1, join(name, "ffn"))
+
+    {hidden_state, attention_info, cross_attention_info} =
+      block_impl(
+        block_type,
+        hidden_state,
+        self_attention_norm,
+        self_attention,
+        cross_attention_maybe,
+        cross_attention_norm,
+        cross_attention,
+        output_norm,
+        ffn
+      )
+
+    {attention, self_attention_cache, attention_relative_bias} = attention_info
+    {cross_attention, cross_attention_cache} = cross_attention_info
 
     block_cache =
       Layers.Decoder.put_attention_caches(
@@ -488,6 +484,129 @@ defmodule Bumblebee.Layers.Transformer do
       )
 
     {hidden_state, attention, cross_attention, block_cache, attention_relative_bias}
+  end
+
+  defp block_impl(
+         :standard,
+         hidden_state,
+         self_attention_norm,
+         self_attention,
+         cross_attention_maybe,
+         cross_attention_norm,
+         cross_attention,
+         output_norm,
+         ffn
+       ) do
+    shortcut = hidden_state
+
+    {hidden_state, attention_info} = self_attention.(hidden_state)
+
+    hidden_state =
+      hidden_state
+      |> Axon.add(shortcut)
+      |> self_attention_norm.()
+
+    {hidden_state, cross_attention_info} =
+      cross_attention_maybe.(hidden_state, fn hidden_state ->
+        shortcut = hidden_state
+
+        {hidden_state, cross_attention_info} = cross_attention.(hidden_state)
+
+        hidden_state =
+          hidden_state
+          |> Axon.add(shortcut)
+          |> cross_attention_norm.()
+
+        {hidden_state, cross_attention_info}
+      end)
+
+    shortcut = hidden_state
+
+    hidden_state =
+      hidden_state
+      |> ffn.()
+      |> Axon.add(shortcut)
+      |> output_norm.()
+
+    {hidden_state, attention_info, cross_attention_info}
+  end
+
+  defp block_impl(
+         :norm_first,
+         hidden_state,
+         self_attention_norm,
+         self_attention,
+         cross_attention_maybe,
+         cross_attention_norm,
+         cross_attention,
+         output_norm,
+         ffn
+       ) do
+    shortcut = hidden_state
+
+    {hidden_state, attention_info} =
+      hidden_state
+      |> self_attention_norm.()
+      |> self_attention.()
+
+    hidden_state = Axon.add(hidden_state, shortcut)
+
+    {hidden_state, cross_attention_info} =
+      cross_attention_maybe.(hidden_state, fn hidden_state ->
+        shortcut = hidden_state
+
+        {hidden_state, cross_attention_info} =
+          hidden_state
+          |> cross_attention_norm.()
+          |> cross_attention.()
+
+        hidden_state = Axon.add(hidden_state, shortcut)
+
+        {hidden_state, cross_attention_info}
+      end)
+
+    shortcut = hidden_state
+
+    hidden_state =
+      hidden_state
+      |> output_norm.()
+      |> ffn.()
+      |> Axon.add(shortcut)
+
+    {hidden_state, attention_info, cross_attention_info}
+  end
+
+  defp block_impl(
+         :parallel,
+         hidden_state,
+         self_attention_norm,
+         self_attention,
+         cross_attention_maybe,
+         _cross_attention_norm,
+         _cross_attention,
+         output_norm,
+         ffn
+       ) do
+    shortcut = hidden_state
+
+    {attention_hidden_state, attention_info} =
+      hidden_state
+      |> self_attention_norm.()
+      |> self_attention.()
+
+    {_hidden_state, cross_attention_info} =
+      cross_attention_maybe.(hidden_state, fn _hidden_state ->
+        raise "cross attention not supported"
+      end)
+
+    ffn_hidden_state =
+      hidden_state
+      |> output_norm.()
+      |> ffn.()
+
+    hidden_state = Axon.add([shortcut, attention_hidden_state, ffn_hidden_state])
+
+    {hidden_state, attention_info, cross_attention_info}
   end
 
   defp basic_ffn(x, intermediate_size, output_size, opts) do
@@ -758,9 +877,6 @@ defmodule Bumblebee.Layers.Transformer do
 
     {attention_output, attention_weights, attention_cache, attention_relative_bias}
   end
-
-  defp maybe(term, false, _fun), do: term
-  defp maybe(term, true, fun), do: fun.(term)
 
   defp validate_required_keys!(opts, keys) do
     case keys -- Keyword.keys(opts) do

@@ -312,12 +312,12 @@ defmodule Bumblebee.Text.Llama do
       hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
       layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
-      norm_placement: :first,
       ffn:
         &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
           name: &2,
           activation: spec.activation
         ),
+      block_type: :norm_first,
       causal?: true,
       rotary_embedding: [position_ids: position_ids, max_positions: spec.max_positions],
       query_use_bias: false,

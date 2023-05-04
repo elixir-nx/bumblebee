@@ -281,10 +281,10 @@ defmodule Bumblebee.Text.GptNeoX do
       layer_norm: [
         epsilon: spec.layer_norm_epsilon
       ],
-      norm_placement: :first,
       ffn: [
         intermediate_size: spec.intermediate_size
       ],
+      block_type: :parallel,
       causal?: true,
       rotary_embedding: [
         position_ids: position_ids,

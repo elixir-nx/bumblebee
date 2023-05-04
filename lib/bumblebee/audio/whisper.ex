@@ -428,11 +428,11 @@ defmodule Bumblebee.Audio.Whisper do
         layer_norm: [
           epsilon: 1.0e-5
         ],
-        norm_placement: :first,
         ffn: [
           intermediate_size: spec.encoder_intermediate_size,
           activation: spec.activation
         ],
+        block_type: :norm_first,
         output_hidden_states: spec.output_hidden_states,
         output_attentions: spec.output_attentions,
         name: join(name, "blocks")
@@ -477,11 +477,11 @@ defmodule Bumblebee.Audio.Whisper do
         layer_norm: [
           epsilon: 1.0e-5
         ],
-        norm_placement: :first,
         ffn: [
           intermediate_size: spec.decoder_intermediate_size,
           activation: spec.activation
         ],
+        block_type: :norm_first,
         output_hidden_states: spec.output_hidden_states,
         output_attentions: spec.output_attentions,
         name: join(name, "blocks")

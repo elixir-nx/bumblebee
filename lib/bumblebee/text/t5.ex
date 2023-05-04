@@ -395,8 +395,8 @@ defmodule Bumblebee.Text.T5 do
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.dropout_rate,
         layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
-        norm_placement: :first,
         ffn: &ffn(&1, spec, name: &2),
+        block_type: :norm_first,
         attention_head_size: spec.attention_head_size,
         output_hidden_states: spec.output_hidden_states,
         output_attentions: spec.output_attentions,
@@ -411,7 +411,6 @@ defmodule Bumblebee.Text.T5 do
         ],
         share_attention_relative_bias: true,
         scale_query?: false,
-        output_shortcut: false,
         name: join(name, "blocks")
       )
 
@@ -456,8 +455,8 @@ defmodule Bumblebee.Text.T5 do
         dropout_rate: spec.dropout_rate,
         attention_head_size: spec.attention_head_size,
         layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
-        norm_placement: :first,
         ffn: &ffn(&1, spec, name: &2),
+        block_type: :norm_first,
         output_hidden_states: spec.output_hidden_states,
         output_attentions: spec.output_attentions,
         query_use_bias: false,
@@ -471,7 +470,6 @@ defmodule Bumblebee.Text.T5 do
         ],
         share_attention_relative_bias: true,
         scale_query?: false,
-        output_shortcut: false,
         name: join(name, "blocks")
       )
 
@@ -491,10 +489,6 @@ defmodule Bumblebee.Text.T5 do
 
   defp ffn(hidden_state, spec, opts) do
     name = opts[:name]
-
-    # There ia a normalization layer before the FFN, but the shortcut
-    # connection uses the prior state
-    shortcut = parent(hidden_state)
 
     intermediate =
       Axon.dense(hidden_state, spec.intermediate_size,
@@ -519,13 +513,6 @@ defmodule Bumblebee.Text.T5 do
     |> Axon.dropout(rate: spec.dropout_rate)
     |> Axon.dense(spec.hidden_size, name: join(name, "output"), use_bias: false)
     |> Axon.dropout(rate: spec.dropout_rate)
-    |> Axon.add(shortcut)
-  end
-
-  defp parent(%Axon{nodes: nodes, output: id} = axon) do
-    # TODO: use Axon.pop_node once we update Axon
-    {%{parent: [parent_id]}, nodes} = Map.pop!(nodes, id)
-    %{axon | nodes: nodes, output: parent_id}
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do
