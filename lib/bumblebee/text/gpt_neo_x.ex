@@ -50,6 +50,11 @@ defmodule Bumblebee.Text.GptNeoX do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ],
+      use_parallel_transformer_block: [
+        default: true,
+        doc:
+          "whether to use the parallel formulation of the Transformer block, where attention and FFN is computed independently"
       ]
     ] ++
       Shared.common_options([
@@ -343,7 +348,7 @@ defmodule Bumblebee.Text.GptNeoX do
       ffn: [
         intermediate_size: spec.intermediate_size
       ],
-      block_type: :parallel,
+      block_type: if(spec.use_parallel_transformer_block, do: :parallel, else: :norm_first),
       causal?: true,
       rotary_embedding: [
         position_ids: position_ids,
@@ -391,7 +396,8 @@ defmodule Bumblebee.Text.GptNeoX do
           rotary_embedding_base: {"rotary_emb_base", number()},
           classifier_dropout_rate: {"classifier_dropout", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()},
-          initializer_scale: {"init_std", number()}
+          initializer_scale: {"init_std", number()},
+          use_parallel_transformer_block: {"use_parallel_residual", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
