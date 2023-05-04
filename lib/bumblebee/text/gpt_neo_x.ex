@@ -38,6 +38,10 @@ defmodule Bumblebee.Text.GptNeoX do
         default: 10_000,
         doc: "base for computing rotary embedding frequency"
       ],
+      classifier_dropout_rate: [
+        default: 0.1,
+        doc: "the dropout rate for the classification head"
+      ],
       layer_norm_epsilon: [
         default: 1.0e-12,
         doc: "the epsilon used by RMS normalization layers"
@@ -74,6 +78,10 @@ defmodule Bumblebee.Text.GptNeoX do
     * `:for_sequence_classification` - GPT-NeoX with a sequence
       classification head. The head returns logits corresponding to
       possible classes
+
+    * `:for_token_classification` - GPT-NeoX with a token classification
+      head. The head returns logits for each token in the original
+      sequence
 
   ## Inputs
 
@@ -139,7 +147,8 @@ defmodule Bumblebee.Text.GptNeoX do
     do: [
       :base,
       :for_causal_language_modeling,
-      :for_sequence_classification
+      :for_sequence_classification,
+      :for_token_classification
     ]
 
   @impl true
@@ -184,6 +193,68 @@ defmodule Bumblebee.Text.GptNeoX do
 
     outputs = core(inputs, spec)
     logits = language_modeling_head(outputs.hidden_state, spec, name: "language_modeling_head")
+
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions,
+      cache: outputs.cache
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_sequence_classification} = spec) do
+    inputs = inputs(spec)
+
+    outputs = core(inputs, spec)
+
+    logits =
+      Axon.dense(outputs.hidden_state, spec.num_labels,
+        kernel_initializer: kernel_initializer(spec),
+        name: "sequence_classification_head.output"
+      )
+
+    pooled_logits =
+      Layers.if_present inputs["input_ids"] do
+        Axon.layer(
+          fn logits, input_ids, _opts ->
+            indices =
+              input_ids
+              |> Nx.not_equal(spec.pad_token_id)
+              |> Nx.sum(axes: [-1])
+              |> Nx.subtract(1)
+              |> Nx.as_type({:s, 64})
+
+            Bumblebee.Utils.Nx.batched_take(logits, indices)
+          end,
+          [logits, inputs["input_ids"]]
+        )
+      else
+        Layers.take_token(logits, axis: 1, index: -1)
+      end
+
+    Layers.output(%{
+      logits: pooled_logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions,
+      cache: outputs.cache
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_token_classification} = spec) do
+    inputs = inputs(spec)
+
+    outputs = core(inputs, spec)
+
+    logits =
+      outputs.hidden_state
+      |> Axon.dropout(
+        rate: spec.classifier_dropout_rate,
+        name: "token_classification_head.dropout"
+      )
+      |> Axon.dense(spec.num_labels,
+        kernel_initializer: kernel_initializer(spec),
+        name: "token_classification_head.output"
+      )
 
     Layers.output(%{
       logits: logits,
@@ -330,9 +401,9 @@ defmodule Bumblebee.Text.GptNeoX do
           activation: {"hidden_act", atom()},
           rotary_embedding_percentage: {"rotary_pct", number()},
           rotary_embedding_base: {"rotary_emb_base", number()},
-          dropout_rate: {"dropout", number()},
-          initializer_scale: {"init_std", number()},
-          layer_norm_epsilon: {"layer_norm_eps", number()}
+          classifier_dropout_rate: {"classifier_dropout", number()},
+          layer_norm_epsilon: {"layer_norm_eps", number()},
+          initializer_scale: {"init_std", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -372,7 +443,9 @@ defmodule Bumblebee.Text.GptNeoX do
         "decoder.blocks.{n}.ffn.output" => "gpt_neox.layers.{n}.mlp.dense_4h_to_h",
         "decoder.blocks.{n}.output_norm" => "gpt_neox.layers.{n}.post_attention_layernorm",
         "output_norm" => "gpt_neox.final_layer_norm",
-        "language_modeling_head.output" => "embed_out"
+        "language_modeling_head.output" => "embed_out",
+        "sequence_classification_head.output" => "score",
+        "token_classification_head.output" => "classifier"
       }
     end
 

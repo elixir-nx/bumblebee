@@ -53,7 +53,7 @@ defmodule Bumblebee.Text.Llama do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++ Shared.token_options(pad_token_id: 0)
+      ]) ++ Shared.token_options(pad_token_id: nil)
 
   @moduledoc """
   LLaMA model family.

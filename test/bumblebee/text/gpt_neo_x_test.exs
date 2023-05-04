@@ -31,27 +31,53 @@ defmodule Bumblebee.Text.GptNeoXTest do
       )
     end
 
-    # test "sequence classification model" do
-    #   assert {:ok, %{model: model, params: params, spec: spec}} =
-    #            Bumblebee.load_model({:hf, "valhalla/bart-large-sst2"})
+    test "sequence classification model" do
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model(
+                 {:hf, "hf-internal-testing/tiny-random-GPTNeoXForSequenceClassification"}
+               )
 
-    #   assert %Bumblebee.Text.Bart{architecture: :for_sequence_classification} = spec
-    #   input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+      assert %Bumblebee.Text.GptNeoX{architecture: :for_sequence_classification} = spec
+      input_ids = Nx.tensor([[4, 928, 219, 10, 591, 1023]])
 
-    #   inputs = %{
-    #     "input_ids" => input_ids
-    #   }
+      inputs = %{
+        "input_ids" => input_ids
+      }
 
-    #   outputs = Axon.predict(model, params, inputs)
+      outputs = Axon.predict(model, params, inputs)
 
-    #   assert Nx.shape(outputs.logits) == {1, 2}
+      assert Nx.shape(outputs.logits) == {1, 2}
 
-    #   assert_all_close(
-    #     outputs.logits,
-    #     Nx.tensor([[-0.1599, -0.0090]]),
-    #     atol: 1.0e-4
-    #   )
-    # end
+      assert_all_close(
+        outputs.logits,
+        Nx.tensor([[0.0622, -0.0701]]),
+        atol: 1.0e-4
+      )
+    end
+
+    test "token classification model" do
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model(
+                 {:hf, "hf-internal-testing/tiny-random-GPTNeoXForTokenClassification"}
+               )
+
+      assert %Bumblebee.Text.GptNeoX{architecture: :for_token_classification} = spec
+      input_ids = Nx.tensor([[4, 928, 219, 10, 591, 1023]])
+
+      inputs = %{
+        "input_ids" => input_ids
+      }
+
+      outputs = Axon.predict(model, params, inputs)
+
+      assert Nx.shape(outputs.logits) == {1, 6, 2}
+
+      assert_all_close(
+        outputs.logits[[.., 1..3]],
+        Nx.tensor([[[0.0089, -0.0230], [-0.0282, 0.0478], [0.1127, -0.0674]]]),
+        atol: 1.0e-4
+      )
+    end
 
     test "causal language model" do
       assert {:ok, %{model: model, params: params, spec: spec}} =
