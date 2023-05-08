@@ -54,7 +54,7 @@ defmodule Bumblebee.Text.GenerationConfig do
             * `:alpha` (required) - the weight of degeneration penalty. It balances the model
               confidence and the penalty
 
-          Example: `%{type: :contrastive_search, top_k: 4, penalty_alpha: 0.6}`.
+          Example: `%{type: :contrastive_search, top_k: 4, alpha: 0.6}`.
 
         * `:multinomial_sampling` - this method samples tokens according to the probability
           distribution given by the model. The results are nondeterministic, unless a seed
