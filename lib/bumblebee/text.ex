@@ -308,7 +308,7 @@ defmodule Bumblebee.Text do
   A list of inputs is also supported.
 
   In the fill-mask task, the objective is to predict a masked word in
-  the text. The serving expects the input to have exactly on such word,
+  the text. The serving expects the input to have exactly one such word,
   denoted as `[MASK]`.
 
   ## Options
