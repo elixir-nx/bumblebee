@@ -6,10 +6,13 @@ defmodule Bumblebee.Text.TextClassification do
   def text_classification(model_info, tokenizer, opts \\ []) do
     %{model: model, params: params, spec: spec} = model_info
     Shared.validate_architecture!(spec, :for_sequence_classification)
-    opts = Keyword.validate!(opts, [:compile, top_k: 5, defn_options: []])
+
+    opts =
+      Keyword.validate!(opts, [:compile, top_k: 5, function_to_apply: "softmax", defn_options: []])
 
     top_k = opts[:top_k]
     compile = opts[:compile]
+    function_to_apply = opts[:function_to_apply]
     defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]
@@ -24,7 +27,21 @@ defmodule Bumblebee.Text.TextClassification do
 
     scores_fun = fn params, input ->
       outputs = predict_fun.(params, input)
-      Axon.Activations.softmax(outputs.logits)
+
+      case function_to_apply do
+        "softmax" ->
+          Axon.Activations.softmax(outputs.logits)
+
+        "sigmoid" ->
+          Axon.Activations.sigmoid(outputs.logits)
+
+        "none" ->
+          outputs.logits
+
+        _ ->
+          raise ArgumentError,
+                "Invalid :function_to_apply option. Only 'softmax', 'sigmoid', and 'none' are accepted"
+      end
     end
 
     Nx.Serving.new(

@@ -12,6 +12,7 @@ defmodule Bumblebee.Text.TokenClassification do
       Keyword.validate!(opts, [
         :aggregation,
         :compile,
+        function_to_apply: "softmax",
         ignored_labels: ["O"],
         defn_options: []
       ])
@@ -19,6 +20,7 @@ defmodule Bumblebee.Text.TokenClassification do
     aggregation = opts[:aggregation]
     ignored_labels = opts[:ignored_labels]
     compile = opts[:compile]
+    function_to_apply = opts[:function_to_apply]
     defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]
@@ -33,7 +35,20 @@ defmodule Bumblebee.Text.TokenClassification do
 
     scores_fun = fn params, input ->
       outputs = predict_fun.(params, input)
-      Axon.Activations.softmax(outputs.logits)
+
+      case function_to_apply do
+        "softmax" ->
+          Axon.Activations.softmax(outputs.logits)
+
+        "sigmoid" ->
+          Axon.Activations.sigmoid(outputs.logits)
+
+        "none" ->
+          outputs.logits
+
+        _ ->
+          raise ArgumentError,
+                "Invalid :function_to_apply option. Only 'softmax', 'sigmoid', and 'none' are accepted"
     end
 
     Nx.Serving.new(
