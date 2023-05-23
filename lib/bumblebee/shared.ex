@@ -323,7 +323,7 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
-  Converts the logits to scores as per the given scores function.
+  Converts logits to scores as per the given scores function.
 
   Raises `ArgumentError` if the scores function is invalid.
   """
