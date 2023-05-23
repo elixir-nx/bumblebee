@@ -11,10 +11,12 @@ defmodule Bumblebee.Vision.ImageClassification do
       :for_image_classification_with_teacher
     ])
 
-    opts = Keyword.validate!(opts, [:compile, top_k: 5, defn_options: []])
+    opts =
+      Keyword.validate!(opts, [:compile, top_k: 5, scores_function: :softmax, defn_options: []])
 
     top_k = opts[:top_k]
     compile = opts[:compile]
+    scores_function = opts[:scores_function]
     defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]
@@ -28,7 +30,7 @@ defmodule Bumblebee.Vision.ImageClassification do
 
     scores_fun = fn params, input ->
       outputs = predict_fun.(params, input)
-      Axon.Activations.softmax(outputs.logits)
+      Shared.logits_to_scores(outputs.logits, scores_function)
     end
 
     Nx.Serving.new(

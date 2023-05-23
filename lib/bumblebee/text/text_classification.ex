@@ -6,10 +6,13 @@ defmodule Bumblebee.Text.TextClassification do
   def text_classification(model_info, tokenizer, opts \\ []) do
     %{model: model, params: params, spec: spec} = model_info
     Shared.validate_architecture!(spec, :for_sequence_classification)
-    opts = Keyword.validate!(opts, [:compile, top_k: 5, defn_options: []])
+
+    opts =
+      Keyword.validate!(opts, [:compile, top_k: 5, scores_function: :softmax, defn_options: []])
 
     top_k = opts[:top_k]
     compile = opts[:compile]
+    scores_function = opts[:scores_function]
     defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]
@@ -24,7 +27,7 @@ defmodule Bumblebee.Text.TextClassification do
 
     scores_fun = fn params, input ->
       outputs = predict_fun.(params, input)
-      Axon.Activations.softmax(outputs.logits)
+      Shared.logits_to_scores(outputs.logits, scores_function)
     end
 
     Nx.Serving.new(

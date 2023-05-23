@@ -12,6 +12,7 @@ defmodule Bumblebee.Text.TokenClassification do
       Keyword.validate!(opts, [
         :aggregation,
         :compile,
+        scores_function: :softmax,
         ignored_labels: ["O"],
         defn_options: []
       ])
@@ -19,6 +20,7 @@ defmodule Bumblebee.Text.TokenClassification do
     aggregation = opts[:aggregation]
     ignored_labels = opts[:ignored_labels]
     compile = opts[:compile]
+    scores_function = opts[:scores_function]
     defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]
@@ -33,7 +35,7 @@ defmodule Bumblebee.Text.TokenClassification do
 
     scores_fun = fn params, input ->
       outputs = predict_fun.(params, input)
-      Axon.Activations.softmax(outputs.logits)
+      Shared.logits_to_scores(outputs.logits, scores_function)
     end
 
     Nx.Serving.new(
