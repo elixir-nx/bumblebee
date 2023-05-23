@@ -12,11 +12,11 @@ defmodule Bumblebee.Vision.ImageClassification do
     ])
 
     opts =
-      Keyword.validate!(opts, [:compile, top_k: 5, function_to_apply: "softmax", defn_options: []])
+      Keyword.validate!(opts, [:compile, top_k: 5, scores_function: "softmax", defn_options: []])
 
     top_k = opts[:top_k]
     compile = opts[:compile]
-    function_to_apply = opts[:function_to_apply]
+    scores_function = opts[:scores_function]
     defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]
@@ -30,20 +30,7 @@ defmodule Bumblebee.Vision.ImageClassification do
 
     scores_fun = fn params, input ->
       outputs = predict_fun.(params, input)
-
-      case function_to_apply do
-        "softmax" ->
-          Axon.Activations.softmax(outputs.logits)
-
-        "sigmoid" ->
-          Axon.Activations.sigmoid(outputs.logits)
-
-        "none" ->
-          outputs.logits
-
-        _ ->
-          raise ArgumentError,
-                "Invalid :function_to_apply option. Only 'softmax', 'sigmoid', and 'none' are accepted"
+      Shared.logits_to_scores(outputs.logits, scores_function)
     end
 
     Nx.Serving.new(

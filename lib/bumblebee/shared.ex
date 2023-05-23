@@ -323,6 +323,29 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Converts the logits to scores as per the given scores function.
+
+  Raises `ArgumentError` if the scores function is invalid.
+  """
+  @spec logits_to_scores(Nx.Tensor.t(), atom()) :: Nx.Tensor.t()
+  def logits_to_scores(logits, scores_function) do
+    case scores_function do
+      :softmax ->
+        Axon.Activations.softmax(logits)
+
+      :sigmoid ->
+        Axon.Activations.sigmoid(logits)
+
+      :none ->
+        logits
+
+      other ->
+        raise ArgumentError,
+              "expected :scores_function to be either of :softmax, :sigmoid or :none, got: #{inspect(other)}"
+    end
+  end
+
+  @doc """
   Generates tokenizer implementation.
   """
   defmacro tokenizer_impl(opts) do
