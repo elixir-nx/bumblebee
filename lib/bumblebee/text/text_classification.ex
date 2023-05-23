@@ -8,7 +8,7 @@ defmodule Bumblebee.Text.TextClassification do
     Shared.validate_architecture!(spec, :for_sequence_classification)
 
     opts =
-      Keyword.validate!(opts, [:compile, top_k: 5, scores_function: "softmax", defn_options: []])
+      Keyword.validate!(opts, [:compile, top_k: 5, scores_function: :softmax, defn_options: []])
 
     top_k = opts[:top_k]
     compile = opts[:compile]

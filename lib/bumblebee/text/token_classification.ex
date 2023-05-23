@@ -12,7 +12,7 @@ defmodule Bumblebee.Text.TokenClassification do
       Keyword.validate!(opts, [
         :aggregation,
         :compile,
-        scores_function: "softmax",
+        scores_function: :softmax,
         ignored_labels: ["O"],
         defn_options: []
       ])
