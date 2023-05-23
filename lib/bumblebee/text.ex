@@ -82,6 +82,10 @@ defmodule Bumblebee.Text do
       a defn compiler using `:defn_options` to maximally reduce inference
       time.
 
+    * `:scores_function` - the function to use for converting logits to
+      scores. Should be one of `:softmax`, `:sigmoid`, or `:none`.
+      Defaults to `:softmax`
+
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
   ## Examples
@@ -268,6 +272,10 @@ defmodule Bumblebee.Text do
       It is advised to set this option in production and also configure
       a defn compiler using `:defn_options` to maximally reduce inference
       time.
+
+    * `:scores_function` - the function to use for converting logits to
+      scores. Should be one of `:softmax`, `:sigmoid`, or `:none`.
+      Defaults to `:softmax`
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
