@@ -305,6 +305,66 @@ defmodule Bumblebee.Text do
   defdelegate text_classification(model_info, tokenizer, opts \\ []),
     to: Bumblebee.Text.TextClassification
 
+  @type text_embedding_input :: String.t()
+  @type text_embedding_output :: %{embedding: Nx.Tensor.t()}
+
+  @doc """
+  Builds serving for text embeddings.
+
+  The serving accepts `t:text_embedding_input/0` and returns
+  `t:text_embedding_output/0`. A list of inputs is also supported.
+
+  ## Options
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:output_attribute` - the attribute of the embedding model output
+    to return.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  ## Examples
+
+      {:ok, model_info} = Bumblebee.load_model({:hf, "intfloat/e5-large"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "intfloat/e5-large"})
+
+      options = [
+        output_attribute: :pooled_state
+      ]
+
+      serving = Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer, options)
+
+      text = "query: Cats are cute."
+      Nx.Serving.run(serving, text)
+
+      #=> %{
+      #=>   embedding: #Nx.Tensor<
+      #=>     f32[1024]
+      #=>     EXLA.Backend<host:0, 0.124908262.1234305056.185360>
+      #=>     [-0.9789889454841614, -0.9814645051956177, -0.5015208125114441, 0.9867952466011047, 0.9917466640472412, -0.5557178258895874, -0.18618212640285492, 0.797040581703186, 0.8922086954116821, 0.7599573135375977, -0.16524426639080048, -0.8740050792694092, 0.9433475732803345, 0.7217797636985779, 0.9437620639801025, 0.4694959223270416, 0.40594056248664856, -0.20143413543701172, 0.7144518494606018, -0.8689796924591064, 0.94001305103302, 0.17163503170013428, -0.9896315932273865, 0.4455447494983673, 0.41139301657676697, 0.01911175064742565, -0.11275406181812286, -0.734498143196106, -0.6410953402519226, -0.628239095211029, -0.2570168673992157, 0.475137323141098, -0.7534396052360535, -0.9492156505584717, -0.17271563410758972, 0.9081271886825562, -0.4851466119289398, -0.9440935254096985, -0.20976334810256958, -0.684502899646759, -0.11581139266490936, 0.17509342730045319, 0.05547652021050453, 0.31042391061782837, 0.955132007598877, -0.35595986247062683, 0.016105204820632935, -0.3154579997062683, 0.9630348682403564, ...]
+      #=>   >
+      #=> }
+  """
+  @spec text_embedding(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate text_embedding(model_info, tokenizer, opts \\ []),
+    to: Bumblebee.Text.TextEmbedding
+
   @type fill_mask_input :: String.t()
   @type fill_mask_output :: %{predictions: list(fill_mask_prediction())}
   @type fill_mask_prediction :: %{score: number(), token: String.t()}
