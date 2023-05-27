@@ -316,6 +316,9 @@ defmodule Bumblebee.Text do
 
   ## Options
 
+    * `:output_attribute` - the attribute of the embedding model output
+      to return. Defaults to `:pooled_state`
+
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
       following keys:
@@ -330,9 +333,6 @@ defmodule Bumblebee.Text do
       a defn compiler using `:defn_options` to maximally reduce inference
       time.
 
-    * `:output_attribute` - the attribute of the embedding model output
-    to return.
-
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
   ## Examples
@@ -340,11 +340,7 @@ defmodule Bumblebee.Text do
       {:ok, model_info} = Bumblebee.load_model({:hf, "intfloat/e5-large"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "intfloat/e5-large"})
 
-      options = [
-        output_attribute: :pooled_state
-      ]
-
-      serving = Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer, options)
+      serving = Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer)
 
       text = "query: Cats are cute."
       Nx.Serving.run(serving, text)

@@ -6,10 +6,10 @@ defmodule Bumblebee.Text.TextEmbedding do
   def text_embedding(model_info, tokenizer, opts \\ []) do
     %{model: model, params: params, spec: _spec} = model_info
 
-    opts = Keyword.validate!(opts, [:compile, :output_attribute, defn_options: []])
+    opts = Keyword.validate!(opts, [:compile, output_attribute: :pooled_state, defn_options: []])
 
-    compile = opts[:compile]
     output_attribute = opts[:output_attribute]
+    compile = opts[:compile]
     defn_options = opts[:defn_options]
 
     batch_size = compile[:batch_size]

@@ -10,11 +10,7 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
       {:ok, model_info} = Bumblebee.load_model({:hf, "intfloat/e5-large"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "intfloat/e5-large"})
 
-      options = [
-        output_attribute: :pooled_state
-      ]
-
-      serving = Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer, options)
+      serving = Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer)
 
       text = "query: Cats are cute."
 
