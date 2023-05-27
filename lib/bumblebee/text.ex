@@ -317,7 +317,11 @@ defmodule Bumblebee.Text do
   ## Options
 
     * `:output_attribute` - the attribute of the embedding model output
-      to return. Defaults to `:pooled_state`
+      with the desired embedding. Defaults to `:pooled_state`
+
+    * `embedding_function` - the function to apply to the output
+      embedding. Should be one of `:l2_normalization` or `:none`.
+      Defaults to `:none`
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the

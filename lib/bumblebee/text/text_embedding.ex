@@ -6,9 +6,16 @@ defmodule Bumblebee.Text.TextEmbedding do
   def text_embedding(model_info, tokenizer, opts \\ []) do
     %{model: model, params: params, spec: _spec} = model_info
 
-    opts = Keyword.validate!(opts, [:compile, output_attribute: :pooled_state, defn_options: []])
+    opts =
+      Keyword.validate!(opts, [
+        :compile,
+        output_attribute: :pooled_state,
+        embedding_function: :none,
+        defn_options: []
+      ])
 
     output_attribute = opts[:output_attribute]
+    embedding_function = opts[:embedding_function]
     compile = opts[:compile]
     defn_options = opts[:defn_options]
 
@@ -59,7 +66,24 @@ defmodule Bumblebee.Text.TextEmbedding do
     end)
     |> Nx.Serving.client_postprocessing(fn embeddings, _metadata, multi? ->
       for embedding <- Bumblebee.Utils.Nx.batch_to_list(embeddings) do
-        %{embedding: embedding}
+        case embedding_function do
+          :l2_normalization ->
+            norm = Nx.LinAlg.norm(embedding, ord: 2)
+
+            if norm > 0 do
+              %{embedding: Nx.divide(embedding, norm)}
+            else
+              # If the norm is 0, we return the original embedding (the zero vector)
+              %{embedding: embedding}
+            end
+
+          :none ->
+            %{embedding: embedding}
+
+          other ->
+            raise ArgumentError,
+                  "expected :embedding_function to be one of :l2_normalization or :none, got: #{inspect(other)}"
+        end
       end
       |> Shared.normalize_output(multi?)
     end)

@@ -10,7 +10,9 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
       {:ok, model_info} = Bumblebee.load_model({:hf, "intfloat/e5-large"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "intfloat/e5-large"})
 
-      serving = Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer)
+      options = [embedding_function: :l2_normalization]
+
+      serving = Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer, options)
 
       text = "query: Cats are cute."
 
