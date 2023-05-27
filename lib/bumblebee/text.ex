@@ -317,7 +317,9 @@ defmodule Bumblebee.Text do
   ## Options
 
     * `:output_attribute` - the attribute of the embedding model output
-      with the desired embedding. Defaults to `:pooled_state`
+      with the desired embedding. Set this option to :none in order to
+      directly retrieve the model output rather than choosing an attribute
+      of it. Defaults to `:pooled_state`
 
     * `embedding_function` - the function to apply to the output
       embedding. Should be one of `:l2_normalization` or `:none`.
