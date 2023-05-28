@@ -321,9 +321,9 @@ defmodule Bumblebee.Text do
       directly retrieve the model output rather than choosing an attribute
       of it. Defaults to `:pooled_state`
 
-    * `embedding_function` - the function to apply to the output
-      embedding. Should be one of `:l2_normalization` or `:none`.
-      Defaults to `:none`
+    * `embedding_functions` - a list of the functions to apply to the
+      output embedding, in order. Each element of the list should be
+      one of `:l2_normalization` or `:mean_pooling`. Defaults to `[]`
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
