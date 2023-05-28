@@ -30,7 +30,7 @@ defmodule Bumblebee.Text.TextEmbedding do
     {_init_fun, encoder} = Axon.build(model)
 
     embedding_fun = fn params, inputs ->
-      if output_attribute == :none do
+      if output_attribute == nil do
         {inputs, encoder.(params, inputs)}
       else
         {inputs, encoder.(params, inputs)[output_attribute]}
