@@ -315,15 +315,18 @@ defmodule Bumblebee.Text do
   `t:text_embedding_output/0`. A list of inputs is also supported.
 
   ## Options
+    * `:output_attribute` - the attribute of the model output map to
+      retrieve. When the output is a single tensor (rather than a map),
+      this option is ignored. Defaults to `:pooled_state`
 
-    * `:output_attribute` - the attribute of the embedding model output
-      with the desired embedding. Set this option to `nil` in order to
-      directly retrieve the model output rather than choosing an attribute
-      of it. Defaults to `:pooled_state`
+    * `:output_pool` - pooling to apply on top of the model output, in case
+      it is not already a pooled embedding. Supported values: `nil` and
+      `:mean`. Defaults to `nil`, which applies no pooling on top of the
+      model output.
 
-    * `embedding_functions` - a list of the functions to apply to the
-      output embedding, in order. Each element of the list should be
-      one of `:l2_normalization` or `:mean_pooling`. Defaults to `[]`
+    * `:embedding_processor` - a post-processing step to apply to the
+      embedding. Supported values: `nil` and `:l2_norm`. Defaults to
+      `nil`, which applies no post-processing step to the embedding.
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the

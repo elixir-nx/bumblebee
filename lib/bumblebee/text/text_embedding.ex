@@ -10,12 +10,14 @@ defmodule Bumblebee.Text.TextEmbedding do
       Keyword.validate!(opts, [
         :compile,
         output_attribute: :pooled_state,
-        embedding_functions: [],
+        output_pool: nil,
+        embedding_processor: nil,
         defn_options: []
       ])
 
     output_attribute = opts[:output_attribute]
-    embedding_functions = opts[:embedding_functions]
+    output_pool = opts[:output_pool]
+    embedding_processor = opts[:embedding_processor]
     compile = opts[:compile]
     defn_options = opts[:defn_options]
 
@@ -30,11 +32,52 @@ defmodule Bumblebee.Text.TextEmbedding do
     {_init_fun, encoder} = Axon.build(model)
 
     embedding_fun = fn params, inputs ->
-      if output_attribute == nil do
-        {inputs, encoder.(params, inputs)}
-      else
-        {inputs, encoder.(params, inputs)[output_attribute]}
-      end
+      output = encoder.(params, inputs)
+
+      output =
+        if is_map(output) do
+          output[output_attribute]
+        else
+          output
+        end
+
+      output =
+        case output_pool do
+          nil ->
+            output
+
+          :mean_pooling ->
+            input_mask_expanded = Nx.new_axis(inputs["attention_mask"], -1)
+
+            output
+            |> Nx.multiply(input_mask_expanded)
+            |> Nx.sum(axes: [1])
+            |> Nx.divide(Nx.sum(input_mask_expanded, axes: [1]))
+
+          other ->
+            raise ArgumentError,
+                  "expected :output_pool to be one of nil or :mean_pooling, got: #{inspect(other)}"
+        end
+
+      output =
+        case embedding_processor do
+          nil ->
+            output
+
+          :l2_norm ->
+            # If the output is the zero vector, return it without normalization
+            if !Nx.any(output) do
+              output
+            else
+              Bumblebee.Utils.Nx.normalize(output)
+            end
+
+          other ->
+            raise ArgumentError,
+                  "expected :embedding_processor to be one of nil or :l2_norm, got: #{inspect(other)}"
+        end
+
+      output
     end
 
     Nx.Serving.new(
@@ -68,38 +111,9 @@ defmodule Bumblebee.Text.TextEmbedding do
 
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn inputs_and_embeddings, _metadata, multi? ->
-      for inputs_and_embedding <- Bumblebee.Utils.Nx.batch_to_list(inputs_and_embeddings) do
-        {inputs, embedding} = inputs_and_embedding
-
-        transformed_embedding =
-          Enum.reduce(embedding_functions, embedding, fn embedding_function, acc_embedding ->
-            case embedding_function do
-              :l2_normalization ->
-                norm = Nx.LinAlg.norm(acc_embedding, ord: 2)
-
-                if norm > 0 do
-                  Nx.divide(acc_embedding, norm)
-                else
-                  # If the norm is 0, we return the original embedding (the zero vector)
-                  acc_embedding
-                end
-
-              :mean_pooling ->
-                input_mask_expanded = Nx.new_axis(inputs["attention_mask"], -1)
-
-                acc_embedding
-                |> Nx.multiply(input_mask_expanded)
-                |> Nx.sum(axes: [1])
-                |> Nx.divide(Nx.sum(input_mask_expanded, axes: [1]))
-
-              other ->
-                raise ArgumentError,
-                      "expected each element of :embedding_functions to be one of :l2_normalization or :mean_pooling, got: #{inspect(other)}"
-            end
-          end)
-
-        %{embedding: transformed_embedding}
+    |> Nx.Serving.client_postprocessing(fn embeddings, _metadata, multi? ->
+      for embedding <- Bumblebee.Utils.Nx.batch_to_list(embeddings) do
+        %{embedding: embedding}
       end
       |> Shared.normalize_output(multi?)
     end)

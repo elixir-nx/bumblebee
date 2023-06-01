@@ -325,7 +325,7 @@ defmodule Bumblebee.Utils.Nx do
     Nx.dot(x, [-1], batch_axes, y, [-1], batch_axes)
   end
 
-  defnp normalize(tensor) do
+  defn normalize(tensor) do
     norm =
       tensor
       |> Nx.pow(2)
