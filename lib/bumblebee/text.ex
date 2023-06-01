@@ -321,13 +321,12 @@ defmodule Bumblebee.Text do
       this option is ignored. Defaults to `:pooled_state`
 
     * `:output_pool` - pooling to apply on top of the model output, in case
-      it is not already a pooled embedding. Supported values: `nil` and
-      `:mean`. Defaults to `nil`, which applies no pooling on top of the
-      model output.
+      it is not already a pooled embedding. Supported values: `:mean`. By
+      default no pooling is applied
 
     * `:embedding_processor` - a post-processing step to apply to the
-      embedding. Supported values: `nil` and `:l2_norm`. Defaults to
-      `nil`, which applies no post-processing step to the embedding.
+      embedding. Supported values: `:l2_norm`. By default the output is
+      returned as is
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
