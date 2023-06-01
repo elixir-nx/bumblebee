@@ -315,6 +315,7 @@ defmodule Bumblebee.Text do
   `t:text_embedding_output/0`. A list of inputs is also supported.
 
   ## Options
+
     * `:output_attribute` - the attribute of the model output map to
       retrieve. When the output is a single tensor (rather than a map),
       this option is ignored. Defaults to `:pooled_state`
