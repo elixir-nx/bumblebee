@@ -16,7 +16,15 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
 
       text = "query: Cats are cute."
 
-      assert Nx.shape(Nx.Serving.run(serving, text).embedding) == {1024}
+      assert %{embedding: %Nx.Tensor{} = embedding} = Nx.Serving.run(serving, text)
+
+      assert Nx.shape(embedding) == {1024}
+      
+      assert_all_close(
+        embedding[1..3],
+        Nx.tensor([-0.9815, -0.5015,  0.9868]),
+        atol: 1.0e-4
+      )
     end
   end
 end
