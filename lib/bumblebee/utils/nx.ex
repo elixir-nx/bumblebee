@@ -325,12 +325,17 @@ defmodule Bumblebee.Utils.Nx do
     Nx.dot(x, [-1], batch_axes, y, [-1], batch_axes)
   end
 
-  defnp normalize(tensor) do
+  @doc """
+  Applies L2 normalization to the last dimension of the given tensor.
+  """
+  defn normalize(tensor) do
     norm =
       tensor
       |> Nx.pow(2)
       |> Nx.sum(axes: [-1], keep_axes: true)
       |> Nx.sqrt()
+
+    norm = Nx.select(norm == 0.0, 1.0, norm)
 
     tensor / norm
   end
