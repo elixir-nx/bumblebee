@@ -332,10 +332,10 @@ defmodule Bumblebee.Utils.Nx do
       |> Nx.sum(axes: [-1], keep_axes: true)
       |> Nx.sqrt()
 
-    if norm == 0 do
-      tensor
+    if Nx.all(norm) do
+      Nx.divide(tensor, norm)
     else
-      tensor / norm
+      tensor
     end
   end
 
