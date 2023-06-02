@@ -325,6 +325,9 @@ defmodule Bumblebee.Utils.Nx do
     Nx.dot(x, [-1], batch_axes, y, [-1], batch_axes)
   end
 
+  @doc """
+  Applies L2 normalization to the last dimension of the given tensor.
+  """
   defn normalize(tensor) do
     norm =
       tensor
