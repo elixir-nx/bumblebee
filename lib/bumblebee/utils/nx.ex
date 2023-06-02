@@ -333,7 +333,7 @@ defmodule Bumblebee.Utils.Nx do
       |> Nx.sqrt()
 
     norm = Nx.select(norm == 0.0, 1.0, norm)
-    
+
     tensor / norm
   end
 
