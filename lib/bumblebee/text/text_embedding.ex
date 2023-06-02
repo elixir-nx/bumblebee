@@ -65,12 +65,7 @@ defmodule Bumblebee.Text.TextEmbedding do
             output
 
           :l2_norm ->
-            # If the output is the zero vector, return it without normalization
-            if !Nx.any(output) do
-              output
-            else
-              Bumblebee.Utils.Nx.normalize(output)
-            end
+            Bumblebee.Utils.Nx.normalize(output)
 
           other ->
             raise ArgumentError,

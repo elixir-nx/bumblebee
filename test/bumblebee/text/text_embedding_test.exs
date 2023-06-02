@@ -19,10 +19,10 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
       assert %{embedding: %Nx.Tensor{} = embedding} = Nx.Serving.run(serving, text)
 
       assert Nx.shape(embedding) == {1024}
-      
+
       assert_all_close(
         embedding[1..3],
-        Nx.tensor([-0.9815, -0.5015,  0.9868]),
+        Nx.tensor([-0.9815, -0.5015, 0.9868]),
         atol: 1.0e-4
       )
     end
