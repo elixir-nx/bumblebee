@@ -932,4 +932,16 @@ defmodule Bumblebee do
           "expected repository to be either {:hf, repository_id}, {:hf, repository_id, options}" <>
             " or {:local, directory}, got: #{inspect(other)}"
   end
+
+  @doc """
+  Returns the directory where downloaded files are stored.
+  """
+  @spec cache_dir() :: String.t()
+  def cache_dir() do
+    if dir = System.get_env("BUMBLEBEE_CACHE_DIR") do
+      Path.expand(dir)
+    else
+      :filename.basedir(:user_cache, "bumblebee")
+    end
+  end
 end
