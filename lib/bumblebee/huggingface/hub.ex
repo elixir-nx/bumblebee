@@ -36,7 +36,7 @@ defmodule Bumblebee.HuggingFace.Hub do
   """
   @spec cached_download(String.t(), keyword()) :: {:ok, String.t()} | {:error, String.t()}
   def cached_download(url, opts \\ []) do
-    cache_dir = opts[:cache_dir] || bumblebee_cache_dir()
+    cache_dir = opts[:cache_dir] || Bumblebee.cache_dir()
     offline = opts[:offline] || bumblebee_offline?()
     auth_token = opts[:auth_token]
 
@@ -152,14 +152,6 @@ defmodule Bumblebee.HuggingFace.Hub do
   defp store_json(path, data) do
     json = Jason.encode!(data)
     File.write(path, json)
-  end
-
-  defp bumblebee_cache_dir() do
-    if dir = System.get_env("BUMBLEBEE_CACHE_DIR") do
-      Path.expand(dir)
-    else
-      :filename.basedir(:user_cache, "bumblebee")
-    end
   end
 
   defp bumblebee_offline?() do
