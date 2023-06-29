@@ -107,9 +107,7 @@ defmodule Bumblebee.Text.TextEmbedding do
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
     |> Nx.Serving.client_postprocessing(fn embeddings, _metadata, multi? ->
-      for embedding <- Bumblebee.Utils.Nx.batch_to_list(embeddings) do
-        %{embedding: embedding}
-      end
+      Bumblebee.Utils.Nx.batch_to_list(embeddings)
       |> Shared.normalize_output(multi?)
     end)
   end

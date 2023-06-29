@@ -14,7 +14,7 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
 
       text = "query: Cats are cute."
 
-      assert %{embedding: %Nx.Tensor{} = embedding} = Nx.Serving.run(serving, text)
+      assert %Nx.Tensor{} = embedding = Nx.Serving.run(serving, text)
 
       assert Nx.shape(embedding) == {1024}
 
@@ -35,7 +35,7 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
 
       text = "query: Cats are cute."
 
-      assert %{embedding: %Nx.Tensor{} = embedding} = Nx.Serving.run(serving, text)
+      assert %Nx.Tensor{} = embedding = Nx.Serving.run(serving, text)
 
       assert Nx.shape(embedding) == {1024}
 
