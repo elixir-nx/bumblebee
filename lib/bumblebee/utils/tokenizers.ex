@@ -24,26 +24,31 @@ defmodule Bumblebee.Utils.Tokenizers do
     {:ok, encodings} =
       Tokenizer.encode(tokenizer, input, add_special_tokens: opts[:add_special_tokens])
 
-    length =
+    {pad_length, truncate_length} =
       if length = opts[:length] do
-        length
+        {length, length}
       else
-        encodings
-        |> Enum.map(&Encoding.n_tokens/1)
-        |> Enum.max()
+        {encodings
+         |> Enum.map(&Encoding.n_tokens/1)
+         |> Enum.max(), nil}
       end
 
     pad_id = Tokenizer.token_to_id(tokenizer, pad_token)
 
     encodings =
       Enum.map(encodings, fn seq ->
-        seq
-        |> Encoding.pad(length,
-          pad_id: pad_id,
-          pad_token: pad_token,
-          direction: opts[:pad_direction]
-        )
-        |> Encoding.truncate(length, direction: opts[:truncate_direction])
+        seq =
+          Encoding.pad(seq, pad_length,
+            pad_id: pad_id,
+            pad_token: pad_token,
+            direction: opts[:pad_direction]
+          )
+
+        if truncate_length do
+          Encoding.truncate(seq, truncate_length, direction: opts[:truncate_direction])
+        else
+          seq
+        end
       end)
 
     input_ids = encodings |> Enum.map(&Encoding.get_u32_ids/1) |> u32_binaries_to_tensor()
