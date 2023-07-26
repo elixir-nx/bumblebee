@@ -260,7 +260,7 @@ defmodule Bumblebee.Shared do
           function(),
           keyword(),
           boolean(),
-          (() -> list(Nx.Tensor.t()))
+          (-> list(Nx.Tensor.t()))
         ) :: function()
   def compile_or_jit(fun, defn_options, compile?, template_fun) do
     if compile? do

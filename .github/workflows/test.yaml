@@ -7,15 +7,20 @@ on:
 
 jobs:
   main:
+    name: "main (${{ matrix.pair.elixir }}, ${{ matrix.pair.otp }})"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - pair:
-              elixir: 1.14.0
-              otp: 24.0
+              elixir: "1.15.4"
+              otp: "26.0.2"
             lint: true
+            slow: true
+          - pair:
+              elixir: "1.14.5"
+              otp: "25.3.2.2"
     env:
       MIX_ENV: test
       XLA_CACHE_DIR: ${{ github.workspace }}/cache/xla
@@ -51,4 +56,4 @@ jobs:
         # mix test exits with a non-zero code if there are no matching tests,
         # so we make sure we fail only when the test suite fails
         run: mix test test/bumblebee_test.exs --only slow --exit-status 100 ${{ env.GIT_DIFF_FILTERED }} || [ $? -ne 100 ]
-        if: ${{ env.GIT_DIFF_FILTERED != '' }}
+        if: ${{ matrix.slow && env.GIT_DIFF_FILTERED != '' }}
