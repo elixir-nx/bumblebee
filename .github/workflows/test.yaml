@@ -15,8 +15,8 @@ jobs:
           - pair:
               elixir: "1.15.4"
               otp: "26.0.2"
-            lint: "lint"
-            slow: "slow"
+            lint: true
+            slow: true
           - pair:
               elixir: "1.14.5"
               otp: "25.3.2.2"
