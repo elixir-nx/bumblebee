@@ -7,6 +7,7 @@ on:
 
 jobs:
   main:
+    name: main (${{ matrix.pair.elixir }}, ${{ matrix.pair.otp }}, lint: ${{ matrix.lint }}, slow: ${{ matrix.slow }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
