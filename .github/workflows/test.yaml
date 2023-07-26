@@ -13,9 +13,12 @@ jobs:
       matrix:
         include:
           - pair:
-              elixir: 1.14.0
-              otp: 24.0
-            lint: true
+              elixir: "1.15.4"
+              otp: "26.0.2"
+            lint: "lint"
+          - pair:
+              elixir: "1.14.5"
+              otp: "25.3.2.2"
     env:
       MIX_ENV: test
       XLA_CACHE_DIR: ${{ github.workspace }}/cache/xla
