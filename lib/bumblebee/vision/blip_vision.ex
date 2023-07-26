@@ -121,7 +121,11 @@ defmodule Bumblebee.Vision.BlipVision do
     encoder_outputs = encoder(embeddings, spec, name: "encoder")
 
     hidden_state =
-      Axon.layer_norm(encoder_outputs.hidden_state, epsilon: spec.layer_norm_epsilon, name: "norm")
+      Axon.layer_norm(
+        encoder_outputs.hidden_state,
+        epsilon: spec.layer_norm_epsilon,
+        name: "norm"
+      )
 
     pooled_state =
       hidden_state
