@@ -24,13 +24,26 @@ defmodule Bumblebee.Utils.Tokenizers do
     {:ok, encodings} =
       Tokenizer.encode(tokenizer, input, add_special_tokens: opts[:add_special_tokens])
 
+    length = opts[:length]
+
     {pad_length, truncate_length} =
-      if length = opts[:length] do
+      if is_number(length) do
         {length, length}
       else
-        {encodings
-         |> Enum.map(&Encoding.n_tokens/1)
-         |> Enum.max(), nil}
+        max_length =
+          encodings
+          |> Enum.map(&Encoding.n_tokens/1)
+          |> Enum.max()
+
+        case length do
+          nil ->
+            {max_length, nil}
+
+          lengths when is_list(lengths) ->
+            lengths = Enum.sort(lengths)
+            length_boundary = Enum.find(lengths, &(&1 >= max_length)) || List.last(lengths)
+            {length_boundary, length_boundary}
+        end
       end
 
     pad_id = Tokenizer.token_to_id(tokenizer, pad_token)

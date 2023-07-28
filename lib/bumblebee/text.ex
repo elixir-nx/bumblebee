@@ -336,7 +336,10 @@ defmodule Bumblebee.Text do
           are optionally padded to always match this batch size
 
         * `:sequence_length` - the maximum input sequence length. Input
-          sequences are always padded/truncated to match that length
+          sequences are always padded/truncated to match that length.
+          A list can be given, in which case the serving compiles
+          a separate computation for each length and then inputs are
+          matched to the smallest bounding length
 
       It is advised to set this option in production and also configure
       a defn compiler using `:defn_options` to maximally reduce inference
