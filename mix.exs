@@ -40,7 +40,7 @@ defmodule Bumblebee.MixProject do
       {:castore, "~> 0.1 or ~> 1.0"},
       {:jason, "~> 1.4.0"},
       {:unzip, "0.8.0"},
-      {:progress_bar, "~> 2.0"},
+      {:progress_bar, "~> 3.0"},
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
