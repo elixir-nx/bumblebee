@@ -61,16 +61,17 @@ defmodule Bumblebee.Text.Generation do
       :for_causal_language_modeling
     ])
 
-    compile = opts[:compile]
     defn_options = opts[:defn_options]
+
+    compile =
+      if compile = opts[:compile] do
+        compile
+        |> Keyword.validate!([:batch_size, :sequence_length])
+        |> Shared.require_options!([:batch_size, :sequence_length])
+      end
 
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
-
-    if compile != nil and (batch_size == nil or sequence_length == nil) do
-      raise ArgumentError,
-            "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
-    end
 
     generate_fun = build_generate(model, spec, generation_config, Keyword.take(opts, [:seed]))
 

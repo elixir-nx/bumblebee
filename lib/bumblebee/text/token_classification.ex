@@ -19,17 +19,18 @@ defmodule Bumblebee.Text.TokenClassification do
 
     aggregation = opts[:aggregation]
     ignored_labels = opts[:ignored_labels]
-    compile = opts[:compile]
     scores_function = opts[:scores_function]
     defn_options = opts[:defn_options]
 
+    compile =
+      if compile = opts[:compile] do
+        compile
+        |> Keyword.validate!([:batch_size, :sequence_length])
+        |> Shared.require_options!([:batch_size, :sequence_length])
+      end
+
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
-
-    if compile != nil and (batch_size == nil or sequence_length == nil) do
-      raise ArgumentError,
-            "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
-    end
 
     {_init_fun, predict_fun} = Axon.build(model)
 

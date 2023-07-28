@@ -215,6 +215,20 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Asserts that the given options keyword list has all of the given
+  keys.
+  """
+  def require_options!(opts, keys) do
+    missing = keys -- Keyword.keys(opts)
+
+    if missing != [] do
+      raise ArgumentError, "missing keys #{inspect(missing)} in #{inspect(opts)}"
+    end
+
+    opts
+  end
+
+  @doc """
   Checks if the given term is an image.
   """
   @spec image?(term()) :: boolean()
