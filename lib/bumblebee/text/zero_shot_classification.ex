@@ -90,7 +90,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
+    |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, multi? ->
       for scores <- Utils.Nx.batch_to_list(scores) do
         scores = Axon.Activations.softmax(scores[[.., entailment_id]])
 

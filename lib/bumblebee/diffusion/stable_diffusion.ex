@@ -212,7 +212,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     )
     |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(&client_preprocessing(&1, tokenizer, sequence_length))
-    |> Nx.Serving.client_postprocessing(&client_postprocessing(&1, &2, &3, safety_checker))
+    |> Nx.Serving.client_postprocessing(&client_postprocessing(&1, &2, safety_checker))
   end
 
   defp init(
@@ -293,7 +293,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     {Nx.Batch.concatenate([inputs]), multi?}
   end
 
-  defp client_postprocessing(outputs, _metadata, multi?, safety_checker?) do
+  defp client_postprocessing({outputs, _metadata}, multi?, safety_checker?) do
     for outputs <- Bumblebee.Utils.Nx.batch_to_list(outputs) do
       results =
         for outputs = %{image: image} <- Bumblebee.Utils.Nx.batch_to_list(outputs) do

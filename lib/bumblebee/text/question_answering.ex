@@ -75,7 +75,7 @@ defmodule Bumblebee.Text.QuestionAnswering do
       inputs = Map.take(all_inputs, ["input_ids", "attention_mask", "token_type_ids"])
       {Nx.Batch.concatenate([inputs]), {all_inputs, raw_inputs, multi?}}
     end)
-    |> Nx.Serving.client_postprocessing(fn outputs, _metadata, {inputs, raw_inputs, multi?} ->
+    |> Nx.Serving.client_postprocessing(fn {outputs, _metadata}, {inputs, raw_inputs, multi?} ->
       Enum.zip_with(
         [raw_inputs, Utils.Nx.batch_to_list(inputs), Utils.Nx.batch_to_list(outputs)],
         fn [{_question_text, context_text}, inputs, outputs] ->

@@ -55,7 +55,7 @@ defmodule Bumblebee.Vision.ImageToText do
       inputs = Bumblebee.apply_featurizer(featurizer, images, defn_options: defn_options)
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn token_ids, _metadata, multi? ->
+    |> Nx.Serving.client_postprocessing(fn {token_ids, _metadata}, multi? ->
       decoded = Bumblebee.Tokenizer.decode(tokenizer, token_ids)
 
       decoded

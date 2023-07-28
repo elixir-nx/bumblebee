@@ -80,7 +80,7 @@ defmodule Bumblebee.Text.FillMask do
 
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
+    |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, multi? ->
       for scores <- Bumblebee.Utils.Nx.batch_to_list(scores) do
         k = min(top_k, Nx.size(scores))
         {top_scores, top_indices} = Nx.top_k(scores, k: k)

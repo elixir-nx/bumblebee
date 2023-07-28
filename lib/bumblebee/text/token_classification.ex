@@ -73,7 +73,7 @@ defmodule Bumblebee.Text.TokenClassification do
 
       {Nx.Batch.concatenate([inputs]), {all_inputs, multi?}}
     end)
-    |> Nx.Serving.client_postprocessing(fn scores, _metadata, {inputs, multi?} ->
+    |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, {inputs, multi?} ->
       Enum.zip_with(
         Utils.Nx.batch_to_list(inputs),
         Utils.Nx.batch_to_list(scores),

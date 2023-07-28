@@ -93,7 +93,7 @@ defmodule Bumblebee.Text.Conversation do
 
       {Nx.Batch.concatenate([inputs]), {histories, multi?}}
     end)
-    |> Nx.Serving.client_postprocessing(fn token_ids, _metadata, {histories, multi?} ->
+    |> Nx.Serving.client_postprocessing(fn {token_ids, _metadata}, {histories, multi?} ->
       decoded = Bumblebee.Tokenizer.decode(tokenizer, token_ids)
 
       Enum.zip_with(decoded, histories, fn text, history ->
