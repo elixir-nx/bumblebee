@@ -40,7 +40,7 @@ defmodule Bumblebee.Utils.Tokenizers do
             {max_length, nil}
 
           lengths when is_list(lengths) ->
-            bounding_length = bounding_length_or_last(max_length, Enum.sort(lengths))
+            bounding_length = find_bounding_length(max_length, lengths)
             {bounding_length, bounding_length}
         end
       end
@@ -74,11 +74,19 @@ defmodule Bumblebee.Utils.Tokenizers do
     |> maybe_put_offsets(encodings, opts[:return_offsets])
   end
 
-  defp bounding_length_or_last(_max_length, [length]), do: length
-  defp bounding_length_or_last(max_length, [length | _]) when length >= max_length, do: length
+  defp find_bounding_length(max_length, lengths) do
+    find_bounding_length(max_length, lengths, :infinity, 0)
+  end
 
-  defp bounding_length_or_last(max_length, [_ | rest]),
-    do: bounding_length_or_last(max_length, rest)
+  defp find_bounding_length(max_length, [length | rest], bound, max) when length >= max_length do
+    find_bounding_length(max_length, rest, min(bound, length), max(length, max))
+  end
+
+  defp find_bounding_length(max_length, [length | rest], bound, max) do
+    find_bounding_length(max_length, rest, bound, max(length, max))
+  end
+
+  defp find_bounding_length(_max_length, [], bound, max), do: min(bound, max)
 
   defp maybe_put_attention_mask(encoded, encodings, return_attention_mask) do
     if return_attention_mask do
