@@ -18,20 +18,21 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
     hypothesis_template = opts[:hypothesis_template]
     top_k = opts[:top_k]
-    compile = opts[:compile]
     defn_options = opts[:defn_options]
 
     hypotheses = Enum.map(labels, hypothesis_template)
 
     sequences_per_batch = length(labels)
 
+    compile =
+      if compile = opts[:compile] do
+        compile
+        |> Keyword.validate!([:batch_size, :sequence_length])
+        |> Shared.require_options!([:batch_size, :sequence_length])
+      end
+
     sequence_length = compile[:sequence_length]
     batch_size = compile[:batch_size]
-
-    if compile != nil and (batch_size == nil or sequence_length == nil) do
-      raise ArgumentError,
-            "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
-    end
 
     entailment_id =
       Enum.find_value(spec.id_to_label, fn {id, label} ->
