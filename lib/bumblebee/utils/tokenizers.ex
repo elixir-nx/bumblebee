@@ -40,9 +40,8 @@ defmodule Bumblebee.Utils.Tokenizers do
             {max_length, nil}
 
           lengths when is_list(lengths) ->
-            lengths = Enum.sort(lengths)
-            length_boundary = Enum.find(lengths, &(&1 >= max_length)) || List.last(lengths)
-            {length_boundary, length_boundary}
+            bounding_length = bounding_length_or_last(max_length, Enum.sort(lengths))
+            {bounding_length, bounding_length}
         end
       end
 
@@ -74,6 +73,12 @@ defmodule Bumblebee.Utils.Tokenizers do
     |> maybe_put_return_special_tokens_mask(encodings, opts[:return_special_tokens_mask])
     |> maybe_put_offsets(encodings, opts[:return_offsets])
   end
+
+  defp bounding_length_or_last(_max_length, [length]), do: length
+  defp bounding_length_or_last(max_length, [length | _]) when length >= max_length, do: length
+
+  defp bounding_length_or_last(max_length, [_ | rest]),
+    do: bounding_length_or_last(max_length, rest)
 
   defp maybe_put_attention_mask(encoded, encodings, return_attention_mask) do
     if return_attention_mask do
