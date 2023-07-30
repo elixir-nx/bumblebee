@@ -134,4 +134,64 @@ defmodule Bumblebee.Vision do
         ) :: Nx.Serving.t()
   defdelegate image_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []),
     to: Bumblebee.Vision.ImageToText
+
+  @type image_embedding_input :: image()
+  @type image_embedding_output :: %{embedding: Nx.Tensor.t()}
+  @doc """
+  Builds serving for image embeddings.
+
+  The serving accepts `t:image_embedding_input/0` and returns
+  `t:image_embedding_output/0`. A list of inputs is also supported.
+
+  ## Options
+
+    * `:output_attribute` - the attribute of the model output map to
+      retrieve. When the output is a single tensor (rather than a map),
+      this option is ignored. Defaults to `:pooled_state`
+
+    * `:embedding_processor` - a post-processing step to apply to the
+      embedding. Supported values: `:l2_norm`. By default the output is
+      returned as is
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:image_size` - the size of the input spatial dimensions
+
+        * `:channels` - the number of channels in the input
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+  ## Examples
+
+     {:ok, clip} =
+        Bumblebee.load_model({:hf, "openai/clip-vit-base-patch32"},
+          module: Bumblebee.Vision.ClipVision
+        )
+      {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/clip-vit-base-patch32"})
+      serving = Bumblebee.Vision.ImageEmbedding.image_embedding(clip, featurizer)
+      image = StbImage.read_file!(path)
+      Nx.Serving.run(serving, image)
+      #=> %{
+      #=>   embedding: #Nx.Tensor<
+      #=>     f32[768]
+      #=>     [-0.43403682112693787, 0.09786412119865417, -0.7233262062072754, -0.7707743644714355, 0.5550824403762817, -0.8923342227935791, 0.2687447965145111, 0.9633643627166748, 0.3520320951938629, 0.43195801973342896, 2.1438512802124023, -0.6542983651161194, -1.9736307859420776, 0.1611439287662506, 0.24555791914463043, 0.16985465586185455, 0.9012499451637268, 1.0657984018325806, 1.087411642074585, -0.5864712595939636, 0.3314521908760071, 0.8396108150482178, 0.3906593322753906, 0.13463366031646729, 0.2605385184288025, -0.07457947731018066, 0.4735124707221985, -0.41367805004119873, 0.18244807422161102, 1.4741417169570923, -5.807061195373535, 0.38920706510543823, 0.057687126100063324, 0.060301072895526886, 0.9680367708206177, 0.9670255184173584, 1.3876476287841797, -0.15498873591423035, -0.969764232635498, -0.38127464056015015, 0.05450016260147095, 2.2317700386047363, -0.07926210761070251, -0.11876475065946579, -1.5408644676208496, 0.7505669593811035, 0.9280041456222534, -0.3571934103965759, -1.1390857696533203, ...]
+      #=>   >
+      #=> }
+  """
+  @spec image_embedding(
+          Bumblebee.model_info(),
+          Bumblebee.Featurizer.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate image_embedding(model_info, featurizer, opts \\ []),
+    to: Bumblebee.Vision.ImageEmbedding
 end
