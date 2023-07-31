@@ -160,10 +160,6 @@ defmodule Bumblebee.Vision do
         * `:batch_size` - the maximum batch size of the input. Inputs
           are optionally padded to always match this batch size
 
-        * `:image_size` - the size of the input spatial dimensions
-
-        * `:channels` - the number of channels in the input
-
       It is advised to set this option in production and also configure
       a defn compiler using `:defn_options` to maximally reduce inference
       time.

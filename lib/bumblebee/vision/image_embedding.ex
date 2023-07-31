@@ -4,7 +4,7 @@ defmodule Bumblebee.Vision.ImageEmbedding do
   alias Bumblebee.Shared
 
   def image_embedding(model_info, featurizer, opts \\ []) do
-    %{model: model, params: params, spec: _spec} = model_info
+    %{model: model, params: params, spec: spec} = model_info
 
     opts =
       Keyword.validate!(opts, [
@@ -21,13 +21,11 @@ defmodule Bumblebee.Vision.ImageEmbedding do
     compile =
       if compile = opts[:compile] do
         compile
-        |> Keyword.validate!([:batch_size, :num_channels, :image_size])
-        |> Shared.require_options!([:batch_size, :num_channels, :image_size])
+        |> Keyword.validate!([:batch_size])
+        |> Shared.require_options!([:batch_size])
       end
 
     batch_size = compile[:batch_size]
-    image_size = compile[:image_size]
-    num_channels = compile[:num_channels]
 
     {_init_fun, encoder} = Axon.build(model)
 
@@ -62,8 +60,7 @@ defmodule Bumblebee.Vision.ImageEmbedding do
         embedding_fun =
           Shared.compile_or_jit(embedding_fun, defn_options, compile != nil, fn ->
             inputs = %{
-              "pixel_values" =>
-                Nx.template({batch_size, image_size, image_size, num_channels}, :f32)
+              "pixel_values" => Shared.input_template(spec, "pixel_values", [batch_size])
             }
 
             [params, inputs]

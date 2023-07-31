@@ -60,7 +60,7 @@ defmodule Bumblebee.Vision.ImageEmbeddingTest do
 
       options = [
         output_attribute: :logits,
-        compile: [batch_size: 5, image_size: 224, num_channels: 3]
+        compile: [batch_size: 5]
       ]
 
       serving = Bumblebee.Vision.ImageEmbedding.image_embedding(model_info, featurizer, options)
