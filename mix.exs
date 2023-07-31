@@ -31,7 +31,9 @@ defmodule Bumblebee.MixProject do
   defp deps do
     [
       {:axon, "~> 0.5.0", axon_opts()},
-      {:tokenizers, "~> 0.3"},
+      # {:tokenizers, "~> 0.3"},
+      {:tokenizers, github: "elixir-nx/tokenizers", override: true},
+      {:rustler, ">= 0.0.0", optional: true},
       # {:nx, "~> 0.5.0"},
       # {:exla, "~> 0.5.0", only: [:dev, :test]},
       # {:torchx, "~> 0.5.0", only: [:dev, :test]},

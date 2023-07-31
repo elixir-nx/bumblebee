@@ -22,7 +22,7 @@ defmodule Bumblebee.Utils.Tokenizers do
     input = List.wrap(input)
 
     {:ok, encodings} =
-      Tokenizer.encode(tokenizer, input, add_special_tokens: opts[:add_special_tokens])
+      Tokenizer.encode_batch(tokenizer, input, add_special_tokens: opts[:add_special_tokens])
 
     length = opts[:length]
 
@@ -151,8 +151,15 @@ defmodule Bumblebee.Utils.Tokenizers do
     |> Nx.reshape({length(list), :auto})
   end
 
-  def decode(tokenizer, ids) do
+  def decode(tokenizer, [id | _] = ids) when is_number(id) do
     case Tokenizer.decode(tokenizer, ids) do
+      {:ok, decoded} -> decoded
+      {:error, term} -> raise "decoding failed with error: #{inspect(term)}"
+    end
+  end
+
+  def decode(tokenizer, batch_ids) do
+    case Tokenizer.decode_batch(tokenizer, batch_ids) do
       {:ok, decoded} -> decoded
       {:error, term} -> raise "decoding failed with error: #{inspect(term)}"
     end
@@ -167,7 +174,7 @@ defmodule Bumblebee.Utils.Tokenizers do
   end
 
   def load!(path) do
-    case Tokenizers.Tokenizer.from_file(path) do
+    case Tokenizers.Tokenizer.from_file(path, padding: :none, truncation: :none) do
       {:ok, tokenizer} -> tokenizer
       {:error, error} -> raise "failed to read tokenizer from file, reason: #{error}"
     end
