@@ -39,10 +39,14 @@ defmodule Bumblebee.Text.TokenClassification do
       Shared.logits_to_scores(outputs.logits, scores_function)
     end
 
+    batch_keys = Shared.sequence_batch_keys(sequence_length)
+
     Nx.Serving.new(
-      fn defn_options ->
+      fn batch_key, defn_options ->
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
+            {:sequence_length, sequence_length} = batch_key
+
             inputs = %{
               "input_ids" => Nx.template({batch_size, sequence_length}, :u32),
               "attention_mask" => Nx.template({batch_size, sequence_length}, :u32)
@@ -58,7 +62,7 @@ defmodule Bumblebee.Text.TokenClassification do
       end,
       defn_options
     )
-    |> Nx.Serving.process_options(batch_size: batch_size)
+    |> Nx.Serving.process_options(batch_size: batch_size, batch_keys: batch_keys)
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
@@ -71,7 +75,10 @@ defmodule Bumblebee.Text.TokenClassification do
 
       inputs = Map.take(all_inputs, ["input_ids", "attention_mask"])
 
-      {Nx.Batch.concatenate([inputs]), {all_inputs, multi?}}
+      batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
+      batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)
+
+      {batch, {all_inputs, multi?}}
     end)
     |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, {inputs, multi?} ->
       Enum.zip_with(

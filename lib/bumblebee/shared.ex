@@ -360,6 +360,39 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Returns batch keys for the given sequence length specified in text
+  serving compile options.
+  """
+  @spec sequence_batch_keys(nil | non_neg_integer() | list(non_neg_integer())) :: list()
+  def sequence_batch_keys(sequence_length)
+
+  def sequence_batch_keys(nil), do: [:default]
+
+  def sequence_batch_keys(length) when is_number(length) do
+    [{:sequence_length, length}]
+  end
+
+  def sequence_batch_keys(lengths) when is_list(lengths) do
+    Enum.map(lengths, &{:sequence_length, &1})
+  end
+
+  @doc """
+  Determines batch key compatible with `sequence_batch_keys/1` based
+  on tokenized inputs.
+  """
+  @spec sequence_batch_key_for_inputs(
+          inputs :: any(),
+          nil | non_neg_integer() | list(non_neg_integer())
+        ) :: term()
+  def sequence_batch_key_for_inputs(inputs, sequence_length) do
+    if sequence_length do
+      {:sequence_length, Nx.axis_size(inputs["input_ids"], 1)}
+    else
+      :default
+    end
+  end
+
+  @doc """
   Generates tokenizer implementation.
   """
   defmacro tokenizer_impl(opts) do
