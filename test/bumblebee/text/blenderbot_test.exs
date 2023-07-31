@@ -55,18 +55,18 @@ defmodule Bumblebee.Text.BlenderbotTest do
 
   test "conditional generation" do
     {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/blenderbot-400M-distill"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/blenderbot-400M-distill"})
 
     {:ok, generation_config} =
       Bumblebee.load_generation_config({:hf, "facebook/blenderbot-400M-distill"})
 
     assert %Bumblebee.Text.Blenderbot{architecture: :for_conditional_generation} = model_info.spec
 
-    english_phrase = " Hey, how are you?"
+    inputs = %{
+      "input_ids" => Nx.tensor([[2675, 19, 544, 366, 304, 38, 2]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1]])
+    }
 
-    inputs = Bumblebee.apply_tokenizer(tokenizer, english_phrase)
-
-    generation_config = Bumblebee.configure(generation_config, min_length: 0, max_length: 6)
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 5)
 
     generate =
       Bumblebee.Text.Generation.build_generate(
@@ -75,8 +75,8 @@ defmodule Bumblebee.Text.BlenderbotTest do
         generation_config
       )
 
-    token_ids = EXLA.jit(generate).(model_info.params, inputs)
+    token_ids = generate.(model_info.params, inputs)
 
-    assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == [" I'm doing well"]
+    assert_equal(token_ids, Nx.tensor([[1, 281, 476, 929, 731, 2]]))
   end
 end
