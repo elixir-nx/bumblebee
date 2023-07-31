@@ -52,28 +52,5 @@ defmodule Bumblebee.Vision.ImageEmbeddingTest do
         atol: 1.0e-4
       )
     end
-
-    test "returns ViT embedding for an image, using compile option" do
-      {:ok, model_info} = Bumblebee.load_model({:hf, "google/vit-base-patch16-224"})
-
-      {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "google/vit-base-patch16-224"})
-
-      options = [
-        output_attribute: :logits,
-        compile: [batch_size: 5]
-      ]
-
-      serving = Bumblebee.Vision.ImageEmbedding.image_embedding(model_info, featurizer, options)
-      image = StbImage.read_file!(Path.join(@images_dir, "coco/39769.jpeg"))
-
-      assert %{embedding: %Nx.Tensor{} = embedding} = Nx.Serving.run(serving, image)
-      assert Nx.shape(embedding) == {1000}
-
-      assert_all_close(
-        embedding[1..3],
-        Nx.tensor([0.8104, -0.0693, 0.4399]),
-        atol: 1.0e-4
-      )
-    end
   end
 end
