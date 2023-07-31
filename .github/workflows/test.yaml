@@ -38,8 +38,6 @@ jobs:
             _build
             cache
           key: ${{ runner.os }}-mix-${{ matrix.pair.elixir }}-${{ matrix.pair.otp }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-mix-
       - run: mix deps.get
       - run: mix format --check-formatted
         if: ${{ matrix.lint }}
