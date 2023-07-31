@@ -158,18 +158,17 @@ defmodule Bumblebee.Text.MbartTest do
         module: Bumblebee.Text.Mbart
       )
 
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/mbart-large-en-ro"})
-
     {:ok, generation_config} =
       Bumblebee.load_generation_config({:hf, "facebook/mbart-large-en-ro"})
 
     assert %Bumblebee.Text.Mbart{architecture: :for_conditional_generation} = model_info.spec
 
-    english_phrase = "42 is the answer"
+    inputs = %{
+      "input_ids" => Nx.tensor([[4828, 83, 70, 35166, 2, 250_004]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1]])
+    }
 
-    inputs = Bumblebee.apply_tokenizer(tokenizer, english_phrase)
-
-    generation_config = Bumblebee.configure(generation_config, min_length: 0, max_length: 6)
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 5)
 
     generate =
       Bumblebee.Text.Generation.build_generate(
@@ -178,8 +177,8 @@ defmodule Bumblebee.Text.MbartTest do
         generation_config
       )
 
-    token_ids = EXLA.jit(generate).(model_info.params, inputs)
+    token_ids = generate.(model_info.params, inputs)
 
-    assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["42 este răspunsul"]
+    assert_equal(token_ids, Nx.tensor([[250_020, 4828, 473, 54051, 202, 2]]))
   end
 end

@@ -144,21 +144,16 @@ defmodule Bumblebee.Text.BartTest do
 
   test "conditional generation" do
     {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})
     {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "facebook/bart-large-cnn"})
 
     assert %Bumblebee.Text.Bart{architecture: :for_conditional_generation} = model_info.spec
 
-    article = """
-    PG&E stated it scheduled the blackouts in response to forecasts for high \
-    winds amid dry conditions. The aim is to reduce the risk of wildfires. \
-    Nearly 800 thousand customers were scheduled to be affected by the shutoffs \
-    which were expected to last through at least midday tomorrow.
-    """
+    inputs = %{
+      "input_ids" => Nx.tensor([[0, 133, 812, 9, 1470, 16, 2201, 2]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1]])
+    }
 
-    inputs = Bumblebee.apply_tokenizer(tokenizer, article)
-
-    generation_config = Bumblebee.configure(generation_config, max_length: 8)
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 5)
 
     generate =
       Bumblebee.Text.Generation.build_generate(
@@ -167,8 +162,8 @@ defmodule Bumblebee.Text.BartTest do
         generation_config
       )
 
-    token_ids = EXLA.jit(generate).(model_info.params, inputs)
+    token_ids = generate.(model_info.params, inputs)
 
-    assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["PG&E scheduled the"]
+    assert_equal(token_ids, Nx.tensor([[2, 0, 133, 812, 9, 2]]))
   end
 end

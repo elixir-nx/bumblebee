@@ -20,9 +20,7 @@ defmodule Bumblebee.Vision.ImageToTextTest do
         Bumblebee.load_generation_config({:hf, "Salesforce/blip-image-captioning-base"})
 
       serving =
-        Bumblebee.Vision.ImageToText.image_to_text(blip, featurizer, tokenizer, generation_config,
-          defn_options: [compiler: EXLA]
-        )
+        Bumblebee.Vision.ImageToText.image_to_text(blip, featurizer, tokenizer, generation_config)
 
       image = StbImage.read_file!(Path.join(@images_dir, "coco/39769.jpeg"))
 
