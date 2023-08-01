@@ -855,31 +855,13 @@ defmodule Bumblebee.Text.Generation do
 
     keys = Nx.Random.split(key, parts: batch_size)
 
-    tokens =
-      for i <- 0..(batch_size - 1) do
-        probabilities = scores[i]
-        {token, _} = Nx.Random.choice(keys[i], vocab, probabilities, samples: 1)
-        token
-      end
+    key = Nx.vectorize(keys, :batch)
+    probabilities = Nx.vectorize(scores, :batch)
 
-    Nx.concatenate(tokens, axis: 0)
+    {tokens, _} = Nx.Random.choice(key, vocab, probabilities, samples: 1)
+
+    tokens
+    |> Nx.squeeze()
+    |> Nx.devectorize()
   end
-
-  # TODO: once vectorization is in
-  # deftransformp batched_choice(key, scores) do
-  #   {batch_size, vocab_size} = Nx.shape(scores)
-
-  #   vocab = Nx.iota({vocab_size})
-
-  #   keys = Nx.Random.split(key, parts: batch_size)
-
-  #   key = Nx.vectorize(keys, :batch)
-  #   probabilities = Nx.vectorize(scores, :batch)
-
-  #   {tokens, _} = Nx.Random.choice(key, vocab, probabilities, samples: 1)
-
-  #   tokens
-  #   |> Nx.squeeze()
-  #   |> Nx.devectorize()
-  # end
 end
