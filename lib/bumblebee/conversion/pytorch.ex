@@ -27,14 +27,21 @@ defmodule Bumblebee.Conversion.PyTorch do
   """
   @spec load_params!(Axon.t(), map(), Path.t() | list(Path.t()), keyword()) :: map()
   def load_params!(model, input_template, path, opts \\ []) do
-    opts = Keyword.validate!(opts, [:log_params_diff, :backend, params_mapping: %{}])
+    opts =
+      opts
+      |> Keyword.validate!([
+        :log_params_diff,
+        :backend,
+        params_mapping: %{},
+        loader_module: Bumblebee.Conversion.PyTorch.Loader
+      ])
 
     with_default_backend(opts[:backend], fn ->
       pytorch_state =
         path
         |> List.wrap()
         |> Enum.map(fn path ->
-          pytorch_state = Bumblebee.Conversion.PyTorch.Loader.load!(path)
+          pytorch_state = opts[:loader_module].load!(path)
 
           unless state_dict?(pytorch_state) do
             raise "expected a serialized model state dictionary at #{path}, but got: #{inspect(pytorch_state)}"

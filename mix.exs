@@ -37,6 +37,7 @@ defmodule Bumblebee.MixProject do
       {:torchx, "~> 0.5.0", only: [:dev, :test]},
       {:nx_image, "~> 0.1.0"},
       {:unpickler, "~> 0.1.0"},
+      {:safetensors, "~> 0.1.0"},
       {:castore, "~> 0.1 or ~> 1.0"},
       {:jason, "~> 1.4.0"},
       {:unzip, "0.8.0"},
