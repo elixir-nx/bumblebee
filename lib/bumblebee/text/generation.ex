@@ -61,23 +61,28 @@ defmodule Bumblebee.Text.Generation do
       :for_causal_language_modeling
     ])
 
-    compile = opts[:compile]
     defn_options = opts[:defn_options]
+
+    compile =
+      if compile = opts[:compile] do
+        compile
+        |> Keyword.validate!([:batch_size, :sequence_length])
+        |> Shared.require_options!([:batch_size, :sequence_length])
+      end
 
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
 
-    if compile != nil and (batch_size == nil or sequence_length == nil) do
-      raise ArgumentError,
-            "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
-    end
-
     generate_fun = build_generate(model, spec, generation_config, Keyword.take(opts, [:seed]))
 
+    batch_keys = Shared.sequence_batch_keys(sequence_length)
+
     Nx.Serving.new(
-      fn defn_options ->
+      fn batch_key, defn_options ->
         generate_fun =
           Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
+            {:sequence_length, sequence_length} = batch_key
+
             inputs = %{
               "input_ids" => Nx.template({batch_size, sequence_length}, :u32),
               "attention_mask" => Nx.template({batch_size, sequence_length}, :u32)
@@ -93,7 +98,7 @@ defmodule Bumblebee.Text.Generation do
       end,
       defn_options
     )
-    |> Nx.Serving.process_options(batch_size: batch_size)
+    |> Nx.Serving.process_options(batch_size: batch_size, batch_keys: batch_keys)
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
@@ -104,9 +109,12 @@ defmodule Bumblebee.Text.Generation do
           return_token_type_ids: false
         )
 
-      {Nx.Batch.concatenate([inputs]), multi?}
+      batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
+      batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)
+
+      {batch, multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn token_ids, _metadata, multi? ->
+    |> Nx.Serving.client_postprocessing(fn {token_ids, _metadata}, multi? ->
       decoded = Bumblebee.Tokenizer.decode(tokenizer, token_ids)
 
       decoded
@@ -847,31 +855,13 @@ defmodule Bumblebee.Text.Generation do
 
     keys = Nx.Random.split(key, parts: batch_size)
 
-    tokens =
-      for i <- 0..(batch_size - 1) do
-        probabilities = scores[i]
-        {token, _} = Nx.Random.choice(keys[i], vocab, probabilities, samples: 1)
-        token
-      end
+    key = Nx.vectorize(keys, :batch)
+    probabilities = Nx.vectorize(scores, :batch)
 
-    Nx.concatenate(tokens, axis: 0)
+    {tokens, _} = Nx.Random.choice(key, vocab, probabilities, samples: 1)
+
+    tokens
+    |> Nx.squeeze()
+    |> Nx.devectorize()
   end
-
-  # TODO: once vectorization is in
-  # deftransformp batched_choice(key, scores) do
-  #   {batch_size, vocab_size} = Nx.shape(scores)
-
-  #   vocab = Nx.iota({vocab_size})
-
-  #   keys = Nx.Random.split(key, parts: batch_size)
-
-  #   key = Nx.vectorize(keys, :batch)
-  #   probabilities = Nx.vectorize(scores, :batch)
-
-  #   {tokens, _} = Nx.Random.choice(key, vocab, probabilities, samples: 1)
-
-  #   tokens
-  #   |> Nx.squeeze()
-  #   |> Nx.devectorize()
-  # end
 end

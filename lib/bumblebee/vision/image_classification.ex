@@ -15,16 +15,17 @@ defmodule Bumblebee.Vision.ImageClassification do
       Keyword.validate!(opts, [:compile, top_k: 5, scores_function: :softmax, defn_options: []])
 
     top_k = opts[:top_k]
-    compile = opts[:compile]
     scores_function = opts[:scores_function]
     defn_options = opts[:defn_options]
 
-    batch_size = compile[:batch_size]
+    compile =
+      if compile = opts[:compile] do
+        compile
+        |> Keyword.validate!([:batch_size])
+        |> Shared.require_options!([:batch_size])
+      end
 
-    if compile != nil and batch_size == nil do
-      raise ArgumentError,
-            "expected :compile to be a keyword list specifying :batch_size, got: #{inspect(compile)}"
-    end
+    batch_size = compile[:batch_size]
 
     {_init_fun, predict_fun} = Axon.build(model)
 
@@ -57,7 +58,7 @@ defmodule Bumblebee.Vision.ImageClassification do
       inputs = Bumblebee.apply_featurizer(featurizer, images)
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
+    |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, multi? ->
       for scores <- Bumblebee.Utils.Nx.batch_to_list(scores) do
         k = min(top_k, Nx.size(scores))
         {top_scores, top_indices} = Nx.top_k(scores, k: k)

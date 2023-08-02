@@ -661,9 +661,10 @@ defmodule Bumblebee do
     * `:return_offsets` - whether to return token offsets for encoded
       sequence. Defaults to `false`
 
-    * `:length` - applies fixed length padding or truncation to the given
-      input if set
-
+    * `:length` - applies fixed length padding or truncation to the
+      given input if set. Can be either a specific number or a list
+      of numbers. When a list is given, the smallest number that
+      exceeds all input lengths is used as the padding length
 
   ## Examples
 

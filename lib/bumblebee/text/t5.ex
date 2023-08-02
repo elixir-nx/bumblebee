@@ -327,7 +327,12 @@ defmodule Bumblebee.Text.T5 do
         }
       else
         embeddings =
-          embedder(inputs["input_ids"], inputs["input_embeddings"], spec, name: "encoder_embedder")
+          embedder(
+            inputs["input_ids"],
+            inputs["input_embeddings"],
+            spec,
+            name: "encoder_embedder"
+          )
 
         embeddings
         |> encoder(inputs["attention_mask"], inputs["attention_head_mask"], spec, name: "encoder")

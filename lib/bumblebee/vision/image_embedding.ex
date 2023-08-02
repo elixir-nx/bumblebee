@@ -1,34 +1,31 @@
-defmodule Bumblebee.Text.TextEmbedding do
+defmodule Bumblebee.Vision.ImageEmbedding do
   @moduledoc false
 
   alias Bumblebee.Shared
 
-  def text_embedding(model_info, tokenizer, opts \\ []) do
-    %{model: model, params: params, spec: _spec} = model_info
+  def image_embedding(model_info, featurizer, opts \\ []) do
+    %{model: model, params: params, spec: spec} = model_info
 
     opts =
       Keyword.validate!(opts, [
         :compile,
         output_attribute: :pooled_state,
-        output_pool: nil,
         embedding_processor: nil,
         defn_options: []
       ])
 
     output_attribute = opts[:output_attribute]
-    output_pool = opts[:output_pool]
     embedding_processor = opts[:embedding_processor]
     defn_options = opts[:defn_options]
 
     compile =
       if compile = opts[:compile] do
         compile
-        |> Keyword.validate!([:batch_size, :sequence_length])
-        |> Shared.require_options!([:batch_size, :sequence_length])
+        |> Keyword.validate!([:batch_size])
+        |> Shared.require_options!([:batch_size])
       end
 
     batch_size = compile[:batch_size]
-    sequence_length = compile[:sequence_length]
 
     {_init_fun, encoder} = Axon.build(model)
 
@@ -40,24 +37,6 @@ defmodule Bumblebee.Text.TextEmbedding do
           output[output_attribute]
         else
           output
-        end
-
-      output =
-        case output_pool do
-          nil ->
-            output
-
-          :mean_pooling ->
-            input_mask_expanded = Nx.new_axis(inputs["attention_mask"], -1)
-
-            output
-            |> Nx.multiply(input_mask_expanded)
-            |> Nx.sum(axes: [1])
-            |> Nx.divide(Nx.sum(input_mask_expanded, axes: [1]))
-
-          other ->
-            raise ArgumentError,
-                  "expected :output_pool to be one of nil or :mean_pooling, got: #{inspect(other)}"
         end
 
       output =
@@ -76,17 +55,12 @@ defmodule Bumblebee.Text.TextEmbedding do
       output
     end
 
-    batch_keys = Shared.sequence_batch_keys(sequence_length)
-
     Nx.Serving.new(
-      fn batch_key, defn_options ->
+      fn defn_options ->
         embedding_fun =
           Shared.compile_or_jit(embedding_fun, defn_options, compile != nil, fn ->
-            {:sequence_length, sequence_length} = batch_key
-
             inputs = %{
-              "input_ids" => Nx.template({batch_size, sequence_length}, :u32),
-              "attention_mask" => Nx.template({batch_size, sequence_length}, :u32)
+              "pixel_values" => Shared.input_template(spec, "pixel_values", [batch_size])
             }
 
             [params, inputs]
@@ -99,20 +73,13 @@ defmodule Bumblebee.Text.TextEmbedding do
       end,
       defn_options
     )
-    |> Nx.Serving.process_options(batch_size: batch_size, batch_keys: batch_keys)
+    |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
-      {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
+      {images, multi?} = Shared.validate_serving_input!(input, &Shared.validate_image/1)
 
-      inputs =
-        Bumblebee.apply_tokenizer(tokenizer, texts,
-          length: sequence_length,
-          return_token_type_ids: false
-        )
+      inputs = Bumblebee.apply_featurizer(featurizer, images)
 
-      batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
-      batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)
-
-      {batch, multi?}
+      {Nx.Batch.concatenate([inputs]), multi?}
     end)
     |> Nx.Serving.client_postprocessing(fn {embeddings, _metadata}, multi? ->
       for embedding <- Bumblebee.Utils.Nx.batch_to_list(embeddings) do

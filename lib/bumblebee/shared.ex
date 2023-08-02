@@ -215,6 +215,20 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Asserts that the given options keyword list has all of the given
+  keys.
+  """
+  def require_options!(opts, keys) do
+    missing = keys -- Keyword.keys(opts)
+
+    if missing != [] do
+      raise ArgumentError, "missing keys #{inspect(missing)} in #{inspect(opts)}"
+    end
+
+    opts
+  end
+
+  @doc """
   Checks if the given term is an image.
   """
   @spec image?(term()) :: boolean()
@@ -260,7 +274,7 @@ defmodule Bumblebee.Shared do
           function(),
           keyword(),
           boolean(),
-          (() -> list(Nx.Tensor.t()))
+          (-> list(Nx.Tensor.t()))
         ) :: function()
   def compile_or_jit(fun, defn_options, compile?, template_fun) do
     if compile? do
@@ -342,6 +356,39 @@ defmodule Bumblebee.Shared do
       other ->
         raise ArgumentError,
               "expected :scores_function to be either of :softmax, :sigmoid or :none, got: #{inspect(other)}"
+    end
+  end
+
+  @doc """
+  Returns batch keys for the given sequence length specified in text
+  serving compile options.
+  """
+  @spec sequence_batch_keys(nil | non_neg_integer() | list(non_neg_integer())) :: list()
+  def sequence_batch_keys(sequence_length)
+
+  def sequence_batch_keys(nil), do: [:default]
+
+  def sequence_batch_keys(length) when is_number(length) do
+    [{:sequence_length, length}]
+  end
+
+  def sequence_batch_keys(lengths) when is_list(lengths) do
+    Enum.map(lengths, &{:sequence_length, &1})
+  end
+
+  @doc """
+  Determines batch key compatible with `sequence_batch_keys/1` based
+  on tokenized inputs.
+  """
+  @spec sequence_batch_key_for_inputs(
+          inputs :: any(),
+          nil | non_neg_integer() | list(non_neg_integer())
+        ) :: term()
+  def sequence_batch_key_for_inputs(inputs, sequence_length) do
+    if sequence_length do
+      {:sequence_length, Nx.axis_size(inputs["input_ids"], 1)}
+    else
+      :default
     end
   end
 

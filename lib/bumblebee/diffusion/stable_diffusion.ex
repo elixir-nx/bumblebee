@@ -142,7 +142,6 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     safety_checker_featurizer = opts[:safety_checker_featurizer]
     num_steps = opts[:num_steps]
     num_images_per_prompt = opts[:num_images_per_prompt]
-    compile = opts[:compile]
     defn_options = opts[:defn_options]
 
     if safety_checker != nil and safety_checker_featurizer == nil do
@@ -151,13 +150,15 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     safety_checker? = safety_checker != nil
 
+    compile =
+      if compile = opts[:compile] do
+        compile
+        |> Keyword.validate!([:batch_size, :sequence_length])
+        |> Shared.require_options!([:batch_size, :sequence_length])
+      end
+
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
-
-    if compile != nil and (batch_size == nil or sequence_length == nil) do
-      raise ArgumentError,
-            "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
-    end
 
     {_, encoder_predict} = Axon.build(encoder.model)
     {_, vae_predict} = Axon.build(vae.model)
@@ -211,7 +212,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     )
     |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(&client_preprocessing(&1, tokenizer, sequence_length))
-    |> Nx.Serving.client_postprocessing(&client_postprocessing(&1, &2, &3, safety_checker))
+    |> Nx.Serving.client_postprocessing(&client_postprocessing(&1, &2, safety_checker))
   end
 
   defp init(
@@ -292,7 +293,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     {Nx.Batch.concatenate([inputs]), multi?}
   end
 
-  defp client_postprocessing(outputs, _metadata, multi?, safety_checker?) do
+  defp client_postprocessing({outputs, _metadata}, multi?, safety_checker?) do
     for outputs <- Bumblebee.Utils.Nx.batch_to_list(outputs) do
       results =
         for outputs = %{image: image} <- Bumblebee.Utils.Nx.batch_to_list(outputs) do

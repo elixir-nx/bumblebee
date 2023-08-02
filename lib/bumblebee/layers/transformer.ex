@@ -449,7 +449,11 @@ defmodule Bumblebee.Layers.Transformer do
         )
 
       hidden_state =
-        Axon.dropout(hidden_state, rate: dropout_rate, name: join(name, "cross_attention_dropout"))
+        Axon.dropout(
+          hidden_state,
+          rate: dropout_rate,
+          name: join(name, "cross_attention_dropout")
+        )
 
       {hidden_state, {cross_attention, cross_attention_cache}}
     end

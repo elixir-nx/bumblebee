@@ -146,15 +146,15 @@ defmodule Bumblebee.Text.T5Test do
     end
 
     test "text generation" do
-      assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "t5-small"})
       assert {:ok, model_info} = Bumblebee.load_model({:hf, "t5-small"})
       assert {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "t5-small"})
 
-      text = "translate English to German: How old are you?"
+      inputs = %{
+        "input_ids" => Nx.tensor([[13959, 1566, 12, 2968, 10, 571, 625, 33, 25, 58, 1]]),
+        "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
+      }
 
-      inputs = Bumblebee.apply_tokenizer(tokenizer, text)
-
-      generation_config = Bumblebee.configure(generation_config, min_length: 0, max_length: 10)
+      generation_config = Bumblebee.configure(generation_config, max_new_tokens: 5)
 
       generate =
         Bumblebee.Text.Generation.build_generate(
@@ -163,23 +163,23 @@ defmodule Bumblebee.Text.T5Test do
           generation_config
         )
 
-      token_ids = EXLA.jit(generate).(model_info.params, inputs)
+      token_ids = generate.(model_info.params, inputs)
 
-      assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["Wie alt sind Sie?"]
+      assert_equal(token_ids, Nx.tensor([[0, 2739, 4445, 436, 292, 58]]))
     end
 
     test "text generation (tied embeddings)" do
-      assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google/flan-t5-small"})
       assert {:ok, model_info} = Bumblebee.load_model({:hf, "google/flan-t5-small"})
 
       assert {:ok, generation_config} =
                Bumblebee.load_generation_config({:hf, "google/flan-t5-small"})
 
-      text = "translate English to German: How old are you?"
+      inputs = %{
+        "input_ids" => Nx.tensor([[13959, 1566, 12, 2968, 10, 571, 625, 33, 25, 58, 1]]),
+        "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
+      }
 
-      inputs = Bumblebee.apply_tokenizer(tokenizer, text)
-
-      generation_config = Bumblebee.configure(generation_config, min_length: 0, max_length: 10)
+      generation_config = Bumblebee.configure(generation_config, max_new_tokens: 5)
 
       generate =
         Bumblebee.Text.Generation.build_generate(
@@ -188,9 +188,9 @@ defmodule Bumblebee.Text.T5Test do
           generation_config
         )
 
-      token_ids = EXLA.jit(generate).(model_info.params, inputs)
+      token_ids = generate.(model_info.params, inputs)
 
-      assert Bumblebee.Tokenizer.decode(tokenizer, token_ids) == ["Wie ich er bitten?"]
+      assert_equal(token_ids, Nx.tensor([[0, 2739, 3, 362, 3, 49]]))
     end
   end
 end

@@ -18,20 +18,21 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
     hypothesis_template = opts[:hypothesis_template]
     top_k = opts[:top_k]
-    compile = opts[:compile]
     defn_options = opts[:defn_options]
 
     hypotheses = Enum.map(labels, hypothesis_template)
 
     sequences_per_batch = length(labels)
 
+    compile =
+      if compile = opts[:compile] do
+        compile
+        |> Keyword.validate!([:batch_size, :sequence_length])
+        |> Shared.require_options!([:batch_size, :sequence_length])
+      end
+
     sequence_length = compile[:sequence_length]
     batch_size = compile[:batch_size]
-
-    if compile != nil and (batch_size == nil or sequence_length == nil) do
-      raise ArgumentError,
-            "expected :compile to be a keyword list specifying :batch_size and :sequence_length, got: #{inspect(compile)}"
-    end
 
     entailment_id =
       Enum.find_value(spec.id_to_label, fn {id, label} ->
@@ -51,10 +52,14 @@ defmodule Bumblebee.Text.ZeroShotClassification do
       logits
     end
 
+    batch_keys = Shared.sequence_batch_keys(sequence_length)
+
     Nx.Serving.new(
-      fn defn_options ->
+      fn batch_key, defn_options ->
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
+            {:sequence_length, sequence_length} = batch_key
+
             inputs = %{
               "input_ids" =>
                 Nx.template({batch_size, sequences_per_batch, sequence_length}, :u32),
@@ -73,7 +78,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
       end,
       defn_options
     )
-    |> Nx.Serving.process_options(batch_size: batch_size)
+    |> Nx.Serving.process_options(batch_size: batch_size, batch_keys: batch_keys)
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
@@ -85,11 +90,15 @@ defmodule Bumblebee.Text.ZeroShotClassification do
           return_token_type_ids: false
         )
 
+      batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
+
       inputs = Utils.Nx.composite_unflatten_batch(inputs, length(texts))
 
-      {Nx.Batch.concatenate([inputs]), multi?}
+      batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)
+
+      {batch, multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn scores, _metadata, multi? ->
+    |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, multi? ->
       for scores <- Utils.Nx.batch_to_list(scores) do
         scores = Axon.Activations.softmax(scores[[.., entailment_id]])
 

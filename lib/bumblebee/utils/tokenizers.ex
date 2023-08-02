@@ -22,15 +22,27 @@ defmodule Bumblebee.Utils.Tokenizers do
     input = List.wrap(input)
 
     {:ok, encodings} =
-      Tokenizer.encode(tokenizer, input, add_special_tokens: opts[:add_special_tokens])
+      Tokenizer.encode_batch(tokenizer, input, add_special_tokens: opts[:add_special_tokens])
+
+    length = opts[:length]
 
     {pad_length, truncate_length} =
-      if length = opts[:length] do
+      if is_number(length) do
         {length, length}
       else
-        {encodings
-         |> Enum.map(&Encoding.n_tokens/1)
-         |> Enum.max(), nil}
+        max_length =
+          encodings
+          |> Enum.map(&Encoding.n_tokens/1)
+          |> Enum.max()
+
+        case length do
+          nil ->
+            {max_length, nil}
+
+          lengths when is_list(lengths) ->
+            bounding_length = find_bounding_length(max_length, lengths)
+            {bounding_length, bounding_length}
+        end
       end
 
     pad_id = Tokenizer.token_to_id(tokenizer, pad_token)
@@ -61,6 +73,20 @@ defmodule Bumblebee.Utils.Tokenizers do
     |> maybe_put_return_special_tokens_mask(encodings, opts[:return_special_tokens_mask])
     |> maybe_put_offsets(encodings, opts[:return_offsets])
   end
+
+  defp find_bounding_length(max_length, lengths) do
+    find_bounding_length(max_length, lengths, :infinity, 0)
+  end
+
+  defp find_bounding_length(max_length, [length | rest], bound, max) when length >= max_length do
+    find_bounding_length(max_length, rest, min(bound, length), max(length, max))
+  end
+
+  defp find_bounding_length(max_length, [length | rest], bound, max) do
+    find_bounding_length(max_length, rest, bound, max(length, max))
+  end
+
+  defp find_bounding_length(_max_length, [], bound, max), do: min(bound, max)
 
   defp maybe_put_attention_mask(encoded, encodings, return_attention_mask) do
     if return_attention_mask do
@@ -125,8 +151,15 @@ defmodule Bumblebee.Utils.Tokenizers do
     |> Nx.reshape({length(list), :auto})
   end
 
-  def decode(tokenizer, ids) do
+  def decode(tokenizer, [id | _] = ids) when is_number(id) do
     case Tokenizer.decode(tokenizer, ids) do
+      {:ok, decoded} -> decoded
+      {:error, term} -> raise "decoding failed with error: #{inspect(term)}"
+    end
+  end
+
+  def decode(tokenizer, batch_ids) do
+    case Tokenizer.decode_batch(tokenizer, batch_ids) do
       {:ok, decoded} -> decoded
       {:error, term} -> raise "decoding failed with error: #{inspect(term)}"
     end
@@ -141,7 +174,7 @@ defmodule Bumblebee.Utils.Tokenizers do
   end
 
   def load!(path) do
-    case Tokenizers.Tokenizer.from_file(path) do
+    case Tokenizers.Tokenizer.from_file(path, padding: :none, truncation: :none) do
       {:ok, tokenizer} -> tokenizer
       {:error, error} -> raise "failed to read tokenizer from file, reason: #{error}"
     end

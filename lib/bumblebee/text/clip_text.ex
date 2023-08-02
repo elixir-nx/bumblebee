@@ -137,7 +137,11 @@ defmodule Bumblebee.Text.ClipText do
     encoder_outputs = encoder(embeddings, inputs["attention_mask"], spec, name: "encoder")
 
     hidden_state =
-      Axon.layer_norm(encoder_outputs.hidden_state, epsilon: spec.layer_norm_epsilon, name: "norm")
+      Axon.layer_norm(
+        encoder_outputs.hidden_state,
+        epsilon: spec.layer_norm_epsilon,
+        name: "norm"
+      )
 
     pooled_state =
       Axon.layer(
