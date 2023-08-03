@@ -70,11 +70,13 @@ defmodule Bumblebee.Text.QuestionAnswering do
         end)
 
       all_inputs =
-        Bumblebee.apply_tokenizer(tokenizer, raw_inputs,
-          length: sequence_length,
-          return_token_type_ids: true,
-          return_offsets: true
-        )
+        Nx.with_default_backend(Nx.BinaryBackend, fn ->
+          Bumblebee.apply_tokenizer(tokenizer, raw_inputs,
+            length: sequence_length,
+            return_token_type_ids: true,
+            return_offsets: true
+          )
+        end)
 
       inputs = Map.take(all_inputs, ["input_ids", "attention_mask", "token_type_ids"])
 

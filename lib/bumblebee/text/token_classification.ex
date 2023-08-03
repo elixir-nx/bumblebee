@@ -67,11 +67,13 @@ defmodule Bumblebee.Text.TokenClassification do
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
       all_inputs =
-        Bumblebee.apply_tokenizer(tokenizer, texts,
-          length: sequence_length,
-          return_special_tokens_mask: true,
-          return_offsets: true
-        )
+        Nx.with_default_backend(Nx.BinaryBackend, fn ->
+          Bumblebee.apply_tokenizer(tokenizer, texts,
+            length: sequence_length,
+            return_special_tokens_mask: true,
+            return_offsets: true
+          )
+        end)
 
       inputs = Map.take(all_inputs, ["input_ids", "attention_mask"])
 

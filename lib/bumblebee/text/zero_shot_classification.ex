@@ -85,10 +85,12 @@ defmodule Bumblebee.Text.ZeroShotClassification do
       pairs = for text <- texts, hypothesis <- hypotheses, do: {text, hypothesis}
 
       inputs =
-        Bumblebee.apply_tokenizer(tokenizer, pairs,
-          length: sequence_length,
-          return_token_type_ids: false
-        )
+        Nx.with_default_backend(Nx.BinaryBackend, fn ->
+          Bumblebee.apply_tokenizer(tokenizer, pairs,
+            length: sequence_length,
+            return_token_type_ids: false
+          )
+        end)
 
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
 

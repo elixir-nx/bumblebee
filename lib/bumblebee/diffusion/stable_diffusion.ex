@@ -275,18 +275,22 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     negative_prompts = Enum.map(inputs, & &1.negative_prompt)
 
     conditional =
-      Bumblebee.apply_tokenizer(tokenizer, prompts,
-        length: sequence_length,
-        return_token_type_ids: false,
-        return_attention_mask: false
-      )
+      Nx.with_default_backend(Nx.BinaryBackend, fn ->
+        Bumblebee.apply_tokenizer(tokenizer, prompts,
+          length: sequence_length,
+          return_token_type_ids: false,
+          return_attention_mask: false
+        )
+      end)
 
     unconditional =
-      Bumblebee.apply_tokenizer(tokenizer, negative_prompts,
-        length: Nx.axis_size(conditional["input_ids"], 1),
-        return_attention_mask: false,
-        return_token_type_ids: false
-      )
+      Nx.with_default_backend(Nx.BinaryBackend, fn ->
+        Bumblebee.apply_tokenizer(tokenizer, negative_prompts,
+          length: Nx.axis_size(conditional["input_ids"], 1),
+          return_attention_mask: false,
+          return_token_type_ids: false
+        )
+      end)
 
     inputs = %{"unconditional" => unconditional, "conditional" => conditional}
 
