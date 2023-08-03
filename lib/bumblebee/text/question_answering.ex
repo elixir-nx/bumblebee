@@ -8,8 +8,9 @@ defmodule Bumblebee.Text.QuestionAnswering do
     %{model: model, params: params, spec: spec} = model_info
     Shared.validate_architecture!(spec, :for_question_answering)
 
-    opts = Keyword.validate!(opts, [:compile, defn_options: []])
+    opts = Keyword.validate!(opts, [:compile, defn_options: [], preallocate_params: false])
 
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     compile =
@@ -35,6 +36,8 @@ defmodule Bumblebee.Text.QuestionAnswering do
 
     Nx.Serving.new(
       fn batch_key, defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
         predict_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key
@@ -70,11 +73,13 @@ defmodule Bumblebee.Text.QuestionAnswering do
         end)
 
       all_inputs =
-        Bumblebee.apply_tokenizer(tokenizer, raw_inputs,
-          length: sequence_length,
-          return_token_type_ids: true,
-          return_offsets: true
-        )
+        Nx.with_default_backend(Nx.BinaryBackend, fn ->
+          Bumblebee.apply_tokenizer(tokenizer, raw_inputs,
+            length: sequence_length,
+            return_token_type_ids: true,
+            return_offsets: true
+          )
+        end)
 
       inputs = Map.take(all_inputs, ["input_ids", "attention_mask", "token_type_ids"])
 

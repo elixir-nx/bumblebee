@@ -42,6 +42,11 @@ defmodule Bumblebee.Audio do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
+
   ## Examples
 
       {:ok, whisper} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})

@@ -12,12 +12,14 @@ defmodule Bumblebee.Text.TextEmbedding do
         output_attribute: :pooled_state,
         output_pool: nil,
         embedding_processor: nil,
-        defn_options: []
+        defn_options: [],
+        preallocate_params: false
       ])
 
     output_attribute = opts[:output_attribute]
     output_pool = opts[:output_pool]
     embedding_processor = opts[:embedding_processor]
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     compile =
@@ -80,6 +82,8 @@ defmodule Bumblebee.Text.TextEmbedding do
 
     Nx.Serving.new(
       fn batch_key, defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
         embedding_fun =
           Shared.compile_or_jit(embedding_fun, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key
@@ -104,10 +108,12 @@ defmodule Bumblebee.Text.TextEmbedding do
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
       inputs =
-        Bumblebee.apply_tokenizer(tokenizer, texts,
-          length: sequence_length,
-          return_token_type_ids: false
-        )
+        Nx.with_default_backend(Nx.BinaryBackend, fn ->
+          Bumblebee.apply_tokenizer(tokenizer, texts,
+            length: sequence_length,
+            return_token_type_ids: false
+          )
+        end)
 
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
       batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)

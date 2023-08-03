@@ -13,11 +13,13 @@ defmodule Bumblebee.Text.ZeroShotClassification do
         :compile,
         hypothesis_template: &default_hypothesis_template/1,
         top_k: 5,
-        defn_options: []
+        defn_options: [],
+        preallocate_params: false
       ])
 
     hypothesis_template = opts[:hypothesis_template]
     top_k = opts[:top_k]
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     hypotheses = Enum.map(labels, hypothesis_template)
@@ -56,6 +58,8 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
     Nx.Serving.new(
       fn batch_key, defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key
@@ -85,10 +89,12 @@ defmodule Bumblebee.Text.ZeroShotClassification do
       pairs = for text <- texts, hypothesis <- hypotheses, do: {text, hypothesis}
 
       inputs =
-        Bumblebee.apply_tokenizer(tokenizer, pairs,
-          length: sequence_length,
-          return_token_type_ids: false
-        )
+        Nx.with_default_backend(Nx.BinaryBackend, fn ->
+          Bumblebee.apply_tokenizer(tokenizer, pairs,
+            length: sequence_length,
+            return_token_type_ids: false
+          )
+        end)
 
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
 

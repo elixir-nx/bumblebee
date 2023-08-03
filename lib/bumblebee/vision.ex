@@ -50,6 +50,11 @@ defmodule Bumblebee.Vision do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
+
   ## Examples
 
       {:ok, resnet} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
@@ -105,6 +110,11 @@ defmodule Bumblebee.Vision do
       time.
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
 
   ## Examples
 
@@ -165,6 +175,11 @@ defmodule Bumblebee.Vision do
       time.
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
 
   ## Examples
 

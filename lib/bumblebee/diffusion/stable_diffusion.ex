@@ -62,6 +62,11 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
+
   ## Examples
 
       repository_id = "CompVis/stable-diffusion-v1-4"
@@ -135,13 +140,15 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
         num_images_per_prompt: 1,
         guidance_scale: 7.5,
         seed: 0,
-        defn_options: []
+        defn_options: [],
+        preallocate_params: false
       ])
 
     safety_checker = opts[:safety_checker]
     safety_checker_featurizer = opts[:safety_checker_featurizer]
     num_steps = opts[:num_steps]
     num_images_per_prompt = opts[:num_images_per_prompt]
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     if safety_checker != nil and safety_checker_featurizer == nil do
@@ -203,11 +210,12 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
       {safety_checker?, safety_checker[:spec], safety_checker[:params]},
       safety_checker_featurizer,
       {compile != nil, batch_size, sequence_length},
-      num_images_per_prompt
+      num_images_per_prompt,
+      preallocate_params
     ]
 
     Nx.Serving.new(
-      fn defn_options -> apply(&init/9, init_args ++ [defn_options]) end,
+      fn defn_options -> apply(&init/10, init_args ++ [defn_options]) end,
       defn_options
     )
     |> Nx.Serving.process_options(batch_size: batch_size)
@@ -224,8 +232,13 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
          safety_checker_featurizer,
          {compile?, batch_size, sequence_length},
          num_images_per_prompt,
+         preallocate_params,
          defn_options
        ) do
+    encoder_params = Shared.maybe_preallocate(encoder_params, preallocate_params, defn_options)
+    unet_params = Shared.maybe_preallocate(unet_params, preallocate_params, defn_options)
+    vae_params = Shared.maybe_preallocate(vae_params, preallocate_params, defn_options)
+
     image_fun =
       Shared.compile_or_jit(image_fun, defn_options, compile?, fn ->
         text_inputs = %{
@@ -249,6 +262,10 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
           [safety_checker_params, inputs]
         end)
+
+    safety_checker_params =
+      safety_checker_params &&
+        Shared.maybe_preallocate(safety_checker_params, preallocate_params, defn_options)
 
     fn inputs ->
       inputs = Shared.maybe_pad(inputs, batch_size)
@@ -275,18 +292,22 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     negative_prompts = Enum.map(inputs, & &1.negative_prompt)
 
     conditional =
-      Bumblebee.apply_tokenizer(tokenizer, prompts,
-        length: sequence_length,
-        return_token_type_ids: false,
-        return_attention_mask: false
-      )
+      Nx.with_default_backend(Nx.BinaryBackend, fn ->
+        Bumblebee.apply_tokenizer(tokenizer, prompts,
+          length: sequence_length,
+          return_token_type_ids: false,
+          return_attention_mask: false
+        )
+      end)
 
     unconditional =
-      Bumblebee.apply_tokenizer(tokenizer, negative_prompts,
-        length: Nx.axis_size(conditional["input_ids"], 1),
-        return_attention_mask: false,
-        return_token_type_ids: false
-      )
+      Nx.with_default_backend(Nx.BinaryBackend, fn ->
+        Bumblebee.apply_tokenizer(tokenizer, negative_prompts,
+          length: Nx.axis_size(conditional["input_ids"], 1),
+          return_attention_mask: false,
+          return_token_type_ids: false
+        )
+      end)
 
     inputs = %{"unconditional" => unconditional, "conditional" => conditional}
 

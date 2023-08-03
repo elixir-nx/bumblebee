@@ -11,11 +11,13 @@ defmodule Bumblebee.Vision.ImageEmbedding do
         :compile,
         output_attribute: :pooled_state,
         embedding_processor: nil,
-        defn_options: []
+        defn_options: [],
+        preallocate_params: false
       ])
 
     output_attribute = opts[:output_attribute]
     embedding_processor = opts[:embedding_processor]
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     compile =
@@ -57,6 +59,8 @@ defmodule Bumblebee.Vision.ImageEmbedding do
 
     Nx.Serving.new(
       fn defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
         embedding_fun =
           Shared.compile_or_jit(embedding_fun, defn_options, compile != nil, fn ->
             inputs = %{

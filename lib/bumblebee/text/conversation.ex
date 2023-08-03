@@ -19,7 +19,7 @@ defmodule Bumblebee.Text.Conversation do
         %Text.GenerationConfig{} = generation_config,
         opts \\ []
       ) do
-    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
+    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: [], preallocate_params: false])
 
     %{model: model, params: params, spec: spec} = model_info
 
@@ -28,6 +28,7 @@ defmodule Bumblebee.Text.Conversation do
       :for_conditional_generation
     ])
 
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     compile =
@@ -49,6 +50,8 @@ defmodule Bumblebee.Text.Conversation do
 
     Nx.Serving.new(
       fn batch_key, defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
         generate_fun =
           Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key
@@ -88,12 +91,14 @@ defmodule Bumblebee.Text.Conversation do
         end
 
       inputs =
-        Bumblebee.apply_tokenizer(tokenizer, texts,
-          length: sequence_length,
-          pad_direction: :left,
-          truncate_direction: :left,
-          return_token_type_ids: false
-        )
+        Nx.with_default_backend(Nx.BinaryBackend, fn ->
+          Bumblebee.apply_tokenizer(tokenizer, texts,
+            length: sequence_length,
+            pad_direction: :left,
+            truncate_direction: :left,
+            return_token_type_ids: false
+          )
+        end)
 
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
       batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)

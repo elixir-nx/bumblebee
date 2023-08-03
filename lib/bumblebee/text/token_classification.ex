@@ -14,12 +14,14 @@ defmodule Bumblebee.Text.TokenClassification do
         :compile,
         scores_function: :softmax,
         ignored_labels: ["O"],
-        defn_options: []
+        defn_options: [],
+        preallocate_params: false
       ])
 
     aggregation = opts[:aggregation]
     ignored_labels = opts[:ignored_labels]
     scores_function = opts[:scores_function]
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     compile =
@@ -43,6 +45,8 @@ defmodule Bumblebee.Text.TokenClassification do
 
     Nx.Serving.new(
       fn batch_key, defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key
@@ -67,11 +71,13 @@ defmodule Bumblebee.Text.TokenClassification do
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
       all_inputs =
-        Bumblebee.apply_tokenizer(tokenizer, texts,
-          length: sequence_length,
-          return_special_tokens_mask: true,
-          return_offsets: true
-        )
+        Nx.with_default_backend(Nx.BinaryBackend, fn ->
+          Bumblebee.apply_tokenizer(tokenizer, texts,
+            length: sequence_length,
+            return_special_tokens_mask: true,
+            return_offsets: true
+          )
+        end)
 
       inputs = Map.take(all_inputs, ["input_ids", "attention_mask"])
 

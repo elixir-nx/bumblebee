@@ -8,10 +8,17 @@ defmodule Bumblebee.Text.TextClassification do
     Shared.validate_architecture!(spec, :for_sequence_classification)
 
     opts =
-      Keyword.validate!(opts, [:compile, top_k: 5, scores_function: :softmax, defn_options: []])
+      Keyword.validate!(opts, [
+        :compile,
+        top_k: 5,
+        scores_function: :softmax,
+        defn_options: [],
+        preallocate_params: false
+      ])
 
     top_k = opts[:top_k]
     scores_function = opts[:scores_function]
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     compile =
@@ -35,6 +42,8 @@ defmodule Bumblebee.Text.TextClassification do
 
     Nx.Serving.new(
       fn batch_key, defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key
@@ -59,10 +68,12 @@ defmodule Bumblebee.Text.TextClassification do
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
       inputs =
-        Bumblebee.apply_tokenizer(tokenizer, texts,
-          length: sequence_length,
-          return_token_type_ids: false
-        )
+        Nx.with_default_backend(Nx.BinaryBackend, fn ->
+          Bumblebee.apply_tokenizer(tokenizer, texts,
+            length: sequence_length,
+            return_token_type_ids: false
+          )
+        end)
 
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
       batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)
