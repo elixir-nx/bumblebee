@@ -11,12 +11,13 @@ defmodule Bumblebee.Vision.ImageToText do
         %Text.GenerationConfig{} = generation_config,
         opts \\ []
       ) do
-    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
+    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: [], preallocate_params: false])
 
     %{model: model, params: params, spec: spec} = model_info
 
     Shared.validate_architecture!(spec, [:for_conditional_generation])
 
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     compile =
@@ -33,6 +34,8 @@ defmodule Bumblebee.Vision.ImageToText do
 
     Nx.Serving.new(
       fn defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
         generate_fun =
           Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
             inputs = %{

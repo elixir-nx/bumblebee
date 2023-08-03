@@ -8,10 +8,17 @@ defmodule Bumblebee.Text.TextClassification do
     Shared.validate_architecture!(spec, :for_sequence_classification)
 
     opts =
-      Keyword.validate!(opts, [:compile, top_k: 5, scores_function: :softmax, defn_options: []])
+      Keyword.validate!(opts, [
+        :compile,
+        top_k: 5,
+        scores_function: :softmax,
+        defn_options: [],
+        preallocate_params: false
+      ])
 
     top_k = opts[:top_k]
     scores_function = opts[:scores_function]
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     compile =
@@ -35,6 +42,8 @@ defmodule Bumblebee.Text.TextClassification do
 
     Nx.Serving.new(
       fn batch_key, defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key

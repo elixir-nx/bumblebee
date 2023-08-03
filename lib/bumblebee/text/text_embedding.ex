@@ -12,12 +12,14 @@ defmodule Bumblebee.Text.TextEmbedding do
         output_attribute: :pooled_state,
         output_pool: nil,
         embedding_processor: nil,
-        defn_options: []
+        defn_options: [],
+        preallocate_params: false
       ])
 
     output_attribute = opts[:output_attribute]
     output_pool = opts[:output_pool]
     embedding_processor = opts[:embedding_processor]
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     compile =
@@ -80,6 +82,8 @@ defmodule Bumblebee.Text.TextEmbedding do
 
     Nx.Serving.new(
       fn batch_key, defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
         embedding_fun =
           Shared.compile_or_jit(embedding_fun, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key

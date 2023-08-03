@@ -407,6 +407,18 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  If `preallocate?` is `true`, allocates `params` using `defn_options`.
+  """
+  @spec maybe_preallocate(map(), boolean(), keyword()) :: map()
+  def maybe_preallocate(params, preallocate?, defn_options) do
+    if preallocate? do
+      Nx.Defn.jit_apply(&Function.identity/1, [params], defn_options)
+    else
+      params
+    end
+  end
+
+  @doc """
   Generates tokenizer implementation.
   """
   defmacro tokenizer_impl(opts) do

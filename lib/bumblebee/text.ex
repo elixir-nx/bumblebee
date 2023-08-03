@@ -91,6 +91,11 @@ defmodule Bumblebee.Text do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
+
   ## Examples
 
       {:ok, bert} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
@@ -151,6 +156,11 @@ defmodule Bumblebee.Text do
       time.
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
 
     * `:stream` - when `true`, the serving immediately returns a
       stream that emits text chunks as they are generated. Note that
@@ -242,6 +252,11 @@ defmodule Bumblebee.Text do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
+
   ## Examples
 
       {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/blenderbot-400M-distill"})
@@ -311,6 +326,11 @@ defmodule Bumblebee.Text do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
+
   ## Examples
 
       {:ok, bertweet} = Bumblebee.load_model({:hf, "finiteautomata/bertweet-base-sentiment-analysis"})
@@ -379,6 +399,11 @@ defmodule Bumblebee.Text do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
+
   ## Examples
 
       {:ok, model_info} = Bumblebee.load_model({:hf, "intfloat/e5-large"})
@@ -443,6 +468,11 @@ defmodule Bumblebee.Text do
       time.
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
 
   ## Examples
 
@@ -513,6 +543,11 @@ defmodule Bumblebee.Text do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
+
   ## Examples
 
       {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
@@ -580,6 +615,11 @@ defmodule Bumblebee.Text do
       time.
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. Defaults to `false`
 
   ## Examples
 

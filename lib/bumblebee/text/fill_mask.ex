@@ -6,9 +6,12 @@ defmodule Bumblebee.Text.FillMask do
   def fill_mask(model_info, tokenizer, opts \\ []) do
     %{model: model, params: params, spec: spec} = model_info
     Shared.validate_architecture!(spec, :for_masked_language_modeling)
-    opts = Keyword.validate!(opts, [:compile, top_k: 5, defn_options: []])
+
+    opts =
+      Keyword.validate!(opts, [:compile, top_k: 5, defn_options: [], preallocate_params: false])
 
     top_k = opts[:top_k]
+    preallocate_params = opts[:preallocate_params]
     defn_options = opts[:defn_options]
 
     compile =
@@ -51,6 +54,8 @@ defmodule Bumblebee.Text.FillMask do
 
     Nx.Serving.new(
       fn batch_key, defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key
