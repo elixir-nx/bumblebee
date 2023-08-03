@@ -33,7 +33,7 @@ defmodule Bumblebee.Conversion.PyTorch do
         :log_params_diff,
         :backend,
         params_mapping: %{},
-        loader_module: Bumblebee.Conversion.PyTorch.Loader
+        loader_fun: &Bumblebee.Conversion.PyTorch.Loader.load!/1
       ])
 
     with_default_backend(opts[:backend], fn ->
@@ -41,7 +41,7 @@ defmodule Bumblebee.Conversion.PyTorch do
         path
         |> List.wrap()
         |> Enum.map(fn path ->
-          pytorch_state = opts[:loader_module].load!(path)
+          pytorch_state = opts[:loader_fun].(path)
 
           unless state_dict?(pytorch_state) do
             raise "expected a serialized model state dictionary at #{path}, but got: #{inspect(pytorch_state)}"

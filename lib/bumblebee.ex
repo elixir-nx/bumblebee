@@ -496,7 +496,7 @@ defmodule Bumblebee do
           paths,
           [
             params_mapping: params_mapping,
-            loader_module: filename |> Path.extname() |> loader_module()
+            loader_fun: filename |> Path.extname() |> params_file_loader_fun()
           ] ++ Keyword.take(opts, [:backend, :log_params_diff])
         )
 
@@ -528,12 +528,16 @@ defmodule Bumblebee do
     end
   end
 
-  defp loader_module(".safetensors") do
-    Bumblebee.Conversion.Safetensors
+  defp params_file_loader_fun(".safetensors") do
+    fn path ->
+      path
+      |> File.read!()
+      |> Safetensors.load!()
+    end
   end
 
-  defp loader_module(_) do
-    Bumblebee.Conversion.PyTorch.Loader
+  defp params_file_loader_fun(_) do
+    &Bumblebee.Conversion.PyTorch.Loader.load!/1
   end
 
   @doc """
