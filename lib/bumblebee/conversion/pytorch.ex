@@ -24,6 +24,10 @@ defmodule Bumblebee.Conversion.PyTorch do
       between the Axon model and the PyTorch state. For more details see
       `Bumblebee.HuggingFace.Transformers.Model.params_mapping/1`
 
+    * `:loader_fun` - a 1-arity function that takes a path argument
+      and loads the params file.
+      Defaults to `Bumblebee.Conversion.PyTorch.Loader.load!/1`.
+
   """
   @spec load_params!(Axon.t(), map(), Path.t() | list(Path.t()), keyword()) :: map()
   def load_params!(model, input_template, path, opts \\ []) do
