@@ -152,11 +152,18 @@ defmodule Bumblebee.Text do
 
     * `:defn_options` - the options for JIT compilation. Defaults to `[]`
 
+    * `:stream` - when `true`, the serving immediately returns a
+      stream that emits text chunks as they are generated. Note that
+      when using streaming, only a single input can be given to the
+      serving. To process a batch, call the serving with each input
+      separately. Defaults to `false`
+
   ## Examples
 
       {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
       {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+      generation_config = Bumblebee.configure(generation_config, max_new_tokens: 15)
 
       serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
 
@@ -168,6 +175,19 @@ defmodule Bumblebee.Text do
       #=>     }
       #=>   ]
       #=> }
+
+  We can stream the result by creating the serving with `stream: true`:
+
+      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+      generation_config = Bumblebee.configure(generation_config, max_new_tokens: 15)
+
+      serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config, stream: true)
+
+      Nx.Serving.run(serving, "Elixir is a functional") |> Enum.to_list()
+      #=> [" programming", " language", " that", " is", " designed", " to", " be", " used", " in", " a",
+      #=>  " variety", " of", " applications.", " It"]
 
   """
   @spec generation(

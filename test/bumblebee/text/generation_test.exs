@@ -87,5 +87,35 @@ defmodule Bumblebee.Text.GenerationTest do
       assert %{results: [%{text: "I was going to say, 'Well, I don't know what you"}]} =
                Nx.Serving.run(serving, "I was going")
     end
+
+    test "streaming text chunks" do
+      {:ok, model_info} = Bumblebee.load_model({:hf, "facebook/bart-large-cnn"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/bart-large-cnn"})
+
+      {:ok, generation_config} =
+        Bumblebee.load_generation_config({:hf, "facebook/bart-large-cnn"})
+
+      article = """
+      PG&E stated it scheduled the blackouts in response to forecasts for high \
+      winds amid dry conditions. The aim is to reduce the risk of wildfires. \
+      Nearly 800 thousand customers were scheduled to be affected by the shutoffs \
+      which were expected to last through at least midday tomorrow.
+      """
+
+      generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
+
+      serving =
+        Bumblebee.Text.generation(model_info, tokenizer, generation_config, stream: true)
+
+      stream = Nx.Serving.run(serving, article)
+      assert Enum.to_list(stream) == ["PG&E", " scheduled", " the", " black"]
+
+      # Raises when a batch is given
+      assert_raise ArgumentError,
+                   "serving only accepts singular input when stream is enabled, call the serving with each input in the batch separately",
+                   fn ->
+                     Nx.Serving.run(serving, [article])
+                   end
+    end
   end
 end

@@ -195,6 +195,20 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Validates that the input is a single value and not a batch.
+  """
+  @spec validate_input_for_stream!(term()) :: :ok
+  def validate_input_for_stream!(input) do
+    if is_list(input) do
+      raise ArgumentError,
+            "serving only accepts singular input when stream is enabled," <>
+              " call the serving with each input in the batch separately"
+    end
+
+    :ok
+  end
+
+  @doc """
   Asserts that the model architecture matches one of the expected
   architectures.
   """

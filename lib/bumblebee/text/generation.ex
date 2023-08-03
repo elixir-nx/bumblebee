@@ -52,7 +52,7 @@ defmodule Bumblebee.Text.Generation do
 
   @doc false
   def generation(model_info, tokenizer, %Text.GenerationConfig{} = generation_config, opts \\ []) do
-    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: []])
+    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: [], stream: false])
 
     %{model: model, params: params, spec: spec} = model_info
 
@@ -100,6 +100,10 @@ defmodule Bumblebee.Text.Generation do
     )
     |> Nx.Serving.process_options(batch_size: batch_size, batch_keys: batch_keys)
     |> Nx.Serving.client_preprocessing(fn input ->
+      if opts[:stream] do
+        Shared.validate_input_for_stream!(input)
+      end
+
       {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
 
       inputs =
@@ -121,6 +125,97 @@ defmodule Bumblebee.Text.Generation do
       |> Enum.map(&%{results: [%{text: &1}]})
       |> Shared.normalize_output(multi?)
     end)
+    |> maybe_stream(opts[:stream], tokenizer)
+  end
+
+  defp maybe_stream(serving, false, _tokenizer), do: serving
+
+  defp maybe_stream(serving, true, tokenizer) do
+    serving
+    |> Nx.Serving.streaming(hooks: [:token])
+    |> Nx.Serving.client_postprocessing(fn stream, false = _multi? ->
+      Stream.transform(stream, %{tokens: [], consumed_size: 0, finished?: false}, fn
+        _event, %{finished?: true} = state ->
+          {:halt, state}
+
+        {:token, {token_id, finished?}}, state ->
+          token_id = Nx.to_number(token_id[0])
+          finished? = Nx.to_number(finished?[0]) == 1
+
+          state = %{state | tokens: state.tokens ++ [token_id], finished?: finished?}
+
+          chunk = pending_chunk(tokenizer, state)
+
+          cond do
+            # When the sequence is finished early or we reach a newline,
+            # we flush the cache
+            finished? or String.ends_with?(chunk, "\n") ->
+              {[chunk], %{state | tokens: [], consumed_size: 0}}
+
+            # CJK characters are tokenized atomically, so we can emit
+            # the chunk
+            chunk != "" and cjk_codepoint?(last_codepoint(chunk)) ->
+              state = update_in(state.consumed_size, &(&1 + byte_size(chunk)))
+              {[chunk], state}
+
+            # Emit chunk until the space. We need to keep tokens,
+            # because certain tokenizers do not encode whitespace in
+            # tokens and they add a space based on previous tokens
+            space_idx = find_last_occurrence(chunk, " ") ->
+              if space_idx > 0 do
+                chunk = binary_slice(chunk, 0, space_idx)
+                state = update_in(state.consumed_size, &(&1 + space_idx))
+                {[chunk], state}
+              else
+                {[], state}
+              end
+
+            true ->
+              {[], state}
+          end
+
+        {:done, _, _}, state ->
+          chunk = pending_chunk(tokenizer, state)
+
+          if chunk == "" do
+            {:halt, state}
+          else
+            {[chunk], %{state | tokens: [], consumed_size: 0}}
+          end
+      end)
+    end)
+  end
+
+  defp pending_chunk(tokenizer, state) do
+    text = Bumblebee.Tokenizer.decode(tokenizer, state.tokens)
+    binary_slice(text, state.consumed_size..-1//1)
+  end
+
+  defp find_last_occurrence(string, pattern) do
+    case :binary.matches(string, pattern) do
+      [] -> nil
+      matches -> matches |> List.last() |> elem(0)
+    end
+  end
+
+  defp last_codepoint(<<codepoint::utf8>>), do: codepoint
+  defp last_codepoint(<<_::utf8, rest::binary>>), do: last_codepoint(rest)
+
+  defp cjk_codepoint?(codepoint) do
+    # The specific ranges originated in [1] and are generally mirrored
+    # in other tokenizers using WordPiece. Also see [2].
+    #
+    # [1]: https://github.com/google-research/bert/blob/eedf5716ce1268e56f0a50264a88cafad334ac61/tokenization.py#L264-L284
+    # [2]: https://github.com/google-research/bert/blob/eedf5716ce1268e56f0a50264a88cafad334ac61/multilingual.md#tokenization
+
+    codepoint in 0x4E00..0x9FFF or
+      codepoint in 0x3400..0x4DBF or
+      codepoint in 0x20000..0x2A6DF or
+      codepoint in 0x2A700..0x2B73F or
+      codepoint in 0x2B740..0x2B81F or
+      codepoint in 0x2B820..0x2CEAF or
+      codepoint in 0xF900..0xFAFF or
+      codepoint in 0x2F800..0x2FA1F
   end
 
   @doc """
@@ -558,6 +653,8 @@ defmodule Bumblebee.Text.Generation do
         nil -> finished?
         eos_token_id -> finished? or token_id == eos_token_id
       end
+
+    {token_id, finished?} = hook({token_id, finished?}, :token)
 
     token_ids = Nx.new_axis(token_id, -1)
     sequences = Nx.put_slice(sequences, [0, length], token_ids)
