@@ -19,5 +19,17 @@ defmodule BumblebeeTest do
 
       assert Enum.sort(Map.keys(params)) == Enum.sort(Map.keys(sharded_params))
     end
+
+    test "supports .safetensors params file" do
+      assert {:ok, %{params: params}} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
+
+      assert {:ok, %{params: safetensors_params}} =
+               Bumblebee.load_model(
+                 {:hf, "openai/whisper-tiny"},
+                 params_filename: "model.safetensors"
+               )
+
+      assert Enum.sort(Map.keys(params)) == Enum.sort(Map.keys(safetensors_params))
+    end
   end
 end
