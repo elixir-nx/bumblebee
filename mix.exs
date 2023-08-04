@@ -42,7 +42,7 @@ defmodule Bumblebee.MixProject do
       {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
       {:nx_image, "~> 0.1.0"},
       {:unpickler, "~> 0.1.0"},
-      {:safetensors, "~> 0.1.0"},
+      {:safetensors, "~> 0.1.1"},
       {:castore, "~> 0.1 or ~> 1.0"},
       {:jason, "~> 1.4.0"},
       {:unzip, "0.8.0"},
