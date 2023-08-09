@@ -48,19 +48,29 @@ defmodule Bumblebee.Utils.Tokenizers do
     pad_id = Tokenizer.token_to_id(tokenizer, pad_token)
 
     encodings =
-      Enum.map(encodings, fn seq ->
-        seq =
-          Encoding.pad(seq, pad_length,
-            pad_id: pad_id,
-            pad_token: pad_token,
-            direction: opts[:pad_direction]
-          )
+      Enum.map(encodings, fn encoding ->
+        transformations =
+          [
+            Encoding.Transformation.pad(pad_length,
+              pad_id: pad_id,
+              pad_token: pad_token,
+              direction: opts[:pad_direction]
+            )
+          ]
 
-        if truncate_length do
-          Encoding.truncate(seq, truncate_length, direction: opts[:truncate_direction])
-        else
-          seq
-        end
+        transformations =
+          transformations ++
+            if truncate_length do
+              [
+                Encoding.Transformation.truncate(truncate_length,
+                  direction: opts[:truncate_direction]
+                )
+              ]
+            else
+              []
+            end
+
+        Encoding.transform(encoding, transformations)
       end)
 
     input_ids = encodings |> Enum.map(&Encoding.get_u32_ids/1) |> u32_binaries_to_tensor()
@@ -174,9 +184,14 @@ defmodule Bumblebee.Utils.Tokenizers do
   end
 
   def load!(path) do
-    case Tokenizers.Tokenizer.from_file(path, padding: :none, truncation: :none) do
-      {:ok, tokenizer} -> tokenizer
-      {:error, error} -> raise "failed to read tokenizer from file, reason: #{error}"
+    case Tokenizer.from_file(path) do
+      {:ok, tokenizer} ->
+        tokenizer
+        |> Tokenizer.disable_padding()
+        |> Tokenizer.disable_truncation()
+
+      {:error, error} ->
+        raise "failed to read tokenizer from file, reason: #{error}"
     end
   end
 end
