@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.1](https://github.com/elixir-nx/bumblebee/tree/v0.3.1) (2023-08-17)
+
+### Added
+
+* LLaMA model ([#199](https://github.com/elixir-nx/bumblebee/pull/199))
+* GPT-NeoX model ([#204](https://github.com/elixir-nx/bumblebee/pull/204))
+* Option to customize scores function in classification tasks ([#211](https://github.com/elixir-nx/bumblebee/pull/211))
+* Text embedding serving ([#214](https://github.com/elixir-nx/bumblebee/pull/214))
+* `Bumblebee.cache_dir/0` for discovering cache location ([#220](https://github.com/elixir-nx/bumblebee/pull/220))
+* Image embedding serving ([#229](https://github.com/elixir-nx/bumblebee/pull/229))
+* Support for compiling text servings for multiple sequence lengths ([#228](https://github.com/elixir-nx/bumblebee/pull/228))
+* Support for streaming chunks during text generation ([#232](https://github.com/elixir-nx/bumblebee/pull/232))
+* Added `:preallocate_params` option to all servings, useful with multiple GPUs ([#233](https://github.com/elixir-nx/bumblebee/pull/233))
+* Support for loading params in the .safetensors format ([#231](https://github.com/elixir-nx/bumblebee/pull/231))
+
 ## [v0.3.0](https://github.com/elixir-nx/bumblebee/tree/v0.3.0) (2023-04-14)
 
 In this release we moved all generation options to a new `%Bumblebee.Text.GenerationConfig{}` struct, which needs to be explicitly loaded and configured. A number of generation options is model-specific and they used to be a part of model specification, but encapsulating everything in a single struct improves the transparency of options origin and reconfiguration. The text generation servings (generation, speech-to-text and conversation) need to be adjusted as follows:
