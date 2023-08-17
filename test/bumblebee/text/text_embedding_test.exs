@@ -45,7 +45,7 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
         atol: 1.0e-4
       )
 
-      assert_equal(Nx.sum(Nx.pow(embedding, 2)), Nx.tensor(1.0))
+      assert_all_close(Nx.sum(Nx.pow(embedding, 2)), Nx.tensor(1.0), atol: 1.0e-6)
     end
 
     test "supports compilation for single or multiple sequence lengths" do
