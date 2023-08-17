@@ -183,7 +183,7 @@ defmodule Bumblebee.Vision do
 
   ## Examples
 
-     {:ok, clip} =
+      {:ok, clip} =
         Bumblebee.load_model({:hf, "openai/clip-vit-base-patch32"},
           module: Bumblebee.Vision.ClipVision
         )
