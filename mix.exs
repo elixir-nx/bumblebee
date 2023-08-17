@@ -1,7 +1,7 @@
 defmodule Bumblebee.MixProject do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.3.1"
   @description "Pre-trained and transformer Neural Network models in Axon"
 
   def project do
