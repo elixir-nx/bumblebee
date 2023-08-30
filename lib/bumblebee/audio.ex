@@ -26,6 +26,19 @@ defmodule Bumblebee.Audio do
 
   ## Options
 
+    * `:chunk_num_seconds` - enables long-form transcription by splitting
+      the input into chunks of the given length. Models generally have
+      a limit on the input length, so by chunking we can feed smaller
+      bits into the model, then merge the individual outputs into a
+      single result at the end. By default chunking is disabled
+
+    * `:context_num_seconds` - specifies the amount of overlap between
+      chunks on both sides of split points. The context is effectively
+      discarded when merging the chunks at the end, but it improves
+      the results at the chunk edges. Note that the context is included
+      in the total `:chunk_num_seconds`. Defaults to 1/6 of
+      `:chunk_num_seconds`
+
     * `:seed` - random seed to use when sampling. By default the current
       timestamp is used
 

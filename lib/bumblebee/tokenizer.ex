@@ -65,6 +65,12 @@ defmodule Bumblebee.Tokenizer do
   @callback special_tokens(t()) :: %{special_token_type() => token()}
 
   @doc """
+  Returns a list with extra special tokens, in addition to the named
+  `special_tokens/1`.
+  """
+  @callback additional_special_tokens(t()) :: MapSet.t(token())
+
+  @doc """
   Decodes a list of token ids into a sentence.
   """
   @spec decode(
@@ -110,5 +116,15 @@ defmodule Bumblebee.Tokenizer do
     if token = special_token(tokenizer, type) do
       token_to_id(tokenizer, token)
     end
+  end
+
+  @doc """
+  Returns all special tokens, including any extra tokens.
+  """
+  @spec all_special_tokens(t()) :: list(token_id())
+  def all_special_tokens(%module{} = tokenizer) do
+    special_tokens = module.special_tokens(tokenizer)
+    additional_special_tokens = module.additional_special_tokens(tokenizer)
+    for {_type, token} <- special_tokens, do: token, into: additional_special_tokens
   end
 end

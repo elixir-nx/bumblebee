@@ -340,15 +340,22 @@ defmodule Bumblebee.Shared do
   def load_special_tokens(special_tokens, data) do
     for {key, default_token} <- special_tokens, into: %{} do
       token =
-        case data["#{key}_token"] do
-          nil -> default_token
-          %{"content" => token} when is_binary(token) -> token
-          token when is_binary(token) -> token
+        if token = data["#{key}_token"] do
+          load_token(token)
+        else
+          default_token
         end
 
       {key, token}
     end
   end
+
+  @doc """
+  Normalizes a persisted token into token string.
+  """
+  @spec load_token(String.t() | map()) :: String.t()
+  def load_token(token) when is_binary(token), do: token
+  def load_token(%{"content" => token}) when is_binary(token), do: token
 
   @doc """
   Converts logits to scores as per the given scores function.
@@ -427,7 +434,8 @@ defmodule Bumblebee.Shared do
     quote do
       defstruct [
         :tokenizer,
-        special_tokens: unquote(special_tokens)
+        special_tokens: unquote(special_tokens),
+        additional_special_tokens: []
       ]
 
       @behaviour Bumblebee.Tokenizer
@@ -457,6 +465,11 @@ defmodule Bumblebee.Shared do
         tokenizer.special_tokens
       end
 
+      @impl true
+      def additional_special_tokens(tokenizer) do
+        tokenizer.additional_special_tokens
+      end
+
       defimpl Bumblebee.HuggingFace.Transformers.Config do
         def load(tokenizer, %{
               "tokenizer_file" => path,
@@ -467,7 +480,21 @@ defmodule Bumblebee.Shared do
           special_tokens =
             Bumblebee.Shared.load_special_tokens(tokenizer.special_tokens, special_tokens_map)
 
-          %{tokenizer | tokenizer: native_tokenizer, special_tokens: special_tokens}
+          additional_special_tokens =
+            case special_tokens_map do
+              %{"additional_special_tokens" => tokens} ->
+                for token <- tokens, do: Bumblebee.Shared.load_token(token), into: MapSet.new()
+
+              _ ->
+                []
+            end
+
+          %{
+            tokenizer
+            | tokenizer: native_tokenizer,
+              special_tokens: special_tokens,
+              additional_special_tokens: additional_special_tokens
+          }
         end
       end
     end
