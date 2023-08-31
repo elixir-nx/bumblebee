@@ -8,7 +8,7 @@ defmodule Bumblebee.Audio.SpeechToTextTest do
   @audio_dir Path.expand("../../fixtures/audio", __DIR__)
 
   describe "integration" do
-    test "returns top scored labels" do
+    test "generates transcription" do
       {:ok, model_info} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/whisper-tiny"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/whisper-tiny"})
@@ -28,6 +28,29 @@ defmodule Bumblebee.Audio.SpeechToTextTest do
         |> Nx.from_binary(:f32)
 
       assert %{results: [%{text: "Tower of strength."}]} = Nx.Serving.run(serving, audio)
+    end
+
+    test "long-form transcription with chunking" do
+      {:ok, model_info} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
+      {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/whisper-tiny"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/whisper-tiny"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai/whisper-tiny"})
+
+      serving =
+        Bumblebee.Audio.speech_to_text(model_info, featurizer, tokenizer, generation_config,
+          chunk_num_seconds: 30,
+          defn_options: [compiler: EXLA]
+        )
+
+      audio =
+        Path.join(@audio_dir, "librivox/46s_pcm_f32le_16000.bin")
+        |> File.read!()
+        |> Nx.from_binary(:f32)
+
+      transcription =
+        "An awakening from the book of Irish poetry part 1, read for LibriVox.org by Sonja. An awakening by Alice Pirlong. O spring will wake in the heart of me with the rapture of blown violets, when the green bud quickens on every tree to spring will wake in the heart of me, and queues of honey will reign on the lee, tangling the grasses in silver nets. Yes, spring will awaken the heart of me with the rapture of blown violets. End of an awakening, this recording is in the public domain."
+
+      assert %{results: [%{text: ^transcription}]} = Nx.Serving.run(serving, audio)
     end
   end
 end

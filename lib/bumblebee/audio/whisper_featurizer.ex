@@ -56,7 +56,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
   def apply(featurizer, raw_samples, defn_options) do
     max_length = featurizer.num_seconds * featurizer.sampling_rate
 
-    transformed_samples =
+    samples =
       for sample <- List.wrap(raw_samples) do
         unless Nx.rank(sample) == 1 do
           raise ArgumentError,
@@ -64,17 +64,20 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
         end
 
         pad_size = max_length - Nx.axis_size(sample, 0)
-        sample = Nx.pad(sample, featurizer.padding_value, [{0, pad_size, 0}])
-
-        Nx.Defn.jit(&extract_fbank_features/2, defn_options).(sample,
-          fft_length: featurizer.fft_length,
-          sampling_rate: featurizer.sampling_rate,
-          mel_bins: featurizer.feature_size,
-          hop_length: featurizer.hop_length
-        )
+        Nx.pad(sample, featurizer.padding_value, [{0, pad_size, 0}])
       end
 
-    samples = Nx.stack(transformed_samples)
+    samples = samples |> Nx.stack() |> Nx.vectorize(:batch)
+
+    samples =
+      Nx.Defn.jit(&extract_fbank_features/2, defn_options).(samples,
+        fft_length: featurizer.fft_length,
+        sampling_rate: featurizer.sampling_rate,
+        mel_bins: featurizer.feature_size,
+        hop_length: featurizer.hop_length
+      )
+
+    samples = Nx.devectorize(samples)
 
     %{"input_features" => samples}
   end
@@ -91,6 +94,8 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
         overlap_length: opts[:fft_length] - opts[:hop_length],
         window_padding: :reflect
       )
+
+    stft = stft[0..-2//1]
 
     # Magic numbers taken from the reference implementation. This yields
     # max_mel ~ 3016

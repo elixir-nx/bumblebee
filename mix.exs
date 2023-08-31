@@ -32,12 +32,12 @@ defmodule Bumblebee.MixProject do
     [
       {:axon, "~> 0.6.0", axon_opts()},
       {:tokenizers, "~> 0.4"},
-      {:nx, "~> 0.6.0"},
-      {:exla, "~> 0.6.0", only: [:dev, :test]},
-      {:torchx, "~> 0.6.0", only: [:dev, :test]},
-      # {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-      # {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
-      # {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
+      # {:nx, "~> 0.6.0"},
+      # {:exla, "~> 0.6.0", only: [:dev, :test]},
+      # {:torchx, "~> 0.6.0", only: [:dev, :test]},
+      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
+      {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
+      {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
       {:nx_image, "~> 0.1.0"},
       {:unpickler, "~> 0.1.0"},
       {:safetensors, "~> 0.1.1"},
@@ -48,7 +48,7 @@ defmodule Bumblebee.MixProject do
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
-      {:nx_signal, "~> 0.1.0"}
+      {:nx_signal, "~> 0.2.0"}
     ]
   end
 
