@@ -6,16 +6,8 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
   deftransform suppressed_tokens_processor(logits, _context, opts \\ []) do
     opts = Keyword.validate!(opts, [:suppressed_token_ids])
 
-    batch_size = Nx.axis_size(logits, 0)
-
-    indices =
-      for batch_idx <- 0..(batch_size - 1), token_id <- opts[:suppressed_token_ids] do
-        [batch_idx, token_id]
-      end
-
-    indices = Nx.tensor(indices)
-    values = Nx.broadcast(Nx.Constants.neg_infinity(), {Nx.axis_size(indices, 0)})
-
+    indices = opts[:suppressed_token_ids] |> Nx.tensor() |> Nx.new_axis(-1)
+    values = Nx.broadcast(Nx.Constants.neg_infinity(), {Nx.size(indices)})
     Nx.indexed_put(logits, indices, values)
   end
 
@@ -34,7 +26,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
     opts = keyword!(opts, [:eos_token_id])
     eos_token_id = opts[:eos_token_id]
 
-    max_length = Nx.axis_size(context.sequences, 1)
+    max_length = Nx.axis_size(context.sequence, 0)
 
     if context.length == max_length - 1 do
       force_token_id(logits, eos_token_id)
@@ -89,29 +81,26 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
 
       last_ngram_but_one =
         Nx.slice_along_axis(
-          context.sequences,
+          context.sequence,
           context.length - ngram_but_one_length,
           ngram_but_one_length,
-          axis: 1
+          axis: 0
         )
 
       {_, _, _, _, logits} =
-        while {i = 0, last_ngram_but_one, sequences = context.sequences, length = context.length,
+        while {i = 0, last_ngram_but_one, sequence = context.sequence, length = context.length,
                logits},
               i + ngram_but_one_length < length do
-          ngram_but_one = Nx.slice_along_axis(sequences, i, ngram_but_one_length, axis: 1)
+          ngram_but_one = Nx.slice_along_axis(sequence, i, ngram_but_one_length, axis: 0)
 
-          batch_size = Nx.axis_size(logits, 0)
+          token_id = sequence[i + ngram_but_one_length]
+          indices = Nx.new_axis(token_id, -1)
 
-          token_id = sequences[[.., i + ngram_but_one_length]]
-          indices = Nx.stack([Nx.iota({batch_size}), token_id], axis: -1)
-
-          match? = Nx.all(ngram_but_one == last_ngram_but_one, axes: [1])
+          match? = Nx.all(ngram_but_one == last_ngram_but_one)
           updates = Nx.select(match?, Nx.Constants.neg_infinity(), 0)
-
           logits = Nx.indexed_add(logits, indices, updates)
 
-          {i + 1, last_ngram_but_one, sequences, length, logits}
+          {i + 1, last_ngram_but_one, sequence, length, logits}
         end
 
       logits
@@ -119,21 +108,13 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
   end
 
   deftransformp force_token_id(logits, token_id) do
-    batch_size = Nx.axis_size(logits, 0)
-
     Nx.Constants.neg_infinity()
     |> Nx.broadcast(logits)
-    |> Nx.put_slice([0, token_id], Nx.broadcast(0, {batch_size, 1}))
+    |> Nx.put_slice([token_id], Nx.tensor([0]))
   end
 
   deftransformp ignore_token_id(logits, token_id) do
-    batch_size = Nx.axis_size(logits, 0)
-
-    Nx.put_slice(
-      logits,
-      [0, token_id],
-      Nx.broadcast(Nx.Constants.neg_infinity(), {batch_size, 1})
-    )
+    Nx.put_slice(logits, [token_id], Nx.broadcast(Nx.Constants.neg_infinity(), {1}))
   end
 
   # Processors manipulating the probability distribution
@@ -143,7 +124,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
     top_k = opts[:top_k]
 
     {top_k_logits, _} = Nx.top_k(logits, k: top_k)
-    kth_logit = top_k_logits[[.., -1]]
+    kth_logit = top_k_logits[-1]
     Nx.select(logits < kth_logit, Nx.Constants.neg_infinity(), logits)
   end
 
@@ -151,13 +132,13 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
     opts = keyword!(opts, [:top_p])
     top_p = opts[:top_p]
 
-    sorted_idx = Nx.argsort(logits, axis: 1)
+    sorted_idx = Nx.argsort(logits)
 
     cumulative_scores =
       logits
-      |> Nx.take_along_axis(sorted_idx, axis: 1)
+      |> Nx.take_along_axis(sorted_idx)
       |> Axon.Activations.softmax()
-      |> Nx.cumulative_sum(axis: 1)
+      |> Nx.cumulative_sum()
 
     ordered_ignore_mask = cumulative_scores <= 1 - top_p
 
@@ -165,8 +146,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
     ignore_mask =
       Nx.indexed_put(
         Nx.broadcast(0.0, Nx.shape(sorted_idx)),
-        Nx.stack([Nx.iota(Nx.shape(sorted_idx), axis: 0), sorted_idx], axis: -1)
-        |> Nx.reshape({:auto, 2}),
+        Nx.new_axis(sorted_idx, -1),
         Nx.flatten(ordered_ignore_mask)
       )
 
@@ -210,34 +190,30 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
     # Force timestamp tokens to appear in pairs, end followed by
     # start, except directly before the EOS token
 
-    batch_size = Nx.axis_size(logits, 0)
-
     prev_was_timestamp? =
       if context.length - begin_idx >= 1 do
-        context.sequences[[.., context.length - 1]] >= timestamp_begin_id
+        context.sequence[context.length - 1] >= timestamp_begin_id
       else
-        Nx.broadcast(Nx.tensor(false), {batch_size})
+        Nx.tensor(false)
       end
-      |> Nx.new_axis(-1)
 
     # Either second to last was timestamp or is out of range
     prev_was_timestamp_start? =
       if context.length - begin_idx >= 2 do
-        context.sequences[[.., context.length - 2]] >= timestamp_begin_id
+        context.sequence[context.length - 2] >= timestamp_begin_id
       else
-        Nx.broadcast(Nx.tensor(true), {batch_size})
+        Nx.tensor(true)
       end
-      |> Nx.new_axis(-1)
 
     ignore_mask =
       Nx.logical_and(
         prev_was_timestamp?,
         Nx.select(
-          Nx.broadcast(prev_was_timestamp_start?, Nx.shape(logits)),
+          Nx.broadcast(Nx.new_axis(prev_was_timestamp_start?, -1), Nx.shape(logits)),
           # Force non-timestamp
-          Nx.iota(Nx.shape(logits), axis: -1) >= timestamp_begin_id,
+          Nx.iota(Nx.shape(logits)) >= timestamp_begin_id,
           # Force non-normal token
-          Nx.iota(Nx.shape(logits), axis: -1) < eos_token_id
+          Nx.iota(Nx.shape(logits)) < eos_token_id
         )
       )
 
@@ -249,24 +225,16 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
     # token, we force a timestamp
 
     log_probabilities = Axon.Activations.log_softmax(logits)
-    timestamp_log_probabilities = log_probabilities[[.., timestamp_begin_id..-1//1]]
+    timestamp_log_probabilities = log_probabilities[timestamp_begin_id..-1//1]
     # TODO: use log_sumexp on Axon v0.6.1
     # timestamp_log_probability = Axon.Activations.log_sumexp(timestamp_log_probabilities)
-    timestamp_log_probability =
-      timestamp_log_probabilities
-      |> Nx.exp()
-      |> Nx.sum(axes: [-1], keep_axes: true)
-      |> Nx.log()
+    timestamp_log_probability = timestamp_log_probabilities |> Nx.exp() |> Nx.sum() |> Nx.log()
+    token_log_probabilities = log_probabilities[0..(timestamp_begin_id - 1)//1]
 
-    token_log_probabilities = log_probabilities[[.., 0..(timestamp_begin_id - 1)//1]]
-
-    max_token_log_probability =
-      Nx.reduce_max(token_log_probabilities, axes: [-1], keep_axes: true)
-
+    max_token_log_probability = Nx.reduce_max(token_log_probabilities)
     force_timestamp_mask = timestamp_log_probability > max_token_log_probability
-    tokens_mask = Nx.iota(Nx.shape(logits), axis: -1) < timestamp_begin_id
-    ignore_mask = Nx.logical_and(force_timestamp_mask, tokens_mask)
-
+    tokens_mask = Nx.iota(Nx.shape(logits)) < timestamp_begin_id
+    ignore_mask = force_timestamp_mask and tokens_mask
     Nx.select(ignore_mask, Nx.Constants.neg_infinity(), logits)
   end
 
