@@ -315,7 +315,7 @@ end
 {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai/whisper-tiny"})
 
 serving =
-  Bumblebee.Audio.speech_to_text(model_info, featurizer, tokenizer, generation_config,
+  Bumblebee.Audio.speech_to_text_whisper(model_info, featurizer, tokenizer, generation_config,
     compile: [batch_size: 10],
     defn_options: [compiler: EXLA]
   )

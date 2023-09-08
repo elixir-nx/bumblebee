@@ -777,6 +777,14 @@ defmodule Bumblebee do
 
   See `Bumblebee.Text.GenerationConfig` for all the available options.
 
+  ## Options
+
+    * `:spec_module` - the model specification module. By default it
+      is inferred from the configuration file, if that is not possible,
+      it must be specified explicitly. Some models have extra options
+      related to generations and those are loaded into a separate
+      struct, stored under the `:extra_config` attribute
+
   ## Examples
 
       {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
@@ -786,20 +794,51 @@ defmodule Bumblebee do
   """
   @spec load_generation_config(repository()) ::
           {:ok, Bumblebee.Text.GenerationConfig.t()} | {:error, String.t()}
-  def load_generation_config(repository) do
+  def load_generation_config(repository, opts \\ []) do
+    opts = Keyword.validate!(opts, [:spec_module])
+
     repository = normalize_repository!(repository)
 
-    file_result =
-      with {:error, _} <- download(repository, @generation_filename) do
-        download(repository, @config_filename)
+    with {:ok, path} <- download(repository, @config_filename),
+         {:ok, spec_data} <- decode_config(path) do
+      spec_module = opts[:spec_module]
+
+      {inferred_module, inference_error} =
+        case infer_model_type(spec_data) do
+          {:ok, module, _architecture} -> {module, nil}
+          {:error, error} -> {nil, error}
+        end
+
+      spec_module = spec_module || inferred_module
+
+      unless spec_module do
+        raise "#{inference_error}, please specify the :spec_module option"
       end
 
-    with {:ok, path} <- file_result,
-         {:ok, generation_data} <- decode_config(path) do
-      config = struct!(Bumblebee.Text.GenerationConfig)
-      config = HuggingFace.Transformers.Config.load(config, generation_data)
+      generation_data_result =
+        case download(repository, @generation_filename) do
+          {:ok, path} -> decode_config(path)
+          # Fallback to the spec data, since it used to include
+          # generation attributes
+          {:error, _} -> {:ok, spec_data}
+        end
 
-      {:ok, config}
+      with {:ok, generation_data} <- generation_data_result do
+        config = struct!(Bumblebee.Text.GenerationConfig)
+        config = HuggingFace.Transformers.Config.load(config, generation_data)
+
+        extra_config_module = Bumblebee.Text.Generation.extra_config_module(struct!(spec_module))
+
+        extra_config =
+          if extra_config_module do
+            extra_config = struct!(extra_config_module)
+            HuggingFace.Transformers.Config.load(extra_config, generation_data)
+          end
+
+        config = %{config | extra_config: extra_config}
+
+        {:ok, config}
+      end
     end
   end
 

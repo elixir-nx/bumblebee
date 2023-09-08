@@ -3,6 +3,22 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
 
   import Nx.Defn
 
+  deftransform suppressed_tokens_processor(logits, _context, opts \\ []) do
+    opts = Keyword.validate!(opts, [:suppressed_token_ids])
+
+    batch_size = Nx.axis_size(logits, 0)
+
+    indices =
+      for batch_idx <- 0..(batch_size - 1), token_id <- opts[:suppressed_token_ids] do
+        [batch_idx, token_id]
+      end
+
+    indices = Nx.tensor(indices)
+    values = Nx.broadcast(Nx.Constants.neg_infinity(), {Nx.axis_size(indices, 0)})
+
+    Nx.indexed_put(logits, indices, values)
+  end
+
   defn bos_token_processor(logits, context, opts \\ []) do
     opts = keyword!(opts, [:bos_token_id])
     bos_token_id = opts[:bos_token_id]
@@ -155,5 +171,109 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
       )
 
     Nx.select(ignore_mask, Nx.Constants.neg_infinity(), logits)
+  end
+
+  defn whisper_timestamp_processor(logits, context, opts \\ []) do
+    opts =
+      keyword!(opts, [
+        :eos_token_id,
+        :forced_token_ids,
+        :no_timestamps_token_id,
+        :timestamp_begin_id
+      ])
+
+    eos_token_id = opts[:eos_token_id]
+    no_timestamps_token_id = opts[:no_timestamps_token_id]
+    timestamp_begin_id = opts[:timestamp_begin_id]
+
+    begin_idx = begin_idx(opts[:forced_token_ids])
+
+    # Ensure the no-timestamps token is never taken
+    logits = ignore_token_id(logits, no_timestamps_token_id)
+
+    cond do
+      context.length < begin_idx ->
+        logits
+
+      context.length == begin_idx ->
+        # Output the starting timestamp
+        force_token_id(logits, timestamp_begin_id)
+
+      true ->
+        logits
+        |> force_timestamp_pair(context, begin_idx, eos_token_id, timestamp_begin_id)
+        |> maybe_force_timestamp(timestamp_begin_id)
+    end
+  end
+
+  defnp force_timestamp_pair(logits, context, begin_idx, eos_token_id, timestamp_begin_id) do
+    # Force timestamp tokens to appear in pairs, end followed by
+    # start, except directly before the EOS token
+
+    batch_size = Nx.axis_size(logits, 0)
+
+    prev_was_timestamp? =
+      if context.length - begin_idx >= 1 do
+        context.sequences[[.., context.length - 1]] >= timestamp_begin_id
+      else
+        Nx.broadcast(Nx.tensor(false), {batch_size})
+      end
+      |> Nx.new_axis(-1)
+
+    # Either second to last was timestamp or is out of range
+    prev_was_timestamp_start? =
+      if context.length - begin_idx >= 2 do
+        context.sequences[[.., context.length - 2]] >= timestamp_begin_id
+      else
+        Nx.broadcast(Nx.tensor(true), {batch_size})
+      end
+      |> Nx.new_axis(-1)
+
+    ignore_mask =
+      Nx.logical_and(
+        prev_was_timestamp?,
+        Nx.select(
+          Nx.broadcast(prev_was_timestamp_start?, Nx.shape(logits)),
+          # Force non-timestamp
+          Nx.iota(Nx.shape(logits), axis: -1) >= timestamp_begin_id,
+          # Force non-normal token
+          Nx.iota(Nx.shape(logits), axis: -1) < eos_token_id
+        )
+      )
+
+    Nx.select(ignore_mask, Nx.Constants.neg_infinity(), logits)
+  end
+
+  defnp maybe_force_timestamp(logits, timestamp_begin_id) do
+    # If the total probability of all timestamps exceeds any regular
+    # token, we force a timestamp
+
+    log_probabilities = Axon.Activations.log_softmax(logits)
+    timestamp_log_probabilities = log_probabilities[[.., timestamp_begin_id..-1//1]]
+    # TODO: use log_sumexp on Axon v0.6.1
+    # timestamp_log_probability = Axon.Activations.log_sumexp(timestamp_log_probabilities)
+    timestamp_log_probability =
+      timestamp_log_probabilities
+      |> Nx.exp()
+      |> Nx.sum(axes: [-1], keep_axes: true)
+      |> Nx.log()
+
+    token_log_probabilities = log_probabilities[[.., 0..(timestamp_begin_id - 1)//1]]
+
+    max_token_log_probability =
+      Nx.reduce_max(token_log_probabilities, axes: [-1], keep_axes: true)
+
+    force_timestamp_mask = timestamp_log_probability > max_token_log_probability
+    tokens_mask = Nx.iota(Nx.shape(logits), axis: -1) < timestamp_begin_id
+    ignore_mask = Nx.logical_and(force_timestamp_mask, tokens_mask)
+
+    Nx.select(ignore_mask, Nx.Constants.neg_infinity(), logits)
+  end
+
+  deftransformp begin_idx(forced_token_ids) do
+    case List.last(forced_token_ids) do
+      nil -> 1
+      {idx, _token_id} -> idx + 1
+    end
   end
 end

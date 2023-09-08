@@ -143,7 +143,8 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.Generation
         ],
         Other: [
-          Bumblebee.Text.GenerationConfig
+          Bumblebee.Text.GenerationConfig,
+          Bumblebee.Text.WhisperGenerationConfig
         ]
       ],
       groups_for_functions: [

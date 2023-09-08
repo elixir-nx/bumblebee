@@ -1,0 +1,510 @@
+defmodule Bumblebee.Audio.SpeechToTextWhisper do
+  @moduledoc false
+
+  alias Bumblebee.Shared
+  alias Bumblebee.Text
+
+  def speech_to_text_whisper(
+        model_info,
+        featurizer,
+        tokenizer,
+        %Text.GenerationConfig{} = generation_config,
+        opts \\ []
+      )
+      when is_struct(model_info.spec, Bumblebee.Audio.Whisper) do
+    opts =
+      Keyword.validate!(opts, [
+        :chunk_num_seconds,
+        :context_num_seconds,
+        :language,
+        :seed,
+        :compile,
+        defn_options: [],
+        preallocate_params: false,
+        task: :transcribe,
+        timestamps: false
+      ])
+
+    %{model: model, params: params, spec: spec} = model_info
+
+    Shared.validate_architecture!(spec, [:for_conditional_generation])
+
+    chunk_num_seconds = opts[:chunk_num_seconds]
+    context_num_seconds = opts[:context_num_seconds]
+    preallocate_params = opts[:preallocate_params]
+    defn_options = opts[:defn_options]
+
+    compile =
+      if compile = opts[:compile] do
+        compile
+        |> Keyword.validate!([:batch_size])
+        |> Shared.require_options!([:batch_size])
+      end
+
+    batch_size = compile[:batch_size]
+
+    sampling_rate = featurizer.sampling_rate
+
+    generate_opts = generate_opts(generation_config, opts)
+
+    generate_fun = Text.Generation.build_generate(model, spec, generation_config, generate_opts)
+
+    Nx.Serving.new(
+      fn defn_options ->
+        params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
+        generate_fun =
+          Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
+            inputs = %{
+              "input_features" => Shared.input_template(spec, "input_features", [batch_size])
+            }
+
+            [params, inputs]
+          end)
+
+        fn inputs ->
+          inputs = Shared.maybe_pad(inputs, batch_size)
+          generate_fun.(params, inputs)
+        end
+      end,
+      defn_options
+    )
+    |> Nx.Serving.process_options(batch_size: batch_size)
+    |> Nx.Serving.client_preprocessing(fn input ->
+      {inputs, multi?} =
+        Shared.validate_serving_input!(input, fn
+          %Nx.Tensor{shape: {_}} = input ->
+            {:ok, input}
+
+          {:file, path} when is_binary(path) ->
+            ffmpeg_read_as_pcm(path, sampling_rate)
+
+          other ->
+            {:error, "expected a 1-dimensional tensor or {:file, path}, got: #{inspect(other)}"}
+        end)
+
+      all_chunks =
+        for input <- inputs do
+          if chunk_num_seconds do
+            chunk_input(input, sampling_rate, chunk_num_seconds, context_num_seconds)
+          else
+            [{input, nil}]
+          end
+        end
+
+      all_num_chunks = Enum.map(all_chunks, &length/1)
+
+      all_chunks = List.flatten(all_chunks)
+      {all_chunks, lengths} = Enum.unzip(all_chunks)
+
+      inputs = Bumblebee.apply_featurizer(featurizer, all_chunks, defn_options: defn_options)
+      {Nx.Batch.concatenate([inputs]), {multi?, all_num_chunks, lengths}}
+    end)
+    |> Nx.Serving.client_postprocessing(fn {outputs, _metadata},
+                                           {multi?, all_num_chunks, lengths} ->
+      chunk_outputs =
+        outputs
+        |> Bumblebee.Utils.Nx.to_list()
+        |> Enum.zip(lengths)
+
+      {grouped_chunk_outputs, []} =
+        Enum.map_reduce(all_num_chunks, chunk_outputs, fn num_chunks, chunk_outputs ->
+          Enum.split(chunk_outputs, num_chunks)
+        end)
+
+      time_precision = featurizer.num_seconds / spec.encoder_max_positions
+
+      grouped_chunk_outputs
+      |> Enum.map(fn chunk_outputs ->
+        decode_chunk_outputs(tokenizer, chunk_outputs, time_precision)
+      end)
+      |> Shared.normalize_output(multi?)
+    end)
+  end
+
+  defp generate_opts(generation_config, opts) do
+    forced_token_ids = forced_token_ids(opts, generation_config.extra_config)
+    generation_config = %{generation_config | forced_token_ids: forced_token_ids}
+
+    logits_processors =
+      if opts[:timestamps] do
+        [
+          &Bumblebee.Text.Generation.LogitsProcessing.whisper_timestamp_processor(&1, &2,
+            eos_token_id: generation_config.eos_token_id,
+            forced_token_ids: generation_config.forced_token_ids,
+            no_timestamps_token_id: generation_config.extra_config.no_timestamps_token_id,
+            timestamp_begin_id: generation_config.extra_config.no_timestamps_token_id + 1
+          )
+        ]
+      else
+        []
+      end
+
+    opts
+    |> Keyword.take([:seed])
+    |> Keyword.put(:logits_processors, logits_processors)
+  end
+
+  defp forced_token_ids(opts, extra_config) do
+    token_ids =
+      if language = opts[:language] do
+        language_token_id = extra_config.language_to_token_id[language]
+
+        unless language_token_id do
+          values =
+            extra_config.language_to_token_id
+            |> Map.keys()
+            |> Enum.sort()
+            |> Enum.map_join(", ", &inspect/1)
+
+          raise "invalid language #{inspect(language)}, expected one of: #{values}"
+        end
+
+        [language_token_id]
+      else
+        [nil]
+      end ++
+        if task = opts[:task] do
+          task_token_id = extra_config.task_to_token_id[task]
+
+          unless task_token_id do
+            values =
+              extra_config.task_to_token_id
+              |> Map.keys()
+              |> Enum.sort()
+              |> Enum.map_join(", ", &inspect/1)
+
+            raise "invalid task #{inspect(task)}, expected one of: #{values}"
+          end
+
+          [task_token_id]
+        else
+          []
+        end ++
+        if opts[:timestamps] do
+          []
+        else
+          [extra_config.no_timestamps_token_id]
+        end
+
+    for {token_id, idx} <- Enum.with_index(token_ids, 1), token_id, do: {idx, token_id}
+  end
+
+  defp chunk_input(input, sampling_rate, chunk_num_seconds, context_num_seconds) do
+    context_num_seconds = context_num_seconds || chunk_num_seconds / 6
+
+    chunk_length = floor(chunk_num_seconds * sampling_rate)
+    context_left = floor(context_num_seconds * sampling_rate)
+    context_right = context_left
+
+    input_length = Nx.axis_size(input, 0)
+    step = chunk_length - context_left - context_right
+
+    0..(input_length - 1)//step
+    |> Enum.reduce_while([], fn chunk_start_idx, chunks ->
+      chunk_end_idx = chunk_start_idx + chunk_length
+
+      # All right contexts must be full, otherwise it is the last item
+      last? =
+        if context_right > 0 do
+          chunk_end_idx > input_length
+        else
+          chunk_end_idx >= input_length
+        end
+
+      context_left = if chunk_start_idx == 0, do: 0, else: context_left
+      context_right = if last?, do: 0, else: context_right
+
+      lengths =
+        {chunk_length / sampling_rate, context_left / sampling_rate,
+         context_right / sampling_rate}
+
+      chunk = input[chunk_start_idx..(min(chunk_end_idx, input_length) - 1)]
+      chunks = [{chunk, lengths} | chunks]
+
+      {if(last?, do: :halt, else: :cont), chunks}
+    end)
+    |> Enum.reverse()
+  end
+
+  defp decode_chunk_outputs(tokenizer, chunk_outputs, time_precision) do
+    all_special_tokens = Bumblebee.Tokenizer.all_special_tokens(tokenizer)
+    timestamp_begin_id = Bumblebee.Tokenizer.token_to_id(tokenizer, "<|notimestamps|>") + 1
+
+    acc = %{
+      time_offset: 0,
+      previous_sequences: [],
+      current_sequence: [],
+      chunks: [],
+      chunk: empty_chunk()
+    }
+
+    acc =
+      Enum.reduce(chunk_outputs, acc, fn {sequence, lengths}, acc ->
+        process_output(
+          sequence,
+          lengths,
+          timestamp_begin_id,
+          time_precision,
+          tokenizer,
+          all_special_tokens,
+          acc
+        )
+      end)
+
+    acc =
+      if acc.previous_sequences == [] do
+        acc
+      else
+        # Without timestamps we don't emit chunks, so we need to emit
+        # a single chunk explicitly
+
+        acc
+        |> finish_current_sequence()
+        |> emit_chunk(tokenizer)
+      end
+
+    chunks = Enum.reverse(acc.chunks)
+    text = Enum.map_join(chunks, & &1.text)
+
+    %{results: [%{text: normalize_text(text), chunks: chunks}]}
+  end
+
+  defp process_output(
+         sequence,
+         lengths,
+         timestamp_begin_id,
+         time_precision,
+         tokenizer,
+         all_special_tokens,
+         acc
+       ) do
+    {chunk_length_seconds, context_left_seconds, context_right_seconds} =
+      lengths || {nil, 0.0, 0.0}
+
+    time_offset = acc.time_offset - context_left_seconds
+
+    # We want to ignore timestamps in the right and left contexts,
+    # because splitting on those would cause issues with merging
+    # chunk overlaps. Also note that for right context, if there
+    # are not timestamps in the right context, we ignore the last
+    # regular timestamp, otherwise we may not have enough tokens
+    # to merge chunks properly.
+
+    first_timestamp = timestamp_begin_id + context_left_seconds / time_precision
+
+    last_timestamp =
+      if context_right_seconds > 0 do
+        right_context_start = chunk_length_seconds - context_right_seconds
+
+        sequence
+        |> Enum.reverse()
+        |> Enum.reduce_while(nil, fn token_id, last_timestamp ->
+          if token_id >= timestamp_begin_id do
+            if last_timestamp != nil and
+                 (token_id - timestamp_begin_id) * time_precision < right_context_start do
+              {:halt, last_timestamp}
+            else
+              {:cont, token_id}
+            end
+          else
+            {:cont, last_timestamp}
+          end
+        end)
+      end
+
+    acc =
+      Enum.reduce(sequence, acc, fn token_id, acc ->
+        if token_id >= timestamp_begin_id do
+          time = (token_id - timestamp_begin_id) * time_precision + time_offset
+          time = Float.round(time, 2)
+
+          cond do
+            last_timestamp && token_id >= last_timestamp ->
+              acc
+
+            # If we are continuing previously open timestamp, ignore
+            # timestamps within the left context
+            acc.previous_sequences != [] and token_id < first_timestamp ->
+              acc
+
+            acc.chunk.start_timestamp == nil ->
+              put_in(acc.chunk.start_timestamp, time)
+
+            acc.chunk.start_timestamp == time ->
+              acc
+
+            true ->
+              acc = put_in(acc.chunk.end_timestamp, time)
+
+              acc
+              |> finish_current_sequence()
+              |> emit_chunk(tokenizer)
+          end
+        else
+          token = Bumblebee.Tokenizer.id_to_token(tokenizer, token_id)
+
+          if token in all_special_tokens do
+            # Skip special tokens
+            acc
+          else
+            %{acc | current_sequence: [token_id | acc.current_sequence]}
+          end
+        end
+      end)
+
+    acc = finish_current_sequence(acc)
+
+    time_offset =
+      if chunk_length_seconds do
+        time_offset + chunk_length_seconds - context_right_seconds
+      else
+        time_offset
+      end
+
+    %{acc | time_offset: time_offset}
+  end
+
+  defp finish_current_sequence(%{current_sequence: []} = acc), do: acc
+
+  defp finish_current_sequence(acc) do
+    %{
+      acc
+      | current_sequence: [],
+        previous_sequences: [
+          Enum.reverse(acc.current_sequence) | acc.previous_sequences
+        ]
+    }
+  end
+
+  defp emit_chunk(acc, tokenizer) do
+    sequences = Enum.reverse(acc.previous_sequences)
+
+    token_ids = merge_overlapping_sequences(sequences)
+    text = Bumblebee.Tokenizer.decode(tokenizer, token_ids)
+
+    acc = put_in(acc.chunk.text, text)
+
+    %{
+      acc
+      | previous_sequences: [],
+        current_sequence: [],
+        chunks: [acc.chunk | acc.chunks],
+        chunk: empty_chunk()
+    }
+  end
+
+  defp empty_chunk(), do: %{start_timestamp: nil, end_timestamp: nil, text: nil}
+
+  defp merge_overlapping_sequences(sequences) do
+    # We have a number of consecutive, overlapping sequences and we
+    # want to merge them into a single sequence. To merge a pair of
+    # consecutive sequences we slide the sequences and compare the
+    # overlap:
+    #
+    #     abcd    (left)
+    #        cde  (right)
+    #     => compare c = d
+    #
+    #     abcd    (left)
+    #       cde   (right)
+    #     => compare cd = cd
+    #
+    # We find the best alignment, then cut the overlap in half and
+    # concatenate the left an right part accordingly. In the example
+    # above, we would use the second alignment, taking `abc` from the
+    # left sequence and `de` from the right one.
+
+    sequences = Enum.map(sequences, &Nx.tensor/1)
+
+    {[left_sequence], right_sequences} = Enum.split(sequences, 1)
+
+    {acc, left_sequence} =
+      for right_sequence <- right_sequences, reduce: {[], left_sequence} do
+        {acc, left_sequence} ->
+          left_length = Nx.size(left_sequence)
+          right_length = Nx.size(right_sequence)
+
+          {_max_match_score, overlap_indices} =
+            for i <- 1..(left_length + right_length - 1),
+                reduce: {0.0, {left_length, left_length, 0, 0}} do
+              {max_match_score, overlap_indices} ->
+                left_start = max(0, left_length - i)
+                left_stop = min(left_length, left_length + right_length - i)
+                left_overlap = left_sequence[left_start..(left_stop - 1)]
+
+                right_start = max(0, i - left_length)
+                right_stop = min(right_length, i)
+                right_overlap = right_sequence[right_start..(right_stop - 1)]
+
+                num_matches = Nx.equal(left_overlap, right_overlap) |> Nx.sum() |> Nx.to_number()
+
+                # Epsilon to favor long perfect matches
+                eps = i / 10000.0
+                match_score = num_matches / i + eps
+
+                if num_matches > 1 and match_score > max_match_score do
+                  overlap_indices = {left_start, left_stop, right_start, right_stop}
+                  {match_score, overlap_indices}
+                else
+                  {max_match_score, overlap_indices}
+                end
+            end
+
+          # Cut in the middle of the overlap
+          {left_start, left_stop, right_start, right_stop} = overlap_indices
+          left_mid = div(left_stop + left_start, 2)
+          right_mid = div(right_stop + right_start, 2)
+          {[left_sequence[0..(left_mid - 1)] | acc], right_sequence[right_mid..-1//1]}
+      end
+
+    Enum.reduce([left_sequence | acc], [], fn sequence, acc ->
+      Nx.to_flat_list(sequence) ++ acc
+    end)
+  end
+
+  defp ffmpeg_read_as_pcm(path, sampling_rate) do
+    channels = 1
+
+    format =
+      case System.endianness() do
+        :little -> "f32le"
+        :big -> "f32be"
+      end
+
+    cond do
+      System.find_executable("ffmpeg") == nil ->
+        {:error, "ffmpeg not found in PATH"}
+
+      not File.exists?(path) ->
+        {:error, "no file found at #{path}"}
+
+      true ->
+        System.cmd("ffmpeg", [
+          "-i",
+          path,
+          "-ac",
+          Integer.to_string(channels),
+          "-ar",
+          Integer.to_string(sampling_rate),
+          "-f",
+          format,
+          "-hide_banner",
+          "-loglevel",
+          "quiet",
+          "pipe:1"
+        ])
+        |> case do
+          {data, 0} ->
+            {:ok, Nx.from_binary(data, :f32)}
+
+          {_, 1} ->
+            {:error, "ffmpeg failed to decode the given file"}
+        end
+    end
+  end
+
+  defp normalize_text(text) do
+    String.trim(text)
+  end
+end
