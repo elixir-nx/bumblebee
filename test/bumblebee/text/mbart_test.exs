@@ -159,7 +159,9 @@ defmodule Bumblebee.Text.MbartTest do
       )
 
     {:ok, generation_config} =
-      Bumblebee.load_generation_config({:hf, "facebook/mbart-large-en-ro"})
+      Bumblebee.load_generation_config({:hf, "facebook/mbart-large-en-ro"},
+        spec_module: Bumblebee.Text.Mbart
+      )
 
     assert %Bumblebee.Text.Mbart{architecture: :for_conditional_generation} = model_info.spec
 

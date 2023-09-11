@@ -270,6 +270,12 @@ defmodule Bumblebee.Text.GenerationConfig do
             data
         end
 
+      data =
+        case data do
+          %{"suppress_tokens" => nil} -> Map.delete(data, "suppress_tokens")
+          data -> data
+        end
+
       opts =
         convert!(data,
           max_new_tokens: {"max_new_tokens", number()},
