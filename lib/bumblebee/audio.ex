@@ -3,6 +3,12 @@ defmodule Bumblebee.Audio do
   High-level tasks related to audio processing.
   """
 
+  # TODO: remove in v0.5
+  @deprecated "Use Bumblebee.Audio.speech_to_text_whisper/5 instead."
+  def speech_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []) do
+    speech_to_text_whisper(model_info, featurizer, tokenizer, generation_config, opts)
+  end
+
   @typedoc """
   A term representing audio.
 
@@ -14,15 +20,23 @@ defmodule Bumblebee.Audio do
       requires `ffmpeg` installed)
 
   """
-  @type speech_to_text_input :: Nx.t() | {:file, String.t()}
-  @type speech_to_text_output :: %{results: list(speech_to_text_result())}
-  @type speech_to_text_result :: %{text: String.t()}
+  @type speech_to_text_whisper_input :: Nx.t() | {:file, String.t()}
+  @type speech_to_text_whisper_output :: %{results: list(speech_to_text_whisper_result())}
+  @type speech_to_text_whisper_result :: %{
+          text: String.t(),
+          chunks:
+            list(%{
+              text: String.t(),
+              start_timestamp_seconds: number() | nil,
+              end_timestamp_seconds: number() | nil
+            })
+        }
 
   @doc """
-  Builds serving for speech-to-text generation.
+  Builds serving for speech-to-text generation with Whisper models.
 
-  The serving accepts `t:speech_to_text_input/0` and returns
-  `t:speech_to_text_output/0`. A list of inputs is also supported.
+  The serving accepts `t:speech_to_text_whisper_input/0` and returns
+  `t:speech_to_text_whisper_output/0`. A list of inputs is also supported.
 
   ## Options
 
@@ -38,6 +52,23 @@ defmodule Bumblebee.Audio do
       the results at the chunk edges. Note that the context is included
       in the total `:chunk_num_seconds`. Defaults to 1/6 of
       `:chunk_num_seconds`
+
+    * `:language` - the language of the speech, when known upfront.
+      Should be given as ISO alpha-2 code as string. By default no
+      language is assumed and it is inferred from the input
+
+    * `:task` - either of:
+
+        * `:transcribe` (default) - generate audio transcription in
+          the same language as the speech
+
+        * `:translate` - generate translation of the given speech in
+          English
+
+    * `:timestamps` - when set, the model predicts timestamps and each
+      annotated segment becomes an output chunk. Currently the only
+      supported value is `:segments`, the length of each segment is up
+      to the model
 
     * `:seed` - random seed to use when sampling. By default the current
       timestamp is used
@@ -68,21 +99,75 @@ defmodule Bumblebee.Audio do
       {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai/whisper-tiny"})
 
       serving =
-        Bumblebee.Audio.speech_to_text(whisper, featurizer, tokenizer, generation_config,
+        Bumblebee.Audio.speech_to_text_whisper(whisper, featurizer, tokenizer, generation_config,
           defn_options: [compiler: EXLA]
         )
 
       Nx.Serving.run(serving, {:file, "/path/to/audio.wav"})
-      #=> %{results: [%{text: "There is a cat outside the window."}]}
+      #=> %{
+      #=>   results: [
+      #=>     %{
+      #=>       chunks: [
+      #=>         %{
+      #=>           text: " There is a cat outside the window.",
+      #=>           start_timestamp_seconds: nil,
+      #=>           end_timestamp_seconds: nil
+      #=>         }
+      #=>       ],
+      #=>       text: "There is a cat outside the window."
+      #=>     }
+      #=>   ]
+      #=> }
+
+  And with timestamps:
+
+      serving =
+        Bumblebee.Audio.speech_to_text_whisper(whisper, featurizer, tokenizer, generation_config,
+          defn_options: [compiler: EXLA],
+          chunk_num_seconds: 30,
+          timestamps: :segments
+        )
+
+      Nx.Serving.run(serving, {:file, "/path/to/colouredstars_08_mathers_128kb.mp3"})
+      #=> %{
+      #=>   results: [
+      #=>     %{
+      #=>       chunks: [
+      #=>         %{
+      #=>           text: " Such an eight of colored stars, versions of fifty isiatic love poems by Edward Powis-Mathers.",
+      #=>           start_timestamp_seconds: 0.0,
+      #=>           end_timestamp_seconds: 7.0
+      #=>         },
+      #=>         %{
+      #=>           text: " This the revocs recording is in the public domain. Doubt. From the Japanese of Hori-Kawa,",
+      #=>           start_timestamp_seconds: 7.0,
+      #=>           end_timestamp_seconds: 14.0
+      #=>         },
+      #=>         %{
+      #=>           text: " will he be true to me that I do not know. But since the dawn, I have had as much disorder in my thoughts as in my black hair, and of doubt.",
+      #=>           start_timestamp_seconds: 14.0,
+      #=>           end_timestamp_seconds: 27.0
+      #=>         }
+      #=>       ],
+      #=>       text: "Such an eight of colored stars, versions of fifty isiatic love poems by Edward Powis-Mathers. This the revocs recording is in the public domain. Doubt. From the Japanese of Hori-Kawa, will he be true to me that I do not know. But since the dawn, I have had as much disorder in my thoughts as in my black hair, and of doubt."
+      #=>     }
+      #=>   ]
+      #=> }
 
   """
-  @spec speech_to_text(
+  @spec speech_to_text_whisper(
           Bumblebee.model_info(),
           Bumblebee.Featurizer.t(),
           Bumblebee.Tokenizer.t(),
           Bumblebee.Text.GenerationConfig.t(),
           keyword()
         ) :: Nx.Serving.t()
-  defdelegate speech_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []),
-    to: Bumblebee.Audio.SpeechToText
+  defdelegate speech_to_text_whisper(
+                model_info,
+                featurizer,
+                tokenizer,
+                generation_config,
+                opts \\ []
+              ),
+              to: Bumblebee.Audio.SpeechToTextWhisper
 end

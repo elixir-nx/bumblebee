@@ -89,6 +89,10 @@ defmodule Bumblebee.Text.GenerationConfig do
       doc:
         "a list of `{index, token_id}` pairs forcing `token_id` to appear at `index` in the generated sequence"
     ],
+    suppressed_token_ids: [
+      default: [],
+      doc: "a list of token ids to suppress during generation"
+    ],
     no_repeat_ngram_length: [
       default: nil,
       doc: "when set, n-grams of the given length can occur only once in the generated sequence"
@@ -110,7 +114,15 @@ defmodule Bumblebee.Text.GenerationConfig do
     ]
   ]
 
-  options = length_options ++ strategy_options ++ token_options ++ special_token_options
+  other_options = [
+    extra_config: [
+      default: nil,
+      doc: "additional configuration specific to the given model"
+    ]
+  ]
+
+  options =
+    length_options ++ strategy_options ++ token_options ++ special_token_options ++ other_options
 
   @moduledoc """
   A set of configuration options controlling text generation.
@@ -248,14 +260,11 @@ defmodule Bumblebee.Text.GenerationConfig do
             data
         end
 
-      # TODO: Whisper generation_config.json doesn't have task-specific
-      # tokens and those are instead added on the fly before generation.
-      # We need to add support for model-specific configuration like
-      # language and task and update configuration based on that
       data =
         case data do
-          %{"forced_decoder_ids" => [[1, nil], [2, 50359]]} ->
-            put_in(data["forced_decoder_ids"], [[1, 50259], [2, 50359], [3, 50363]])
+          %{"forced_decoder_ids" => ids} ->
+            ids = Enum.reject(ids, &match?([_idx, nil], &1))
+            put_in(data["forced_decoder_ids"], ids)
 
           data ->
             data
@@ -274,6 +283,7 @@ defmodule Bumblebee.Text.GenerationConfig do
           forced_bos_token_id: {"forced_bos_token_id", optional(number())},
           forced_eos_token_id: {"forced_eos_token_id", optional(number())},
           forced_token_ids: {"forced_decoder_ids", list(tuple([number(), number()]))},
+          suppressed_token_ids: {"suppress_tokens", list(number())},
           no_repeat_ngram_length: {"no_repeat_ngram_size", number()}
         )
 

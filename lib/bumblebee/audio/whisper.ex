@@ -247,6 +247,9 @@ defmodule Bumblebee.Audio.Whisper do
     Layers.Decoder.traverse_cache(cache, fun)
   end
 
+  @impl true
+  def extra_config_module(_spec), do: Bumblebee.Text.WhisperGenerationConfig
+
   defp inputs(spec) do
     input_length = 2 * spec.encoder_max_positions
 

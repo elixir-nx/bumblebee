@@ -27,6 +27,14 @@ defmodule Bumblebee.Text.Generation do
               (Nx.Tensor.t() -> Nx.Tensor.t())
             ) :: cache()
 
+  @doc """
+  Returns a configuration module for extra model-specific generation
+  attributes to extend the base `Bumblebee.Text.GenerationConfig`.
+  """
+  @callback extra_config_module(spec :: Bumblebee.ModelSpec.t()) :: module()
+
+  @optional_callbacks extra_config_module: 1
+
   import Nx.Defn
 
   alias Bumblebee.Shared
@@ -44,10 +52,24 @@ defmodule Bumblebee.Text.Generation do
   @doc """
   Calls `fun` for every batched tensor in the cache.
   """
-  @spec traverse_cache(Bumblebee.ModelSpec.t(), cache, (Nx.Tensor.t() -> Nx.Tensor.t())) ::
-          cache()
+  @spec traverse_cache(
+          Bumblebee.ModelSpec.t(),
+          cache,
+          (Nx.Tensor.t() -> Nx.Tensor.t())
+        ) :: cache()
   def traverse_cache(%module{} = spec, cache, fun) do
     module.traverse_cache(spec, cache, fun)
+  end
+
+  @doc """
+  Returns a configuration module for extra model-specific generation
+  attributes to extend the base `Bumblebee.Text.GenerationConfig`.
+  """
+  @spec extra_config_module(Bumblebee.ModelSpec.t()) :: module() | nil
+  def extra_config_module(%module{} = spec) do
+    if function_exported?(module, :extra_config_module, 1) do
+      module.extra_config_module(spec)
+    end
   end
 
   @doc """
@@ -70,6 +92,10 @@ defmodule Bumblebee.Text.Generation do
     * `:seed` - random seed to use when sampling. By default the current
       timestamp is used
 
+    * `:logits_processors` - a list of numerical functions to modify
+      predicted scores at each generation step. The functions are
+      applied in order, after all default processors
+
   """
   @spec build_generate(
           Axon.t(),
@@ -78,7 +104,7 @@ defmodule Bumblebee.Text.Generation do
           keyword()
         ) :: (params :: map(), inputs :: map() -> Nx.t())
   def build_generate(model, spec, config, opts \\ []) do
-    opts = Keyword.validate!(opts, [:seed])
+    opts = Keyword.validate!(opts, [:seed, logits_processors: []])
     seed = Keyword.get_lazy(opts, :seed, &:erlang.system_time/0)
 
     decoder_start_token_id = config.decoder_start_token_id || config.bos_token_id
@@ -103,7 +129,7 @@ defmodule Bumblebee.Text.Generation do
 
     {_init_fun, predict_fun} = Axon.build(model)
 
-    logits_processor_fun = get_logits_processor(min_length_fun, eos_token_id, config)
+    logits_processor_fun = get_logits_processor(min_length_fun, config, opts[:logits_processors])
 
     &generate_impl(
       &2,
@@ -253,7 +279,7 @@ defmodule Bumblebee.Text.Generation do
     |> Map.replace!("cache", cache)
   end
 
-  defp get_logits_processor(min_length_fun, eos_token_id, config) do
+  defp get_logits_processor(min_length_fun, config, logits_processors) do
     import Bumblebee.Text.Generation.LogitsProcessing
 
     processors =
@@ -261,11 +287,14 @@ defmodule Bumblebee.Text.Generation do
         if config.no_repeat_ngram_length && config.no_repeat_ngram_length > 0 do
           &no_repeat_ngram_processor(&1, &2, ngram_length: config.no_repeat_ngram_length)
         end,
-        if min_length_fun && eos_token_id do
+        if min_length_fun && config.eos_token_id do
           &min_length_processor(&1, &2,
             min_length_fun: min_length_fun,
-            eos_token_id: eos_token_id
+            eos_token_id: config.eos_token_id
           )
+        end,
+        if config.suppressed_token_ids != [] do
+          &suppressed_tokens_processor(&1, &2, suppressed_token_ids: config.suppressed_token_ids)
         end,
         if config.forced_bos_token_id do
           &bos_token_processor(&1, &2, bos_token_id: config.forced_bos_token_id)
@@ -288,7 +317,7 @@ defmodule Bumblebee.Text.Generation do
           ]
         else
           []
-        end
+        end ++ logits_processors
 
     fn logits, context ->
       for processor <- processors, processor, reduce: logits do
