@@ -56,7 +56,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisperTest do
         |> Nx.from_binary(:f32)
 
       transcription =
-        "An awakening from the book of Irish poetry part 1, read for LibriVox.org by Sonia. An awakening by Alice Pirlong. O spring will wake in the heart of me with the rapture of blown violets, when the green bud quickens on every tree to spring will wake in the heart of me, and queues of honey will reign on the lee, tangling the grasses in silver nets. Yes, spring will awaken the heart of me with the rapture of blown violets. End of an awakening, this recording is in the public domain."
+        "An awakening from the book of Irish poetry part 1, read for LibriVox.org by Sonja. An awakening by Alice Pirlong. O spring will wake in the heart of me with the rapture of blown violets, when the green bud quickens on every tree to spring will wake in the heart of me, and queues of honey will reign on the lee, tangling the grasses in silver nets. Yes, spring will awaken the heart of me with the rapture of blown violets. End of an awakening, this recording is in the public domain."
 
       assert %{results: [%{text: ^transcription}]} = Nx.Serving.run(serving, audio)
     end

@@ -106,17 +106,15 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         |> Bumblebee.Utils.Nx.to_list()
         |> Enum.zip(lengths)
 
-      {grouped_chunk_outputs, []} =
-        Enum.map_reduce(all_num_chunks, chunk_outputs, fn num_chunks, chunk_outputs ->
-          Enum.split(chunk_outputs, num_chunks)
-        end)
-
       time_precision = featurizer.num_seconds / spec.encoder_max_positions
 
-      grouped_chunk_outputs
-      |> Enum.map(fn chunk_outputs ->
-        decode_chunk_outputs(tokenizer, chunk_outputs, time_precision)
+      all_num_chunks
+      |> Enum.map_reduce(chunk_outputs, fn num_chunks, chunk_outputs ->
+        {chunk_outputs, rest} = Enum.split(chunk_outputs, num_chunks)
+        result = decode_chunk_outputs(tokenizer, chunk_outputs, time_precision)
+        {result, rest}
       end)
+      |> elem(0)
       |> Shared.normalize_output(multi?)
     end)
   end
