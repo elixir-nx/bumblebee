@@ -19,10 +19,10 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         :language,
         :seed,
         :compile,
+        :timestamps,
         defn_options: [],
         preallocate_params: false,
-        task: :transcribe,
-        timestamps: false
+        task: :transcribe
       ])
 
     %{model: model, params: params, spec: spec} = model_info
@@ -328,14 +328,14 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
             acc.previous_sequences != [] and token_id < first_timestamp ->
               acc
 
-            acc.chunk.start_timestamp == nil ->
-              put_in(acc.chunk.start_timestamp, time)
+            acc.chunk.start_timestamp_seconds == nil ->
+              put_in(acc.chunk.start_timestamp_seconds, time)
 
-            acc.chunk.start_timestamp == time ->
+            acc.chunk.start_timestamp_seconds == time ->
               acc
 
             true ->
-              acc = put_in(acc.chunk.end_timestamp, time)
+              acc = put_in(acc.chunk.end_timestamp_seconds, time)
 
               acc
               |> finish_current_sequence()
@@ -394,7 +394,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     }
   end
 
-  defp empty_chunk(), do: %{start_timestamp: nil, end_timestamp: nil, text: nil}
+  defp empty_chunk(), do: %{start_timestamp_seconds: nil, end_timestamp_seconds: nil, text: nil}
 
   defp merge_overlapping_sequences(sequences) do
     # We have a number of consecutive, overlapping sequences and we

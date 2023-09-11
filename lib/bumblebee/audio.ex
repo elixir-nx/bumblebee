@@ -27,8 +27,8 @@ defmodule Bumblebee.Audio do
           chunks:
             list(%{
               text: String.t(),
-              start_timestamp: number() | nil,
-              end_timestamp: number() | nil
+              start_timestamp_seconds: number() | nil,
+              end_timestamp_seconds: number() | nil
             })
         }
 
@@ -65,8 +65,10 @@ defmodule Bumblebee.Audio do
         * `:translate` - generate translation of the given speech in
           English
 
-    * `:timestamps` - when `true`, the model predicts timestamps for
-      text segments (the length of each segment is up to the model)
+    * `:timestamps` - when set, the model predicts timestamps and each
+      annotated segment becomes an output chunk. Currently the only
+      supported value is `:segments`, the length of each segment is up
+      to the model
 
     * `:seed` - random seed to use when sampling. By default the current
       timestamp is used
@@ -102,7 +104,55 @@ defmodule Bumblebee.Audio do
         )
 
       Nx.Serving.run(serving, {:file, "/path/to/audio.wav"})
-      #=> %{results: [%{text: "There is a cat outside the window."}]}
+      #=> %{
+      #=>   results: [
+      #=>     %{
+      #=>       chunks: [
+      #=>         %{
+      #=>           text: " There is a cat outside the window.",
+      #=>           start_timestamp_seconds: nil,
+      #=>           end_timestamp_seconds: nil
+      #=>         }
+      #=>       ],
+      #=>       text: "There is a cat outside the window."
+      #=>     }
+      #=>   ]
+      #=> }
+
+  And with timestamps:
+
+      serving =
+        Bumblebee.Audio.speech_to_text_whisper(whisper, featurizer, tokenizer, generation_config,
+          defn_options: [compiler: EXLA],
+          chunk_num_seconds: 30,
+          timestamps: :segments
+        )
+
+      Nx.Serving.run(serving, {:file, "/path/to/colouredstars_08_mathers_128kb.mp3"})
+      #=> %{
+      #=>   results: [
+      #=>     %{
+      #=>       chunks: [
+      #=>         %{
+      #=>           text: " Such an eight of colored stars, versions of fifty isiatic love poems by Edward Powis-Mathers.",
+      #=>           start_timestamp_seconds: 0.0,
+      #=>           end_timestamp_seconds: 7.0
+      #=>         },
+      #=>         %{
+      #=>           text: " This the revocs recording is in the public domain. Doubt. From the Japanese of Hori-Kawa,",
+      #=>           start_timestamp_seconds: 7.0,
+      #=>           end_timestamp_seconds: 14.0
+      #=>         },
+      #=>         %{
+      #=>           text: " will he be true to me that I do not know. But since the dawn, I have had as much disorder in my thoughts as in my black hair, and of doubt.",
+      #=>           start_timestamp_seconds: 14.0,
+      #=>           end_timestamp_seconds: 27.0
+      #=>         }
+      #=>       ],
+      #=>       text: "Such an eight of colored stars, versions of fifty isiatic love poems by Edward Powis-Mathers. This the revocs recording is in the public domain. Doubt. From the Japanese of Hori-Kawa, will he be true to me that I do not know. But since the dawn, I have had as much disorder in my thoughts as in my black hair, and of doubt."
+      #=>     }
+      #=>   ]
+      #=> }
 
   """
   @spec speech_to_text_whisper(

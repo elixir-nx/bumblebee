@@ -75,7 +75,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisperTest do
           generation_config,
           chunk_num_seconds: 30,
           defn_options: [compiler: EXLA],
-          timestamps: true
+          timestamps: :segments
         )
 
       audio =
@@ -93,41 +93,41 @@ defmodule Bumblebee.Audio.SpeechToTextWhisperTest do
                %{
                  text:
                    " An awakening from the book of Irish poetry part 1, read for LibriVox.org by Sonia.",
-                 start_timestamp: 0.0,
-                 end_timestamp: 7.0
+                 start_timestamp_seconds: 0.0,
+                 end_timestamp_seconds: 7.0
                },
                %{
                  text: " An awakening by Alice Pirlong.",
-                 start_timestamp: 7.0,
-                 end_timestamp: 11.0
+                 start_timestamp_seconds: 7.0,
+                 end_timestamp_seconds: 11.0
                },
                %{
                  text:
                    " O spring will wake in the heart of me with the rapture of blown violets, when the green bud",
-                 start_timestamp: 11.0,
-                 end_timestamp: 18.12
+                 start_timestamp_seconds: 11.0,
+                 end_timestamp_seconds: 18.12
                },
                %{
                  text:
                    " quickens on every tree to spring will wake in the heart of me, and queues of honey will reign on the lee,",
-                 start_timestamp: 18.12,
-                 end_timestamp: 25.92
+                 start_timestamp_seconds: 18.12,
+                 end_timestamp_seconds: 25.92
                },
                %{
                  text:
                    " tangling the grasses in silver nets. Yes, spring will awaken the heart of me",
-                 start_timestamp: 25.92,
-                 end_timestamp: 32.48
+                 start_timestamp_seconds: 25.92,
+                 end_timestamp_seconds: 32.48
                },
                %{
                  text: " with the rapture of blown violets.",
-                 start_timestamp: 32.48,
-                 end_timestamp: 34.88
+                 start_timestamp_seconds: 32.48,
+                 end_timestamp_seconds: 34.88
                },
                %{
                  text: " End of an awakening, this recording is in the public domain.",
-                 start_timestamp: 36.96,
-                 end_timestamp: 40.72
+                 start_timestamp_seconds: 36.96,
+                 end_timestamp_seconds: 40.72
                }
              ]
     end
