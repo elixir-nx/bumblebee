@@ -45,8 +45,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
 
     sampling_rate = featurizer.sampling_rate
 
-    generate_opts = generate_opts(generation_config, opts)
-
+    {generate_opts, generation_config} = generate_opts(generation_config, opts)
     generate_fun = Text.Generation.build_generate(model, spec, generation_config, generate_opts)
 
     Nx.Serving.new(
@@ -140,9 +139,12 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         []
       end
 
-    opts
-    |> Keyword.take([:seed])
-    |> Keyword.put(:logits_processors, logits_processors)
+    opts =
+      opts
+      |> Keyword.take([:seed])
+      |> Keyword.put(:logits_processors, logits_processors)
+
+    {opts, generation_config}
   end
 
   defp forced_token_ids(opts, extra_config) do
