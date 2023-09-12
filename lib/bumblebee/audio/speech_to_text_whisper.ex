@@ -22,7 +22,8 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         :timestamps,
         defn_options: [],
         preallocate_params: false,
-        task: :transcribe
+        task: :transcribe,
+        stream: false
       ])
 
     %{model: model, params: params, spec: spec} = model_info
@@ -44,6 +45,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     batch_size = compile[:batch_size]
 
     sampling_rate = featurizer.sampling_rate
+    timestamps? = opts[:timestamps] != nil
 
     {generate_opts, generation_config} = generate_opts(generation_config, opts)
     generate_fun = Text.Generation.build_generate(model, spec, generation_config, generate_opts)
@@ -70,6 +72,10 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     )
     |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
+      if opts[:stream] do
+        Shared.validate_input_for_stream!(input)
+      end
+
       {inputs, multi?} =
         Shared.validate_serving_input!(input, fn
           %Nx.Tensor{shape: {_}} = input ->
@@ -99,23 +105,36 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
       inputs = Bumblebee.apply_featurizer(featurizer, all_chunks, defn_options: defn_options)
       {Nx.Batch.concatenate([inputs]), {multi?, all_num_chunks, lengths}}
     end)
-    |> Nx.Serving.client_postprocessing(fn {outputs, _metadata},
-                                           {multi?, all_num_chunks, lengths} ->
-      chunk_outputs =
-        outputs
-        |> Bumblebee.Utils.Nx.to_list()
-        |> Enum.zip(lengths)
+    |> maybe_stream(opts[:stream], spec, featurizer, tokenizer, timestamps?)
+  end
 
-      time_precision = featurizer.num_seconds / spec.encoder_max_positions
+  defp maybe_stream(serving, false, spec, featurizer, tokenizer, timestamps?) do
+    Nx.Serving.client_postprocessing(serving, fn
+      {outputs, _metadata}, {multi?, all_num_chunks, lengths} ->
+        chunk_outputs = Bumblebee.Utils.Nx.to_list(outputs)
 
-      all_num_chunks
-      |> Enum.map_reduce(chunk_outputs, fn num_chunks, chunk_outputs ->
-        {chunk_outputs, rest} = Enum.split(chunk_outputs, num_chunks)
-        result = decode_chunk_outputs(tokenizer, chunk_outputs, time_precision)
-        {result, rest}
+        all_num_chunks
+        |> Enum.map_reduce(chunk_outputs, fn num_chunks, chunk_outputs ->
+          {outputs, rest} = Enum.split(chunk_outputs, num_chunks)
+          state = decode_chunk_outputs_init(lengths, spec, featurizer, tokenizer)
+          {chunks, _state} = decode_chunk_outputs_update(state, outputs, timestamps?, tokenizer)
+          {%{chunks: chunks}, rest}
+        end)
+        |> elem(0)
+        |> Shared.normalize_output(multi?)
+    end)
+  end
+
+  defp maybe_stream(serving, true, spec, featurizer, tokenizer, timestamps?) do
+    serving
+    |> Nx.Serving.streaming()
+    |> Nx.Serving.client_postprocessing(fn stream, {false = _multi?, _all_num_chunks, lengths} ->
+      state = decode_chunk_outputs_init(lengths, spec, featurizer, tokenizer)
+
+      Stream.transform(stream, state, fn {:batch, outputs, _metadata}, state ->
+        outputs = Bumblebee.Utils.Nx.to_list(outputs)
+        decode_chunk_outputs_update(state, outputs, timestamps?, tokenizer)
       end)
-      |> elem(0)
-      |> Shared.normalize_output(multi?)
     end)
   end
 
@@ -227,7 +246,11 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     |> Enum.reverse()
   end
 
-  defp decode_chunk_outputs(tokenizer, chunk_outputs, time_precision) do
+  # We generalize the decoding into multiple steps, where we feed a
+  # number of outputs at a time. When not streaming we just feed all
+  # outputs at once.
+  defp decode_chunk_outputs_init(lengths, spec, featurizer, tokenizer) do
+    time_precision = featurizer.num_seconds / spec.encoder_max_positions
     all_special_tokens = Bumblebee.Tokenizer.all_special_tokens(tokenizer)
     timestamp_begin_id = Bumblebee.Tokenizer.token_to_id(tokenizer, "<|notimestamps|>") + 1
 
@@ -239,11 +262,35 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
       chunk: empty_chunk()
     }
 
+    %{
+      acc: acc,
+      lengths: lengths,
+      time_precision: time_precision,
+      all_special_tokens: all_special_tokens,
+      timestamp_begin_id: timestamp_begin_id
+    }
+  end
+
+  defp decode_chunk_outputs_update(state, outputs, timestamps?, tokenizer) do
+    %{
+      time_precision: time_precision,
+      timestamp_begin_id: timestamp_begin_id,
+      all_special_tokens: all_special_tokens
+    } = state
+
+    batch_size = length(outputs)
+
+    {lengths, lengths_rest} = Enum.split(state.lengths, batch_size)
+    state = %{state | lengths: lengths_rest}
+
     acc =
-      Enum.reduce(chunk_outputs, acc, fn {sequence, lengths}, acc ->
+      outputs
+      |> Enum.zip(lengths)
+      |> Enum.reduce(state.acc, fn {sequence, lengths}, acc ->
         process_output(
           sequence,
           lengths,
+          timestamps?,
           timestamp_begin_id,
           time_precision,
           tokenizer,
@@ -253,26 +300,33 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
       end)
 
     acc =
-      if acc.previous_sequences == [] do
+      if timestamps? do
         acc
       else
-        # Without timestamps we don't emit chunks, so we need to emit
-        # a single chunk explicitly
+        # We finish chunks on end timestamps, so with timestamps disabled
+        # we need to do this explicitly
 
-        acc
-        |> finish_current_sequence()
-        |> emit_chunk(tokenizer)
+        acc = finish_chunk(acc, timestamps?, tokenizer)
+
+        finished? = state.lengths == []
+
+        if finished? do
+          # Flush any pending sequences
+          finish_chunk(acc, timestamps?, tokenizer)
+        else
+          acc
+        end
       end
 
     chunks = Enum.reverse(acc.chunks)
-    text = Enum.map_join(chunks, & &1.text)
-
-    %{results: [%{text: normalize_text(text), chunks: chunks}]}
+    acc = %{acc | chunks: []}
+    {chunks, %{state | acc: acc}}
   end
 
   defp process_output(
          sequence,
          lengths,
+         timestamps?,
          timestamp_begin_id,
          time_precision,
          tokenizer,
@@ -339,7 +393,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
 
               acc
               |> finish_current_sequence()
-              |> emit_chunk(tokenizer)
+              |> finish_chunk(timestamps?, tokenizer)
           end
         else
           token = Bumblebee.Tokenizer.id_to_token(tokenizer, token_id)
@@ -371,30 +425,44 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     %{
       acc
       | current_sequence: [],
-        previous_sequences: [
-          Enum.reverse(acc.current_sequence) | acc.previous_sequences
-        ]
+        previous_sequences: [Enum.reverse(acc.current_sequence) | acc.previous_sequences]
     }
   end
 
-  defp emit_chunk(acc, tokenizer) do
+  defp finish_chunk(%{previous_sequences: []} = acc, _timestamps?, _tokenizer) do
+    %{acc | chunk: empty_chunk()}
+  end
+
+  defp finish_chunk(acc, timestamps?, tokenizer) do
     sequences = Enum.reverse(acc.previous_sequences)
 
-    token_ids = merge_overlapping_sequences(sequences)
-    text = Bumblebee.Tokenizer.decode(tokenizer, token_ids)
+    {token_ids, rest_token_ids} = merge_overlapping_sequences(sequences)
 
+    # With timestamps we always finish chunks outside of context parts,
+    # so we know the subsequent sequence is not going to overlap with
+    # the chunk. Without timestamps we always need to keep the last
+    # sequence for the next merge
+    {chunk_token_ids, previous_sequences} =
+      if timestamps? or rest_token_ids == [] do
+        {token_ids ++ rest_token_ids, []}
+      else
+        {token_ids, [rest_token_ids]}
+      end
+
+    text = Bumblebee.Tokenizer.decode(tokenizer, chunk_token_ids)
     acc = put_in(acc.chunk.text, text)
 
     %{
       acc
-      | previous_sequences: [],
-        current_sequence: [],
+      | previous_sequences: previous_sequences,
         chunks: [acc.chunk | acc.chunks],
         chunk: empty_chunk()
     }
   end
 
   defp empty_chunk(), do: %{start_timestamp_seconds: nil, end_timestamp_seconds: nil, text: nil}
+
+  defp merge_overlapping_sequences([sequence]), do: {sequence, []}
 
   defp merge_overlapping_sequences(sequences) do
     # We have a number of consecutive, overlapping sequences and we
@@ -415,7 +483,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     # above, we would use the second alignment, taking `abc` from the
     # left sequence and `de` from the right one.
 
-    sequences = Enum.map(sequences, &Nx.tensor/1)
+    sequences = Enum.map(sequences, &Nx.tensor(&1, backend: Nx.BinaryBackend))
 
     {[left_sequence], right_sequences} = Enum.split(sequences, 1)
 
@@ -458,9 +526,14 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
           {[left_sequence[0..(left_mid - 1)] | acc], right_sequence[right_mid..-1//1]}
       end
 
-    Enum.reduce([left_sequence | acc], [], fn sequence, acc ->
-      Nx.to_flat_list(sequence) ++ acc
-    end)
+    merged_sequence =
+      Enum.reduce(acc, [], fn sequence, acc ->
+        Nx.to_flat_list(sequence) ++ acc
+      end)
+
+    rest = Nx.to_flat_list(left_sequence)
+
+    {merged_sequence, rest}
   end
 
   defp ffmpeg_read_as_pcm(path, sampling_rate) do
@@ -502,9 +575,5 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
             {:error, "ffmpeg failed to decode the given file"}
         end
     end
-  end
-
-  defp normalize_text(text) do
-    String.trim(text)
   end
 end

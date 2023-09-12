@@ -6,7 +6,27 @@ defmodule Bumblebee.Audio do
   # TODO: remove in v0.5
   @deprecated "Use Bumblebee.Audio.speech_to_text_whisper/5 instead."
   def speech_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []) do
-    speech_to_text_whisper(model_info, featurizer, tokenizer, generation_config, opts)
+    serving = speech_to_text_whisper(model_info, featurizer, tokenizer, generation_config, opts)
+    client_postprocessing = serving.client_postprocessing
+
+    Nx.Serving.client_postprocessing(serving, fn output_pair, info ->
+      output = client_postprocessing.(output_pair, info)
+
+      if is_list(output) do
+        Enum.map(output, &speech_to_text_convert_output/1)
+      else
+        speech_to_text_convert_output(output)
+      end
+    end)
+  end
+
+  defp speech_to_text_convert_output(%{chunks: chunks}) do
+    text =
+      chunks
+      |> Enum.map_join(& &1.text)
+      |> String.trim()
+
+    %{results: [%{text: text}]}
   end
 
   @typedoc """
@@ -21,15 +41,13 @@ defmodule Bumblebee.Audio do
 
   """
   @type speech_to_text_whisper_input :: Nx.t() | {:file, String.t()}
-  @type speech_to_text_whisper_output :: %{results: list(speech_to_text_whisper_result())}
-  @type speech_to_text_whisper_result :: %{
+  @type speech_to_text_whisper_output :: %{
+          chunks: list(speech_to_text_whisper_chunk())
+        }
+  @type speech_to_text_whisper_chunk :: %{
           text: String.t(),
-          chunks:
-            list(%{
-              text: String.t(),
-              start_timestamp_seconds: number() | nil,
-              end_timestamp_seconds: number() | nil
-            })
+          start_timestamp_seconds: number() | nil,
+          end_timestamp_seconds: number() | nil
         }
 
   @doc """
@@ -91,6 +109,12 @@ defmodule Bumblebee.Audio do
       this option when using partitioned serving, to allocate params
       on each of the devices. Defaults to `false`
 
+    * `:stream` - when `true`, the serving immediately returns a
+      stream that emits chunks as they are generated. Note that
+      when using streaming, only a single input can be given to the
+      serving. To process a batch, call the serving with each input
+      separately. Defaults to `false`
+
   ## Examples
 
       {:ok, whisper} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
@@ -103,21 +127,19 @@ defmodule Bumblebee.Audio do
           defn_options: [compiler: EXLA]
         )
 
-      Nx.Serving.run(serving, {:file, "/path/to/audio.wav"})
+      output = Nx.Serving.run(serving, {:file, "/path/to/audio.wav"})
       #=> %{
-      #=>   results: [
+      #=>   chunks: [
       #=>     %{
-      #=>       chunks: [
-      #=>         %{
-      #=>           text: " There is a cat outside the window.",
-      #=>           start_timestamp_seconds: nil,
-      #=>           end_timestamp_seconds: nil
-      #=>         }
-      #=>       ],
-      #=>       text: "There is a cat outside the window."
+      #=>       text: " There is a cat outside the window.",
+      #=>       start_timestamp_seconds: nil,
+      #=>       end_timestamp_seconds: nil
       #=>     }
       #=>   ]
       #=> }
+
+      text = output.chunks |> Enum.map_join(& &1.text) |> String.trim()
+      #=> "There is a cat outside the window."
 
   And with timestamps:
 
@@ -130,26 +152,21 @@ defmodule Bumblebee.Audio do
 
       Nx.Serving.run(serving, {:file, "/path/to/colouredstars_08_mathers_128kb.mp3"})
       #=> %{
-      #=>   results: [
+      #=>   chunks: [
       #=>     %{
-      #=>       chunks: [
-      #=>         %{
-      #=>           text: " Such an eight of colored stars, versions of fifty isiatic love poems by Edward Powis-Mathers.",
-      #=>           start_timestamp_seconds: 0.0,
-      #=>           end_timestamp_seconds: 7.0
-      #=>         },
-      #=>         %{
-      #=>           text: " This the revocs recording is in the public domain. Doubt. From the Japanese of Hori-Kawa,",
-      #=>           start_timestamp_seconds: 7.0,
-      #=>           end_timestamp_seconds: 14.0
-      #=>         },
-      #=>         %{
-      #=>           text: " will he be true to me that I do not know. But since the dawn, I have had as much disorder in my thoughts as in my black hair, and of doubt.",
-      #=>           start_timestamp_seconds: 14.0,
-      #=>           end_timestamp_seconds: 27.0
-      #=>         }
-      #=>       ],
-      #=>       text: "Such an eight of colored stars, versions of fifty isiatic love poems by Edward Powis-Mathers. This the revocs recording is in the public domain. Doubt. From the Japanese of Hori-Kawa, will he be true to me that I do not know. But since the dawn, I have had as much disorder in my thoughts as in my black hair, and of doubt."
+      #=>       text: " Such an eight of colored stars, versions of fifty isiatic love poems by Edward Powis-Mathers.",
+      #=>       start_timestamp_seconds: 0.0,
+      #=>       end_timestamp_seconds: 7.0
+      #=>     },
+      #=>     %{
+      #=>       text: " This the revocs recording is in the public domain. Doubt. From the Japanese of Hori-Kawa,",
+      #=>       start_timestamp_seconds: 7.0,
+      #=>       end_timestamp_seconds: 14.0
+      #=>     },
+      #=>     %{
+      #=>       text: " will he be true to me that I do not know. But since the dawn, I have had as much disorder in my thoughts as in my black hair, and of doubt.",
+      #=>       start_timestamp_seconds: 14.0,
+      #=>       end_timestamp_seconds: 27.0
       #=>     }
       #=>   ]
       #=> }

@@ -891,17 +891,18 @@ defmodule Bumblebee.Text.Generation do
 
       {batch, multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn {token_ids, _metadata}, multi? ->
+    |> maybe_stream(opts[:stream], tokenizer)
+  end
+
+  defp maybe_stream(serving, false, tokenizer) do
+    Nx.Serving.client_postprocessing(serving, fn {token_ids, _metadata}, multi? ->
       decoded = Bumblebee.Tokenizer.decode(tokenizer, token_ids)
 
       decoded
       |> Enum.map(&%{results: [%{text: &1}]})
       |> Shared.normalize_output(multi?)
     end)
-    |> maybe_stream(opts[:stream], tokenizer)
   end
-
-  defp maybe_stream(serving, false, _tokenizer), do: serving
 
   defp maybe_stream(serving, true, tokenizer) do
     serving
