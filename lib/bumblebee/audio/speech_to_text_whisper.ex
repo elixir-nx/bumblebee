@@ -284,9 +284,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     state = %{state | lengths: lengths_rest}
 
     acc =
-      outputs
-      |> Enum.zip(lengths)
-      |> Enum.reduce(state.acc, fn {sequence, lengths}, acc ->
+      Enum.zip_reduce([outputs, lengths], state.acc, fn [sequence, lengths], acc ->
         process_output(
           sequence,
           lengths,
