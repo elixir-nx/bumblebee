@@ -483,6 +483,8 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     # above, we would use the second alignment, taking `abc` from the
     # left sequence and `de` from the right one.
 
+    # We use binary backend so we are not blocked by the serving computation,
+    # in this case we do simple operations with small data so it is fine
     sequences = Enum.map(sequences, &Nx.tensor(&1, backend: Nx.BinaryBackend))
 
     {[left_sequence], right_sequences} = Enum.split(sequences, 1)
