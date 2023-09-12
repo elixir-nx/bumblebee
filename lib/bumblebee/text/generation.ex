@@ -948,7 +948,7 @@ defmodule Bumblebee.Text.Generation do
               {[], state}
           end
 
-        {:done, _, _}, state ->
+        {:batch, _, _}, state ->
           chunk = pending_chunk(tokenizer, state)
 
           if chunk == "" do
