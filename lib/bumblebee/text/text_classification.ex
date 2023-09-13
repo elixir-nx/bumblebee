@@ -35,7 +35,10 @@ defmodule Bumblebee.Text.TextClassification do
 
     scores_fun = fn params, input ->
       outputs = predict_fun.(params, input)
-      Shared.logits_to_scores(outputs.logits, scores_function)
+      scores = Shared.logits_to_scores(outputs.logits, scores_function)
+      k = min(top_k, Nx.size(scores))
+      {top_scores, top_indices} = Nx.top_k(scores, k: k)
+      {top_scores, top_indices}
     end
 
     batch_keys = Shared.sequence_batch_keys(sequence_length)
@@ -80,23 +83,20 @@ defmodule Bumblebee.Text.TextClassification do
 
       {batch, multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, multi? ->
-      for scores <- Bumblebee.Utils.Nx.batch_to_list(scores) do
-        k = min(top_k, Nx.size(scores))
-        {top_scores, top_indices} = Nx.top_k(scores, k: k)
-
-        predictions =
-          Enum.zip_with(
-            Nx.to_flat_list(top_scores),
-            Nx.to_flat_list(top_indices),
-            fn score, idx ->
+    |> Nx.Serving.client_postprocessing(fn {{top_scores, top_indices}, _metadata}, multi? ->
+      Enum.zip_with(
+        Bumblebee.Utils.Nx.to_list(top_scores),
+        Bumblebee.Utils.Nx.to_list(top_indices),
+        fn top_scores, top_indices ->
+          predictions =
+            Enum.zip_with(top_scores, top_indices, fn score, idx ->
               label = spec.id_to_label[idx] || "LABEL_#{idx}"
               %{score: score, label: label}
-            end
-          )
+            end)
 
-        %{predictions: predictions}
-      end
+          %{predictions: predictions}
+        end
+      )
       |> Shared.normalize_output(multi?)
     end)
   end

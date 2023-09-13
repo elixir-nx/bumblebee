@@ -29,7 +29,20 @@ defmodule Bumblebee.Text.QuestionAnswering do
       outputs = predict_fun.(params, input)
       start_scores = Axon.Activations.softmax(outputs.start_logits)
       end_scores = Axon.Activations.softmax(outputs.end_logits)
-      %{start_scores: start_scores, end_scores: end_scores}
+
+      start_idx = Nx.argmax(start_scores, axis: -1, keep_axis: true)
+      end_idx = Nx.argmax(end_scores, axis: -1, keep_axis: true)
+
+      start_score = Nx.take_along_axis(start_scores, start_idx, axis: -1)
+      end_score = Nx.take_along_axis(end_scores, end_idx, axis: -1)
+
+      score = Nx.multiply(start_score, end_score)
+
+      %{
+        score: Nx.squeeze(score, axes: [-1]),
+        start_idx: Nx.squeeze(start_idx, axes: [-1]),
+        end_idx: Nx.squeeze(end_idx, axes: [-1])
+      }
     end
 
     batch_keys = Shared.sequence_batch_keys(sequence_length)
@@ -92,16 +105,11 @@ defmodule Bumblebee.Text.QuestionAnswering do
       Enum.zip_with(
         [raw_inputs, Utils.Nx.batch_to_list(inputs), Utils.Nx.batch_to_list(outputs)],
         fn [{_question_text, context_text}, inputs, outputs] ->
-          start_idx = outputs.start_scores |> Nx.argmax() |> Nx.to_number()
-          end_idx = outputs.end_scores |> Nx.argmax() |> Nx.to_number()
-
+          start_idx = Nx.to_number(outputs.start_idx)
+          end_idx = Nx.to_number(outputs.end_idx)
+          score = Nx.to_number(outputs.score)
           start = Nx.to_number(inputs["start_offsets"][start_idx])
           ending = Nx.to_number(inputs["end_offsets"][end_idx])
-
-          score =
-            outputs.start_scores[start_idx]
-            |> Nx.multiply(outputs.end_scores[end_idx])
-            |> Nx.to_number()
 
           answer_text = binary_part(context_text, start, ending - start)
 

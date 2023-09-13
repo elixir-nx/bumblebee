@@ -48,7 +48,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
     {_init_fun, predict_fun} = Axon.build(model)
 
-    scores_fun = fn params, input ->
+    logits_fun = fn params, input ->
       input = Utils.Nx.composite_flatten_batch(input)
       %{logits: logits} = predict_fun.(params, input)
       logits
@@ -60,8 +60,8 @@ defmodule Bumblebee.Text.ZeroShotClassification do
       fn batch_key, defn_options ->
         params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
 
-        scores_fun =
-          Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
+        logits_fun =
+          Shared.compile_or_jit(logits_fun, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key
 
             inputs = %{
@@ -76,8 +76,12 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
-          scores = scores_fun.(params, inputs)
-          Utils.Nx.composite_unflatten_batch(scores, inputs.size)
+          logits = logits_fun.(params, inputs)
+          logits = Utils.Nx.composite_unflatten_batch(logits, inputs.size)
+          scores = Axon.Activations.softmax(logits[[.., .., entailment_id]])
+          k = min(top_k, Nx.axis_size(scores, 1))
+          {top_scores, top_indices} = Nx.top_k(scores, k: k)
+          {top_scores, top_indices}
         end
       end,
       defn_options
@@ -104,25 +108,20 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
       {batch, multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, multi? ->
-      for scores <- Utils.Nx.batch_to_list(scores) do
-        scores = Axon.Activations.softmax(scores[[.., entailment_id]])
-
-        k = min(top_k, Nx.size(scores))
-        {top_scores, top_indices} = Nx.top_k(scores, k: k)
-
-        predictions =
-          Enum.zip_with(
-            Nx.to_flat_list(top_scores),
-            Nx.to_flat_list(top_indices),
-            fn score, idx ->
+    |> Nx.Serving.client_postprocessing(fn {{top_scores, top_indices}, _metadata}, multi? ->
+      Enum.zip_with(
+        Bumblebee.Utils.Nx.to_list(top_scores),
+        Bumblebee.Utils.Nx.to_list(top_indices),
+        fn top_scores, top_indices ->
+          predictions =
+            Enum.zip_with(top_scores, top_indices, fn score, idx ->
               label = Enum.at(labels, idx)
               %{score: score, label: label}
-            end
-          )
+            end)
 
-        %{predictions: predictions}
-      end
+          %{predictions: predictions}
+        end
+      )
       |> Shared.normalize_output(multi?)
     end)
   end
