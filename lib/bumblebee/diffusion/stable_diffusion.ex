@@ -315,6 +315,9 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   end
 
   defp client_postprocessing({outputs, _metadata}, multi?, safety_checker?) do
+    # We use binary backend so we are not blocked by the serving computation
+    outputs = Nx.backend_transfer(outputs, Nx.BinaryBackend)
+
     for outputs <- Bumblebee.Utils.Nx.batch_to_list(outputs) do
       results =
         for outputs = %{image: image} <- Bumblebee.Utils.Nx.batch_to_list(outputs) do
@@ -336,7 +339,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
   defp zeroed(tensor) do
     0
-    |> Nx.tensor(type: Nx.type(tensor))
+    |> Nx.tensor(type: Nx.type(tensor), backend: Nx.BinaryBackend)
     |> Nx.broadcast(Nx.shape(tensor))
   end
 

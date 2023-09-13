@@ -121,6 +121,9 @@ defmodule Bumblebee.Text.TextEmbedding do
       {batch, multi?}
     end)
     |> Nx.Serving.client_postprocessing(fn {embeddings, _metadata}, multi? ->
+      # We use binary backend so we are not blocked by the serving computation
+      embeddings = Nx.backend_transfer(embeddings, Nx.BinaryBackend)
+
       for embedding <- Bumblebee.Utils.Nx.batch_to_list(embeddings) do
         %{embedding: embedding}
       end

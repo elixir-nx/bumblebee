@@ -87,6 +87,10 @@ defmodule Bumblebee.Text.TokenClassification do
       {batch, {all_inputs, multi?}}
     end)
     |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, {inputs, multi?} ->
+      # We use binary backend so we are not blocked by the serving computation
+      scores = Nx.backend_transfer(scores, Nx.BinaryBackend)
+      inputs = Nx.backend_transfer(inputs, Nx.BinaryBackend)
+
       Enum.zip_with(
         Utils.Nx.batch_to_list(inputs),
         Utils.Nx.batch_to_list(scores),
