@@ -105,6 +105,9 @@ defmodule Bumblebee.Text.TokenClassification do
   end
 
   defp gather_raw_entities(scores, tokenizer, inputs) do
+    # We use binary backend so we are not blocked by the serving computation
+    scores = Nx.backend_transfer(scores, Nx.BinaryBackend)
+
     {sequence_length, _} = Nx.shape(scores)
     flat_special_tokens_mask = Nx.to_flat_list(inputs["special_tokens_mask"])
     flat_input_ids = Nx.to_flat_list(inputs["input_ids"])

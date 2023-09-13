@@ -45,9 +45,14 @@ defmodule Bumblebee.Text.FillMask do
         |> Nx.reshape({batch_size, 1, 1})
         |> Nx.broadcast({batch_size, 1, num_tokens})
 
-      scores
-      |> Nx.take_along_axis(mask_idx, axis: 1)
-      |> Nx.squeeze(axes: [1])
+      scores =
+        scores
+        |> Nx.take_along_axis(mask_idx, axis: 1)
+        |> Nx.squeeze(axes: [1])
+
+      k = min(top_k, Nx.axis_size(scores, 1))
+      {top_scores, top_indices} = Nx.top_k(scores, k: k)
+      {top_scores, top_indices}
     end
 
     batch_keys = Shared.sequence_batch_keys(sequence_length)
@@ -94,16 +99,13 @@ defmodule Bumblebee.Text.FillMask do
 
       {batch, multi?}
     end)
-    |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, multi? ->
-      for scores <- Bumblebee.Utils.Nx.batch_to_list(scores) do
-        k = min(top_k, Nx.size(scores))
-        {top_scores, top_indices} = Nx.top_k(scores, k: k)
-
-        predictions =
-          Enum.zip_with(
-            Nx.to_flat_list(top_scores),
-            Nx.to_flat_list(top_indices),
-            fn score, token_id ->
+    |> Nx.Serving.client_postprocessing(fn {{top_scores, top_indices}, _metadata}, multi? ->
+      Enum.zip_with(
+        Bumblebee.Utils.Nx.to_list(top_scores),
+        Bumblebee.Utils.Nx.to_list(top_indices),
+        fn top_scores, top_indices ->
+          predictions =
+            Enum.zip_with(top_scores, top_indices, fn score, token_id ->
               # Certain tokenizers distinguish tokens with a leading space,
               # so we normalize the result to a consistent string
               token =
@@ -112,11 +114,11 @@ defmodule Bumblebee.Text.FillMask do
                 |> String.trim_leading()
 
               %{score: score, token: token}
-            end
-          )
+            end)
 
-        %{predictions: predictions}
-      end
+          %{predictions: predictions}
+        end
+      )
       |> Shared.normalize_output(multi?)
     end)
   end
