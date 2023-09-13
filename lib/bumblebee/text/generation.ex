@@ -67,7 +67,7 @@ defmodule Bumblebee.Text.Generation do
   """
   @spec extra_config_module(Bumblebee.ModelSpec.t()) :: module() | nil
   def extra_config_module(%module{} = spec) do
-    if function_exported?(module, :extra_config_module, 1) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :extra_config_module, 1) do
       module.extra_config_module(spec)
     end
   end

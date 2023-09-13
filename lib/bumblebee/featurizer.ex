@@ -54,7 +54,7 @@ defmodule Bumblebee.Featurizer do
   """
   @spec batch_template(t(), pos_integer()) :: Nx.t() | Nx.Container.t() | nil
   def batch_template(%module{} = featurizer, batch_size) do
-    if function_exported?(module, :batch_template, 2) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :batch_template, 2) do
       module.batch_template(featurizer, batch_size)
     end
   end
@@ -70,7 +70,7 @@ defmodule Bumblebee.Featurizer do
   """
   @spec process_batch(t(), Nx.t() | Nx.Container.t()) :: Nx.t() | Nx.Container.t()
   def process_batch(%module{} = featurizer, batch) do
-    if function_exported?(module, :process_batch, 2) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :process_batch, 2) do
       module.process_batch(featurizer, batch)
     else
       batch

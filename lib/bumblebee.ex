@@ -563,7 +563,7 @@ defmodule Bumblebee do
 
     batch = module.process_input(featurizer, input)
 
-    if function_exported?(module, :process_batch, 2) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :process_batch, 2) do
       Nx.Defn.jit_apply(&module.process_batch(featurizer, &1), [batch], opts[:defn_options])
     else
       batch
