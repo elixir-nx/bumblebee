@@ -115,7 +115,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
         fn top_scores, top_indices ->
           predictions =
             Enum.zip_with(top_scores, top_indices, fn score, idx ->
-              label = Enum.at(labels, idx)
+              label = Enum.fetch!(labels, idx)
               %{score: score, label: label}
             end)
 
