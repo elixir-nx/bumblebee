@@ -560,7 +560,14 @@ defmodule Bumblebee do
   @spec apply_featurizer(Bumblebee.Featurizer.t(), any(), keyword()) :: any()
   def apply_featurizer(%module{} = featurizer, input, opts \\ []) do
     opts = Keyword.validate!(opts, defn_options: [])
-    module.apply(featurizer, input, opts[:defn_options])
+
+    batch = module.process_input(featurizer, input)
+
+    if function_exported?(module, :process_batch, 2) do
+      Nx.Defn.jit_apply(&module.process_batch(featurizer, &1), [batch], opts[:defn_options])
+    else
+      batch
+    end
   end
 
   @doc """

@@ -60,36 +60,44 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
   end
 
   @impl true
-  def apply(featurizer, images, _defn_options) do
+  def process_input(featurizer, images) do
     images = List.wrap(images)
 
-    images =
-      for image <- images do
-        images =
-          image
-          |> Image.to_batched_tensor()
-          |> Nx.as_type(:f32)
-          |> Image.normalize_channels(length(featurizer.image_mean))
+    for image <- images do
+      images =
+        image
+        |> Image.to_batched_tensor()
+        |> Nx.as_type(:f32)
+        |> Image.normalize_channels(length(featurizer.image_mean))
 
-        cond do
-          not featurizer.resize ->
-            images
+      cond do
+        not featurizer.resize ->
+          images
 
-          featurizer.size >= 384 ->
-            NxImage.resize(images, {featurizer.size, featurizer.size},
-              method: featurizer.resize_method
-            )
+        featurizer.size >= 384 ->
+          NxImage.resize(images, {featurizer.size, featurizer.size},
+            method: featurizer.resize_method
+          )
 
-          true ->
-            scale_size = floor(featurizer.size / featurizer.crop_percentage)
+        true ->
+          scale_size = floor(featurizer.size / featurizer.crop_percentage)
 
-            images
-            |> NxImage.resize_short(scale_size, method: featurizer.resize_method)
-            |> NxImage.center_crop({featurizer.size, featurizer.size})
-        end
+          images
+          |> NxImage.resize_short(scale_size, method: featurizer.resize_method)
+          |> NxImage.center_crop({featurizer.size, featurizer.size})
       end
-      |> Nx.concatenate()
+    end
+    |> Nx.concatenate()
+  end
 
+  @impl true
+  def batch_template(featurizer, batch_size) do
+    num_channels = length(featurizer.image_mean)
+    Nx.template({batch_size, featurizer.size, featurizer.size, num_channels}, :f32)
+  end
+
+  @impl true
+  def process_batch(featurizer, images) do
     images = NxImage.to_continuous(images, 0, 1)
 
     images =

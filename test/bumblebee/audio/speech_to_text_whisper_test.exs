@@ -42,6 +42,41 @@ defmodule Bumblebee.Audio.SpeechToTextWhisperTest do
              }
     end
 
+    test "supports compilation" do
+      {:ok, model_info} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
+      {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/whisper-tiny"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/whisper-tiny"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai/whisper-tiny"})
+
+      serving =
+        Bumblebee.Audio.speech_to_text_whisper(
+          model_info,
+          featurizer,
+          tokenizer,
+          generation_config,
+          defn_options: [compiler: EXLA],
+          compile: [batch_size: 1]
+        )
+
+      audio =
+        Path.join(
+          @audio_dir,
+          "common_voice/a6c7706a220eeea7ee3687c1122fe7ac17962d2449d25b6db37cc41cdaace442683e11945b6f581e73941c3083cd4eecfafc938840459cd8c571dae7774ee687_pcm_f32le_16000.bin"
+        )
+        |> File.read!()
+        |> Nx.from_binary(:f32)
+
+      assert Nx.Serving.run(serving, audio) == %{
+               chunks: [
+                 %{
+                   text: " Tower of strength.",
+                   start_timestamp_seconds: nil,
+                   end_timestamp_seconds: nil
+                 }
+               ]
+             }
+    end
+
     test "long-form transcription with chunking" do
       {:ok, model_info} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/whisper-tiny"})

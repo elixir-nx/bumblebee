@@ -4,7 +4,7 @@ defmodule Bumblebee.Vision.ImageEmbedding do
   alias Bumblebee.Shared
 
   def image_embedding(model_info, featurizer, opts \\ []) do
-    %{model: model, params: params, spec: spec} = model_info
+    %{model: model, params: params} = model_info
 
     opts =
       Keyword.validate!(opts, [
@@ -32,6 +32,8 @@ defmodule Bumblebee.Vision.ImageEmbedding do
     {_init_fun, encoder} = Axon.build(model)
 
     embedding_fun = fn params, inputs ->
+      inputs = Bumblebee.Featurizer.process_batch(featurizer, inputs)
+
       output = encoder.(params, inputs)
 
       output =
@@ -63,10 +65,7 @@ defmodule Bumblebee.Vision.ImageEmbedding do
 
         embedding_fun =
           Shared.compile_or_jit(embedding_fun, defn_options, compile != nil, fn ->
-            inputs = %{
-              "pixel_values" => Shared.input_template(spec, "pixel_values", [batch_size])
-            }
-
+            inputs = Bumblebee.Featurizer.batch_template(featurizer, batch_size)
             [params, inputs]
           end)
 
@@ -81,7 +80,7 @@ defmodule Bumblebee.Vision.ImageEmbedding do
     |> Nx.Serving.client_preprocessing(fn input ->
       {images, multi?} = Shared.validate_serving_input!(input, &Shared.validate_image/1)
 
-      inputs = Bumblebee.apply_featurizer(featurizer, images)
+      inputs = Bumblebee.Featurizer.process_input(featurizer, images)
 
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
