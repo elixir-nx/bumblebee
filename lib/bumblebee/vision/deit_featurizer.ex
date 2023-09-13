@@ -65,34 +65,42 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
   end
 
   @impl true
-  def apply(featurizer, images, _defn_options) do
+  def process_input(featurizer, images) do
     images = List.wrap(images)
 
-    images =
-      for image <- images do
-        images =
-          image
-          |> Image.to_batched_tensor()
-          |> Nx.as_type(:f32)
-          |> Image.normalize_channels(length(featurizer.image_mean))
+    for image <- images do
+      images =
+        image
+        |> Image.to_batched_tensor()
+        |> Nx.as_type(:f32)
+        |> Image.normalize_channels(length(featurizer.image_mean))
 
-        if featurizer.resize do
-          size = Image.normalize_size(featurizer.size)
-          NxImage.resize(images, size, method: featurizer.resize_method)
-        else
-          images
-        end
+      if featurizer.resize do
+        size = Image.normalize_size(featurizer.size)
+        NxImage.resize(images, size, method: featurizer.resize_method)
+      else
+        images
       end
-      |> Nx.concatenate()
+    end
+    |> Nx.concatenate()
+  end
 
-    images = NxImage.to_continuous(images, 0, 1)
+  @impl true
+  def batch_template(featurizer, batch_size) do
+    num_channels = length(featurizer.image_mean)
+    Nx.template({batch_size, featurizer.size, featurizer.size, num_channels}, :f32)
+  end
 
+  @impl true
+  def process_batch(featurizer, images) do
     images =
       if featurizer.center_crop do
         NxImage.center_crop(images, {featurizer.crop_size, featurizer.crop_size})
       else
         images
       end
+
+    images = NxImage.to_continuous(images, 0, 1)
 
     images =
       if featurizer.normalize do

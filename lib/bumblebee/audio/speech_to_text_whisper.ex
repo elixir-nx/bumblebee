@@ -50,16 +50,18 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     {generate_opts, generation_config} = generate_opts(generation_config, opts)
     generate_fun = Text.Generation.build_generate(model, spec, generation_config, generate_opts)
 
+    generate_fun = fn params, inputs ->
+      inputs = Bumblebee.Featurizer.process_batch(featurizer, inputs)
+      generate_fun.(params, inputs)
+    end
+
     Nx.Serving.new(
       fn defn_options ->
         params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
 
         generate_fun =
           Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
-            inputs = %{
-              "input_features" => Shared.input_template(spec, "input_features", [batch_size])
-            }
-
+            inputs = Bumblebee.Featurizer.batch_template(featurizer, batch_size)
             [params, inputs]
           end)
 
@@ -102,7 +104,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
       all_chunks = List.flatten(all_chunks)
       {all_chunks, lengths} = Enum.unzip(all_chunks)
 
-      inputs = Bumblebee.apply_featurizer(featurizer, all_chunks, defn_options: defn_options)
+      inputs = Bumblebee.Featurizer.process_input(featurizer, all_chunks)
       {Nx.Batch.concatenate([inputs]), {multi?, all_num_chunks, lengths}}
     end)
     |> maybe_stream(opts[:stream], spec, featurizer, tokenizer, timestamps?)

@@ -37,6 +37,7 @@ defmodule Bumblebee.Vision.ImageClassification do
     {_init_fun, predict_fun} = Axon.build(model)
 
     scores_fun = fn params, input ->
+      input = Bumblebee.Featurizer.process_batch(featurizer, input)
       outputs = predict_fun.(params, input)
       Shared.logits_to_scores(outputs.logits, scores_function)
     end
@@ -47,10 +48,7 @@ defmodule Bumblebee.Vision.ImageClassification do
 
         scores_fun =
           Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
-            inputs = %{
-              "pixel_values" => Shared.input_template(spec, "pixel_values", [batch_size])
-            }
-
+            inputs = Bumblebee.Featurizer.batch_template(featurizer, batch_size)
             [params, inputs]
           end)
 
@@ -64,7 +62,7 @@ defmodule Bumblebee.Vision.ImageClassification do
     |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       {images, multi?} = Shared.validate_serving_input!(input, &Shared.validate_image/1)
-      inputs = Bumblebee.apply_featurizer(featurizer, images)
+      inputs = Bumblebee.Featurizer.process_input(featurizer, images)
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
     |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, multi? ->

@@ -53,7 +53,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
   end
 
   @impl true
-  def apply(featurizer, raw_samples, defn_options) do
+  def process_input(featurizer, raw_samples) do
     max_length = featurizer.num_seconds * featurizer.sampling_rate
 
     samples =
@@ -67,17 +67,27 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
         Nx.pad(sample, featurizer.padding_value, [{0, pad_size, 0}])
       end
 
-    samples = samples |> Nx.stack() |> Nx.vectorize(:batch)
+    Nx.stack(samples)
+  end
 
+  @impl true
+  def batch_template(featurizer, batch_size) do
+    max_length = featurizer.num_seconds * featurizer.sampling_rate
+    Nx.template({batch_size, max_length}, :f32)
+  end
+
+  @impl true
+  def process_batch(featurizer, samples) do
     samples =
-      Nx.Defn.jit(&extract_fbank_features/2, defn_options).(samples,
+      samples
+      |> Nx.vectorize(:batch)
+      |> extract_fbank_features(
         fft_length: featurizer.fft_length,
         sampling_rate: featurizer.sampling_rate,
         mel_bins: featurizer.feature_size,
         hop_length: featurizer.hop_length
       )
-
-    samples = Nx.devectorize(samples)
+      |> Nx.devectorize()
 
     %{"input_features" => samples}
   end

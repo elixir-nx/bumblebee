@@ -32,16 +32,18 @@ defmodule Bumblebee.Vision.ImageToText do
     generate_fun =
       Text.Generation.build_generate(model, spec, generation_config, Keyword.take(opts, [:seed]))
 
+    generate_fun = fn params, inputs ->
+      inputs = Bumblebee.Featurizer.process_batch(featurizer, inputs)
+      generate_fun.(params, inputs)
+    end
+
     Nx.Serving.new(
       fn defn_options ->
         params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
 
         generate_fun =
           Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
-            inputs = %{
-              "pixel_values" => Shared.input_template(spec, "pixel_values", [batch_size])
-            }
-
+            inputs = Bumblebee.Featurizer.batch_template(featurizer, batch_size)
             [params, inputs]
           end)
 
@@ -55,7 +57,7 @@ defmodule Bumblebee.Vision.ImageToText do
     |> Nx.Serving.process_options(batch_size: batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       {images, multi?} = Shared.validate_serving_input!(input, &Shared.validate_image/1)
-      inputs = Bumblebee.apply_featurizer(featurizer, images, defn_options: defn_options)
+      inputs = Bumblebee.Featurizer.process_input(featurizer, images)
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
     |> Nx.Serving.client_postprocessing(fn {token_ids, _metadata}, multi? ->
