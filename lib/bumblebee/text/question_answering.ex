@@ -102,6 +102,10 @@ defmodule Bumblebee.Text.QuestionAnswering do
       {batch, {all_inputs, raw_inputs, multi?}}
     end)
     |> Nx.Serving.client_postprocessing(fn {outputs, _metadata}, {inputs, raw_inputs, multi?} ->
+      # We use binary backend so we are not blocked by the serving computation
+      inputs = Nx.backend_transfer(inputs, Nx.BinaryBackend)
+      outputs = Nx.backend_transfer(outputs, Nx.BinaryBackend)
+
       Enum.zip_with(
         [raw_inputs, Utils.Nx.batch_to_list(inputs), Utils.Nx.batch_to_list(outputs)],
         fn [{_question_text, context_text}, inputs, outputs] ->
