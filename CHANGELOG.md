@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.0](https://github.com/elixir-nx/bumblebee/tree/v0.4.0) (2023-09-14)
+
+### Added
+
+* Chunking options to speech-to-text to support long audio transcription ([#236](https://github.com/elixir-nx/bumblebee/pull/236))
+* Support for Whisper timestamps and task/language configuration ([#238](https://github.com/elixir-nx/bumblebee/pull/238))
+* Support for streaming speech-to-text results ([#242](https://github.com/elixir-nx/bumblebee/pull/242))
+* Introduced featurizer batch phase that is compiled as part of the serving computation ([#243](https://github.com/elixir-nx/bumblebee/pull/243))
+* Removed possibly contentious Nx calls from serving postprocessing ([#244](https://github.com/elixir-nx/bumblebee/pull/244), [#245](https://github.com/elixir-nx/bumblebee/pull/245))
+
+### Changed
+
+* Deprecated `Bumblebee.Audio.speech_to_text/5` in favour of the more specific `Bumblebee.Audio.speech_to_text_whisper/5`
+* Changed the tensors returned from embedding servings to use `Nx.BinaryBackend`
+
 ## [v0.3.1](https://github.com/elixir-nx/bumblebee/tree/v0.3.1) (2023-08-17)
 
 ### Added
