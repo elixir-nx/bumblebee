@@ -40,7 +40,7 @@ defmodule Bumblebee.Vision.ImageClassification do
       input = Bumblebee.Featurizer.process_batch(featurizer, input)
       outputs = predict_fun.(params, input)
       scores = Shared.logits_to_scores(outputs.logits, scores_function)
-      k = min(top_k, Nx.size(scores))
+      k = min(top_k, Nx.axis_size(scores, 1))
       {top_scores, top_indices} = Nx.top_k(scores, k: k)
       {top_scores, top_indices}
     end
