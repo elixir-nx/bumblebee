@@ -62,7 +62,7 @@ defmodule Bumblebee.Vision.ImageClassification do
       end,
       defn_options
     )
-    |> Nx.Serving.process_options(batch_size: batch_size)
+    |> Nx.Serving.batch_size(batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       {images, multi?} = Shared.validate_serving_input!(input, &Shared.validate_image/1)
       inputs = Bumblebee.Featurizer.process_input(featurizer, images)

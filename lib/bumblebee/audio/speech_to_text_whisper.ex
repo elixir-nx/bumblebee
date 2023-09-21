@@ -72,7 +72,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
       end,
       defn_options
     )
-    |> Nx.Serving.process_options(batch_size: batch_size)
+    |> Nx.Serving.batch_size(batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->
       if opts[:stream] do
         Shared.validate_input_for_stream!(input)

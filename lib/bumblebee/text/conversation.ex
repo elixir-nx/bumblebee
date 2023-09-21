@@ -81,7 +81,8 @@ defmodule Bumblebee.Text.Conversation do
       end,
       defn_options
     )
-    |> Nx.Serving.process_options(batch_size: batch_size, batch_keys: batch_keys)
+    |> Nx.Serving.batch_size(batch_size)
+    |> Nx.Serving.process_options(batch_keys: batch_keys)
     |> Nx.Serving.client_preprocessing(fn input ->
       {histories, multi?} = Shared.validate_serving_input!(input, &validate_input/1)
 
