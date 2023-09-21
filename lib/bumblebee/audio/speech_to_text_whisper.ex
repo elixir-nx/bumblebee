@@ -81,7 +81,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
       {inputs, multi?} =
         Shared.validate_serving_input!(input, fn
           %Nx.Tensor{shape: {_}} = input ->
-            {:ok, input}
+            {:ok, Nx.backend_transfer(input, Nx.BinaryBackend)}
 
           {:file, path} when is_binary(path) ->
             ffmpeg_read_as_pcm(path, sampling_rate)
@@ -104,8 +104,20 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
       all_chunks = List.flatten(all_chunks)
       {all_chunks, lengths} = Enum.unzip(all_chunks)
 
-      inputs = Bumblebee.Featurizer.process_input(featurizer, all_chunks)
-      {Nx.Batch.concatenate([inputs]), {multi?, all_num_chunks, lengths}}
+      if batch_size do
+        stream =
+          all_chunks
+          |> Stream.chunk_every(batch_size)
+          |> Stream.map(fn all_chunks ->
+            inputs = Bumblebee.Featurizer.process_input(featurizer, all_chunks)
+            Nx.Batch.concatenate([inputs])
+          end)
+
+        {stream, {multi?, all_num_chunks, lengths}}
+      else
+        inputs = Bumblebee.Featurizer.process_input(featurizer, all_chunks)
+        {Nx.Batch.concatenate([inputs]), {multi?, all_num_chunks, lengths}}
+      end
     end)
     |> maybe_stream(opts[:stream], spec, featurizer, tokenizer, timestamps?)
   end
@@ -571,7 +583,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         ])
         |> case do
           {data, 0} ->
-            {:ok, Nx.from_binary(data, :f32)}
+            {:ok, Nx.from_binary(data, :f32, backend: Nx.BinaryBackend)}
 
           {_, 1} ->
             {:error, "ffmpeg failed to decode the given file"}
