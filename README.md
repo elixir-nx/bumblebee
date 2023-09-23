@@ -5,9 +5,19 @@
 
 Bumblebee provides pre-trained Neural Network models on top of [Axon](https://github.com/elixir-nx/axon). It includes integration with [🤗 Models](https://huggingface.co/models), allowing anyone to download and perform Machine Learning tasks with few lines of code.
 
-To see all supported architectures, [check out our documentation sidebar](https://hexdocs.pm/bumblebee).
-
 ![Numbat and Bumblebees](.github/images/background.jpg)
+
+## Getting started
+
+The best way to get started with Bumblebee is with [Livebook](https://livebook.dev). [Our announcement video](https://news.livebook.dev/announcing-bumblebee-gpt2-stable-diffusion-and-more-in-elixir-3Op73O) shows how to use Livebook's Smart Cells to perform different Neural Network tasks with few clicks. You can then tweak the code and deploy it.
+
+![](.github/images/kino_bumblebee_token_classification.png)
+
+We also provide single-file examples of running Neural Networks inside your Phoenix (+ LiveView) apps inside the [examples/phoenix](examples/phoenix) folder.
+
+![](.github/images/phx_image_classification.png)
+
+You may also check [our official docs](https://hexdocs.pm/bumblebee), which includes notebooks and our API reference. The "Tasks" section in the sidebar covers high-level APIs for using Bumblebee. The remaining modules in the sidebar lists all supported architectures.
 
 ## Installation
 
@@ -66,20 +76,6 @@ Nx.Serving.run(serving, "The capital of [MASK] is Paris.")
 ```
 
 We load the BERT model from Hugging Face Hub, then plug it into an end-to-end pipeline in the form of "serving", finally we use the serving to get our task done. For more details check out [the documentation](https://hexdocs.pm/bumblebee) and the resources below.
-
-## Examples
-
-To explore Bumblebee:
-
-  * See [examples/phoenix](examples/phoenix) for single-file examples of running Neural Networks inside your Phoenix (+ LiveView) apps
-
-    ![](.github/images/phx_image_classification.png)
-
-  * Use Bumblebee's integration with Livebook v0.8 (or later) to automatically generate "Neural Networks tasks" from the "+ Smart" cell menu (see [`kino_bumblebee`](https://github.com/livebook-dev/kino_bumblebee))
-
-    ![](.github/images/kino_bumblebee_token_classification.png)
-
-  * For a more hands on approach, read our example [notebooks](notebooks)
 
 ## License
 
