@@ -218,7 +218,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
       fn defn_options -> apply(&init/10, init_args ++ [defn_options]) end,
       defn_options
     )
-    |> Nx.Serving.process_options(batch_size: batch_size)
+    |> Nx.Serving.batch_size(batch_size)
     |> Nx.Serving.client_preprocessing(&client_preprocessing(&1, tokenizer, sequence_length))
     |> Nx.Serving.client_postprocessing(&client_postprocessing(&1, &2, safety_checker))
   end

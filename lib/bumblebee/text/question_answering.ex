@@ -72,7 +72,8 @@ defmodule Bumblebee.Text.QuestionAnswering do
       end,
       defn_options
     )
-    |> Nx.Serving.process_options(batch_size: batch_size, batch_keys: batch_keys)
+    |> Nx.Serving.batch_size(batch_size)
+    |> Nx.Serving.process_options(batch_keys: batch_keys)
     |> Nx.Serving.client_preprocessing(fn raw_input ->
       {raw_inputs, multi?} =
         Shared.validate_serving_input!(raw_input, fn

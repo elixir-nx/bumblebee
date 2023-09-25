@@ -32,9 +32,9 @@ defmodule Bumblebee.MixProject do
     [
       {:axon, "~> 0.6.0", axon_opts()},
       {:tokenizers, "~> 0.4"},
-      {:nx, "~> 0.6.1"},
-      {:exla, "~> 0.6.1", only: [:dev, :test]},
-      {:torchx, "~> 0.6.1", only: [:dev, :test]},
+      {:nx, "~> 0.6.2"},
+      {:exla, ">= 0.0.0", only: [:dev, :test]},
+      {:torchx, ">= 0.0.0", only: [:dev, :test]},
       # {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
       # {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
       # {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
