@@ -135,7 +135,7 @@ defmodule Bumblebee.HuggingFace.HubTest do
 
       url = url(bypass.port) <> "/file.json"
 
-      assert {:error, "HTTP request failed with status 500"} =
+      assert {:error, "HTTP request failed with status 500, url: " <> _} =
                Hub.cached_download(url, cache_dir: tmp_dir)
     end
 
@@ -150,7 +150,8 @@ defmodule Bumblebee.HuggingFace.HubTest do
 
       url = url(bypass.port) <> "/file.json"
 
-      assert {:error, "repository not found"} = Hub.cached_download(url, cache_dir: tmp_dir)
+      assert {:error, "repository not found, url: " <> _} =
+               Hub.cached_download(url, cache_dir: tmp_dir)
     end
 
     @tag :tmp_dir
@@ -178,7 +179,8 @@ defmodule Bumblebee.HuggingFace.HubTest do
          %{bypass: bypass, tmp_dir: tmp_dir} do
       url = url(bypass.port) <> "/file.json"
 
-      assert {:error, "could not find file in local cache and outgoing traffic is disabled"} =
+      assert {:error,
+              "could not find file in local cache and outgoing traffic is disabled, url: " <> _} =
                Hub.cached_download(url, cache_dir: tmp_dir, offline: true)
     end
   end

@@ -15,6 +15,16 @@ defmodule Bumblebee.HuggingFace.Hub do
   end
 
   @doc """
+  Returns a URL to list the contents of a Hugging Face repository.
+  """
+  @spec file_listing_url(String.t(), String.t() | nil, String.t() | nil) :: String.t()
+  def file_listing_url(repository_id, subdir, revision) do
+    revision = revision || "main"
+    path = if(subdir, do: "/" <> subdir)
+    @huggingface_endpoint <> "/api/models/#{repository_id}/tree/#{revision}#{path}"
+  end
+
+  @doc """
   Downloads file from the given URL and returns a path to the file.
 
   The file is cached based on the received ETag. Subsequent requests
@@ -32,6 +42,10 @@ defmodule Bumblebee.HuggingFace.Hub do
 
     * `:auth_token` - the token to use as HTTP bearer authorization
       for remote files
+
+    * `:etag` - by default a HEAD request is made to fetch the latest
+      ETag value, however if the value is already known, it can be
+      passed as an option instead (to skip the extra request)
 
   """
   @spec cached_download(String.t(), keyword()) :: {:ok, String.t()} | {:error, String.t()}
@@ -60,10 +74,18 @@ defmodule Bumblebee.HuggingFace.Hub do
           {:ok, entry_path}
 
         _ ->
-          {:error, "could not find file in local cache and outgoing traffic is disabled"}
+          {:error,
+           "could not find file in local cache and outgoing traffic is disabled, url: #{url}"}
       end
     else
-      with {:ok, etag, download_url} <- head_download(url, headers) do
+      head_result =
+        if etag = opts[:etag] do
+          {:ok, etag, url}
+        else
+          head_download(url, headers)
+        end
+
+      with {:ok, etag, download_url} <- head_result do
         entry_path = Path.join(dir, entry_filename(url, etag))
 
         case load_json(metadata_path) do
@@ -71,7 +93,8 @@ defmodule Bumblebee.HuggingFace.Hub do
             {:ok, entry_path}
 
           _ ->
-            case HTTP.download(download_url, entry_path, headers: headers) |> finish_request() do
+            case HTTP.download(download_url, entry_path, headers: headers)
+                 |> finish_request(download_url) do
               :ok ->
                 :ok = store_json(metadata_path, %{"etag" => etag, "url" => url})
                 {:ok, entry_path}
@@ -88,7 +111,8 @@ defmodule Bumblebee.HuggingFace.Hub do
 
   defp head_download(url, headers) do
     with {:ok, response} <-
-           HTTP.request(:head, url, follow_redirects: false, headers: headers) |> finish_request(),
+           HTTP.request(:head, url, follow_redirects: false, headers: headers)
+           |> finish_request(url),
          {:ok, etag} <- fetch_etag(response) do
       download_url =
         if response.status in 300..399 do
@@ -101,20 +125,35 @@ defmodule Bumblebee.HuggingFace.Hub do
     end
   end
 
-  defp finish_request(:ok), do: :ok
+  defp finish_request(:ok, _url), do: :ok
 
-  defp finish_request({:ok, response}) when response.status in 100..399, do: {:ok, response}
+  defp finish_request({:ok, response}, _url) when response.status in 100..399, do: {:ok, response}
 
-  defp finish_request({:ok, response}) do
+  defp finish_request({:ok, response}, url) do
     case HTTP.get_header(response, "x-error-code") do
-      "RepoNotFound" -> {:error, "repository not found"}
-      "EntryNotFound" -> {:error, "file not found"}
-      "RevisionNotFound" -> {:error, "revision not found"}
-      _ -> {:error, "HTTP request failed with status #{response.status}"}
+      code when code == "RepoNotFound" or response.status == 401 ->
+        {:error,
+         "repository not found, url: #{url}. Please make sure you specified" <>
+           " the correct repository id. If you are trying to access a private" <>
+           " or gated repository, use an authentication token"}
+
+      "EntryNotFound" ->
+        {:error, "file not found, url: #{url}"}
+
+      "RevisionNotFound" ->
+        {:error, "revision not found, url: #{url}"}
+
+      "GatedRepo" ->
+        {:error,
+         "cannot access gated repository, url: #{url}. Make sure to request access" <>
+           " for the repository and use an authentication token"}
+
+      _ ->
+        {:error, "HTTP request failed with status #{response.status}, url: #{url}"}
     end
   end
 
-  defp finish_request({:error, reason}) do
+  defp finish_request({:error, reason}, _url) do
     {:error, "failed to make an HTTP request, reason: #{inspect(reason)}"}
   end
 
