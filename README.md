@@ -109,7 +109,9 @@ Here is a list of files commonly found in a repository following the Transformer
 
 ### Model support
 
-As pointed out above, in order to load a model, the given model type must be implemented in Bumblebee. One way to find out is calling `Bumblebee.load_model({:hf, "model-repo"})`. Alternatively, you can open the `config.json` file in the model repository and copy the class name under `"architectures"`, then [search Bumblebee codebase](https://github.com/search?q=repo%3Aelixir-nx%2Fbumblebee+BertForMaskedLM&type=code) for that keyword.
+As pointed out above, in order to load a model, the given model type must be implemented in Bumblebee. To find out whether the model is supported you can call `Bumblebee.load_model({:hf, "model-repo"})` or use [this tool](https://jonatanklosko-bumblebee-tools.hf.space/apps/repository-inspector) to run a number of checks against the repository.
+
+If you prefer to poke around the code, open the `config.json` file in the model repository and copy the class name under `"architectures"`. Next, [search Bumblebee codebase](https://github.com/search?q=repo%3Aelixir-nx%2Fbumblebee+BertForMaskedLM&type=code) for that keyword. If you find a match, this indicates the model is supported.
 
 Also note that certain repositories include multiple models in separate repositories, for example [`stabilityai/stable-diffusion-2`](https://huggingface.co/stabilityai/stable-diffusion-2). In such case use `Bumblebee.load_model({:hf, "model-repo", subdir: "..."})`.
 
