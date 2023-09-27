@@ -1,4 +1,11 @@
 defmodule Bumblebee do
+  @external_resource "README.md"
+
+  [_, readme_docs, _] =
+    "README.md"
+    |> File.read!()
+    |> String.split("<!-- Docs -->")
+
   @moduledoc """
   Pre-trained `Axon` models for easy inference and boosted training.
 
@@ -51,6 +58,8 @@ defmodule Bumblebee do
   >
   > The models are generally large, so make sure to configure an efficient
   > `Nx` backend, such as `EXLA` or `Torchx`.
+
+  #{readme_docs}
   """
 
   alias Bumblebee.HuggingFace
@@ -58,10 +67,12 @@ defmodule Bumblebee do
   @config_filename "config.json"
   @featurizer_filename "preprocessor_config.json"
   @tokenizer_filename "tokenizer.json"
+  @tokenizer_config_filename "tokenizer_config.json"
   @tokenizer_special_tokens_filename "special_tokens_map.json"
   @generation_filename "generation_config.json"
   @scheduler_filename "scheduler_config.json"
-  @params_filename %{pytorch: "pytorch_model.bin"}
+  @pytorch_params_filename "pytorch_model.bin"
+  @safetensors_params_filename "model.safetensors"
 
   @transformers_class_to_model %{
     "AlbertForMaskedLM" => {Bumblebee.Text.Albert, :for_masked_language_modeling},
@@ -335,38 +346,53 @@ defmodule Bumblebee do
     module = opts[:module]
     architecture = opts[:architecture]
 
-    with {:ok, path} <- download(repository, @config_filename),
-         {:ok, spec_data} <- decode_config(path) do
-      {inferred_module, inferred_architecture, inference_error} =
-        case infer_model_type(spec_data) do
-          {:ok, module, architecture} -> {module, architecture, nil}
-          {:error, error} -> {nil, nil, error}
+    with {:ok, repo_files} <- get_repo_files(repository) do
+      do_load_spec(repository, repo_files, module, architecture)
+    end
+  end
+
+  defp do_load_spec(repository, repo_files, module, architecture) do
+    case repo_files do
+      %{@config_filename => etag} ->
+        with {:ok, path} <- download(repository, @config_filename, etag),
+             {:ok, spec_data} <- decode_config(path) do
+          {inferred_module, inferred_architecture, inference_error} =
+            case infer_model_type(spec_data) do
+              {:ok, module, architecture} -> {module, architecture, nil}
+              {:error, error} -> {nil, nil, error}
+            end
+
+          module = module || inferred_module
+          architecture = architecture || inferred_architecture
+
+          unless module do
+            raise ArgumentError,
+                  "#{inference_error}, please specify the :module and :architecture options"
+          end
+
+          architectures = module.architectures()
+
+          if architecture && architecture not in architectures do
+            raise ArgumentError,
+                  "expected architecture to be one of: #{Enum.map_join(architectures, ", ", &inspect/1)}, but got: #{inspect(architecture)}"
+          end
+
+          spec =
+            if architecture do
+              configure(module, architecture: architecture)
+            else
+              configure(module)
+            end
+
+          spec = HuggingFace.Transformers.Config.load(spec, spec_data)
+
+          {:ok, spec}
         end
 
-      module = module || inferred_module
-      architecture = architecture || inferred_architecture
-
-      unless module do
-        raise "#{inference_error}, please specify the :module and :architecture options"
-      end
-
-      architectures = module.architectures()
-
-      if architecture && architecture not in architectures do
+      %{} ->
         raise ArgumentError,
-              "expected architecture to be one of: #{Enum.map_join(architectures, ", ", &inspect/1)}, but got: #{inspect(architecture)}"
-      end
-
-      spec =
-        if architecture do
-          configure(module, architecture: architecture)
-        else
-          configure(module)
-        end
-
-      spec = HuggingFace.Transformers.Config.load(spec, spec_data)
-
-      {:ok, spec}
+              "no config file found in the given repository. Please refer to Bumblebee" <>
+                " README to learn about repositories and supported models"
     end
   end
 
@@ -458,87 +484,101 @@ defmodule Bumblebee do
         :log_params_diff
       ])
 
-    spec_response =
-      if spec = opts[:spec] do
-        {:ok, spec}
-      else
-        load_spec(repository, Keyword.take(opts, [:module, :architecture]))
-      end
-
-    with {:ok, spec} <- spec_response,
+    with {:ok, repo_files} <- get_repo_files(repository),
+         {:ok, spec} <- maybe_load_model_spec(opts, repository, repo_files),
          model <- build_model(spec),
-         {:ok, params} <-
-           load_params(
-             spec,
-             model,
-             repository,
-             opts
-             |> Keyword.take([:params_filename, :log_params_diff, :backend])
-           ) do
+         {:ok, params} <- load_params(spec, model, repository, repo_files, opts) do
       {:ok, %{model: model, params: params, spec: spec}}
     end
   end
 
-  defp load_params(%module{} = spec, model, repository, opts) do
-    # TODO: support format: :auto | :axon | :pytorch
-    format = :pytorch
-    filename = opts[:params_filename] || @params_filename[format]
+  defp maybe_load_model_spec(opts, repository, repo_files) do
+    if spec = opts[:spec] do
+      {:ok, spec}
+    else
+      do_load_spec(repository, repo_files, opts[:module], opts[:architecture])
+    end
+  end
 
+  defp load_params(%module{} = spec, model, repository, repo_files, opts) do
     input_template = module.input_template(spec)
 
     params_mapping = Bumblebee.HuggingFace.Transformers.Model.params_mapping(spec)
 
-    with {:ok, paths} <- download_params_files(repository, filename) do
-      params =
-        Bumblebee.Conversion.PyTorch.load_params!(
-          model,
-          input_template,
-          paths,
-          [
-            params_mapping: params_mapping,
-            loader_fun: filename |> Path.extname() |> params_file_loader_fun()
-          ] ++ Keyword.take(opts, [:backend, :log_params_diff])
-        )
+    {filename, sharded?} = infer_params_filename(repo_files, opts[:params_filename])
+    loader_fun = filename |> Path.extname() |> params_file_loader_fun()
 
+    with {:ok, paths} <- download_params_files(repository, repo_files, filename, sharded?) do
+      opts =
+        [
+          params_mapping: params_mapping,
+          loader_fun: loader_fun
+        ] ++ Keyword.take(opts, [:backend, :log_params_diff])
+
+      params = Bumblebee.Conversion.PyTorch.load_params!(model, input_template, paths, opts)
       {:ok, params}
     end
   end
 
-  defp download_params_files(repository, filename) do
-    case download(repository, filename) do
-      {:ok, path} ->
-        {:ok, [path]}
+  defp infer_params_filename(repo_files, nil = _filename) do
+    cond do
+      Map.has_key?(repo_files, @pytorch_params_filename) ->
+        {@pytorch_params_filename, false}
 
-      error ->
-        # Check for sharded params
-        with {:ok, path} <- download(repository, filename <> ".index.json"),
-             {:ok, sharded_metadata} <- decode_config(path) do
-          filenames =
-            for {_layer, filename} <- sharded_metadata["weight_map"], uniq: true, do: filename
+      Map.has_key?(repo_files, @pytorch_params_filename <> ".index.json") ->
+        {@pytorch_params_filename, true}
 
-          Enum.reduce_while(filenames, {:ok, []}, fn filename, {:ok, paths} ->
-            case download(repository, filename) do
-              {:ok, path} -> {:cont, {:ok, [path | paths]}}
-              error -> {:halt, error}
-            end
-          end)
-        else
-          _ -> error
+      Map.has_key?(repo_files, @safetensors_params_filename) ->
+        {@safetensors_params_filename, false}
+
+      Map.has_key?(repo_files, @safetensors_params_filename <> ".index.json") ->
+        {@safetensors_params_filename, true}
+
+      true ->
+        raise ArgumentError,
+              "none of the expected parameters files found in the repository." <>
+                " If the file exists under an unusual name, try specifying :params_filename"
+    end
+  end
+
+  defp infer_params_filename(repo_files, filename) do
+    cond do
+      Map.has_key?(repo_files, filename) ->
+        {filename, false}
+
+      Map.has_key?(repo_files, filename <> ".index.json") ->
+        {filename, true}
+
+      true ->
+        raise ArgumentError, "could not find file #{inspect(filename)} in the repository"
+    end
+  end
+
+  defp download_params_files(repository, repo_files, filename, false = _sharded?) do
+    with {:ok, path} <- download(repository, filename, repo_files[filename]) do
+      {:ok, [path]}
+    end
+  end
+
+  defp download_params_files(repository, repo_files, filename, true = _sharded?) do
+    index_filename = filename <> ".index.json"
+
+    with {:ok, path} <- download(repository, index_filename, repo_files[index_filename]),
+         {:ok, sharded_metadata} <- decode_config(path) do
+      filenames =
+        for {_layer, filename} <- sharded_metadata["weight_map"], uniq: true, do: filename
+
+      Enum.reduce_while(filenames, {:ok, []}, fn filename, {:ok, paths} ->
+        case download(repository, filename, repo_files[filename]) do
+          {:ok, path} -> {:cont, {:ok, [path | paths]}}
+          error -> {:halt, error}
         end
+      end)
     end
   end
 
-  defp params_file_loader_fun(".safetensors") do
-    fn path ->
-      path
-      |> File.read!()
-      |> Safetensors.load!()
-    end
-  end
-
-  defp params_file_loader_fun(_) do
-    &Bumblebee.Conversion.PyTorch.Loader.load!/1
-  end
+  defp params_file_loader_fun(".safetensors"), do: &Safetensors.read!/1
+  defp params_file_loader_fun(_), do: &Bumblebee.Conversion.PyTorch.Loader.load!/1
 
   @doc """
   Featurizes `input` with the given featurizer.
@@ -592,22 +632,34 @@ defmodule Bumblebee do
     opts = Keyword.validate!(opts, [:module])
     module = opts[:module]
 
-    with {:ok, path} <- download(repository, @featurizer_filename),
-         {:ok, featurizer_data} <- decode_config(path) do
-      module =
-        module ||
-          case infer_featurizer_type(featurizer_data, repository) do
-            {:ok, module} -> module
-            {:error, error} -> raise "#{error}, please specify the :module option"
-          end
+    case get_repo_files(repository) do
+      {:ok, %{@featurizer_filename => etag} = repo_files} ->
+        with {:ok, path} <- download(repository, @featurizer_filename, etag),
+             {:ok, featurizer_data} <- decode_config(path) do
+          module =
+            module ||
+              case infer_featurizer_type(featurizer_data, repository, repo_files) do
+                {:ok, module} ->
+                  module
 
-      featurizer = configure(module)
-      featurizer = HuggingFace.Transformers.Config.load(featurizer, featurizer_data)
-      {:ok, featurizer}
+                {:error, error} ->
+                  raise ArgumentError, "#{error}, please specify the :module option"
+              end
+
+          featurizer = configure(module)
+          featurizer = HuggingFace.Transformers.Config.load(featurizer, featurizer_data)
+          {:ok, featurizer}
+        end
+
+      {:ok, %{}} ->
+        raise ArgumentError, "no featurizer found in the given repository"
+
+      {:error, message} ->
+        {:error, message}
     end
   end
 
-  defp infer_featurizer_type(%{"feature_extractor_type" => class_name}, _repository) do
+  defp infer_featurizer_type(%{"feature_extractor_type" => class_name}, _repository, _repo_files) do
     case @transformers_class_to_featurizer[class_name] do
       nil ->
         {:error,
@@ -618,7 +670,7 @@ defmodule Bumblebee do
     end
   end
 
-  defp infer_featurizer_type(%{"image_processor_type" => class_name}, _repository) do
+  defp infer_featurizer_type(%{"image_processor_type" => class_name}, _repository, _repo_files) do
     case @transformers_image_processor_type_to_featurizer[class_name] do
       nil ->
         {:error,
@@ -629,8 +681,8 @@ defmodule Bumblebee do
     end
   end
 
-  defp infer_featurizer_type(_featurizer_data, repository) do
-    with {:ok, path} <- download(repository, @config_filename),
+  defp infer_featurizer_type(_featurizer_data, repository, repo_files) do
+    with {:ok, path} <- download(repository, @config_filename, repo_files[@config_filename]),
          {:ok, featurizer_data} <- decode_config(path) do
       case featurizer_data do
         %{"model_type" => model_type} ->
@@ -727,36 +779,59 @@ defmodule Bumblebee do
     opts = Keyword.validate!(opts, [:module])
     module = opts[:module]
 
-    with {:ok, path} <- download(repository, @tokenizer_filename) do
-      module =
-        module ||
-          case infer_tokenizer_type(repository) do
-            {:ok, module} -> module
-            {:error, error} -> raise "#{error}, please specify the :module option"
-          end
+    case get_repo_files(repository) do
+      {:ok, %{@tokenizer_filename => etag} = repo_files} ->
+        with {:ok, path} <- download(repository, @tokenizer_filename, etag) do
+          module =
+            module ||
+              case infer_tokenizer_type(repository, repo_files) do
+                {:ok, module} ->
+                  module
 
-      special_tokens_map =
-        with {:ok, path} <- download(repository, @tokenizer_special_tokens_filename),
-             {:ok, special_tokens_map} <- decode_config(path) do
-          special_tokens_map
-        else
-          _ -> %{}
+                {:error, error} ->
+                  raise ArgumentError, "#{error}, please specify the :module option"
+              end
+
+          special_tokens_map_result =
+            if Map.has_key?(repo_files, @tokenizer_special_tokens_filename) do
+              etag = repo_files[@tokenizer_special_tokens_filename]
+
+              with {:ok, path} <- download(repository, @tokenizer_special_tokens_filename, etag) do
+                decode_config(path)
+              end
+            else
+              {:ok, %{}}
+            end
+
+          with {:ok, special_tokens_map} <- special_tokens_map_result do
+            tokenizer = struct!(module)
+
+            tokenizer =
+              HuggingFace.Transformers.Config.load(tokenizer, %{
+                "tokenizer_file" => path,
+                "special_tokens_map" => special_tokens_map
+              })
+
+            {:ok, tokenizer}
+          end
         end
 
-      tokenizer = struct!(module)
+      {:ok, %{@tokenizer_config_filename => _}} ->
+        raise ArgumentError,
+              "expected a Rust-compatible tokenizer.json file, however the repository" <>
+                " includes tokenizer in a different format. Please refer to Bumblebee" <>
+                " README to see the possible steps you can take"
 
-      tokenizer =
-        HuggingFace.Transformers.Config.load(tokenizer, %{
-          "tokenizer_file" => path,
-          "special_tokens_map" => special_tokens_map
-        })
+      {:ok, %{}} ->
+        raise ArgumentError, "no tokenizer found in the given repository"
 
-      {:ok, tokenizer}
+      {:error, message} ->
+        {:error, message}
     end
   end
 
-  defp infer_tokenizer_type(repository) do
-    with {:ok, path} <- download(repository, @config_filename),
+  defp infer_tokenizer_type(repository, repo_files) do
+    with {:ok, path} <- download(repository, @config_filename, repo_files[@config_filename]),
          {:ok, tokenizer_data} <- decode_config(path) do
       case tokenizer_data do
         %{"model_type" => model_type} ->
@@ -806,46 +881,58 @@ defmodule Bumblebee do
 
     repository = normalize_repository!(repository)
 
-    with {:ok, path} <- download(repository, @config_filename),
-         {:ok, spec_data} <- decode_config(path) do
-      spec_module = opts[:spec_module]
+    case get_repo_files(repository) do
+      {:ok, %{@config_filename => etag} = repo_files} ->
+        with {:ok, path} <- download(repository, @config_filename, etag),
+             {:ok, spec_data} <- decode_config(path) do
+          spec_module = opts[:spec_module]
 
-      {inferred_module, inference_error} =
-        case infer_model_type(spec_data) do
-          {:ok, module, _architecture} -> {module, nil}
-          {:error, error} -> {nil, error}
-        end
+          {inferred_module, inference_error} =
+            case infer_model_type(spec_data) do
+              {:ok, module, _architecture} -> {module, nil}
+              {:error, error} -> {nil, error}
+            end
 
-      spec_module = spec_module || inferred_module
+          spec_module = spec_module || inferred_module
 
-      unless spec_module do
-        raise "#{inference_error}, please specify the :spec_module option"
-      end
-
-      generation_data_result =
-        case download(repository, @generation_filename) do
-          {:ok, path} -> decode_config(path)
-          # Fallback to the spec data, since it used to include
-          # generation attributes
-          {:error, _} -> {:ok, spec_data}
-        end
-
-      with {:ok, generation_data} <- generation_data_result do
-        config = struct!(Bumblebee.Text.GenerationConfig)
-        config = HuggingFace.Transformers.Config.load(config, generation_data)
-
-        extra_config_module = Bumblebee.Text.Generation.extra_config_module(struct!(spec_module))
-
-        extra_config =
-          if extra_config_module do
-            extra_config = struct!(extra_config_module)
-            HuggingFace.Transformers.Config.load(extra_config, generation_data)
+          unless spec_module do
+            raise ArgumentError, "#{inference_error}, please specify the :spec_module option"
           end
 
-        config = %{config | extra_config: extra_config}
+          generation_data_result =
+            if Map.has_key?(repo_files, @generation_filename) do
+              etag = repo_files[@generation_filename]
 
-        {:ok, config}
-      end
+              with {:ok, path} <- download(repository, @generation_filename, etag) do
+                decode_config(path)
+              end
+            else
+              # Fallback to the spec data, since it used to include
+              # generation attributes
+              {:ok, spec_data}
+            end
+
+          with {:ok, generation_data} <- generation_data_result do
+            config = struct!(Bumblebee.Text.GenerationConfig)
+            config = HuggingFace.Transformers.Config.load(config, generation_data)
+
+            extra_config_module =
+              Bumblebee.Text.Generation.extra_config_module(struct!(spec_module))
+
+            extra_config =
+              if extra_config_module do
+                extra_config = struct!(extra_config_module)
+                HuggingFace.Transformers.Config.load(extra_config, generation_data)
+              end
+
+            config = %{config | extra_config: extra_config}
+
+            {:ok, config}
+          end
+        end
+
+      {:error, message} ->
+        {:error, message}
     end
   end
 
@@ -918,18 +1005,30 @@ defmodule Bumblebee do
     opts = Keyword.validate!(opts, [:module])
     module = opts[:module]
 
-    with {:ok, path} <- download(repository, @scheduler_filename),
-         {:ok, scheduler_data} <- decode_config(path) do
-      module =
-        module ||
-          case infer_scheduler_type(scheduler_data) do
-            {:ok, module} -> module
-            {:error, error} -> raise "#{error}, please specify the :module option"
-          end
+    case get_repo_files(repository) do
+      {:ok, %{@scheduler_filename => etag}} ->
+        with {:ok, path} <- download(repository, @scheduler_filename, etag),
+             {:ok, scheduler_data} <- decode_config(path) do
+          module =
+            module ||
+              case infer_scheduler_type(scheduler_data) do
+                {:ok, module} ->
+                  module
 
-      scheduler = configure(module)
-      scheduler = HuggingFace.Transformers.Config.load(scheduler, scheduler_data)
-      {:ok, scheduler}
+                {:error, error} ->
+                  raise ArgumentError, "#{error}, please specify the :module option"
+              end
+
+          scheduler = configure(module)
+          scheduler = HuggingFace.Transformers.Config.load(scheduler, scheduler_data)
+          {:ok, scheduler}
+        end
+
+      {:ok, %{}} ->
+        raise ArgumentError, "no scheduler found in the given repository"
+
+      {:error, message} ->
+        {:error, message}
     end
   end
 
@@ -948,7 +1047,56 @@ defmodule Bumblebee do
     {:error, "could not infer featurizer type from the configuration"}
   end
 
-  defp download({:local, dir}, filename) do
+  defp get_repo_files({:local, dir}) do
+    case File.ls(dir) do
+      {:ok, filenames} ->
+        repo_files =
+          for filename <- filenames,
+              path = Path.join(dir, filename),
+              File.regular?(path),
+              into: %{},
+              do: {filename, nil}
+
+        {:ok, repo_files}
+
+      {:error, reason} ->
+        {:error, "could not read #{dir}, reason: #{:file.format_error(reason)}"}
+    end
+  end
+
+  defp get_repo_files({:hf, repository_id, opts}) do
+    subdir = opts[:subdir]
+    url = HuggingFace.Hub.file_listing_url(repository_id, subdir, opts[:revision])
+
+    result =
+      HuggingFace.Hub.cached_download(
+        url,
+        Keyword.take(opts, [:cache_dir, :offline, :auth_token])
+      )
+
+    with {:ok, path} <- result,
+         {:ok, data} <- decode_config(path) do
+      repo_files =
+        for entry <- data, entry["type"] == "file", into: %{} do
+          path = entry["path"]
+
+          name =
+            if subdir do
+              String.replace_leading(path, subdir <> "/", "")
+            else
+              path
+            end
+
+          etag_content = entry["lfs"]["oid"] || entry["oid"]
+          etag = <<?", etag_content::binary, ?">>
+          {name, etag}
+        end
+
+      {:ok, repo_files}
+    end
+  end
+
+  defp download({:local, dir}, filename, _etag) do
     path = Path.join(dir, filename)
 
     if File.exists?(path) do
@@ -958,21 +1106,19 @@ defmodule Bumblebee do
     end
   end
 
-  defp download({:hf, repository_id, opts}, filename) do
-    revision = opts[:revision]
-    cache_dir = opts[:cache_dir]
-    offline = opts[:offline]
-    auth_token = opts[:auth_token]
-    subdir = opts[:subdir]
+  defp download({:hf, repository_id, opts}, filename, etag) do
+    filename =
+      if subdir = opts[:subdir] do
+        subdir <> "/" <> filename
+      else
+        filename
+      end
 
-    filename = if subdir, do: subdir <> "/" <> filename, else: filename
+    url = HuggingFace.Hub.file_url(repository_id, filename, opts[:revision])
 
-    url = HuggingFace.Hub.file_url(repository_id, filename, revision)
-
-    HuggingFace.Hub.cached_download(url,
-      cache_dir: cache_dir,
-      offline: offline,
-      auth_token: auth_token
+    HuggingFace.Hub.cached_download(
+      url,
+      [etag: etag] ++ Keyword.take(opts, [:cache_dir, :offline, :auth_token])
     )
   end
 
