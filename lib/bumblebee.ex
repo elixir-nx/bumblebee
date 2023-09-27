@@ -1,4 +1,11 @@
 defmodule Bumblebee do
+  @external_resource "README.md"
+
+  [_, readme_docs, _] =
+    "README.md"
+    |> File.read!()
+    |> String.split("<!-- Docs -->")
+
   @moduledoc """
   Pre-trained `Axon` models for easy inference and boosted training.
 
@@ -51,6 +58,8 @@ defmodule Bumblebee do
   >
   > The models are generally large, so make sure to configure an efficient
   > `Nx` backend, such as `EXLA` or `Torchx`.
+
+  #{readme_docs}
   """
 
   alias Bumblebee.HuggingFace

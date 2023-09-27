@@ -75,7 +75,9 @@ Nx.Serving.run(serving, "The capital of [MASK] is Paris.")
 #=> }
 ```
 
-We load the BERT model from Hugging Face Hub, then plug it into an end-to-end pipeline in the form of "serving", finally we use the serving to get our task done. For more details check out [the documentation](https://hexdocs.pm/bumblebee) and the resources below.
+We load the BERT model from Hugging Face Hub, then plug it into an end-to-end pipeline in the form of "serving", finally we use the serving to get our task done. For more details check out [the documentation](https://hexdocs.pm/bumblebee).
+
+<!-- Docs -->
 
 ## HuggingFace Hub
 
@@ -83,7 +85,7 @@ HuggingFace Hub is a platform hosting models, datasets and demo apps (Spaces), a
 
 ### Models
 
-Model repositories are regular Git repositories, therefore they can store arbitrary files. However, most repositories store models saved using the Python [Transformers](https://github.com/huggingface/transformers) library. Bumblebee is an Elixir counterpart of Transformers and allow for importing those models, as long as they are implemented in Bumblebee.
+Model repositories are regular Git repositories, therefore they can store arbitrary files. However, most repositories store models saved using the Python [Transformers](https://github.com/huggingface/transformers) library. Bumblebee is an Elixir counterpart of Transformers and allows for importing those models, as long as they are implemented in Bumblebee.
 
 A repository in the Transformers format does not store an actual model, only the trained parameters and a configuration file. The configuration file specifies the model type (e.g. BERT) and high-level properties, such as the number layers and their size. The model implementation lives in the library code (both Transformers and Bumblebee). When loading a model, the library fetches the configuration and builds a matching model, then it fetches the trained parameters to pair them with the model. The key takeaway is that in order to use any given model, it needs to have an implementation in Bumblebee.
 
@@ -97,7 +99,7 @@ Here is a list of files commonly found in a repository following the Transformer
 
   * `model.safetensors` - raw model parameters (tensors) serialized from a PyTorch model using [Safetensors](https://github.com/huggingface/safetensors) (supported by Bumblebee)
 
-  * `flax_model.msgpack`, `tf_model.h5` - raw model parameters (tensors) serialized from a Flax and Tensorflow models respectively (not supported by Bumblebee)
+  * `flax_model.msgpack`, `tf_model.h5` - raw model parameters (tensors) serialized from Flax and Tensorflow models respectively (not supported by Bumblebee)
 
   * `tokenizer.json`, `tokenizer_config.json` - tokenizer configuration, describes how to convert text input to model inputs (tensors). See [Tokenizer support](#tokenizer-support)
 
@@ -121,9 +123,11 @@ The Transformers library distinguishes two types of tokenizer implementations:
 
 Bumblebee relies on the Rust implementations (through bindings to [Tokenizers](https://github.com/huggingface/tokenizers)) and therefore always requires the `tokenizer.json` file. Many repositories only include files for a "slow tokenizer". When you stumble upon such repository, there are two options you can try.
 
-First, if the repository is clearly a fine-tuned version of another model, you can look for `tokenizer.json` in the original model repository. For example, [`textattack/bert-base-uncased-yelp-polarity`](https://huggingface.co/textattack/bert-base-uncased-yelp-polarity) only includes `tokenizer_config.json`, but it is a fine-tuned version of [`bert-base-uncased`](bert-base-uncased), which does include `tokenizer.json`. Consequently, you can safely load the model from `textattack/bert-base-uncased-yelp-polarity` and tokenizer from `bert-base-uncased`.
+First, if the repository is clearly a fine-tuned version of another model, you can look for `tokenizer.json` in the original model repository. For example, [`textattack/bert-base-uncased-yelp-polarity`](https://huggingface.co/textattack/bert-base-uncased-yelp-polarity) only includes `tokenizer_config.json`, but it is a fine-tuned version of [`bert-base-uncased`](https://huggingface.co/bert-base-uncased), which does include `tokenizer.json`. Consequently, you can safely load the model from `textattack/bert-base-uncased-yelp-polarity` and tokenizer from `bert-base-uncased`.
 
 Otherwise, the Transformers library includes conversion rules to load a "slow tokenizer" and convert it to a corresponding "fast tokenizer", which is possible in most cases. You can generate the `tokenizer.json` file using [this tool](https://jonatanklosko-bumblebee-tools.hf.space/apps/tokenizer-generator). Once successful, you can follow the steps to submit a PR adding `tokenizer.json` to the model repository. Note that you do not have to wait for the PR to be merged, instead you can copy commit SHA from the PR and load the tokenizer with `Bumblebee.load_tokenizer({:hf, "model-repo", revision: "..."})`.
+
+<!-- Docs -->
 
 ## License
 
