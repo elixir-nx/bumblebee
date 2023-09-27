@@ -357,7 +357,8 @@ defmodule Bumblebee do
           architecture = architecture || inferred_architecture
 
           unless module do
-            raise "#{inference_error}, please specify the :module and :architecture options"
+            raise ArgumentError,
+                  "#{inference_error}, please specify the :module and :architecture options"
           end
 
           architectures = module.architectures()
@@ -380,7 +381,8 @@ defmodule Bumblebee do
         end
 
       %{} ->
-        raise "no config file found in the given repository. Please refer to Bumblebee" <>
+        raise ArgumentError,
+              "no config file found in the given repository. Please refer to Bumblebee" <>
                 " README to learn about repositories and supported models"
     end
   end
@@ -524,7 +526,8 @@ defmodule Bumblebee do
         {@safetensors_params_filename, true}
 
       true ->
-        raise "none of the expected parameters files found in the repository." <>
+        raise ArgumentError,
+              "none of the expected parameters files found in the repository." <>
                 " If the file exists under an unusual name, try specifying :params_filename"
     end
   end
@@ -538,7 +541,7 @@ defmodule Bumblebee do
         {filename, true}
 
       true ->
-        raise "could not find file #{inspect(filename)} in the repository"
+        raise ArgumentError, "could not find file #{inspect(filename)} in the repository"
     end
   end
 
@@ -627,8 +630,11 @@ defmodule Bumblebee do
           module =
             module ||
               case infer_featurizer_type(featurizer_data, repository, repo_files) do
-                {:ok, module} -> module
-                {:error, error} -> raise "#{error}, please specify the :module option"
+                {:ok, module} ->
+                  module
+
+                {:error, error} ->
+                  raise ArgumentError, "#{error}, please specify the :module option"
               end
 
           featurizer = configure(module)
@@ -637,7 +643,7 @@ defmodule Bumblebee do
         end
 
       {:ok, %{}} ->
-        raise "no featurizer found in the given repository"
+        raise ArgumentError, "no featurizer found in the given repository"
 
       {:error, message} ->
         {:error, message}
@@ -770,8 +776,11 @@ defmodule Bumblebee do
           module =
             module ||
               case infer_tokenizer_type(repository, repo_files) do
-                {:ok, module} -> module
-                {:error, error} -> raise "#{error}, please specify the :module option"
+                {:ok, module} ->
+                  module
+
+                {:error, error} ->
+                  raise ArgumentError, "#{error}, please specify the :module option"
               end
 
           special_tokens_map_result =
@@ -799,12 +808,13 @@ defmodule Bumblebee do
         end
 
       {:ok, %{@tokenizer_config_filename => _}} ->
-        raise "expected a Rust-compatible tokenizer.json file, however the repository" <>
+        raise ArgumentError,
+              "expected a Rust-compatible tokenizer.json file, however the repository" <>
                 " includes tokenizer in a different format. Please refer to Bumblebee" <>
                 " README to see the possible steps you can take"
 
       {:ok, %{}} ->
-        raise "no tokenizer found in the given repository"
+        raise ArgumentError, "no tokenizer found in the given repository"
 
       {:error, message} ->
         {:error, message}
@@ -877,7 +887,7 @@ defmodule Bumblebee do
           spec_module = spec_module || inferred_module
 
           unless spec_module do
-            raise "#{inference_error}, please specify the :spec_module option"
+            raise ArgumentError, "#{inference_error}, please specify the :spec_module option"
           end
 
           generation_data_result =
@@ -993,8 +1003,11 @@ defmodule Bumblebee do
           module =
             module ||
               case infer_scheduler_type(scheduler_data) do
-                {:ok, module} -> module
-                {:error, error} -> raise "#{error}, please specify the :module option"
+                {:ok, module} ->
+                  module
+
+                {:error, error} ->
+                  raise ArgumentError, "#{error}, please specify the :module option"
               end
 
           scheduler = configure(module)
@@ -1003,7 +1016,7 @@ defmodule Bumblebee do
         end
 
       {:ok, %{}} ->
-        raise "no scheduler found in the given repository"
+        raise ArgumentError, "no scheduler found in the given repository"
 
       {:error, message} ->
         {:error, message}
