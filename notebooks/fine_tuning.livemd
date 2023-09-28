@@ -4,31 +4,17 @@
 
 ```elixir
 Mix.install([
-  {:bumblebee, "~> 0.3.0"},
-  {:axon, "~> 0.5.1"},
-  {:nx, "~> 0.5.1"},
-  {:exla, "~> 0.5.1"},
-  {:explorer, "~> 0.5.0"}
+  {:bumblebee, "~> 0.4.2"},
+  {:axon, "~> 0.6.0"},
+  {:nx, "~> 0.6.1"},
+  {:exla, "~> 0.6.1"},
+  {:explorer, "~> 0.7.0"}
 ])
-```
 
-<!-- livebook:{"output":true} -->
-
-```
-:ok
-```
-
-## Introduction
-
-```elixir
 Nx.default_backend(EXLA.Backend)
 ```
 
-<!-- livebook:{"output":true} -->
-
-```
-{Nx.BinaryBackend, []}
-```
+## Introduction
 
 Fine-tuning is the process of specializing the parameters in a pre-trained model to a specific task. Large-language models such as BERT train on a generic langauge-modeling task which makes them powerful at extracting features from text. Despite their power, you often still need to train them on a downstream task.
 
@@ -80,7 +66,6 @@ spec = Bumblebee.configure(spec, num_labels: 5)
   * cls.predictions.transform.dense.weight
   * cls.seq_relationship.bias
   * cls.seq_relationship.weight
-
 
 ```
 
@@ -291,7 +276,7 @@ loss =
     sparse: true
   )
 
-optimizer = Axon.Optimizers.adam(5.0e-5)
+optimizer = Polaris.Optimizers.adam(5.0e-5)
 
 loop = Axon.Loop.trainer(logits_model, loss, optimizer, log: 1)
 ```
