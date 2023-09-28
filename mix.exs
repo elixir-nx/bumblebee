@@ -68,6 +68,7 @@ defmodule Bumblebee.MixProject do
       extras: [
         "notebooks/examples.livemd",
         "notebooks/stable_diffusion.livemd",
+        "notebooks/llama.livemd",
         "notebooks/fine_tuning.livemd"
       ],
       extra_section: "GUIDES",
