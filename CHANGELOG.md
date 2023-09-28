@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.2](https://github.com/elixir-nx/bumblebee/tree/v0.4.2) (2023-09-28)
+
+### Added
+
+* More detailed error messages when loading fails ([#256](https://github.com/elixir-nx/bumblebee/pull/256))
+
+### Changed
+
+* Automatic detection there are no model parameters in the `.bin` format, but `.safetensors` is available ([#256](https://github.com/elixir-nx/bumblebee/pull/256))
+
 ## [v0.4.1](https://github.com/elixir-nx/bumblebee/tree/v0.4.1) (2023-09-25)
 
 ### Changed

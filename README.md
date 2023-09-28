@@ -26,7 +26,7 @@ First add Bumblebee and EXLA as dependencies in your `mix.exs`. EXLA is an optio
 ```elixir
 def deps do
   [
-    {:bumblebee, "~> 0.4.1"},
+    {:bumblebee, "~> 0.4.2"},
     {:exla, ">= 0.0.0"}
   ]
 end
@@ -47,7 +47,7 @@ In notebooks and scripts, use the following `Mix.install/2` call to both install
 ```elixir
 Mix.install(
   [
-    {:bumblebee, "~> 0.4.1"},
+    {:bumblebee, "~> 0.4.2"},
     {:exla, ">= 0.0.0"}
   ],
   config: [nx: [default_backend: EXLA.Backend]]
