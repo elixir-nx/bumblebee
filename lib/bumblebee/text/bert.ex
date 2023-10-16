@@ -624,7 +624,14 @@ defmodule Bumblebee.Text.Bert do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(_spec) do
+    def params_mapping(spec) do
+      language_modeling_head_output =
+        if Map.get(spec, :tie_word_embeddings, true) do
+          "bert.embeddings.word_embeddings"
+        else
+          "cls.predictions.decoder"
+        end
+
       %{
         "embedder.token_embedding" => "bert.embeddings.word_embeddings",
         "embedder.position_embedding" => "bert.embeddings.position_embeddings",
@@ -655,7 +662,7 @@ defmodule Bumblebee.Text.Bert do
         "pooler.output" => "bert.pooler.dense",
         "language_modeling_head.dense" => "cls.predictions.transform.dense",
         "language_modeling_head.norm" => "cls.predictions.transform.LayerNorm",
-        "language_modeling_head.output" => "cls.predictions.decoder",
+        "language_modeling_head.output" => language_modeling_head_output,
         "language_modeling_head.bias" => "cls.predictions",
         "next_sentence_prediction_head.output" => "cls.seq_relationship",
         "sequence_classification_head.output" => "classifier",

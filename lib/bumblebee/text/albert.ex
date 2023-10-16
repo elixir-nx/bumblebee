@@ -496,7 +496,14 @@ defmodule Bumblebee.Text.Albert do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(_spec) do
+    def params_mapping(spec) do
+      language_modeling_head_output =
+        if Map.get(spec, :tie_word_embeddings, true) do
+          "albert.embeddings.word_embeddings"
+        else
+          "predictions.decoder"
+        end
+
       %{
         "embedder.token_embedding" => "albert.embeddings.word_embeddings",
         "embedder.position_embedding" => "albert.embeddings.position_embeddings",
@@ -522,7 +529,7 @@ defmodule Bumblebee.Text.Albert do
         "pooler.output" => "albert.pooler",
         "language_modeling_head.dense" => "predictions.dense",
         "language_modeling_head.norm" => "predictions.LayerNorm",
-        "language_modeling_head.output" => "predictions.decoder",
+        "language_modeling_head.output" => language_modeling_head_output,
         "sequence_classification_head.output" => "classifier",
         "token_classification_head.output" => "classifier",
         "multiple_choice_head.output" => "classifier",
