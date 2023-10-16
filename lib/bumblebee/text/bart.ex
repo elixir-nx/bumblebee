@@ -656,7 +656,8 @@ defmodule Bumblebee.Text.Bart do
       tie_word_embeddings = Map.get(spec, :tie_word_embeddings, true)
 
       %{
-        "encoder_embedder.token_embedding" => (if tie_word_embeddings, do: "model.shared", else: "model.encoder.embed_tokens"),
+        "encoder_embedder.token_embedding" =>
+          if(tie_word_embeddings, do: "model.shared", else: "model.encoder.embed_tokens"),
         "encoder_embedder.position_embedding" => "model.encoder.embed_positions",
         "encoder_embedder.norm" => "model.encoder.layernorm_embedding",
         "encoder.blocks.{n}.self_attention.query" => "model.encoder.layers.{n}.self_attn.q_proj",
@@ -669,7 +670,8 @@ defmodule Bumblebee.Text.Bart do
         "encoder.blocks.{n}.ffn.intermediate" => "model.encoder.layers.{n}.fc1",
         "encoder.blocks.{n}.ffn.output" => "model.encoder.layers.{n}.fc2",
         "encoder.blocks.{n}.output_norm" => "model.encoder.layers.{n}.final_layer_norm",
-        "decoder_embedder.token_embedding" => (if tie_word_embeddings, do: "model.shared", else: "model.decoder.embed_tokens"),
+        "decoder_embedder.token_embedding" =>
+          if(tie_word_embeddings, do: "model.shared", else: "model.decoder.embed_tokens"),
         "decoder_embedder.position_embedding" => "model.decoder.embed_positions",
         "decoder_embedder.norm" => "model.decoder.layernorm_embedding",
         "decoder.blocks.{n}.self_attention.query" => "model.decoder.layers.{n}.self_attn.q_proj",
