@@ -1012,4 +1012,14 @@ defmodule Bumblebee.Layers do
     x2 = x[[.., .., .., size..-1//1]]
     Nx.concatenate([-x2, x1], axis: -1)
   end
+
+  @doc """
+  Adds a repeat layer to the network.
+  """
+  def repeat_interleave(x, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, :repeats])
+    Axon.layer(fn x, opts ->
+      Bumblebee.Utils.Nx.repeat_interleave(x, opts[:repeats], axis: 1)
+    end, [x], opts)
+  end
 end

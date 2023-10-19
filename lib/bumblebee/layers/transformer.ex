@@ -42,6 +42,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     block_opts_keys = [
       :num_attention_heads,
+      :num_key_value_heads,
       :causal?,
       :hidden_size,
       :ffn,
@@ -298,6 +299,7 @@ defmodule Bumblebee.Layers.Transformer do
         :num_attention_heads,
         :hidden_size,
         :ffn,
+        :num_key_value_heads,
         attention_mask: Layers.none(),
         attention_head_mask: Layers.none(),
         attention_relative_bias: Layers.none(),
@@ -323,6 +325,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     name = opts[:name]
     num_attention_heads = opts[:num_attention_heads]
+    num_key_value_heads = opts[:num_key_value_heads] || num_attention_heads
     hidden_size = opts[:hidden_size]
     ffn = opts[:ffn]
     causal? = opts[:causal?]
@@ -392,6 +395,7 @@ defmodule Bumblebee.Layers.Transformer do
           offset: offset,
           causal?: causal?,
           num_heads: num_attention_heads,
+          num_key_value_heads: num_key_value_heads,
           hidden_size: hidden_size,
           kernel_initializer: kernel_initializer,
           attention_head_size: attention_head_size,
@@ -435,6 +439,7 @@ defmodule Bumblebee.Layers.Transformer do
           attention_cache: cross_attention_cache,
           offset: offset,
           num_heads: num_attention_heads,
+          num_key_value_heads: num_key_value_heads,
           hidden_size: hidden_size,
           kernel_initializer: kernel_initializer,
           attention_head_size: attention_head_size,
@@ -716,6 +721,7 @@ defmodule Bumblebee.Layers.Transformer do
         :name,
         :num_heads,
         :hidden_size,
+        :num_key_value_heads,
         attention_mask: Layers.none(),
         attention_head_mask: Layers.none(),
         attention_relative_bias: Layers.none(),
@@ -740,6 +746,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     name = opts[:name]
     num_heads = opts[:num_heads]
+    num_key_value_heads = opts[:num_key_value_heads]
     hidden_size = opts[:hidden_size]
     kernel_initializer = opts[:kernel_initializer]
     causal? = opts[:causal?]
@@ -761,6 +768,13 @@ defmodule Bumblebee.Layers.Transformer do
         hidden_size
       end
 
+    inner_kv_size =
+      if num_heads == num_key_value_heads do
+        inner_size
+      else
+        div(hidden_size, num_heads) * num_key_value_heads
+      end
+
     head_size = div(hidden_size, num_heads)
 
     query =
@@ -774,21 +788,21 @@ defmodule Bumblebee.Layers.Transformer do
 
     key =
       key
-      |> Axon.dense(inner_size,
+      |> Axon.dense(inner_kv_size,
         kernel_initializer: kernel_initializer,
         name: join(name, "key"),
         use_bias: key_use_bias
       )
-      |> Layers.split_heads(num_heads)
+      |> Layers.split_heads(num_key_value_heads)
 
     value =
       value
-      |> Axon.dense(inner_size,
+      |> Axon.dense(inner_kv_size,
         kernel_initializer: kernel_initializer,
         name: join(name, "value"),
         use_bias: value_use_bias
       )
-      |> Layers.split_heads(num_heads)
+      |> Layers.split_heads(num_key_value_heads)
 
     {query, key} =
       case rotary_embedding do
@@ -823,6 +837,14 @@ defmodule Bumblebee.Layers.Transformer do
 
         nil ->
           {query, key}
+      end
+
+    {key, value} =
+      if num_key_value_heads == num_heads do
+        {key, value}
+      else
+        num_key_value_groups = div(num_heads, num_key_value_heads)
+        {repeat_states(key, num_key_value_groups), repeat_states(value, num_key_value_groups)}
       end
 
     {key, value, attention_cache} =
@@ -880,6 +902,14 @@ defmodule Bumblebee.Layers.Transformer do
       )
 
     {attention_output, attention_weights, attention_cache, attention_relative_bias}
+  end
+
+  defp repeat_states(state, repeats) do
+    if repeats == 1 do
+      state
+    else
+      Layers.repeat_kv(state, repeats: repeats)
+    end
   end
 
   defp validate_required_keys!(opts, keys) do

@@ -148,6 +148,7 @@ defmodule Bumblebee do
     "MBartForQuestionAnswering" => {Bumblebee.Text.Mbart, :for_question_answering},
     "MBartForSequenceClassification" => {Bumblebee.Text.Mbart, :for_sequence_classification},
     "MBartModel" => {Bumblebee.Text.Mbart, :base},
+    "MistralModel" => {Bumblebee.Text.Mistral, :base},
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
     "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
     "RobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
