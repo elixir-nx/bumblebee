@@ -8,11 +8,11 @@ defmodule Bumblebee.Text.MistralTest do
   describe "integration" do
     test "base model" do
       assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "seanmor5/tiny-llama-test"}, architecture: :base)
+               Bumblebee.load_model({:hf, "echarlaix/tiny-random-mistral"}, architecture: :base)
 
-      assert %Bumblebee.Text.Llama{architecture: :base} = spec
+      assert %Bumblebee.Text.Mistral{architecture: :base} = spec
 
-      input_ids = Nx.tensor([[1, 15043, 3186, 825, 29915, 29879, 701]])
+      input_ids = Nx.tensor([[1, 6312, 28709, 1526, 28808]])
 
       inputs = %{
         "input_ids" => input_ids
@@ -20,12 +20,16 @@ defmodule Bumblebee.Text.MistralTest do
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.hidden_state) == {1, 7, 32}
+      assert Nx.shape(outputs.hidden_state) == {1, 5, 32}
 
       assert_all_close(
         outputs.hidden_state[[.., 1..3, 1..3]],
         Nx.tensor([
-          [[-0.4411, -1.9037, 0.9454], [0.8148, -1.4606, 0.0076], [0.9480, 0.6038, 0.1649]]
+          [
+            [-1.1513, -0.3565, -1.3482],
+            [0.5468, 0.5652, -0.4141],
+            [-1.2177, -0.7919, -0.7064]
+          ]
         ]),
         atol: 1.0e-2
       )

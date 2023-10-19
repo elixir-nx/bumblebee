@@ -908,7 +908,7 @@ defmodule Bumblebee.Layers.Transformer do
     if repeats == 1 do
       state
     else
-      Layers.repeat_kv(state, repeats: repeats)
+      Layers.repeat_interleave(state, repeats: repeats)
     end
   end
 

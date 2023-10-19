@@ -11,7 +11,7 @@ defmodule Bumblebee.Text.Mistral do
         """
       ],
       max_positions: [
-        default: 131072,
+        default: 131_072,
         doc: """
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
         length that this model can process. Typically this is set to a large value just in case,
@@ -42,7 +42,7 @@ defmodule Bumblebee.Text.Mistral do
         regular MHA. If it's set to 1, it will use MQA, otherwise it uses Grouped Query
         Attention
         """
-      ]
+      ],
       activation: [
         default: :silu,
         doc: "the activation function"
@@ -385,6 +385,7 @@ defmodule Bumblebee.Text.Mistral do
           hidden_size: {"hidden_size", number()},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
+          num_key_value_heads: {"num_key_value_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", atom()},
           initializer_scale: {"initializer_range", number()},

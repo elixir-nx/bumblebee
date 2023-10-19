@@ -49,14 +49,13 @@ defmodule Bumblebee.Utils.Tokenizers do
 
     encodings =
       Enum.map(encodings, fn encoding ->
-        transformations =
-          [
-            Encoding.Transformation.pad(pad_length,
-              pad_id: pad_id,
-              pad_token: pad_token,
-              direction: opts[:pad_direction]
-            )
-          ]
+        transformations = [
+          Encoding.Transformation.pad(pad_length,
+            pad_id: pad_id,
+            pad_token: pad_token,
+            direction: opts[:pad_direction]
+          )
+        ]
 
         transformations =
           transformations ++

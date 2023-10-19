@@ -1018,8 +1018,13 @@ defmodule Bumblebee.Layers do
   """
   def repeat_interleave(x, opts \\ []) do
     opts = Keyword.validate!(opts, [:name, :repeats])
-    Axon.layer(fn x, opts ->
-      Bumblebee.Utils.Nx.repeat_interleave(x, opts[:repeats], axis: 1)
-    end, [x], opts)
+
+    Axon.layer(
+      fn x, opts ->
+        Bumblebee.Utils.Nx.repeat_interleave(x, opts[:repeats], axis: 2)
+      end,
+      [x],
+      opts
+    )
   end
 end
