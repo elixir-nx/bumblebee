@@ -306,6 +306,7 @@ defmodule Bumblebee.Text.Llama do
       cache: cache,
       num_blocks: spec.num_blocks,
       num_attention_heads: spec.num_attention_heads,
+      num_key_value_heads: spec.num_key_value_heads,
       hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
       layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
