@@ -34,6 +34,10 @@ defmodule Bumblebee.Text.Llama do
         default: 32,
         doc: "the number of attention heads for each attention layer in the model"
       ],
+      num_key_value_heads: [
+        default: nil,
+        doc: "the number of key value heads for each attention layer in the model"
+      ]
       activation: [
         default: :silu,
         doc: "the activation function"
@@ -365,6 +369,7 @@ defmodule Bumblebee.Text.Llama do
           hidden_size: {"hidden_size", number()},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
+          num_key_value_heads: {"num_key_value_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", atom()},
           initializer_scale: {"initializer_range", number()},
