@@ -37,7 +37,7 @@ defmodule Bumblebee.Text.Llama do
       num_key_value_heads: [
         default: nil,
         doc: "the number of key value heads for each attention layer in the model"
-      ]
+      ],
       activation: [
         default: :silu,
         doc: "the activation function"
