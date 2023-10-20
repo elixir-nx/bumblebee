@@ -150,6 +150,7 @@ defmodule Bumblebee do
     "MBartModel" => {Bumblebee.Text.Mbart, :base},
     "MistralModel" => {Bumblebee.Text.Mistral, :base},
     "MistralForCausalLM" => {Bumblebee.Text.Mistral, :for_causal_language_modeling},
+    "MistralForSequenceClassification" => {Bumblebee.Text.Mistral, :for_sequence_classification},
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
     "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
     "RobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
