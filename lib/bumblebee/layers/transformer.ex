@@ -746,7 +746,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     name = opts[:name]
     num_heads = opts[:num_heads]
-    num_key_value_heads = opts[:num_key_value_heads]
+    num_key_value_heads = opts[:num_key_value_heads] || num_heads
     hidden_size = opts[:hidden_size]
     kernel_initializer = opts[:kernel_initializer]
     causal? = opts[:causal?]
@@ -839,10 +839,9 @@ defmodule Bumblebee.Layers.Transformer do
           {query, key}
       end
 
-    {key, value} =
-      num_key_value_groups = div(num_heads, num_key_value_heads)
-      key = repeat_states(key, num_key_value_groups)
-      value = repeat_states(value, num_key_value_groups)
+    num_key_value_groups = div(num_heads, num_key_value_heads)
+    key = repeat_states(key, num_key_value_groups)
+    value = repeat_states(value, num_key_value_groups)
 
     {key, value, attention_cache} =
       Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset)
