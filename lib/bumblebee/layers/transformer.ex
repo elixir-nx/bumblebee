@@ -840,12 +840,9 @@ defmodule Bumblebee.Layers.Transformer do
       end
 
     {key, value} =
-      if num_key_value_heads == num_heads do
-        {key, value}
-      else
-        num_key_value_groups = div(num_heads, num_key_value_heads)
-        {repeat_states(key, num_key_value_groups), repeat_states(value, num_key_value_groups)}
-      end
+      num_key_value_groups = div(num_heads, num_key_value_heads)
+      key = repeat_states(key, num_key_value_groups)
+      value = repeat_states(value, num_key_value_groups)
 
     {key, value, attention_cache} =
       Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset)
