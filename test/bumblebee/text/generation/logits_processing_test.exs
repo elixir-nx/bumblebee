@@ -12,7 +12,9 @@ defmodule Bumblebee.Text.Generation.LogitsProcessingTest do
       context = context([1, 0, 0, 0])
 
       assert_equal(
-        LogitsProcessing.suppressed_tokens_processor(logits, context, suppressed_token_ids: [1, 3]),
+        LogitsProcessing.suppressed_tokens_processor(logits, context,
+          suppressed_token_ids: [1, 3]
+        ),
         Nx.tensor([1.0, :neg_infinity, 3.0, :neg_infinity])
       )
     end
