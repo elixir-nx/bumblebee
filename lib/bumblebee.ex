@@ -217,6 +217,7 @@ defmodule Bumblebee do
     "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
     "layoutlm" => Bumblebee.Text.LayoutLmTokenizer,
     "llama" => Bumblebee.Text.LlamaTokenizer,
+    "mistral" => Bumblebee.Text.LlamaTokenizer,
     "mbart" => Bumblebee.Text.MbartTokenizer,
     "roberta" => Bumblebee.Text.RobertaTokenizer,
     "t5" => Bumblebee.Text.T5Tokenizer,
