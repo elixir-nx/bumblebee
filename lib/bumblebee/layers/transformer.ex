@@ -888,12 +888,10 @@ defmodule Bumblebee.Layers.Transformer do
     {attention_output, attention_weights, attention_cache, attention_relative_bias}
   end
 
-  defp repeat_states(state, repeats) do
-    if repeats == 1 do
-      state
-    else
-      Layers.repeat_interleave(state, repeats, axis: 2)
-    end
+  defp repeat_states(state, 1), do: state
+
+  defp repeat_states(state, times) do
+    Layers.repeat_interleave(state, times, axis: 2)
   end
 
   defp validate_required_keys!(opts, keys) do
