@@ -59,10 +59,6 @@ defmodule Bumblebee.Text.Mistral do
       rotary_embedding_base: [
         default: 10_000,
         doc: "base for computing rotary embedding frequency"
-      ],
-      sliding_window: [
-        default: 4096,
-        doc: "sliding window attention size"
       ]
     ] ++
       Shared.common_options([
