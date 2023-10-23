@@ -74,8 +74,7 @@ defmodule Bumblebee.Text.BertTokenizerTest do
     test "encoding with multiple lengths" do
       assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
 
-      inputs =
-        Bumblebee.apply_tokenizer(tokenizer, "This is short.", length: [8, 16])
+      inputs = Bumblebee.apply_tokenizer(tokenizer, "This is short.", length: [8, 16])
 
       assert {1, 8} = Nx.shape(inputs["input_ids"])
 

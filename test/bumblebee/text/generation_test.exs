@@ -22,8 +22,7 @@ defmodule Bumblebee.Text.GenerationTest do
 
       generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
 
-      serving =
-        Bumblebee.Text.generation(model_info, tokenizer, generation_config)
+      serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
 
       assert %{results: [%{text: "PG&E scheduled the black"}]} = Nx.Serving.run(serving, article)
     end
@@ -36,8 +35,7 @@ defmodule Bumblebee.Text.GenerationTest do
       generation_config =
         Bumblebee.configure(generation_config, max_new_tokens: 12, no_repeat_ngram_length: 2)
 
-      serving =
-        Bumblebee.Text.generation(model_info, tokenizer, generation_config)
+      serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
 
       # Without :no_repeat_ngram_length we get
       # %{results: [%{text: "I was going to say, 'Well, I'm going to say,"}]}
@@ -57,8 +55,7 @@ defmodule Bumblebee.Text.GenerationTest do
           strategy: %{type: :multinomial_sampling}
         )
 
-      serving =
-        Bumblebee.Text.generation(model_info, tokenizer, generation_config, seed: 0)
+      serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config, seed: 0)
 
       # Note that this is just a snapshot test, we do not use any
       # reference value, because of PRNG difference
@@ -81,8 +78,7 @@ defmodule Bumblebee.Text.GenerationTest do
           strategy: %{type: :contrastive_search, top_k: 4, alpha: 0.6}
         )
 
-      serving =
-        Bumblebee.Text.generation(model_info, tokenizer, generation_config)
+      serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
 
       assert %{results: [%{text: "I was going to say, 'Well, I don't know what you"}]} =
                Nx.Serving.run(serving, "I was going")
@@ -104,8 +100,7 @@ defmodule Bumblebee.Text.GenerationTest do
 
       generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
 
-      serving =
-        Bumblebee.Text.generation(model_info, tokenizer, generation_config, stream: true)
+      serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config, stream: true)
 
       stream = Nx.Serving.run(serving, article)
       assert Enum.to_list(stream) == ["PG&E", " scheduled", " the", " black"]

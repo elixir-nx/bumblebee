@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.Llama do
+defmodule Bumblebee.Text.Mistral do
   alias Bumblebee.Shared
 
   options =
@@ -11,7 +11,7 @@ defmodule Bumblebee.Text.Llama do
         """
       ],
       max_positions: [
-        default: 1024,
+        default: 131_072,
         doc: """
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
         length that this model can process. Typically this is set to a large value just in case,
@@ -23,7 +23,7 @@ defmodule Bumblebee.Text.Llama do
         doc: "the dimensionality of hidden layers"
       ],
       intermediate_size: [
-        default: 11008,
+        default: 14336,
         doc: "the dimensionality of intermediate layers"
       ],
       num_blocks: [
@@ -35,8 +35,13 @@ defmodule Bumblebee.Text.Llama do
         doc: "the number of attention heads for each attention layer in the model"
       ],
       num_key_value_heads: [
-        default: nil,
-        doc: "the number of key value heads for each attention layer in the model"
+        default: 8,
+        doc: """
+        the number of key-value heads used to implement Grouped Query Attention. If
+        this value is set to the same as the number of attention heads, it will use
+        regular MHA. If it's set to 1, it will use MQA, otherwise it uses Grouped Query
+        Attention
+        """
       ],
       activation: [
         default: :silu,
@@ -50,6 +55,10 @@ defmodule Bumblebee.Text.Llama do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ],
+      rotary_embedding_base: [
+        default: 10_000,
+        doc: "base for computing rotary embedding frequency"
       ]
     ] ++
       Shared.common_options([
@@ -60,17 +69,17 @@ defmodule Bumblebee.Text.Llama do
       ]) ++ Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
-  LLaMA model family.
+  Mistral model family.
 
   ## Architectures
 
-    * `:base` - plain LLaMA without any head on top
+    * `:base` - plain Mistral without any head on top
 
-    * `:for_causal_language_modeling` - LLaMA with a language modeling
+    * `:for_causal_language_modeling` - Mistral with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - LLaMA with a sequence
+    * `:for_sequence_classification` - Mistral with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
@@ -281,6 +290,8 @@ defmodule Bumblebee.Text.Llama do
   defp embedder(input_ids, input_embeddings, spec, opts) do
     name = opts[:name]
 
+    # TODO: Axon needs a way to specify ignoring pad tokens
+    # in gradient
     Layers.default input_embeddings do
       Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
@@ -317,7 +328,11 @@ defmodule Bumblebee.Text.Llama do
         ),
       block_type: :norm_first,
       causal?: true,
-      rotary_embedding: [position_ids: position_ids, max_positions: spec.max_positions],
+      rotary_embedding: [
+        position_ids: position_ids,
+        max_positions: spec.max_positions,
+        base: spec.rotary_embedding_base
+      ],
       query_use_bias: false,
       key_use_bias: false,
       value_use_bias: false,
@@ -373,6 +388,7 @@ defmodule Bumblebee.Text.Llama do
           num_key_value_heads: {"num_key_value_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", atom()},
+          rotary_embedding_base: {"rope_theta", number()},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
