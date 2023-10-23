@@ -1015,13 +1015,21 @@ defmodule Bumblebee.Layers do
 
   @doc """
   Adds a repeat layer to the network.
+
+  ## Options
+
+    * `:name` - layer name
+
+    * `:axis` - the axis to repeat along. Defaults to `-1`
+
   """
-  def repeat_interleave(x, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, :repeats])
+  def repeat_interleave(x, times, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, axis: -1])
 
     Axon.layer(
       fn x, opts ->
-        Bumblebee.Utils.Nx.repeat_interleave(x, opts[:repeats], axis: 2)
+        axis = Nx.axis_index(x, opts[:axis])
+        Bumblebee.Utils.Nx.repeat_interleave(x, times, axis: axis)
       end,
       [x],
       opts

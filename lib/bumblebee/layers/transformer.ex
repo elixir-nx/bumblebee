@@ -761,21 +761,9 @@ defmodule Bumblebee.Layers.Transformer do
 
     attention_relative_bias = opts[:attention_relative_bias]
 
-    inner_size =
-      if attention_head_size = opts[:attention_head_size] do
-        num_heads * attention_head_size
-      else
-        hidden_size
-      end
-
-    inner_kv_size =
-      if num_heads == num_key_value_heads do
-        inner_size
-      else
-        div(hidden_size, num_heads) * num_key_value_heads
-      end
-
-    head_size = div(hidden_size, num_heads)
+    attention_head_size = opts[:attention_head_size] || div(hidden_size, num_heads)
+    inner_size = num_heads * attention_head_size
+    inner_kv_size = num_key_value_heads * attention_head_size
 
     query =
       query
@@ -815,11 +803,11 @@ defmodule Bumblebee.Layers.Transformer do
           {position_ids, opts} = Keyword.pop(opts, :position_ids)
           {percentage, opts} = Keyword.pop(opts, :percentage)
 
-          size = trunc(head_size * percentage)
+          size = trunc(attention_head_size * percentage)
 
           rotary_opts = [name: join(name, "rotary_embedding")] ++ opts
 
-          if size == head_size do
+          if size == attention_head_size do
             Layers.rotary_embedding(query, key, position_ids, size, rotary_opts)
           else
             query_rotary = Axon.nx(query, & &1[[.., .., .., 0..(size - 1)//1]])
@@ -904,7 +892,7 @@ defmodule Bumblebee.Layers.Transformer do
     if repeats == 1 do
       state
     else
-      Layers.repeat_interleave(state, repeats: repeats)
+      Layers.repeat_interleave(state, repeats, axis: 2)
     end
   end
 
