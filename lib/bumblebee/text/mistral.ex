@@ -56,9 +56,9 @@ defmodule Bumblebee.Text.Mistral do
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ],
-      rope_theta: [
-        default: 10_000.0,
-        doc: "base period of RoPE embeddings"
+      rotary_embedding_base: [
+        default: 10_000,
+        doc: "base for computing rotary embedding frequency"
       ],
       sliding_window: [
         default: 4096,
@@ -332,7 +332,11 @@ defmodule Bumblebee.Text.Mistral do
         ),
       block_type: :norm_first,
       causal?: true,
-      rotary_embedding: [position_ids: position_ids, max_positions: spec.max_positions],
+      rotary_embedding: [
+        position_ids: position_ids,
+        max_positions: spec.max_positions,
+        base: spec.rotary_embedding_base
+      ],
       query_use_bias: false,
       key_use_bias: false,
       value_use_bias: false,
@@ -388,6 +392,7 @@ defmodule Bumblebee.Text.Mistral do
           num_key_value_heads: {"num_key_value_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", atom()},
+          rotary_embedding_base: {"rope_theta", number()},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
