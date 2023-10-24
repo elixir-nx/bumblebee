@@ -276,7 +276,7 @@ loss =
     sparse: true
   )
 
-optimizer = Polaris.Optimizers.adam(5.0e-5)
+optimizer = Polaris.Optimizers.adam(learning_rate: 5.0e-5)
 
 loop = Axon.Loop.trainer(logits_model, loss, optimizer, log: 1)
 ```
