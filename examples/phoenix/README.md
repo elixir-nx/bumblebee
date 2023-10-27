@@ -34,7 +34,18 @@ In such scenarios, you must change the calls from `Bumblebee.load_xyz({:hf, "mic
 
 Bumblebee can download and cache data from both public and private Hugging Face repositories. You can control the cache directory by setting `BUMBLEBEE_CACHE_DIR`. Therefore, one option during deployment is to set the `BUMBLEBEE_CACHE_DIR` to a directory within your application. If using Docker, you must then include said directory in your application and make sure that `BUMBLEBEE_CACHE_DIR` points to it.
 
-When using Docker multi-stage build, you can populate the cache in the build stage, then copy the contents of `BUMBLEBEE_CACHE_DIR` to the final image. It is also recommended to set `BUMBLEBEE_OFFLINE` to `true` in the final image to make sure the models are always loaded from the cache. If you start a serving under your app supervision tree, then populating the cache is as simple as calling `mix app.start`, otherwise you can define a custom mix task that loads the relevant models.
+When using Docker multi-stage build, you can populate the cache in the build stage. For example, if your application has a module named `MyApp.Servings` with several Bumblebee models, you could define a function called `load_all/0` that loads all relevant information:
+
+```elixir
+  def load_all do
+    Bumblebee.load_xyz({:hf, "microsoft/resnet"})
+    Bumblebee.load_xyz({:hf, "foo/bar/baz"})
+  end
+```
+
+Then your Dockerfile calls either `RUN mix eval 'MyApp.Servings.load_all()'` in your Mix project root or `RUN bin/my_app eval 'MyApp.Servings.load_all()'` in your release root to write all relevant information to the cache directory. The last step is to copy the contents of `BUMBLEBEE_CACHE_DIR` to the final image.
+
+It is also recommended to set `BUMBLEBEE_OFFLINE` to `true` in the final image to make sure the models are always loaded from the cache.
 
 ### Configuring Nx
 
