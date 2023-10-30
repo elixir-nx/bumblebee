@@ -181,6 +181,12 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
   defp forced_token_ids(opts, extra_config) do
     token_ids =
       if language = opts[:language] do
+        if extra_config.task_to_token_id == %{} do
+          raise "the generation config does not have any languages defined." <>
+                  " If you are dealing with a monolingual model, set :language to nil." <>
+                  " Otherwise you may need to update generation_config.extra_config.language_to_token_id"
+        end
+
         language_token_id = extra_config.language_to_token_id[language]
 
         unless language_token_id do
@@ -198,6 +204,12 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         [nil]
       end ++
         if task = opts[:task] do
+          if extra_config.task_to_token_id == %{} do
+            raise "the generation config does not have any tasks defined." <>
+                    " If you are dealing with a monolingual model, set :task to nil." <>
+                    " Otherwise you may need to update generation_config.extra_config.task_to_token_id"
+          end
+
           task_token_id = extra_config.task_to_token_id[task]
 
           unless task_token_id do
