@@ -87,8 +87,9 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
 
   @impl true
   def batch_template(featurizer, batch_size) do
+    {height, width} = Image.normalize_size(featurizer.size)
     num_channels = length(featurizer.image_mean)
-    Nx.template({batch_size, featurizer.size, featurizer.size, num_channels}, :f32)
+    Nx.template({batch_size, height, width, num_channels}, :f32)
   end
 
   @impl true
