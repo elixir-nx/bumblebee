@@ -432,6 +432,9 @@ defmodule Bumblebee do
   @doc """
   Loads a pre-trained model from a model repository.
 
+  The model is downloaded and cached on your disk, use `cache_dir/0` to
+  find the location.
+
   ## Options
 
     * `:spec` - the model specification to use when building the model.
@@ -1147,6 +1150,9 @@ defmodule Bumblebee do
 
   @doc """
   Returns the directory where downloaded files are stored.
+
+  Defaults to the standard cache location for the given operating system.
+  Can be configured with the `BUMBLEBEE_CACHE_DIR` environment variable.
   """
   @spec cache_dir() :: String.t()
   def cache_dir() do
