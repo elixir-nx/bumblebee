@@ -432,6 +432,9 @@ defmodule Bumblebee do
   @doc """
   Loads a pre-trained model from a model repository.
 
+  The model is downloaded and cached on your disk, use `cache_dir/0` to
+  find the location.
+
   ## Options
 
     * `:spec` - the model specification to use when building the model.
@@ -472,9 +475,6 @@ defmodule Bumblebee do
       spec = Bumblebee.configure(spec, num_labels: 10)
       {:ok, resnet} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, spec: spec)
 
-  ## See also:
-
-  `cache_dir/0` for where the loaded modules are saved
   """
   @doc type: :model
   @spec load_model(repository(), keyword()) :: {:ok, model_info()} | {:error, String.t()}
@@ -630,9 +630,6 @@ defmodule Bumblebee do
 
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "microsoft/resnet-50"})
 
-  ## See also:
-
-  `cache_dir/0` for where the loaded modules are saved
   """
   @doc type: :featurizer
   @spec load_featurizer(repository(), keyword()) ::
@@ -780,9 +777,6 @@ defmodule Bumblebee do
 
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
 
-  ## See also:
-
-  `cache_dir/0` for where the loaded modules are saved
   """
   @doc type: :tokenizer
   @spec load_tokenizer(repository(), keyword()) ::
@@ -886,9 +880,6 @@ defmodule Bumblebee do
 
       generation_config = Bumblebee.configure(generation_config, max_new_tokens: 10)
 
-  ## See also:
-
-  `cache_dir/0` for where the loaded modules are saved
   """
   @spec load_generation_config(repository()) ::
           {:ok, Bumblebee.Text.GenerationConfig.t()} | {:error, String.t()}
@@ -1012,9 +1003,6 @@ defmodule Bumblebee do
       {:ok, scheduler} =
         Bumblebee.load_scheduler({:hf, "CompVis/stable-diffusion-v1-4", subdir: "scheduler"})
 
-  ## See also:
-
-  `cache_dir/0` for where the loaded modules are saved
   """
   @doc type: :scheduler
   @spec load_scheduler(repository(), keyword()) ::
@@ -1163,9 +1151,8 @@ defmodule Bumblebee do
   @doc """
   Returns the directory where downloaded files are stored.
 
-  Defaults to the standard cache location for the given operating system, as determined by 
-  `:filename.basedir/2`.  Can be overridden with the `BUMBLEBEE_CACHE_DIR` environment 
-  variable.
+  Defaults to the standard cache location for the given operating system.
+  Can be overridden with the `BUMBLEBEE_CACHE_DIR` environment variable.
   """
   @spec cache_dir() :: String.t()
   def cache_dir() do
