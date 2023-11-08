@@ -65,7 +65,10 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     * `:preallocate_params` - when `true`, explicitly allocates params
       on the device configured by `:defn_options`. You may want to set
       this option when using partitioned serving, to allocate params
-      on each of the devices. Defaults to `false`
+      on each of the devices. When using this option, you should first
+      load the parameters into the host. This can be done by passing
+      `backend: {EXLA.Backend, client: :host}` to `load_model/1` and friends.
+      Defaults to `false`
 
   ## Examples
 
