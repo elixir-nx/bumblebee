@@ -37,5 +37,29 @@ defmodule Bumblebee.Vision.ClipVisionTest do
         atol: 1.0e-4
       )
     end
+
+    test "embedding model" do
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "openai/clip-vit-base-patch32"},
+                 module: Bumblebee.Vision.ClipVision,
+                 architecture: :for_embedding
+               )
+
+      assert %Bumblebee.Vision.ClipVision{architecture: :for_embedding} = spec
+
+      inputs = %{
+        "pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})
+      }
+
+      outputs = Axon.predict(model, params, inputs)
+
+      assert Nx.shape(outputs.embedding) == {1, 512}
+
+      assert_all_close(
+        outputs.embedding[[.., 1..3]],
+        Nx.tensor([[-0.3381, -0.0196, -0.4053]]),
+        atol: 1.0e-4
+      )
+    end
   end
 end

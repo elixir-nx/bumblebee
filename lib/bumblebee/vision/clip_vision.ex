@@ -32,6 +32,10 @@ defmodule Bumblebee.Vision.ClipVision do
         docs:
           "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
+      projection_size: [
+        default: 512,
+        doc: "the dimensionality of the projection layer"
+      ],
       activation: [
         default: :quick_gelu,
         doc: "the activation function"
@@ -57,6 +61,10 @@ defmodule Bumblebee.Vision.ClipVision do
 
     * `:base` - the base image model
 
+    * `:for_embedding` - the base model with a single projection layer
+      on top. The head returns a vector embedded in the joint text-image
+      CLIP space
+
   ## Inputs
 
     * `"pixel_values"` - `{batch_size, image_size, image_size, num_channels}`
@@ -78,7 +86,7 @@ defmodule Bumblebee.Vision.ClipVision do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base]
+  def architectures(), do: [:base, :for_embedding]
 
   @impl true
   def config(spec, opts \\ []) do
@@ -100,6 +108,22 @@ defmodule Bumblebee.Vision.ClipVision do
     inputs
     |> core(spec)
     |> Layers.output()
+  end
+
+  def model(%__MODULE__{architecture: :for_embedding} = spec) do
+    inputs = inputs(spec)
+
+    outputs = core(inputs, spec)
+
+    embedding =
+      outputs.pooled_state
+      |> Axon.dense(spec.projection_size, use_bias: false, name: "projection_head.output")
+
+    Layers.output(%{
+      embedding: embedding,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   defp inputs(spec) do
@@ -220,6 +244,7 @@ defmodule Bumblebee.Vision.ClipVision do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
+          projection_size: {"projection_dim", number()},
           activation: {"hidden_act", atom()},
           attention_dropout_rate: {"attention_dropout", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()}
@@ -253,7 +278,8 @@ defmodule Bumblebee.Vision.ClipVision do
         "encoder.blocks.{n}.ffn.output" => "vision_model.encoder.layers.{n}.mlp.fc2",
         "encoder.blocks.{n}.output_norm" => "vision_model.encoder.layers.{n}.layer_norm2",
         "pre_norm" => "vision_model.pre_layrnorm",
-        "post_norm" => "vision_model.post_layernorm"
+        "post_norm" => "vision_model.post_layernorm",
+        "projection_head.output" => "visual_projection"
       }
     end
   end

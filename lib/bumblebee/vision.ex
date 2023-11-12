@@ -188,7 +188,7 @@ defmodule Bumblebee.Vision do
           module: Bumblebee.Vision.ClipVision
         )
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/clip-vit-base-patch32"})
-      serving = Bumblebee.Vision.ImageEmbedding.image_embedding(clip, featurizer)
+      serving = Bumblebee.Vision.image_embedding(clip, featurizer)
       image = StbImage.read_file!(path)
       Nx.Serving.run(serving, image)
       #=> %{
