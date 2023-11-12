@@ -43,5 +43,33 @@ defmodule Bumblebee.Text.ClipTextTest do
         atol: 1.0e-4
       )
     end
+
+    test "embedding model" do
+      assert {:ok, %{model: model, params: params, spec: spec}} =
+               Bumblebee.load_model({:hf, "openai/clip-vit-base-patch32"},
+                 module: Bumblebee.Text.ClipText,
+                 architecture: :for_embedding
+               )
+
+      assert %Bumblebee.Text.ClipText{architecture: :for_embedding} = spec
+
+      inputs = %{
+        "input_ids" =>
+          Nx.tensor([
+            [49406, 320, 1125, 539, 320, 2368, 49407]
+          ]),
+        "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1]])
+      }
+
+      outputs = Axon.predict(model, params, inputs)
+
+      assert Nx.shape(outputs.embedding) == {1, 512}
+
+      assert_all_close(
+        outputs.embedding[[.., 1..3]],
+        Nx.tensor([[0.0733, -0.2448, -0.2212]]),
+        atol: 1.0e-4
+      )
+    end
   end
 end

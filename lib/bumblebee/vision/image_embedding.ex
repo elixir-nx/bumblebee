@@ -37,10 +37,19 @@ defmodule Bumblebee.Vision.ImageEmbedding do
       output = encoder.(params, inputs)
 
       output =
-        if is_map(output) do
-          output[output_attribute]
-        else
-          output
+        case output do
+          %{^output_attribute => output} ->
+            output
+
+          %{} ->
+            keys = output |> Map.keys() |> Enum.sort()
+
+            raise ArgumentError,
+                  "key #{inspect(output_attribute)} not found in the output map," <>
+                    " you may want to set :output_attribute to one of the map keys: #{inspect(keys)}"
+
+          _ ->
+            output
         end
 
       output =

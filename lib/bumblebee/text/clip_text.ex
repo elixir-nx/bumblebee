@@ -35,6 +35,10 @@ defmodule Bumblebee.Text.ClipText do
         doc:
           "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
+      projection_size: [
+        default: 512,
+        doc: "the dimensionality of the projection layer"
+      ],
       activation: [
         default: :quick_gelu,
         doc: "the activation function"
@@ -61,6 +65,10 @@ defmodule Bumblebee.Text.ClipText do
   ## Architectures
 
     * `:base` - the base text model
+
+    * `:for_embedding` - the base model with a single projection layer
+      on top. The head returns a vector embedded in the joint text-image
+      CLIP space
 
   ## Inputs
 
@@ -95,7 +103,7 @@ defmodule Bumblebee.Text.ClipText do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base]
+  def architectures(), do: [:base, :for_embedding]
 
   @impl true
   def config(spec, opts \\ []) do
@@ -118,6 +126,22 @@ defmodule Bumblebee.Text.ClipText do
     inputs
     |> core(spec)
     |> Layers.output()
+  end
+
+  def model(%__MODULE__{architecture: :for_embedding} = spec) do
+    inputs = inputs()
+
+    outputs = core(inputs, spec)
+
+    embedding =
+      outputs.pooled_state
+      |> Axon.dense(spec.projection_size, use_bias: false, name: "embedding_head.output")
+
+    Layers.output(%{
+      embedding: embedding,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   defp inputs() do
@@ -226,6 +250,7 @@ defmodule Bumblebee.Text.ClipText do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
+          projection_size: {"projection_dim", number()},
           activation: {"hidden_act", atom()},
           attention_dropout_rate: {"attention_dropout", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()}
@@ -252,7 +277,8 @@ defmodule Bumblebee.Text.ClipText do
         "encoder.blocks.{n}.ffn.intermediate" => "text_model.encoder.layers.{n}.mlp.fc1",
         "encoder.blocks.{n}.ffn.output" => "text_model.encoder.layers.{n}.mlp.fc2",
         "encoder.blocks.{n}.output_norm" => "text_model.encoder.layers.{n}.layer_norm2",
-        "norm" => "text_model.final_layer_norm"
+        "norm" => "text_model.final_layer_norm",
+        "embedding_head.output" => "text_projection"
       }
     end
   end
