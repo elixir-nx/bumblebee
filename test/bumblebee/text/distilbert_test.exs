@@ -88,7 +88,9 @@ defmodule Bumblebee.Text.DistilbertTest do
 
       inputs = %{
         "input_ids" =>
-          Nx.tensor([[101, 11_590, 11_324, 10_124, 14_290, 10_111, 146, 12_962, 10_106, 11_193, 102]])
+          Nx.tensor([
+            [101, 11_590, 11_324, 10_124, 14_290, 10_111, 146, 12_962, 10_106, 11_193, 102]
+          ])
       }
 
       outputs = Axon.predict(model, params, inputs)

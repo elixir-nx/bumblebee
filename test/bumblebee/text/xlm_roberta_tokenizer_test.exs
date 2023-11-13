@@ -17,7 +17,10 @@ defmodule Bumblebee.Text.XlmRobertaTokenizerTest do
 
       assert_equal(
         inputs["input_ids"],
-        Nx.tensor([[0, 8647, 149_357, 678, 250_001, 6, 5, 2], [0, 68_185, 32, 2, 2, 130_373, 2, 1]])
+        Nx.tensor([
+          [0, 8647, 149_357, 678, 250_001, 6, 5, 2],
+          [0, 68_185, 32, 2, 2, 130_373, 2, 1]
+        ])
       )
 
       assert_equal(

@@ -80,7 +80,8 @@ defmodule Bumblebee.Text.RobertaTest do
       assert %Bumblebee.Text.Roberta{architecture: :for_token_classification} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[30_581, 3923, 34_892, 16, 10, 138, 716, 11, 2201, 8, 188, 469]])
+        "input_ids" =>
+          Nx.tensor([[30_581, 3923, 34_892, 16, 10, 138, 716, 11, 2201, 8, 188, 469]])
       }
 
       outputs = Axon.predict(model, params, inputs)
@@ -103,7 +104,25 @@ defmodule Bumblebee.Text.RobertaTest do
       inputs = %{
         "input_ids" =>
           Nx.tensor([
-            [0, 12_375, 21, 2488, 289, 13_919, 116, 2, 2, 24_021, 289, 13_919, 21, 10, 2579, 29_771, 2]
+            [
+              0,
+              12_375,
+              21,
+              2488,
+              289,
+              13_919,
+              116,
+              2,
+              2,
+              24_021,
+              289,
+              13_919,
+              21,
+              10,
+              2579,
+              29_771,
+              2
+            ]
           ])
       }
 
