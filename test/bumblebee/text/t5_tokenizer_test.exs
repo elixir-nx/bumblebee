@@ -14,7 +14,7 @@ defmodule Bumblebee.Text.T5TokenizerTest do
 
       assert_equal(
         inputs["input_ids"],
-        Nx.tensor([[13959, 1566, 12, 2968, 10, 571, 625, 33, 25, 58, 1]])
+        Nx.tensor([[13_959, 1566, 12, 2968, 10, 571, 625, 33, 25, 58, 1]])
       )
 
       assert_equal(

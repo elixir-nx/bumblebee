@@ -4,7 +4,7 @@ defmodule Bumblebee.Utils.Tokenizers do
   # Shared logic for implementing Bumblebee.Tokenizer using the
   # tokenizers package.
 
-  alias Tokenizers.{Tokenizer, Encoding}
+  alias Tokenizers.{Encoding, Tokenizer}
 
   def apply(tokenizer, input, pad_token, opts \\ []) do
     opts =

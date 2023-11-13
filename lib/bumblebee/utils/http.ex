@@ -182,7 +182,7 @@ defmodule Bumblebee.Utils.HTTP do
     end)
   end
 
-  defp http_ssl_opts() do
+  defp http_ssl_opts do
     # Use secure options, see https://gist.github.com/jonatanklosko/5e20ca84127f6b31bbe3906498e1a1d7
     [
       verify: :verify_peer,

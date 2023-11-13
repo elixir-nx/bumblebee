@@ -17,7 +17,7 @@ defmodule Bumblebee.Text.Gpt2TokenizerTest do
       assert_equal(
         inputs["input_ids"],
         Nx.tensor([
-          [15496, 2159]
+          [15_496, 2159]
         ])
       )
 

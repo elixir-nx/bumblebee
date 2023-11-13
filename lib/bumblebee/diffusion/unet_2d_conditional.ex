@@ -129,11 +129,10 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
   import Bumblebee.Utils.Model, only: [join: 2]
 
-  alias Bumblebee.Layers
-  alias Bumblebee.Diffusion
+  alias Bumblebee.{Diffusion, Layers}
 
   @impl true
-  def architectures(), do: [:base]
+  def architectures, do: [:base]
 
   @impl true
   def config(spec, opts \\ []) do

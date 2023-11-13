@@ -4,7 +4,7 @@ defmodule Bumblebee.Text.T5 do
   options =
     [
       vocab_size: [
-        default: 32128,
+        default: 32_128,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
@@ -181,7 +181,7 @@ defmodule Bumblebee.Text.T5 do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(),
+  def architectures,
     do: [:base, :for_conditional_generation, :encoder]
 
   @impl true
@@ -560,7 +560,7 @@ defmodule Bumblebee.Text.T5 do
       @for.config(spec, opts)
     end
 
-    defp activation() do
+    defp activation do
       fn name, value ->
         try do
           case String.replace_prefix(value, "gated-", "") do
@@ -575,7 +575,7 @@ defmodule Bumblebee.Text.T5 do
       end
     end
 
-    defp ffn_gated_activation() do
+    defp ffn_gated_activation do
       fn _name, value ->
         {:ok, String.starts_with?(value, "gated-")}
       end

@@ -4,7 +4,7 @@ defmodule Bumblebee.Text.Bart do
   options =
     [
       vocab_size: [
-        default: 50265,
+        default: 50_265,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
@@ -213,7 +213,7 @@ defmodule Bumblebee.Text.Bart do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(),
+  def architectures,
     do: [
       :base,
       :for_causal_language_modeling,

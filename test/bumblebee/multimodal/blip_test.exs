@@ -28,7 +28,7 @@ defmodule Bumblebee.Multimodal.BlipTest do
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {2, 2, 30524}
+      assert Nx.shape(outputs.logits) == {2, 2, 30_524}
 
       assert_all_close(
         outputs.logits[[.., .., 1..3]],

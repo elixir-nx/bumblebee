@@ -246,6 +246,7 @@ defmodule Bumblebee.Shared do
   Checks if the given term is an image.
   """
   @spec image?(term()) :: boolean()
+  # credo:disable-for-this-file Credo.Check.Readability.PreferImplicitTry
   def image?(image) do
     try do
       Nx.to_template(image)

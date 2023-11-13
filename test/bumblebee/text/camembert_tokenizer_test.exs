@@ -17,7 +17,7 @@ defmodule Bumblebee.Text.CamembertTokenizerTest do
       assert_equal(
         inputs["input_ids"],
         Nx.tensor([
-          [5, 9115, 22625, 1466, 32004, 21, 9, 6]
+          [5, 9115, 22_625, 1466, 32_004, 21, 9, 6]
         ])
       )
 

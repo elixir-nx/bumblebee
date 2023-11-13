@@ -14,7 +14,7 @@ defmodule Bumblebee.Text.MbartTokenizerTest do
       assert_equal(
         inputs["input_ids"],
         Nx.tensor([
-          [35378, 4, 759, 10269, 83, 99942, 250_026, 2, 250_004]
+          [35_378, 4, 759, 10_269, 83, 99_942, 250_026, 2, 250_004]
         ])
       )
 

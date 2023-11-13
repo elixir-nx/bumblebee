@@ -193,7 +193,7 @@ defmodule Bumblebee.HuggingFace.Hub do
     File.write(path, json)
   end
 
-  defp bumblebee_offline?() do
+  defp bumblebee_offline? do
     System.get_env("BUMBLEBEE_OFFLINE") in ~w(1 true)
   end
 end

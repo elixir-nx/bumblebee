@@ -1,8 +1,7 @@
 defmodule Bumblebee.Text.QuestionAnswering do
   @moduledoc false
 
-  alias Bumblebee.Utils
-  alias Bumblebee.Shared
+  alias Bumblebee.{Shared, Utils}
 
   def question_answering(model_info, tokenizer, opts \\ []) do
     %{model: model, params: params, spec: spec} = model_info

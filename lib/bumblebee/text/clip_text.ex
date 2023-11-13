@@ -4,7 +4,7 @@ defmodule Bumblebee.Text.ClipText do
   options =
     [
       vocab_size: [
-        default: 49408,
+        default: 49_408,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
@@ -103,7 +103,7 @@ defmodule Bumblebee.Text.ClipText do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base, :for_embedding]
+  def architectures, do: [:base, :for_embedding]
 
   @impl true
   def config(spec, opts \\ []) do
@@ -144,7 +144,7 @@ defmodule Bumblebee.Text.ClipText do
     })
   end
 
-  defp inputs() do
+  defp inputs do
     shape = {nil, nil}
 
     Bumblebee.Utils.Model.inputs_to_map([

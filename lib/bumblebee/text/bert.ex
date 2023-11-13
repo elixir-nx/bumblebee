@@ -4,7 +4,7 @@ defmodule Bumblebee.Text.Bert do
   options =
     [
       vocab_size: [
-        default: 30522,
+        default: 30_522,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
@@ -172,7 +172,7 @@ defmodule Bumblebee.Text.Bert do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(),
+  def architectures,
     do: [
       :base,
       :for_masked_language_modeling,

@@ -4,7 +4,7 @@ defmodule Bumblebee.Text.BlipText do
   options =
     [
       vocab_size: [
-        default: 30524,
+        default: 30_524,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
@@ -144,7 +144,7 @@ defmodule Bumblebee.Text.BlipText do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base, :for_causal_language_modeling]
+  def architectures, do: [:base, :for_causal_language_modeling]
 
   @impl true
   def config(spec, opts \\ []) do

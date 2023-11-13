@@ -18,8 +18,8 @@ defmodule Bumblebee.Text.ClipTextTest do
       inputs = %{
         "input_ids" =>
           Nx.tensor([
-            [49406, 320, 1125, 539, 320, 2368, 49407],
-            [49406, 320, 1125, 539, 320, 1929, 49407]
+            [49_406, 320, 1125, 539, 320, 2368, 49_407],
+            [49_406, 320, 1125, 539, 320, 1929, 49_407]
           ]),
         "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1], [1, 1, 0, 0, 0, 0, 0]])
       }
@@ -56,7 +56,7 @@ defmodule Bumblebee.Text.ClipTextTest do
       inputs = %{
         "input_ids" =>
           Nx.tensor([
-            [49406, 320, 1125, 539, 320, 2368, 49407]
+            [49_406, 320, 1125, 539, 320, 2368, 49_407]
           ]),
         "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1]])
       }

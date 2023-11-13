@@ -22,7 +22,7 @@ defmodule Bumblebee.Shared.Converters do
     end
   end
 
-  def number() do
+  def number do
     fn name, value ->
       if is_number(value) do
         {:ok, value}
@@ -32,7 +32,7 @@ defmodule Bumblebee.Shared.Converters do
     end
   end
 
-  def string() do
+  def string do
     fn name, value ->
       if is_binary(value) do
         {:ok, value}
@@ -42,7 +42,7 @@ defmodule Bumblebee.Shared.Converters do
     end
   end
 
-  def atom() do
+  def atom do
     fn name, value ->
       try do
         {:ok, String.to_atom(value)}
@@ -53,7 +53,7 @@ defmodule Bumblebee.Shared.Converters do
     end
   end
 
-  def boolean() do
+  def boolean do
     fn name, value ->
       if is_boolean(value) do
         {:ok, value}
@@ -63,7 +63,7 @@ defmodule Bumblebee.Shared.Converters do
     end
   end
 
-  def integer_as_string() do
+  def integer_as_string do
     fn name, value ->
       with true <- is_binary(value), {number, ""} <- Integer.parse(value) do
         {:ok, number}
@@ -184,7 +184,7 @@ defmodule Bumblebee.Shared.Converters do
     end
   end
 
-  def resize_method() do
+  def resize_method do
     # See https://pillow.readthedocs.io/en/stable/reference/Image.html#PIL.Image.Resampling
     mapping(%{
       0 => :nearest,

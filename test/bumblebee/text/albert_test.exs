@@ -43,7 +43,7 @@ defmodule Bumblebee.Text.AlbertTest do
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 9, 30000}
+      assert Nx.shape(outputs.logits) == {1, 9, 30_000}
 
       assert_all_close(
         outputs.logits[[.., 1..3, 1..3]],

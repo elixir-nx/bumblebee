@@ -64,8 +64,8 @@ defmodule Bumblebee.Text.T5Test do
 
       assert %Bumblebee.Text.T5{architecture: :for_conditional_generation} = spec
 
-      input_ids = Nx.tensor([[37, 32099, 10681, 16, 32098, 2447, 1]])
-      decoder_input_ids = Nx.tensor([[32099, 5295, 1782, 32098, 8, 32097, 1]])
+      input_ids = Nx.tensor([[37, 32_099, 10_681, 16, 32_098, 2447, 1]])
+      decoder_input_ids = Nx.tensor([[32_099, 5295, 1782, 32_098, 8, 32_097, 1]])
 
       inputs = %{
         "input_ids" => input_ids,
@@ -74,7 +74,7 @@ defmodule Bumblebee.Text.T5Test do
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 7, 32128}
+      assert Nx.shape(outputs.logits) == {1, 7, 32_128}
 
       assert_all_close(
         outputs.logits[[0, 1..3, 1..3]],
@@ -95,8 +95,8 @@ defmodule Bumblebee.Text.T5Test do
 
       assert %Bumblebee.Text.T5{architecture: :for_conditional_generation} = spec
 
-      input_ids = Nx.tensor([[37, 32099, 10681, 16, 32098, 2447, 1]])
-      decoder_input_ids = Nx.tensor([[32099, 5295, 1782, 32098, 8, 32097, 1]])
+      input_ids = Nx.tensor([[37, 32_099, 10_681, 16, 32_098, 2447, 1]])
+      decoder_input_ids = Nx.tensor([[32_099, 5295, 1782, 32_098, 8, 32_097, 1]])
 
       inputs = %{
         "input_ids" => input_ids,
@@ -105,7 +105,7 @@ defmodule Bumblebee.Text.T5Test do
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 7, 32128}
+      assert Nx.shape(outputs.logits) == {1, 7, 32_128}
 
       assert_all_close(
         outputs.logits[[0, 1..3, 1..3]],
@@ -126,7 +126,7 @@ defmodule Bumblebee.Text.T5Test do
 
       assert %Bumblebee.Text.T5{architecture: :encoder} = spec
 
-      input_ids = Nx.tensor([[37, 32099, 10681, 16, 32098, 2447, 1]])
+      input_ids = Nx.tensor([[37, 32_099, 10_681, 16, 32_098, 2447, 1]])
 
       inputs = %{
         "input_ids" => input_ids
@@ -150,7 +150,7 @@ defmodule Bumblebee.Text.T5Test do
       assert {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "t5-small"})
 
       inputs = %{
-        "input_ids" => Nx.tensor([[13959, 1566, 12, 2968, 10, 571, 625, 33, 25, 58, 1]]),
+        "input_ids" => Nx.tensor([[13_959, 1566, 12, 2968, 10, 571, 625, 33, 25, 58, 1]]),
         "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
@@ -175,7 +175,7 @@ defmodule Bumblebee.Text.T5Test do
                Bumblebee.load_generation_config({:hf, "google/flan-t5-small"})
 
       inputs = %{
-        "input_ids" => Nx.tensor([[13959, 1566, 12, 2968, 10, 571, 625, 33, 25, 58, 1]]),
+        "input_ids" => Nx.tensor([[13_959, 1566, 12, 2968, 10, 571, 625, 33, 25, 58, 1]]),
         "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
 

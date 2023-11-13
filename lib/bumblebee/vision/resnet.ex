@@ -68,7 +68,7 @@ defmodule Bumblebee.Vision.ResNet do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base, :for_image_classification]
+  def architectures, do: [:base, :for_image_classification]
 
   @impl true
   def config(spec, opts \\ []) do
@@ -298,7 +298,7 @@ defmodule Bumblebee.Vision.ResNet do
     |> Axon.activation(activation, name: join(name, "activation"))
   end
 
-  defp conv_kernel_initializer() do
+  defp conv_kernel_initializer do
     Axon.Initializers.variance_scaling(scale: 2.0, mode: :fan_out, distribution: :normal)
   end
 

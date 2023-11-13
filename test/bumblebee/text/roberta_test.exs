@@ -13,7 +13,7 @@ defmodule Bumblebee.Text.RobertaTest do
       assert %Bumblebee.Text.Roberta{architecture: :base} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[0, 31414, 232, 328, 740, 1140, 12695, 69, 46078, 1588, 2]])
+        "input_ids" => Nx.tensor([[0, 31_414, 232, 328, 740, 1140, 12_695, 69, 46_078, 1588, 2]])
       }
 
       outputs = Axon.predict(model, params, inputs)
@@ -36,12 +36,12 @@ defmodule Bumblebee.Text.RobertaTest do
       assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[0, 31414, 232, 328, 740, 1140, 12695, 69, 46078, 1588, 2]])
+        "input_ids" => Nx.tensor([[0, 31_414, 232, 328, 740, 1140, 12_695, 69, 46_078, 1588, 2]])
       }
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 11, 50265}
+      assert Nx.shape(outputs.logits) == {1, 11, 50_265}
 
       assert_all_close(
         outputs.logits[[.., 0..2, 0..2]],
@@ -59,7 +59,7 @@ defmodule Bumblebee.Text.RobertaTest do
       assert %Bumblebee.Text.Roberta{architecture: :for_sequence_classification} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[0, 31414, 6, 127, 2335, 16, 11962, 37, 11639, 1168, 2]])
+        "input_ids" => Nx.tensor([[0, 31_414, 6, 127, 2335, 16, 11_962, 37, 11_639, 1168, 2]])
       }
 
       outputs = Axon.predict(model, params, inputs)
@@ -80,7 +80,7 @@ defmodule Bumblebee.Text.RobertaTest do
       assert %Bumblebee.Text.Roberta{architecture: :for_token_classification} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[30581, 3923, 34892, 16, 10, 138, 716, 11, 2201, 8, 188, 469]])
+        "input_ids" => Nx.tensor([[30_581, 3923, 34_892, 16, 10, 138, 716, 11, 2201, 8, 188, 469]])
       }
 
       outputs = Axon.predict(model, params, inputs)
@@ -103,7 +103,7 @@ defmodule Bumblebee.Text.RobertaTest do
       inputs = %{
         "input_ids" =>
           Nx.tensor([
-            [0, 12375, 21, 2488, 289, 13919, 116, 2, 2, 24021, 289, 13919, 21, 10, 2579, 29771, 2]
+            [0, 12_375, 21, 2488, 289, 13_919, 116, 2, 2, 24_021, 289, 13_919, 21, 10, 2579, 29_771, 2]
           ])
       }
 
@@ -134,7 +134,7 @@ defmodule Bumblebee.Text.RobertaTest do
       inputs = %{
         "input_ids" =>
           Nx.tensor([
-            [[0, 38576, 103, 4437, 2, 2, 725, 895, 2], [0, 38576, 103, 4437, 2, 2, 487, 895, 2]]
+            [[0, 38_576, 103, 4437, 2, 2, 725, 895, 2], [0, 38_576, 103, 4437, 2, 2, 487, 895, 2]]
           ]),
         "attention_mask" =>
           Nx.tensor([[[1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1]]])
@@ -160,12 +160,12 @@ defmodule Bumblebee.Text.RobertaTest do
       assert %Bumblebee.Text.Roberta{architecture: :for_causal_language_modeling} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[0, 31414, 6, 127, 2335, 16, 11962, 2]])
+        "input_ids" => Nx.tensor([[0, 31_414, 6, 127, 2335, 16, 11_962, 2]])
       }
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 8, 50265}
+      assert Nx.shape(outputs.logits) == {1, 8, 50_265}
 
       assert_all_close(
         outputs.logits[[.., 1..3, 1..3]],

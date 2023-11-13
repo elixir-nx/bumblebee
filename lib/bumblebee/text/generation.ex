@@ -37,9 +37,7 @@ defmodule Bumblebee.Text.Generation do
 
   import Nx.Defn
 
-  alias Bumblebee.Shared
-  alias Bumblebee.Utils
-  alias Bumblebee.Text
+  alias Bumblebee.{Shared, Text, Utils}
 
   @doc """
   Initializes an opaque cache input for iterative inference.

@@ -84,7 +84,7 @@ defmodule Bumblebee.Multimodal.Blip do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:for_conditional_generation]
+  def architectures, do: [:for_conditional_generation]
 
   @impl true
   def config(spec, opts \\ []) do

@@ -81,11 +81,10 @@ defmodule Bumblebee.Diffusion.VaeKl do
 
   import Bumblebee.Utils.Model, only: [join: 2]
 
-  alias Bumblebee.Layers
-  alias Bumblebee.Diffusion
+  alias Bumblebee.{Diffusion, Layers}
 
   @impl true
-  def architectures(), do: [:base, :encoder, :decoder]
+  def architectures, do: [:base, :encoder, :decoder]
 
   @impl true
   def config(spec, opts \\ []) do

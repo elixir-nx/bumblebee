@@ -74,7 +74,7 @@ defmodule Bumblebee.Multimodal.Clip do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base]
+  def architectures, do: [:base]
 
   @impl true
   def config(spec, opts \\ []) do

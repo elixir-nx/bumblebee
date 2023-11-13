@@ -38,7 +38,7 @@ defmodule Bumblebee.TestHelpers do
     end
   end
 
-  def model_test_tags() do
+  def model_test_tags do
     [slow: true, capture_log: true, timeout: 600_000]
   end
 

@@ -11,7 +11,7 @@ defmodule Bumblebee.Text.WhisperTokenizerTest do
 
       inputs = Bumblebee.apply_tokenizer(tokenizer, ["Hello world"])
 
-      assert_equal(inputs["input_ids"], Nx.tensor([[50258, 50363, 15947, 1002, 50257]]))
+      assert_equal(inputs["input_ids"], Nx.tensor([[50_258, 50_363, 15_947, 1002, 50_257]]))
       assert_equal(inputs["attention_mask"], Nx.tensor([[1, 1, 1, 1, 1]]))
     end
   end

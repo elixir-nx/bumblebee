@@ -484,7 +484,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     }
   end
 
-  defp empty_chunk(), do: %{start_timestamp_seconds: nil, end_timestamp_seconds: nil, text: nil}
+  defp empty_chunk, do: %{start_timestamp_seconds: nil, end_timestamp_seconds: nil, text: nil}
 
   defp merge_overlapping_sequences([sequence]), do: {sequence, []}
 
@@ -534,7 +534,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
                 num_matches = Nx.equal(left_overlap, right_overlap) |> Nx.sum() |> Nx.to_number()
 
                 # Epsilon to favor long perfect matches
-                eps = i / 10000.0
+                eps = i / 10_000.0
                 match_score = num_matches / i + eps
 
                 if num_matches > 1 and match_score > max_match_score do

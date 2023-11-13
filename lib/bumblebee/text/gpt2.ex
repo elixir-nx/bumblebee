@@ -4,7 +4,7 @@ defmodule Bumblebee.Text.Gpt2 do
   options =
     [
       vocab_size: [
-        default: 50257,
+        default: 50_257,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
@@ -73,7 +73,7 @@ defmodule Bumblebee.Text.Gpt2 do
         :output_attentions,
         :num_labels,
         :id_to_label
-      ]) ++ Shared.token_options(pad_token_id: 50256)
+      ]) ++ Shared.token_options(pad_token_id: 50_256)
 
   @moduledoc """
   GPT-2 model family.
@@ -165,7 +165,7 @@ defmodule Bumblebee.Text.Gpt2 do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(),
+  def architectures,
     do: [
       :base,
       :for_causal_language_modeling,

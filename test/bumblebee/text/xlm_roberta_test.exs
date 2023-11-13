@@ -13,7 +13,7 @@ defmodule Bumblebee.Text.XlmRobertaTest do
       assert %Bumblebee.Text.Roberta{architecture: :base} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[0, 581, 10323, 111, 9942, 83, 250_001, 6, 5, 2]])
+        "input_ids" => Nx.tensor([[0, 581, 10_323, 111, 9942, 83, 250_001, 6, 5, 2]])
       }
 
       outputs = Axon.predict(model, params, inputs)
@@ -36,7 +36,7 @@ defmodule Bumblebee.Text.XlmRobertaTest do
       assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[0, 581, 10323, 111, 9942, 83, 250_001, 6, 5, 2]])
+        "input_ids" => Nx.tensor([[0, 581, 10_323, 111, 9942, 83, 250_001, 6, 5, 2]])
       }
 
       outputs = Axon.predict(model, params, inputs)

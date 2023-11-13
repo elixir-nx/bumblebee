@@ -16,7 +16,7 @@ defmodule Bumblebee.Text.LlamaTokenizerTest do
 
       assert_equal(
         inputs["input_ids"],
-        Nx.tensor([[1, 15043, 1432, 711, 4518, 29892, 920, 526, 366, 29973]])
+        Nx.tensor([[1, 15_043, 1432, 711, 4518, 29_892, 920, 526, 366, 29_973]])
       )
 
       assert_equal(

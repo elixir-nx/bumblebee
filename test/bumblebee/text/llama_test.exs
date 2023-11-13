@@ -12,7 +12,7 @@ defmodule Bumblebee.Text.LlamaTest do
 
       assert %Bumblebee.Text.Llama{architecture: :base} = spec
 
-      input_ids = Nx.tensor([[1, 15043, 3186, 825, 29915, 29879, 701]])
+      input_ids = Nx.tensor([[1, 15_043, 3186, 825, 29_915, 29_879, 701]])
 
       inputs = %{
         "input_ids" => input_ids
@@ -38,7 +38,7 @@ defmodule Bumblebee.Text.LlamaTest do
                )
 
       assert %Bumblebee.Text.Llama{architecture: :for_sequence_classification} = spec
-      input_ids = Nx.tensor([[1, 15043, 3186, 825, 29915, 29879, 701]])
+      input_ids = Nx.tensor([[1, 15_043, 3186, 825, 29_915, 29_879, 701]])
 
       inputs = %{
         "input_ids" => input_ids
@@ -63,7 +63,7 @@ defmodule Bumblebee.Text.LlamaTest do
 
       assert %Bumblebee.Text.Llama{architecture: :for_causal_language_modeling} = spec
 
-      input_ids = Nx.tensor([[1, 15043, 3186, 825, 29915, 29879, 701]])
+      input_ids = Nx.tensor([[1, 15_043, 3186, 825, 29_915, 29_879, 701]])
 
       inputs = %{
         "input_ids" => input_ids
@@ -71,7 +71,7 @@ defmodule Bumblebee.Text.LlamaTest do
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 7, 32000}
+      assert Nx.shape(outputs.logits) == {1, 7, 32_000}
 
       assert_all_close(
         outputs.logits[[.., 1..3, 1..3]],

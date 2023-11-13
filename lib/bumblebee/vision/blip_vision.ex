@@ -83,7 +83,7 @@ defmodule Bumblebee.Vision.BlipVision do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base]
+  def architectures, do: [:base]
 
   @impl true
   def config(spec, opts \\ []) do

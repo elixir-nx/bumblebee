@@ -8,12 +8,12 @@ defmodule Bumblebee.Conversion.PyTorchTest do
   @dir Path.expand("../../fixtures/pytorch", __DIR__)
 
   describe "load_params!/3" do
-    defp base_model() do
+    defp base_model do
       Axon.input("input", shape: {nil, 4, 4, 3})
       |> Axon.conv(2, kernel_size: 2, name: "conv")
     end
 
-    defp full_model() do
+    defp full_model do
       Axon.input("input", shape: {nil, 4, 4, 3})
       |> Axon.conv(2, kernel_size: 2, name: "base.conv")
       |> Axon.flatten()
@@ -21,11 +21,11 @@ defmodule Bumblebee.Conversion.PyTorchTest do
       |> Axon.dense(1, name: "classifier.output")
     end
 
-    defp input_template() do
+    defp input_template do
       Nx.broadcast(1, {1, 4, 4, 3})
     end
 
-    defp params_mapping() do
+    defp params_mapping do
       %{
         "base.conv" => "base.conv",
         "classifier.intermediate" => "classifier.layers.0",

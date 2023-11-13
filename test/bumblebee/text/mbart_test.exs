@@ -14,7 +14,7 @@ defmodule Bumblebee.Text.MbartTest do
 
       assert %Bumblebee.Text.Mbart{architecture: :base} = spec
 
-      input_ids = Nx.tensor([[35378, 4, 759, 10269, 83, 99942, 2, 250_004]])
+      input_ids = Nx.tensor([[35_378, 4, 759, 10_269, 83, 99_942, 2, 250_004]])
 
       inputs = %{
         "input_ids" => input_ids
@@ -42,7 +42,7 @@ defmodule Bumblebee.Text.MbartTest do
 
       assert %Bumblebee.Text.Mbart{architecture: :for_conditional_generation} = spec
 
-      input_ids = Nx.tensor([[4828, 83, 70, 35166, 2, 250_004]])
+      input_ids = Nx.tensor([[4828, 83, 70, 35_166, 2, 250_004]])
 
       inputs = %{
         "input_ids" => input_ids
@@ -129,7 +129,7 @@ defmodule Bumblebee.Text.MbartTest do
 
       assert %Bumblebee.Text.Mbart{architecture: :for_causal_language_modeling} = spec
 
-      input_ids = Nx.tensor([[35378, 4, 759, 10269, 83, 99942, 2, 250_004]])
+      input_ids = Nx.tensor([[35_378, 4, 759, 10_269, 83, 99_942, 2, 250_004]])
 
       inputs = %{
         "input_ids" => input_ids
@@ -166,7 +166,7 @@ defmodule Bumblebee.Text.MbartTest do
     assert %Bumblebee.Text.Mbart{architecture: :for_conditional_generation} = model_info.spec
 
     inputs = %{
-      "input_ids" => Nx.tensor([[4828, 83, 70, 35166, 2, 250_004]]),
+      "input_ids" => Nx.tensor([[4828, 83, 70, 35_166, 2, 250_004]]),
       "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1]])
     }
 
@@ -181,6 +181,6 @@ defmodule Bumblebee.Text.MbartTest do
 
     token_ids = generate.(model_info.params, inputs)
 
-    assert_equal(token_ids, Nx.tensor([[250_020, 4828, 473, 54051, 202, 2]]))
+    assert_equal(token_ids, Nx.tensor([[250_020, 4828, 473, 54_051, 202, 2]]))
   end
 end

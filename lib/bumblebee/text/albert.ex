@@ -4,7 +4,7 @@ defmodule Bumblebee.Text.Albert do
   options =
     [
       vocab_size: [
-        default: 30000,
+        default: 30_000,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
@@ -53,7 +53,7 @@ defmodule Bumblebee.Text.Albert do
         doc: "the number of attention heads for each attention layer in the encoder"
       ],
       intermediate_size: [
-        default: 16384,
+        default: 16_384,
         doc:
           "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
@@ -168,7 +168,7 @@ defmodule Bumblebee.Text.Albert do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(),
+  def architectures,
     do: [
       :base,
       :for_masked_language_modeling,

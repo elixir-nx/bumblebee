@@ -4,7 +4,7 @@ defmodule Bumblebee.Text.Mistral do
   options =
     [
       vocab_size: [
-        default: 32000,
+        default: 32_000,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
@@ -23,7 +23,7 @@ defmodule Bumblebee.Text.Mistral do
         doc: "the dimensionality of hidden layers"
       ],
       intermediate_size: [
-        default: 14336,
+        default: 14_336,
         doc: "the dimensionality of intermediate layers"
       ],
       num_blocks: [
@@ -136,7 +136,7 @@ defmodule Bumblebee.Text.Mistral do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(),
+  def architectures,
     do: [
       :base,
       :for_causal_language_modeling,

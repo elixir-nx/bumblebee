@@ -1,8 +1,7 @@
 defmodule Bumblebee.Text.TokenClassification do
   @moduledoc false
 
-  alias Bumblebee.Utils
-  alias Bumblebee.Shared
+  alias Bumblebee.{Shared, Utils}
 
   def token_classification(model_info, tokenizer, opts \\ []) do
     %{model: model, params: params, spec: spec} = model_info

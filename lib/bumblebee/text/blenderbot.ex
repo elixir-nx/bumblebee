@@ -39,12 +39,12 @@ defmodule Bumblebee.Text.Blenderbot do
         doc: "the number of attention heads for each attention layer in the decoder"
       ],
       encoder_intermediate_size: [
-        default: 10240,
+        default: 10_240,
         docs:
           "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
       decoder_intermediate_size: [
-        default: 10240,
+        default: 10_240,
         docs:
           "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the decoder"
       ],
@@ -191,7 +191,7 @@ defmodule Bumblebee.Text.Blenderbot do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base, :for_conditional_generation]
+  def architectures, do: [:base, :for_conditional_generation]
 
   @impl true
   def config(spec, opts \\ []) do

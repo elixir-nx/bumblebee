@@ -4,7 +4,7 @@ defmodule Bumblebee.Audio.Whisper do
   options =
     [
       vocab_size: [
-        default: 51865,
+        default: 51_865,
         doc: """
         the vocabulary size of the model. This corresponds to the number of distinct
         tokens that can be represented by the decoder
@@ -177,7 +177,7 @@ defmodule Bumblebee.Audio.Whisper do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base, :for_conditional_generation]
+  def architectures, do: [:base, :for_conditional_generation]
 
   @impl true
   def config(spec, opts \\ []) do

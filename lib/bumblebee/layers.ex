@@ -740,7 +740,7 @@ defmodule Bumblebee.Layers do
   @doc """
   Returns an Axon layer that resolves to `%Axon.None{}`.
   """
-  def none() do
+  def none do
     Axon.layer(fn _opts -> %Axon.None{} end, [], op_name: :none)
   end
 

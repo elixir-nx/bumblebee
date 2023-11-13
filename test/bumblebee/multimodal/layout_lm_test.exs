@@ -59,7 +59,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 4, 30522}
+      assert Nx.shape(outputs.logits) == {1, 4, 30_522}
 
       assert_all_close(
         outputs.logits[[.., 1..3, 1..3]],
@@ -152,7 +152,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
       assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_question_answering} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[0, 20920, 232, 2]]),
+        "input_ids" => Nx.tensor([[0, 20_920, 232, 2]]),
         "attention_mask" => Nx.tensor([[1, 1, 1, 1]]),
         "bounding_box" =>
           Nx.tensor([

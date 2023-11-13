@@ -13,7 +13,7 @@ defmodule Bumblebee.Text.CamembertTest do
       assert %Bumblebee.Text.Roberta{architecture: :base} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[0, 402, 232, 328, 740, 1140, 12695, 69, 1588, 2]])
+        "input_ids" => Nx.tensor([[0, 402, 232, 328, 740, 1140, 12_695, 69, 1588, 2]])
       }
 
       outputs = Axon.predict(model, params, inputs)
@@ -36,12 +36,12 @@ defmodule Bumblebee.Text.CamembertTest do
       assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[0, 402, 232, 328, 740, 1140, 12695, 69, 1588, 2]])
+        "input_ids" => Nx.tensor([[0, 402, 232, 328, 740, 1140, 12_695, 69, 1588, 2]])
       }
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 10, 32005}
+      assert Nx.shape(outputs.logits) == {1, 10, 32_005}
 
       assert_all_close(
         outputs.logits[[.., 0..2, 0..2]],

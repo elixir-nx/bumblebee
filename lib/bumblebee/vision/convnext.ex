@@ -79,7 +79,7 @@ defmodule Bumblebee.Vision.ConvNext do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base, :for_image_classification]
+  def architectures, do: [:base, :for_image_classification]
 
   @impl true
   def config(spec, opts \\ []) do

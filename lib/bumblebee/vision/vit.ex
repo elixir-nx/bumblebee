@@ -109,7 +109,7 @@ defmodule Bumblebee.Vision.Vit do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base, :for_image_classification, :for_masked_image_modeling]
+  def architectures, do: [:base, :for_image_classification, :for_masked_image_modeling]
 
   @impl true
   def config(spec, opts \\ []) do

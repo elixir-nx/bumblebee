@@ -13,7 +13,7 @@ defmodule Bumblebee.Text.DistilbertTest do
       assert %Bumblebee.Text.Distilbert{architecture: :base} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10140, 102]]),
+        "input_ids" => Nx.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10_140, 102]]),
         "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1]])
       }
 
@@ -42,7 +42,7 @@ defmodule Bumblebee.Text.DistilbertTest do
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 9, 30522}
+      assert Nx.shape(outputs.logits) == {1, 9, 30_522}
 
       assert_all_close(
         outputs.logits[[.., 1..3, 1..3]],
@@ -88,7 +88,7 @@ defmodule Bumblebee.Text.DistilbertTest do
 
       inputs = %{
         "input_ids" =>
-          Nx.tensor([[101, 11590, 11324, 10124, 14290, 10111, 146, 12962, 10106, 11193, 102]])
+          Nx.tensor([[101, 11_590, 11_324, 10_124, 14_290, 10_111, 146, 12_962, 10_106, 11_193, 102]])
       }
 
       outputs = Axon.predict(model, params, inputs)
@@ -113,8 +113,8 @@ defmodule Bumblebee.Text.DistilbertTest do
       inputs = %{
         "input_ids" =>
           Nx.tensor([
-            [101, 2627, 1108, 3104, 1124, 15703, 136, 102, 3104, 1124] ++
-              [15703, 1108, 170, 3505, 16797, 102]
+            [101, 2627, 1108, 3104, 1124, 15_703, 136, 102, 3104, 1124] ++
+              [15_703, 1108, 170, 3505, 16_797, 102]
           ])
       }
 

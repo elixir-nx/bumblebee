@@ -1154,8 +1154,8 @@ defmodule Bumblebee do
   Defaults to the standard cache location for the given operating system.
   Can be configured with the `BUMBLEBEE_CACHE_DIR` environment variable.
   """
-  @spec cache_dir() :: String.t()
-  def cache_dir() do
+  @spec cache_dir :: String.t()
+  def cache_dir do
     if dir = System.get_env("BUMBLEBEE_CACHE_DIR") do
       Path.expand(dir)
     else

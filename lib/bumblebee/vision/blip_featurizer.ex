@@ -116,7 +116,7 @@ defmodule Bumblebee.Vision.BlipFeaturizer do
       @for.config(featurizer, opts)
     end
 
-    defp size_as_map() do
+    defp size_as_map do
       fn name, value ->
         case value do
           %{"height" => height, "width" => width} ->

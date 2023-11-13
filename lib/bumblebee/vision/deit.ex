@@ -114,7 +114,7 @@ defmodule Bumblebee.Vision.Deit do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(),
+  def architectures,
     do: [
       :base,
       :for_image_classification,

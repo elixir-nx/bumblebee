@@ -4,7 +4,7 @@ defmodule Bumblebee.Text.Llama do
   options =
     [
       vocab_size: [
-        default: 32000,
+        default: 32_000,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
@@ -23,7 +23,7 @@ defmodule Bumblebee.Text.Llama do
         doc: "the dimensionality of hidden layers"
       ],
       intermediate_size: [
-        default: 11008,
+        default: 11_008,
         doc: "the dimensionality of intermediate layers"
       ],
       num_blocks: [
@@ -127,7 +127,7 @@ defmodule Bumblebee.Text.Llama do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(),
+  def architectures,
     do: [
       :base,
       :for_causal_language_modeling,

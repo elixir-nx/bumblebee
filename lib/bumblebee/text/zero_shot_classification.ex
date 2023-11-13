@@ -1,8 +1,7 @@
 defmodule Bumblebee.Text.ZeroShotClassification do
   @moduledoc false
 
-  alias Bumblebee.Utils
-  alias Bumblebee.Shared
+  alias Bumblebee.{Shared, Utils}
 
   def zero_shot_classification(model_info, tokenizer, labels, opts \\ []) do
     %{model: model, params: params, spec: spec} = model_info

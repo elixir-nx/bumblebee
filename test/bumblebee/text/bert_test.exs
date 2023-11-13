@@ -40,7 +40,7 @@ defmodule Bumblebee.Text.BertTest do
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 9, 30522}
+      assert Nx.shape(outputs.logits) == {1, 9, 30_522}
 
       assert_all_close(
         outputs.logits[[.., 1..3, 1..3]],
@@ -65,7 +65,7 @@ defmodule Bumblebee.Text.BertTest do
 
       inputs = %{
         "input_ids" =>
-          Nx.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10140, 2002, 7317, 4747, 102]])
+          Nx.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10_140, 2002, 7317, 4747, 102]])
       }
 
       outputs = Axon.predict(model, params, inputs)
@@ -88,7 +88,7 @@ defmodule Bumblebee.Text.BertTest do
       inputs = %{
         "input_ids" =>
           Nx.tensor([
-            [101, 20164, 10932, 2271, 7954, 1110, 1359, 1107, 2123, 1105, 1203, 1365, 102]
+            [101, 20_164, 10_932, 2271, 7954, 1110, 1359, 1107, 2123, 1105, 1203, 1365, 102]
           ])
       }
 
@@ -114,8 +114,8 @@ defmodule Bumblebee.Text.BertTest do
       inputs = %{
         "input_ids" =>
           Nx.tensor([
-            [101, 2627, 1108, 3104, 1124, 15703, 136] ++
-              [102, 3104, 1124, 15703, 1108, 170, 3505, 16797, 102]
+            [101, 2627, 1108, 3104, 1124, 15_703, 136] ++
+              [102, 3104, 1124, 15_703, 1108, 170, 3505, 16_797, 102]
           ]),
         "token_type_ids" => Nx.tensor([[0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1]])
       }
@@ -148,8 +148,8 @@ defmodule Bumblebee.Text.BertTest do
         "input_ids" =>
           Nx.tensor([
             [
-              [101, 1999, 3304, 10733, 2003, 8828, 102, 2478, 9292, 1998, 5442, 1012, 102, 0],
-              [101, 1999, 3304, 10733, 2003, 8828, 102, 2096, 2218, 1999, 1996, 2192, 1012, 102]
+              [101, 1999, 3304, 10_733, 2003, 8828, 102, 2478, 9292, 1998, 5442, 1012, 102, 0],
+              [101, 1999, 3304, 10_733, 2003, 8828, 102, 2096, 2218, 1999, 1996, 2192, 1012, 102]
             ]
           ]),
         "attention_mask" =>
@@ -190,8 +190,8 @@ defmodule Bumblebee.Text.BertTest do
       inputs = %{
         "input_ids" =>
           Nx.tensor([
-            [101, 1999, 3304, 10733, 2003, 2366, 4895, 14540, 6610, 2094, 1012] ++
-              [102, 2059, 1996, 8013, 20323, 2009, 2478, 9292, 1998, 5442, 1012, 102]
+            [101, 1999, 3304, 10_733, 2003, 2366, 4895, 14_540, 6610, 2094, 1012] ++
+              [102, 2059, 1996, 8013, 20_323, 2009, 2478, 9292, 1998, 5442, 1012, 102]
           ]),
         "token_type_ids" =>
           Nx.tensor([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -217,12 +217,12 @@ defmodule Bumblebee.Text.BertTest do
       assert %Bumblebee.Text.Bert{architecture: :for_causal_language_modeling} = spec
 
       inputs = %{
-        "input_ids" => Nx.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10140, 102]])
+        "input_ids" => Nx.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10_140, 102]])
       }
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 8, 30522}
+      assert Nx.shape(outputs.logits) == {1, 8, 30_522}
 
       assert_all_close(
         outputs.logits[[.., 1..3, 1..3]],

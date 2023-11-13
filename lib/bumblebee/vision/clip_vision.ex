@@ -86,7 +86,7 @@ defmodule Bumblebee.Vision.ClipVision do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base, :for_embedding]
+  def architectures, do: [:base, :for_embedding]
 
   @impl true
   def config(spec, opts \\ []) do

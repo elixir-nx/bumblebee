@@ -12,7 +12,7 @@ defmodule Bumblebee.Text.MistralTest do
 
       assert %Bumblebee.Text.Mistral{architecture: :base} = spec
 
-      input_ids = Nx.tensor([[1, 6312, 28709, 1526, 28808]])
+      input_ids = Nx.tensor([[1, 6312, 28_709, 1526, 28_808]])
 
       inputs = %{
         "input_ids" => input_ids
@@ -40,7 +40,7 @@ defmodule Bumblebee.Text.MistralTest do
                Bumblebee.load_model({:hf, "seanmor5/tiny-random-mistral-classification"})
 
       assert %Bumblebee.Text.Mistral{architecture: :for_sequence_classification} = spec
-      input_ids = Nx.tensor([[1, 6312, 28709, 1526]])
+      input_ids = Nx.tensor([[1, 6312, 28_709, 1526]])
 
       inputs = %{
         "input_ids" => input_ids
@@ -65,7 +65,7 @@ defmodule Bumblebee.Text.MistralTest do
 
       assert %Bumblebee.Text.Mistral{architecture: :for_causal_language_modeling} = spec
 
-      input_ids = Nx.tensor([[1, 6312, 28709, 1526]])
+      input_ids = Nx.tensor([[1, 6312, 28_709, 1526]])
 
       inputs = %{
         "input_ids" => input_ids
@@ -73,7 +73,7 @@ defmodule Bumblebee.Text.MistralTest do
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 4, 32000}
+      assert Nx.shape(outputs.logits) == {1, 4, 32_000}
 
       assert_all_close(
         outputs.logits[[.., 1..3, 1..3]],

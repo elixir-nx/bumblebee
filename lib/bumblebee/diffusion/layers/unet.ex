@@ -1,8 +1,7 @@
 defmodule Bumblebee.Diffusion.Layers.UNet do
   @moduledoc false
 
-  alias Bumblebee.Layers
-  alias Bumblebee.Diffusion
+  alias Bumblebee.{Diffusion, Layers}
 
   import Bumblebee.Utils.Model, only: [join: 2]
 

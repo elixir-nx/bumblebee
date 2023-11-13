@@ -49,7 +49,7 @@ defmodule Bumblebee.Text.BlipTextTest do
 
       outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {1, 11, 30524}
+      assert Nx.shape(outputs.logits) == {1, 11, 30_524}
 
       assert_all_close(
         outputs.logits[[.., 1..3, 1..3]],

@@ -18,8 +18,8 @@ defmodule Bumblebee.Text.RobertaTokenizerTest do
       assert_equal(
         inputs["input_ids"],
         Nx.tensor([
-          [0, 34603, 3645, 19, 50264, 4, 2],
-          [0, 45641, 116, 2, 2, 33683, 2]
+          [0, 34_603, 3645, 19, 50_264, 4, 2],
+          [0, 45_641, 116, 2, 2, 33_683, 2]
         ])
       )
 
