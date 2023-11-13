@@ -79,5 +79,27 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
       assert_equal(embedding_short, embedding_short2)
       assert_equal(embedding_long, embedding_long2)
     end
+
+    @tag :multi_device
+    test "works with partitioned serving", %{test: test} do
+      {:ok, model_info} = Bumblebee.load_model({:hf, "intfloat/e5-large"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "intfloat/e5-large"})
+
+      serving =
+        Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer,
+          compile: [batch_size: 1, sequence_length: 16],
+          defn_options: [compiler: EXLA, client: :other_host],
+          preallocate_params: true
+        )
+
+      start_supervised!({Nx.Serving, serving: serving, name: test, partitions: true})
+
+      text = "query: Cats are cute."
+
+      assert %{embedding: %Nx.Tensor{} = embedding1} = Nx.Serving.batched_run(test, text)
+      assert %{embedding: %Nx.Tensor{} = embedding2} = Nx.Serving.batched_run(test, text)
+
+      assert_equal(embedding1, embedding2)
+    end
   end
 end
