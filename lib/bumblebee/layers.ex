@@ -948,7 +948,11 @@ defmodule Bumblebee.Layers do
         initializer: opts[:initializer]
       )
 
-    Axon.layer(&rms_norm_impl/3, [input, weight], name: opts[:name], epsilon: opts[:epsilon], op_name: :rms_norm)
+    Axon.layer(&rms_norm_impl/3, [input, weight],
+      name: opts[:name],
+      epsilon: opts[:epsilon],
+      op_name: :rms_norm
+    )
   end
 
   defnp rms_norm_impl(input, weight, opts \\ []) do
