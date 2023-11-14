@@ -57,6 +57,13 @@ defmodule Bumblebee.Multimodal.Blip do
       Indices of positions of each decoder input sequence tokens in
       the position embeddings.
 
+    * `"encoder_hidden_state"` - `{batch_size, sequence_length, hidden_size}`
+
+      Last hidden state output from the encoder. This hidden state is
+      used in cross-attention blocks in the decoder. If specified, the
+      model will skip the image encoding process and use this value
+      directly for cross-attentions in the text decoder.
+
     * `"cache"`
 
       A container with cached layer results used to speed up sequential
