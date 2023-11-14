@@ -864,7 +864,7 @@ defmodule Bumblebee.Text.Generation do
 
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
-          generate_fun.(params, inputs)
+          generate_fun.(params, inputs) |> Shared.serving_post_computation()
         end
       end,
       defn_options

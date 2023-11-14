@@ -284,7 +284,9 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
           %{image: image}
         end
 
-      Bumblebee.Utils.Nx.composite_unflatten_batch(output, inputs.size)
+      output
+      |> Bumblebee.Utils.Nx.composite_unflatten_batch(inputs.size)
+      |> Shared.serving_post_computation()
     end
   end
 
@@ -318,9 +320,6 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   end
 
   defp client_postprocessing({outputs, _metadata}, multi?, safety_checker?) do
-    # We use binary backend so we are not blocked by the serving computation
-    outputs = Nx.backend_transfer(outputs, Nx.BinaryBackend)
-
     for outputs <- Bumblebee.Utils.Nx.batch_to_list(outputs) do
       results =
         for outputs = %{image: image} <- Bumblebee.Utils.Nx.batch_to_list(outputs) do

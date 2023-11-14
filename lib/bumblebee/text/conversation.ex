@@ -77,6 +77,7 @@ defmodule Bumblebee.Text.Conversation do
             end
 
           sequences[[.., start_idx..-1//1]]
+          |> Shared.serving_post_computation()
         end
       end,
       defn_options

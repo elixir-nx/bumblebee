@@ -61,7 +61,7 @@ defmodule Bumblebee.Text.TokenClassification do
 
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
-          scores_fun.(params, inputs)
+          scores_fun.(params, inputs) |> Shared.serving_post_computation()
         end
       end,
       defn_options
@@ -88,10 +88,6 @@ defmodule Bumblebee.Text.TokenClassification do
       {batch, {all_inputs, multi?}}
     end)
     |> Nx.Serving.client_postprocessing(fn {scores, _metadata}, {inputs, multi?} ->
-      # We use binary backend so we are not blocked by the serving computation
-      scores = Nx.backend_transfer(scores, Nx.BinaryBackend)
-      inputs = Nx.backend_transfer(inputs, Nx.BinaryBackend)
-
       Enum.zip_with(
         Utils.Nx.batch_to_list(inputs),
         Utils.Nx.batch_to_list(scores),
@@ -110,9 +106,6 @@ defmodule Bumblebee.Text.TokenClassification do
   end
 
   defp gather_raw_entities(scores, tokenizer, inputs) do
-    # We use binary backend so we are not blocked by the serving computation
-    scores = Nx.backend_transfer(scores, Nx.BinaryBackend)
-
     {sequence_length, _} = Nx.shape(scores)
     flat_special_tokens_mask = Nx.to_flat_list(inputs["special_tokens_mask"])
     flat_input_ids = Nx.to_flat_list(inputs["input_ids"])

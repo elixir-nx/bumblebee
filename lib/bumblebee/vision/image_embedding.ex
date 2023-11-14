@@ -80,7 +80,7 @@ defmodule Bumblebee.Vision.ImageEmbedding do
 
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
-          embedding_fun.(params, inputs)
+          embedding_fun.(params, inputs) |> Shared.serving_post_computation()
         end
       end,
       defn_options
@@ -94,9 +94,6 @@ defmodule Bumblebee.Vision.ImageEmbedding do
       {Nx.Batch.concatenate([inputs]), multi?}
     end)
     |> Nx.Serving.client_postprocessing(fn {embeddings, _metadata}, multi? ->
-      # We use binary backend so we are not blocked by the serving computation
-      embeddings = Nx.backend_transfer(embeddings, Nx.BinaryBackend)
-
       for embedding <- Bumblebee.Utils.Nx.batch_to_list(embeddings) do
         %{embedding: embedding}
       end

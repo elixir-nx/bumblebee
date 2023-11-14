@@ -277,6 +277,19 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Shared logic applied after serving computation to the resulting tensor
+  or container.
+  """
+  @spec serving_post_computation(result) :: result when result: Nx.Tensor.t() | Nx.Container.t()
+  def serving_post_computation(result) do
+    # We transfer to binary backend so tensor access in post-processing
+    # is not blocked by the serving the serving computation. It is also
+    # necessary when partitions are enabled since we may need to
+    # concatenate results for input exceeding the expected batch size.
+    Nx.backend_transfer(result, Nx.BinaryBackend)
+  end
+
+  @doc """
   Compiles or wraps the function with just-in-time compilation.
 
   When `compile?` is `true`, runs `template_fun` to get template args

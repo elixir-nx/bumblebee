@@ -96,8 +96,10 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
 
       text = "query: Cats are cute."
 
-      assert %{embedding: %Nx.Tensor{} = embedding1} = Nx.Serving.batched_run(test, text)
-      assert %{embedding: %Nx.Tensor{} = embedding2} = Nx.Serving.batched_run(test, text)
+      assert [
+               %{embedding: %Nx.Tensor{} = embedding1},
+               %{embedding: %Nx.Tensor{} = embedding2}
+             ] = Nx.Serving.batched_run(test, [text, text])
 
       assert_equal(embedding1, embedding2)
     end

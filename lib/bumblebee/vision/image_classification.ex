@@ -57,7 +57,7 @@ defmodule Bumblebee.Vision.ImageClassification do
 
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
-          scores_fun.(params, inputs)
+          scores_fun.(params, inputs) |> Shared.serving_post_computation()
         end
       end,
       defn_options
