@@ -81,7 +81,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
           scores = Axon.Activations.softmax(logits[[.., .., entailment_id]])
           k = min(top_k, Nx.axis_size(scores, 1))
           {top_scores, top_indices} = Nx.top_k(scores, k: k)
-          {top_scores, top_indices}
+          {top_scores, top_indices} |> Shared.serving_post_computation()
         end
       end,
       defn_options
