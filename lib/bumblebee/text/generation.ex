@@ -250,7 +250,7 @@ defmodule Bumblebee.Text.Generation do
 
   defp prepare_decoder_inputs(inputs, prefix, spec, max_length) do
     input_ids = inputs[prefix <> "input_ids"]
-    attention_mask = inputs[prefix <> "attention_mask"] || Nx.broadcast(1.0, input_ids)
+    attention_mask = inputs[prefix <> "attention_mask"] || Nx.broadcast(1, input_ids)
 
     position_ids =
       attention_mask
@@ -270,7 +270,7 @@ defmodule Bumblebee.Text.Generation do
   defp update_decoder_inputs(prefix, inputs, cache, token_ids) do
     inputs
     |> Map.replace!(prefix <> "input_ids", token_ids)
-    |> Map.replace!(prefix <> "attention_mask", Nx.broadcast(1.0, token_ids))
+    |> Map.replace!(prefix <> "attention_mask", Nx.broadcast(1, token_ids))
     |> Map.update!(prefix <> "position_ids", fn position_ids ->
       position_ids
       |> Nx.slice_along_axis(Nx.axis_size(position_ids, -1) - 1, 1, axis: -1)
