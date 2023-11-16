@@ -798,7 +798,13 @@ defmodule Bumblebee.Layers.Transformer do
           validate_required_keys!(opts, [:position_ids])
 
           opts =
-            Keyword.validate!(opts, [:position_ids, :max_positions, base: 10_000, percentage: 1.0])
+            Keyword.validate!(opts, [
+              :position_ids,
+              :max_positions,
+              :scaling_strategy,
+              base: 10_000,
+              percentage: 1.0
+            ])
 
           {position_ids, opts} = Keyword.pop(opts, :position_ids)
           {percentage, opts} = Keyword.pop(opts, :percentage)
@@ -808,7 +814,7 @@ defmodule Bumblebee.Layers.Transformer do
           rotary_opts = [name: join(name, "rotary_embedding")] ++ opts
 
           if size == attention_head_size do
-            Layers.rotary_embedding(query, key, position_ids, size, rotary_opts)
+            Layers.rotary_embedding(query, key, position_ids, attention_mask, size, rotary_opts)
           else
             query_rotary = Axon.nx(query, & &1[[.., .., .., 0..(size - 1)//1]])
             query_pass = Axon.nx(query, & &1[[.., .., .., size..-1//1]])
@@ -817,7 +823,14 @@ defmodule Bumblebee.Layers.Transformer do
             key_pass = Axon.nx(key, & &1[[.., .., .., size..-1//1]])
 
             {query_rotary, key_rotary} =
-              Layers.rotary_embedding(query_rotary, key_rotary, position_ids, size, rotary_opts)
+              Layers.rotary_embedding(
+                query_rotary,
+                key_rotary,
+                position_ids,
+                attention_mask,
+                size,
+                rotary_opts
+              )
 
             {Axon.concatenate([query_rotary, query_pass], axis: -1),
              Axon.concatenate([key_rotary, key_pass], axis: -1)}
