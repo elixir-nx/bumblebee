@@ -973,20 +973,47 @@ defmodule Bumblebee.Layers do
   @doc """
   Adds a rotary embedding layer to the network.
   """
-  def rotary_embedding(query, key, position_ids, size, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, max_positions: 2048, base: 10_000])
+  def rotary_embedding(query, key, position_ids, attention_mask, size, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, :scaling_strategy, max_positions: 2048, base: 10_000])
 
     output =
-      Axon.layer(&apply_rotary_embedding/4, [query, key, position_ids], [size: size] ++ opts)
+      Axon.layer(
+        &apply_rotary_embedding/5,
+        [query, key, position_ids, Axon.optional(attention_mask)],
+        [size: size] ++ opts
+      )
 
     unwrap_tuple(output, 2)
   end
 
-  deftransformp create_sinusoidal_positions(max_positions, size, base) do
+  deftransformp create_sinusoidal_positions(
+                  sequence_length,
+                  max_positions,
+                  size,
+                  base,
+                  scaling_strategy
+                ) do
+    position = Nx.iota({sequence_length})
+
+    {base, position} =
+      case scaling_strategy do
+        %{type: :linear, factor: factor} ->
+          {base, Nx.divide(position, factor)}
+
+        %{type: :dynamic, factor: factor} when sequence_length > max_positions ->
+          base =
+            base
+            |> Nx.multiply(factor * sequence_length / max_positions - (factor - 1))
+            |> Nx.pow(size / (size - 2))
+
+          {base, position}
+
+        _other ->
+          {base, position}
+      end
+
     range = Nx.iota({div(size, 2)}) |> Nx.multiply(2) |> Nx.divide(size)
     inv_frequency = Nx.divide(1.0, Nx.pow(base, range))
-
-    position = Nx.iota({max_positions})
     angle = Nx.outer(position, inv_frequency)
 
     angle = Nx.concatenate([angle, angle], axis: -1)
@@ -994,10 +1021,32 @@ defmodule Bumblebee.Layers do
     {Nx.cos(angle), Nx.sin(angle)}
   end
 
-  defnp apply_rotary_embedding(query, key, position_ids, opts \\ []) do
-    opts = keyword!(opts, [:size, mode: :inference, max_positions: 2048, base: 10_000])
+  defnp apply_rotary_embedding(query, key, position_ids, attention_mask, opts \\ []) do
+    opts =
+      keyword!(opts, [
+        :size,
+        :scaling_strategy,
+        mode: :inference,
+        max_positions: 2048,
+        base: 10_000
+      ])
 
-    {cos, sin} = create_sinusoidal_positions(opts[:max_positions], opts[:size], opts[:base])
+    # When decoding with cache position_ids may be a partial sequence,
+    # but in that case we always have full-length attention mask
+    sequence_length =
+      case attention_mask do
+        %Axon.None{} -> Nx.axis_size(position_ids, 1)
+        _other -> Nx.axis_size(attention_mask, 1)
+      end
+
+    {cos, sin} =
+      create_sinusoidal_positions(
+        sequence_length,
+        opts[:max_positions],
+        opts[:size],
+        opts[:base],
+        opts[:scaling_strategy]
+      )
 
     position_ids = Nx.as_type(position_ids, :s64)
 

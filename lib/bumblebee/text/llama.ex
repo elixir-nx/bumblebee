@@ -42,6 +42,22 @@ defmodule Bumblebee.Text.Llama do
         default: :silu,
         doc: "the activation function"
       ],
+      rotary_embedding_base: [
+        default: 10_000,
+        doc: "base for computing rotary embedding frequency"
+      ],
+      rotary_embedding_scaling_strategy: [
+        default: nil,
+        doc: """
+        scaling configuration for rotary embedding. Currently the supported values are:
+
+          * `%{type: :linear, factor: number()}`
+
+          * `%{type: :dynamic, factor: number()}`
+
+        For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
+        """
+      ],
       layer_norm_epsilon: [
         default: 1.0e-12,
         doc: "the epsilon used by RMS normalization layers"
@@ -317,7 +333,12 @@ defmodule Bumblebee.Text.Llama do
         ),
       block_type: :norm_first,
       causal?: true,
-      rotary_embedding: [position_ids: position_ids, max_positions: spec.max_positions],
+      rotary_embedding: [
+        position_ids: position_ids,
+        max_positions: spec.max_positions,
+        base: spec.rotary_embedding_base,
+        scaling_strategy: spec.rotary_embedding_scaling_strategy
+      ],
       query_use_bias: false,
       key_use_bias: false,
       value_use_bias: false,
@@ -363,6 +384,19 @@ defmodule Bumblebee.Text.Llama do
     def load(spec, data) do
       import Shared.Converters
 
+      scaling_strategy_converter = fn name, value ->
+        case value do
+          %{"type" => "linear", "factor" => factor} when is_number(factor) ->
+            {:ok, %{type: :linear, factor: factor}}
+
+          %{"type" => "dynamic", "factor" => factor} when is_number(factor) ->
+            {:ok, %{type: :dynamic, factor: factor}}
+
+          _other ->
+            {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
+        end
+      end
+
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
@@ -373,6 +407,8 @@ defmodule Bumblebee.Text.Llama do
           num_key_value_heads: {"num_key_value_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", atom()},
+          rotary_embedding_base: {"rope_theta", number()},
+          rotary_embedding_scaling_strategy: {"rope_scaling", scaling_strategy_converter},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
