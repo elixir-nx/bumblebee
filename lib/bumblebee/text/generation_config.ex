@@ -96,6 +96,15 @@ defmodule Bumblebee.Text.GenerationConfig do
     no_repeat_ngram_length: [
       default: nil,
       doc: "when set, n-grams of the given length can occur only once in the generated sequence"
+    ],
+    temperature: [
+      default: nil,
+      doc: """
+      enables exponential scaling of the output probability distribution. The temperature value effectively
+      determines the randomness of the predicted tokens. Values smaller than 1.0 decrease the randomness,
+      while bigger values increase it. Note that this is only relevant for generation `:strategy` that does
+      sampling based on the output probability distribution
+      """
     ]
   ]
 
