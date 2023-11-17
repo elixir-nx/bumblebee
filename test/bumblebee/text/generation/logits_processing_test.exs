@@ -155,6 +155,19 @@ defmodule Bumblebee.Text.Generation.LogitsProcessingTest do
     end
   end
 
+  describe "temperature_processor/3" do
+    test "scales the logits" do
+      logits = Nx.tensor([1.0, 2.0, 3.0, 4.0])
+
+      context = context([1, 0, 0, 0])
+
+      assert_equal(
+        LogitsProcessing.temperature_processor(logits, context, temperature: 10),
+        Nx.tensor([0.1, 0.2, 0.3, 0.4])
+      )
+    end
+  end
+
   describe "top_k_processor/3" do
     test "keeps top-k highest logits" do
       logits = Nx.tensor([1.0, 2.0, 3.0, 4.0])

@@ -117,6 +117,13 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
     Nx.put_slice(logits, [token_id], Nx.broadcast(Nx.Constants.neg_infinity(), {1}))
   end
 
+  defn temperature_processor(logits, _context, opts \\ []) do
+    opts = keyword!(opts, [:temperature])
+    temperature = opts[:temperature]
+
+    logits / temperature
+  end
+
   # Processors manipulating the probability distribution
 
   defn top_k_processor(logits, _context, opts \\ []) do
