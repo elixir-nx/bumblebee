@@ -8,8 +8,8 @@ Application.put_env(:sample, PhoenixDemo.Endpoint,
 Mix.install([
   {:plug_cowboy, "~> 2.6"},
   {:jason, "~> 1.4"},
-  {:phoenix, "~> 1.7.0"},
-  {:phoenix_live_view, "~> 0.18.3"},
+  {:phoenix, "1.7.10"},
+  {:phoenix_live_view, "0.20.1"},
   # Bumblebee and friends
   {:bumblebee, "~> 0.3.0"},
   {:nx, "~> 0.5.1"},
@@ -23,10 +23,10 @@ defmodule PhoenixDemo.Layouts do
 
   def render("live.html", assigns) do
     ~H"""
-    <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.0-rc.0/priv/static/phoenix.min.js">
+    <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.10/priv/static/phoenix.min.js">
     </script>
     <script
-      src="https://cdn.jsdelivr.net/npm/phoenix_live_view@0.18.3/priv/static/phoenix_live_view.min.js"
+      src="https://cdn.jsdelivr.net/npm/phoenix_live_view@0.20.1/priv/static/phoenix_live_view.min.js"
     >
     </script>
     <script>
@@ -49,7 +49,7 @@ defmodule PhoenixDemo.SampleLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, text: "", label: nil, task: nil)}
+    {:ok, assign(socket, text: "", label: nil)}
   end
 
   @impl true
@@ -67,18 +67,22 @@ defmodule PhoenixDemo.SampleLive do
           <button
             class="px-5 py-2.5 text-center mr-2 inline-flex items-center text-white bg-blue-700 font-medium rounded-lg text-sm hover:bg-blue-800 focus:ring-4 focus:ring-blue-300"
             type="submit"
-            disabled={@task != nil}
+            disabled={@label != nil and @label.loading != nil}
           >
             Predict
           </button>
         </form>
         <div class="mt-2 flex space-x-1.5 items-center text-gray-600 text-lg">
           <span>Emotion:</span>
-          <%= if @task do %>
-            <.spinner />
-          <% else %>
-            <span class="text-gray-900 font-medium"><%= @label || "?" %></span>
-          <% end %>
+          <.async_result :let={label} assign={@label} :if={@label}>
+            <:loading>
+              <.spinner />
+            </:loading>
+            <:failed :let={_reason}>
+              <span>Oops, something went wrong!</span>
+            </:failed>
+            <span class="text-gray-900 font-medium"><%= label %></span>
+          </.async_result>
         </div>
       </div>
     </div>
@@ -107,15 +111,18 @@ defmodule PhoenixDemo.SampleLive do
 
   @impl true
   def handle_event("predict", %{"text" => text}, socket) do
-    task = Task.async(fn -> Nx.Serving.batched_run(PhoenixDemo.Serving, text) end)
-    {:noreply, assign(socket, text: text, task: task)}
-  end
+    socket =
+      socket
+      |> assign(:text, text)
+      # Discard previous label so we show the loading state once more
+      |> assign(:label, nil)
+      |> assign_async(:label, fn ->
+        output = Nx.Serving.batched_run(PhoenixDemo.Serving, text)
+        %{predictions: [%{label: label}]} = output
+        {:ok, %{label: label}}
+      end)
 
-  @impl true
-  def handle_info({ref, result}, socket) when socket.assigns.task.ref == ref do
-    Process.demonitor(ref, [:flush])
-    %{predictions: [%{label: label}]} = result
-    {:noreply, assign(socket, label: label, task: nil)}
+    {:noreply, socket}
   end
 end
 
@@ -150,7 +157,7 @@ end
 serving =
   Bumblebee.Text.text_classification(model_info, tokenizer,
     top_k: 1,
-    compile: [batch_size: 10, sequence_length: 100],
+    compile: [batch_size: 4, sequence_length: 100],
     defn_options: [compiler: EXLA]
   )
 

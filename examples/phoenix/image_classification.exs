@@ -9,8 +9,8 @@ Application.put_env(:sample, PhoenixDemo.Endpoint,
 Mix.install([
   {:plug_cowboy, "~> 2.6"},
   {:jason, "~> 1.4"},
-  {:phoenix, "~> 1.7.0"},
-  {:phoenix_live_view, "~> 0.18.3"},
+  {:phoenix, "1.7.10"},
+  {:phoenix_live_view, "0.20.1"},
   # Bumblebee and friends
   {:bumblebee, "~> 0.3.0"},
   {:nx, "~> 0.5.1"},
@@ -24,10 +24,10 @@ defmodule PhoenixDemo.Layouts do
 
   def render("live.html", assigns) do
     ~H"""
-    <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.0-rc.0/priv/static/phoenix.min.js">
+    <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.10/priv/static/phoenix.min.js">
     </script>
     <script
-      src="https://cdn.jsdelivr.net/npm/phoenix_live_view@0.18.3/priv/static/phoenix_live_view.min.js"
+      src="https://cdn.jsdelivr.net/npm/phoenix_live_view@0.20.1/priv/static/phoenix_live_view.min.js"
     >
     </script>
     <script>
@@ -189,7 +189,7 @@ defmodule PhoenixDemo.SampleLive do
   def mount(_params, _session, socket) do
     {:ok,
      socket
-     |> assign(label: nil, task: nil)
+     |> assign(label: nil)
      |> allow_upload(:image, accept: :any, progress: &handle_progress/3, auto_upload: true)}
   end
 
@@ -203,11 +203,15 @@ defmodule PhoenixDemo.SampleLive do
         </form>
         <div class="mt-6 flex space-x-1.5 items-center text-gray-600 text-lg">
           <span>Label:</span>
-          <%= if @task do %>
-            <.spinner />
-          <% else %>
-            <span class="text-gray-900 font-medium"><%= @label || "?" %></span>
-          <% end %>
+          <.async_result :let={label} assign={@label} :if={@label}>
+            <:loading>
+              <.spinner />
+            </:loading>
+            <:failed :let={_reason}>
+              <span>Oops, something went wrong!</span>
+            </:failed>
+            <span class="text-gray-900 font-medium"><%= label %></span>
+          </.async_result>
         </div>
       </div>
     </div>
@@ -266,8 +270,18 @@ defmodule PhoenixDemo.SampleLive do
       end)
 
     image = decode_as_tensor(binary)
-    task = Task.async(fn -> Nx.Serving.batched_run(PhoenixDemo.Serving, image) end)
-    {:noreply, assign(socket, task: task)}
+
+    socket =
+      socket
+      # Discard previous label so we show the loading state once more
+      |> assign(:label, nil)
+      |> assign_async(:label, fn ->
+        output = Nx.Serving.batched_run(PhoenixDemo.Serving, image)
+        %{predictions: [%{label: label}]} = output
+        {:ok, %{label: label}}
+      end)
+
+    {:noreply, socket}
   end
 
   def handle_progress(_name, _entry, socket), do: {:noreply, socket}
@@ -282,13 +296,6 @@ defmodule PhoenixDemo.SampleLive do
     # but we make predictions immediately using :progress, so we just
     # ignore this event
     {:noreply, socket}
-  end
-
-  @impl true
-  def handle_info({ref, result}, socket) when socket.assigns.task.ref == ref do
-    Process.demonitor(ref, [:flush])
-    %{predictions: [%{label: label}]} = result
-    {:noreply, assign(socket, label: label, task: nil)}
   end
 end
 
@@ -323,7 +330,7 @@ end
 serving =
   Bumblebee.Vision.image_classification(model_info, featurizer,
     top_k: 1,
-    compile: [batch_size: 10],
+    compile: [batch_size: 4],
     defn_options: [compiler: EXLA]
   )
 

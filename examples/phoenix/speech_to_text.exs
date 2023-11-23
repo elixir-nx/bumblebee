@@ -9,7 +9,8 @@ Application.put_env(:sample, PhoenixDemo.Endpoint,
 Mix.install([
   {:plug_cowboy, "~> 2.6"},
   {:jason, "~> 1.4"},
-  {:phoenix_live_view, "~> 0.20.1"},
+  {:phoenix, "1.7.10"},
+  {:phoenix_live_view, "0.20.1"},
   # Bumblebee and friends
   {:bumblebee, "~> 0.4.0"},
   {:nx, "~> 0.6.1"},
@@ -23,10 +24,10 @@ defmodule PhoenixDemo.Layouts do
 
   def render("live.html", assigns) do
     ~H"""
-    <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.0-rc.0/priv/static/phoenix.min.js">
+    <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.10/priv/static/phoenix.min.js">
     </script>
     <script
-      src="https://cdn.jsdelivr.net/npm/phoenix_live_view@0.18.3/priv/static/phoenix_live_view.min.js"
+      src="https://cdn.jsdelivr.net/npm/phoenix_live_view@0.20.1/priv/static/phoenix_live_view.min.js"
     >
     </script>
     <script>
@@ -204,11 +205,15 @@ defmodule PhoenixDemo.SampleLive do
         </form>
 
         <div class="mt-6 flex space-x-1.5 items-center text-gray-600 text-lg">
-          <span>Transcription: </span>
+          <div>Transcription:</div>
           <.async_result :let={transcription} assign={@transcription} :if={@transcription}>
-            <:loading><.spinner /></:loading>
-            <:failed :let={_reason}>oops, something went wrong!</:failed>
-            <%= transcription %>
+            <:loading>
+              <.spinner />
+            </:loading>
+            <:failed :let={_reason}>
+              <span>Oops, something went wrong!</span>
+            </:failed>
+            <span class="text-gray-900 font-medium"><%= transcription %></span>
           </.async_result>
         </div>
       </div>
@@ -269,7 +274,7 @@ defmodule PhoenixDemo.SampleLive do
       # Discard previous transcription so we show the loading state once more
       |> assign(:transcription, nil)
       |> assign_async(:transcription, fn ->
-        output = Nx.Serving.batched_run(PhoenixDemo.Serving, audio) |> dbg()
+        output = Nx.Serving.batched_run(PhoenixDemo.Serving, audio)
         transcription = output.chunks |> Enum.map_join(& &1.text) |> String.trim()
         {:ok, %{transcription: transcription}}
       end)
