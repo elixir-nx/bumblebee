@@ -408,7 +408,8 @@ defmodule Bumblebee.Text.Llama do
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", atom()},
           rotary_embedding_base: {"rope_theta", number()},
-          rotary_embedding_scaling_strategy: {"rope_scaling", scaling_strategy_converter},
+          rotary_embedding_scaling_strategy:
+            {"rope_scaling", optional(scaling_strategy_converter)},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
