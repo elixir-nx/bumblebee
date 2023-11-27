@@ -435,7 +435,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
           down_block_types:
             {"down_block_types", list(mapping(%{"DownEncoderBlock2D" => :down_block}))},
           up_block_types: {"up_block_types", list(mapping(%{"UpDecoderBlock2D" => :up_block}))},
-          activation: {"act_fn", atom()}
+          activation: {"act_fn", activation()}
         )
 
       @for.config(spec, opts)

@@ -450,7 +450,7 @@ defmodule Bumblebee.Text.Distilbert do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
-          activation: {"hidden_act", atom()},
+          activation: {"hidden_act", activation()},
           dropout_rate: {"hidden_dropout_prob", number()},
           attention_dropout_rate: {"attention_probs_dropout_prob", number()},
           classifier_dropout_rate: {"classifier_dropout", optional(number())},

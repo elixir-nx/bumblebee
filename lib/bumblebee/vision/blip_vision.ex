@@ -224,7 +224,7 @@ defmodule Bumblebee.Vision.BlipVision do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
-          activation: {"hidden_act", atom()},
+          activation: {"hidden_act", activation()},
           attention_dropout_rate: {"attention_dropout", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()},
           initializer_scale: {"initializer_range", number()}
@@ -251,42 +251,29 @@ defmodule Bumblebee.Vision.BlipVision do
         },
         "encoder.blocks.{n}.self_attention_norm" => "vision_model.encoder.layers.{n}.layer_norm1",
         "encoder.blocks.{n}.self_attention.query" =>
-          sliced_dense("vision_model.encoder.layers.{n}.self_attn.qkv", 3, 0),
+          Shared.sliced_dense_params_source(
+            "vision_model.encoder.layers.{n}.self_attn.qkv",
+            {[1, 1, 1], :auto},
+            0
+          ),
         "encoder.blocks.{n}.self_attention.key" =>
-          sliced_dense("vision_model.encoder.layers.{n}.self_attn.qkv", 3, 1),
+          Shared.sliced_dense_params_source(
+            "vision_model.encoder.layers.{n}.self_attn.qkv",
+            {[1, 1, 1], :auto},
+            1
+          ),
         "encoder.blocks.{n}.self_attention.value" =>
-          sliced_dense("vision_model.encoder.layers.{n}.self_attn.qkv", 3, 2),
+          Shared.sliced_dense_params_source(
+            "vision_model.encoder.layers.{n}.self_attn.qkv",
+            {[1, 1, 1], :auto},
+            2
+          ),
         "encoder.blocks.{n}.self_attention.output" =>
           "vision_model.encoder.layers.{n}.self_attn.projection",
         "encoder.blocks.{n}.ffn.intermediate" => "vision_model.encoder.layers.{n}.mlp.fc1",
         "encoder.blocks.{n}.ffn.output" => "vision_model.encoder.layers.{n}.mlp.fc2",
         "encoder.blocks.{n}.output_norm" => "vision_model.encoder.layers.{n}.layer_norm2",
         "norm" => "vision_model.post_layernorm"
-      }
-    end
-
-    defp sliced_dense(source_layer_name, num_chunks, idx) do
-      %{
-        "kernel" => {
-          [{source_layer_name, "weight"}],
-          fn [kernel] ->
-            # Slice units
-            size = Nx.axis_size(kernel, 0)
-            step = div(size, num_chunks)
-            kernel = Nx.slice_along_axis(kernel, idx * step, step, axis: 0)
-            # Transpose the kernel
-            [out_features, in_features] = Nx.axes(kernel)
-            Nx.transpose(kernel, axes: [in_features, out_features])
-          end
-        },
-        "bias" => {
-          [{source_layer_name, "bias"}],
-          fn [bias] ->
-            size = Nx.axis_size(bias, 0)
-            step = div(size, num_chunks)
-            Nx.slice_along_axis(bias, idx * step, step)
-          end
-        }
       }
     end
   end

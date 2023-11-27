@@ -308,7 +308,7 @@ defmodule Bumblebee.Vision.Vit do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
-          activation: {"hidden_act", atom()},
+          activation: {"hidden_act", activation()},
           use_qkv_bias: {"qkv_bias", boolean()},
           dropout_rate: {"hidden_dropout_prob", number()},
           attention_dropout_rate: {"attention_probs_dropout_prob", number()},

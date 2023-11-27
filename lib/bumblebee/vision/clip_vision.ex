@@ -37,7 +37,7 @@ defmodule Bumblebee.Vision.ClipVision do
         doc: "the dimensionality of the projection layer"
       ],
       activation: [
-        default: :quick_gelu,
+        default: :gelu_approx_sigmoid,
         doc: "the activation function"
       ],
       attention_dropout_rate: [
@@ -245,7 +245,7 @@ defmodule Bumblebee.Vision.ClipVision do
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           projection_size: {"projection_dim", number()},
-          activation: {"hidden_act", atom()},
+          activation: {"hidden_act", activation()},
           attention_dropout_rate: {"attention_dropout", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)

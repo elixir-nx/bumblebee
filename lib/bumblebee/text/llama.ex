@@ -332,7 +332,7 @@ defmodule Bumblebee.Text.Llama do
           activation: spec.activation
         ),
       block_type: :norm_first,
-      causal?: true,
+      causal: true,
       rotary_embedding: [
         position_ids: position_ids,
         max_positions: spec.max_positions,
@@ -406,7 +406,7 @@ defmodule Bumblebee.Text.Llama do
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
           intermediate_size: {"intermediate_size", number()},
-          activation: {"hidden_act", atom()},
+          activation: {"hidden_act", activation()},
           rotary_embedding_base: {"rope_theta", number()},
           rotary_embedding_scaling_strategy:
             {"rope_scaling", optional(scaling_strategy_converter)},
