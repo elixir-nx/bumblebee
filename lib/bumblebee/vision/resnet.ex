@@ -313,7 +313,7 @@ defmodule Bumblebee.Vision.ResNet do
           hidden_sizes: {"hidden_sizes", list(number())},
           depths: {"depths", list(number())},
           residual_block_type: {"layer_type", atom()},
-          activation: {"hidden_act", atom()},
+          activation: {"hidden_act", activation()},
           downsample_in_first_stage: {"downsample_in_first_stage", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 

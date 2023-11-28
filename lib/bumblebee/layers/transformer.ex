@@ -43,7 +43,7 @@ defmodule Bumblebee.Layers.Transformer do
     block_opts_keys = [
       :num_attention_heads,
       :num_key_value_heads,
-      :causal?,
+      :causal,
       :hidden_size,
       :ffn,
       :kernel_initializer,
@@ -56,7 +56,7 @@ defmodule Bumblebee.Layers.Transformer do
       :output_use_bias,
       :layer_norm,
       :block_type,
-      :scale_query?,
+      :scale_attention_weights,
       :rotary_embedding
     ]
 
@@ -216,7 +216,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     * `:offset` - offset in the input sequence during iterative decoding
 
-    * `:causal?` - whether the self-attention block should be causal.
+    * `:causal` - whether the self-attention block should be causal.
       Defaults to `false`
 
     * `:kernel_initializer` - initializer for kernel weights. Defaults
@@ -265,7 +265,7 @@ defmodule Bumblebee.Layers.Transformer do
         * `:parallel` - block with attention and FFN independently (in parallel).
           This type doesn't support cross-attention
 
-    * `:scale_query?` - whether to scale query in the traditional style of
+    * `:scale_attention_weights` - whether to scale query in the traditional style of
       multi-headed attention. Defaults to `true`
 
     * `:rotary_embedding` - configuration of rotary embedding. If set,
@@ -308,7 +308,7 @@ defmodule Bumblebee.Layers.Transformer do
         cross_attention_head_mask: Layers.none(),
         block_cache: Layers.none(),
         offset: Layers.none(),
-        causal?: false,
+        causal: false,
         kernel_initializer: :glorot_uniform,
         attention_head_size: nil,
         dropout_rate: 0.0,
@@ -319,7 +319,7 @@ defmodule Bumblebee.Layers.Transformer do
         output_use_bias: true,
         block_type: :standard,
         layer_norm: [],
-        scale_query?: true,
+        scale_attention_weights: true,
         rotary_embedding: nil
       ])
 
@@ -328,7 +328,7 @@ defmodule Bumblebee.Layers.Transformer do
     num_key_value_heads = opts[:num_key_value_heads] || num_attention_heads
     hidden_size = opts[:hidden_size]
     ffn = opts[:ffn]
-    causal? = opts[:causal?]
+    causal = opts[:causal]
     kernel_initializer = opts[:kernel_initializer]
     attention_head_size = opts[:attention_head_size]
     dropout_rate = opts[:dropout_rate]
@@ -347,7 +347,7 @@ defmodule Bumblebee.Layers.Transformer do
     offset = opts[:offset]
     layer_norm = opts[:layer_norm]
     block_type = opts[:block_type]
-    scale_query? = opts[:scale_query?]
+    scale_attention_weights = opts[:scale_attention_weights]
     rotary_embedding = opts[:rotary_embedding]
 
     ffn_fun =
@@ -393,7 +393,7 @@ defmodule Bumblebee.Layers.Transformer do
           attention_relative_bias: attention_relative_bias,
           attention_cache: self_attention_cache,
           offset: offset,
-          causal?: causal?,
+          causal: causal,
           num_heads: num_attention_heads,
           num_key_value_heads: num_key_value_heads,
           hidden_size: hidden_size,
@@ -404,7 +404,7 @@ defmodule Bumblebee.Layers.Transformer do
           key_use_bias: key_use_bias,
           value_use_bias: value_use_bias,
           output_use_bias: output_use_bias,
-          scale_query?: scale_query?,
+          scale_attention_weights: scale_attention_weights,
           rotary_embedding: rotary_embedding,
           name: join(name, "self_attention")
         )
@@ -448,7 +448,7 @@ defmodule Bumblebee.Layers.Transformer do
           key_use_bias: key_use_bias,
           value_use_bias: value_use_bias,
           output_use_bias: output_use_bias,
-          scale_query?: scale_query?,
+          scale_attention_weights: scale_attention_weights,
           rotary_embedding: rotary_embedding,
           name: join(name, "cross_attention")
         )
@@ -673,7 +673,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     * `:offset` - offset in the input sequence during iterative decoding
 
-    * `:causal?` - whether to apply causal attention mask, so that tokens
+    * `:causal` - whether to apply causal attention mask, so that tokens
       are attended to only in a single direction. Defaults to `false`
 
     * `:kernel_initializer` - initializer for kernel weights. Defaults
@@ -727,8 +727,8 @@ defmodule Bumblebee.Layers.Transformer do
         attention_relative_bias: Layers.none(),
         attention_cache: Layers.none(),
         offset: Layers.none(),
-        causal?: false,
-        scale_query?: true,
+        causal: false,
+        scale_attention_weights: true,
         kernel_initializer: :glorot_uniform,
         dropout_rate: 0.0,
         attention_head_size: nil,
@@ -749,8 +749,8 @@ defmodule Bumblebee.Layers.Transformer do
     num_key_value_heads = opts[:num_key_value_heads] || num_heads
     hidden_size = opts[:hidden_size]
     kernel_initializer = opts[:kernel_initializer]
-    causal? = opts[:causal?]
-    scale_query? = opts[:scale_query?]
+    causal = opts[:causal]
+    scale_attention_weights = opts[:scale_attention_weights]
     dropout_rate = opts[:dropout_rate]
     rotary_embedding = opts[:rotary_embedding]
 
@@ -850,7 +850,7 @@ defmodule Bumblebee.Layers.Transformer do
     attention_mask = Layers.expand_attention_mask(attention_mask)
 
     attention_mask =
-      if causal? do
+      if causal do
         Layers.Decoder.apply_causal_mask(attention_mask, query, offset)
       else
         attention_mask
@@ -884,7 +884,7 @@ defmodule Bumblebee.Layers.Transformer do
       end
 
     attention_weights =
-      Layers.attention_weights(query, key, attention_bias, scale_query?: scale_query?)
+      Layers.attention_weights(query, key, attention_bias, scale: scale_attention_weights)
       |> Axon.dropout(rate: dropout_rate)
       |> Layers.apply_attention_head_mask(attention_head_mask)
 

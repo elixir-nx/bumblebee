@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.Gpt2 do
+defmodule Bumblebee.Text.GptBigCode do
   alias Bumblebee.Shared
 
   options =
@@ -29,6 +29,10 @@ defmodule Bumblebee.Text.Gpt2 do
       num_attention_heads: [
         default: 16,
         doc: "the number of attention heads for each attention layer in the decoder"
+      ],
+      num_key_value_heads: [
+        default: nil,
+        doc: "the number of key value heads for each attention layer in the model"
       ],
       intermediate_size: [
         default: nil,
@@ -80,21 +84,21 @@ defmodule Bumblebee.Text.Gpt2 do
       ]) ++ Shared.token_options(pad_token_id: 50256)
 
   @moduledoc """
-  GPT-2 model family.
+  GPT-BigCode model family.
 
   ## Architectures
 
-    * `:base` - plain GPT-2 without any head on top
+    * `:base` - plain GPT-BigCode without any head on top
 
-    * `:for_causal_language_modeling` - GPT-2 with a language modeling
+    * `:for_causal_language_modeling` - GPT-BigCode with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - GPT-2 with a sequence
+    * `:for_sequence_classification` - GPT-BigCode with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
-    * `:for_token_classification` - GPT-2 with a token classification
+    * `:for_token_classification` - GPT-BigCode with a token classification
       head. The head returns logits for each token in the original
       sequence
 
@@ -401,6 +405,7 @@ defmodule Bumblebee.Text.Gpt2 do
         causal: true,
         num_blocks: spec.num_blocks,
         num_attention_heads: spec.num_attention_heads,
+        num_key_value_heads: spec.num_key_value_heads,
         hidden_size: spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.dropout_rate,
@@ -448,6 +453,7 @@ defmodule Bumblebee.Text.Gpt2 do
           hidden_size: {"n_embd", number()},
           num_blocks: {"n_layer", number()},
           num_attention_heads: {"n_head", number()},
+          num_key_value_heads: {"multi_query", mapping(%{true => 1, false => nil})},
           intermediate_size: {"n_inner", optional(number())},
           activation: {"activation_function", activation()},
           scale_attention_weights: {"scale_attn_weights", boolean()},
@@ -464,58 +470,49 @@ defmodule Bumblebee.Text.Gpt2 do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(_spec) do
+    def params_mapping(spec) do
+      # The QKV parameters are joint, but they have different layout
+      # depending on the "multi_query" option, so we slice accordingly
+      out_template =
+        if spec.num_key_value_heads == 1 do
+          {[spec.num_attention_heads, spec.num_key_value_heads, spec.num_key_value_heads], :auto}
+        else
+          {spec.num_attention_heads, [1, 1, 1], :auto}
+        end
+
       %{
         "embedder.token_embedding" => "transformer.wte",
         "embedder.position_embedding" => "transformer.wpe",
         "decoder.blocks.{n}.self_attention.query" =>
-          dense_from_conv1d("transformer.h.{n}.attn.c_attn", 3, 0),
+          Shared.sliced_dense_params_source("transformer.h.{n}.attn.c_attn", out_template, 0),
         "decoder.blocks.{n}.self_attention.key" =>
-          dense_from_conv1d("transformer.h.{n}.attn.c_attn", 3, 1),
+          Shared.sliced_dense_params_source("transformer.h.{n}.attn.c_attn", out_template, 1),
         "decoder.blocks.{n}.self_attention.value" =>
-          dense_from_conv1d("transformer.h.{n}.attn.c_attn", 3, 2),
-        "decoder.blocks.{n}.self_attention.output" =>
-          dense_from_conv1d("transformer.h.{n}.attn.c_proj", 1, 0),
+          Shared.sliced_dense_params_source("transformer.h.{n}.attn.c_attn", out_template, 2),
+        "decoder.blocks.{n}.self_attention.output" => "transformer.h.{n}.attn.c_proj",
         "decoder.blocks.{n}.self_attention_norm" => "transformer.h.{n}.ln_1",
-        "decoder.blocks.{n}.cross_attention.query" =>
-          dense_from_conv1d("transformer.h.{n}.crossattention.q_attn", 1, 0),
+        "decoder.blocks.{n}.cross_attention.query" => "transformer.h.{n}.crossattention.q_attn",
         "decoder.blocks.{n}.cross_attention.key" =>
-          dense_from_conv1d("transformer.h.{n}.crossattention.c_attn", 2, 0),
+          Shared.sliced_dense_params_source(
+            "transformer.h.{n}.crossattention.c_attn",
+            {spec.num_attention_heads, [1, 1], :auto},
+            0
+          ),
         "decoder.blocks.{n}.cross_attention.value" =>
-          dense_from_conv1d("transformer.h.{n}.crossattention.c_attn", 2, 1),
-        "decoder.blocks.{n}.cross_attention.output" =>
-          dense_from_conv1d("transformer.h.{n}.crossattention.c_proj", 1, 0),
-        "decoder.blocks.{n}.ffn.intermediate" =>
-          dense_from_conv1d("transformer.h.{n}.mlp.c_fc", 1, 0),
-        "decoder.blocks.{n}.ffn.output" =>
-          dense_from_conv1d("transformer.h.{n}.mlp.c_proj", 1, 0),
+          Shared.sliced_dense_params_source(
+            "transformer.h.{n}.crossattention.c_attn",
+            {spec.num_attention_heads, [1, 1], :auto},
+            1
+          ),
+        "decoder.blocks.{n}.cross_attention.output" => "transformer.h.{n}.crossattention.c_proj",
+        "decoder.blocks.{n}.ffn.intermediate" => "transformer.h.{n}.mlp.c_fc",
+        "decoder.blocks.{n}.ffn.output" => "transformer.h.{n}.mlp.c_proj",
         "decoder.blocks.{n}.cross_attention_norm" => "transformer.h.{n}.ln_cross_attn",
         "decoder.blocks.{n}.output_norm" => "transformer.h.{n}.ln_2",
         "norm" => "transformer.ln_f",
         "language_modeling_head.output" => "transformer.wte",
         "token_classification_head.output" => "classifier",
         "sequence_classification_head.output" => "score"
-      }
-    end
-
-    defp dense_from_conv1d(source_layer_name, num_chunks, chunk_idx) do
-      %{
-        "kernel" => {
-          [{source_layer_name, "weight"}],
-          fn [kernel] ->
-            size = Nx.axis_size(kernel, 1)
-            step = div(size, num_chunks)
-            Nx.slice_along_axis(kernel, chunk_idx * step, step, axis: 1)
-          end
-        },
-        "bias" => {
-          [{source_layer_name, "bias"}],
-          fn [bias] ->
-            size = Nx.axis_size(bias, 0)
-            step = div(size, num_chunks)
-            Nx.slice_along_axis(bias, chunk_idx * step, step)
-          end
-        }
       }
     end
   end

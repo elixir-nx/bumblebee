@@ -349,7 +349,7 @@ defmodule Bumblebee.Text.GptNeoX do
         intermediate_size: spec.intermediate_size
       ],
       block_type: if(spec.use_parallel_transformer_block, do: :parallel, else: :norm_first),
-      causal?: true,
+      causal: true,
       rotary_embedding: [
         position_ids: position_ids,
         percentage: spec.rotary_embedding_percentage,
@@ -391,7 +391,7 @@ defmodule Bumblebee.Text.GptNeoX do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
-          activation: {"hidden_act", atom()},
+          activation: {"hidden_act", activation()},
           rotary_embedding_percentage: {"rotary_pct", number()},
           rotary_embedding_base: {"rotary_emb_base", number()},
           classifier_dropout_rate: {"classifier_dropout", number()},
@@ -409,25 +409,22 @@ defmodule Bumblebee.Text.GptNeoX do
       %{
         "embedder.token_embedding" => "gpt_neox.embed_in",
         "decoder.blocks.{n}.self_attention.query" =>
-          sliced_dense(
+          Shared.sliced_dense_params_source(
             "gpt_neox.layers.{n}.attention.query_key_value",
-            0,
-            spec.num_attention_heads,
-            spec.hidden_size
+            {spec.num_attention_heads, [1, 1, 1], :auto},
+            0
           ),
         "decoder.blocks.{n}.self_attention.key" =>
-          sliced_dense(
+          Shared.sliced_dense_params_source(
             "gpt_neox.layers.{n}.attention.query_key_value",
-            1,
-            spec.num_attention_heads,
-            spec.hidden_size
+            {spec.num_attention_heads, [1, 1, 1], :auto},
+            1
           ),
         "decoder.blocks.{n}.self_attention.value" =>
-          sliced_dense(
+          Shared.sliced_dense_params_source(
             "gpt_neox.layers.{n}.attention.query_key_value",
-            2,
-            spec.num_attention_heads,
-            spec.hidden_size
+            {spec.num_attention_heads, [1, 1, 1], :auto},
+            2
           ),
         "decoder.blocks.{n}.self_attention.output" => "gpt_neox.layers.{n}.attention.dense",
         "decoder.blocks.{n}.self_attention_norm" => "gpt_neox.layers.{n}.input_layernorm",
@@ -440,34 +437,6 @@ defmodule Bumblebee.Text.GptNeoX do
         "language_modeling_head.output" => "embed_out",
         "sequence_classification_head.output" => "score",
         "token_classification_head.output" => "classifier"
-      }
-    end
-
-    defp sliced_dense(source_layer_name, idx, num_attention_heads, hidden_size) do
-      %{
-        "kernel" => {
-          [{source_layer_name, "weight"}],
-          fn [kernel] ->
-            # Slice units
-            head_size = div(hidden_size, num_attention_heads)
-            kernel = Nx.reshape(kernel, {num_attention_heads, 3, head_size, :auto})
-            kernel = kernel[[.., idx, .., ..]] |> Nx.flatten(axes: [0, 1])
-
-            # Transpose the kernel
-            [out_features, in_features] = Nx.axes(kernel)
-            Nx.transpose(kernel, axes: [in_features, out_features])
-          end
-        },
-        "bias" => {
-          [{source_layer_name, "bias"}],
-          fn [bias] ->
-            head_size = div(hidden_size, num_attention_heads)
-            bias = Nx.reshape(bias, {num_attention_heads, 3, head_size})
-            bias = bias[[.., idx, ..]] |> Nx.flatten()
-
-            bias
-          end
-        }
       }
     end
   end

@@ -512,4 +512,49 @@ defmodule Bumblebee.Shared do
       end
     end
   end
+
+  @doc """
+  Slices a subset of dense layer parameters.
+
+  Expects `out_template` to be a tuple representing a "shape" of the
+  output units. The tuple should include a list in place of the axis
+  along which the parameters are concatenated. The list should contain
+  chunk sizes. `chunk_idx` indicates which chunk to slice.
+  """
+  def sliced_dense_params_source(source_layer_name, out_template, chunk_idx) do
+    out_template = Tuple.to_list(out_template)
+    chunk_axis = Enum.find_index(out_template, &is_list/1)
+    chunk_sizes = Enum.at(out_template, chunk_axis)
+    {prev_chunk_sizes, [chunk_size | _]} = Enum.split(chunk_sizes, chunk_idx)
+    offset = Enum.sum(prev_chunk_sizes)
+    out_shape = List.replace_at(out_template, chunk_axis, Enum.sum(chunk_sizes))
+
+    %{
+      "kernel" => {
+        [{source_layer_name, "weight"}],
+        fn [kernel] ->
+          in_size = Nx.axis_size(kernel, -1)
+
+          kernel =
+            kernel
+            |> Nx.reshape(List.to_tuple(out_shape ++ [in_size]))
+            |> Nx.slice_along_axis(offset, chunk_size, axis: chunk_axis)
+            |> Nx.reshape({:auto, in_size})
+
+          # Transpose the kernel
+          [out_features, in_features] = Nx.axes(kernel)
+          Nx.transpose(kernel, axes: [in_features, out_features])
+        end
+      },
+      "bias" => {
+        [{source_layer_name, "bias"}],
+        fn [bias] ->
+          bias
+          |> Nx.reshape(List.to_tuple(out_shape))
+          |> Nx.slice_along_axis(offset, chunk_size, axis: chunk_axis)
+          |> Nx.flatten()
+        end
+      }
+    }
+  end
 end

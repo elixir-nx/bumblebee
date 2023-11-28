@@ -203,4 +203,19 @@ defmodule Bumblebee.Shared.Converters do
       end
     end
   end
+
+  def activation() do
+    mapping = %{
+      "gelu_new" => :gelu_approx_tanh,
+      "gelu_pytorch_tanh" => :gelu_approx_tanh,
+      "quick_gelu" => :gelu_approx_sigmoid
+    }
+
+    fn name, value ->
+      case Map.fetch(mapping, value) do
+        {:ok, replacement} -> {:ok, replacement}
+        :error -> atom().(name, value)
+      end
+    end
+  end
 end

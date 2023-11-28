@@ -327,7 +327,7 @@ defmodule Bumblebee.Text.Mistral do
           activation: spec.activation
         ),
       block_type: :norm_first,
-      causal?: true,
+      causal: true,
       rotary_embedding: [
         position_ids: position_ids,
         max_positions: spec.max_positions,
@@ -387,7 +387,7 @@ defmodule Bumblebee.Text.Mistral do
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
           intermediate_size: {"intermediate_size", number()},
-          activation: {"hidden_act", atom()},
+          activation: {"hidden_act", activation()},
           rotary_embedding_base: {"rope_theta", number()},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()}

@@ -397,7 +397,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
           num_attention_heads: {"attention_head_dim", one_of([number(), list(number())])},
           cross_attention_size: {"cross_attention_dim", number()},
           use_linear_projection: {"use_linear_projection", boolean()},
-          activation: {"act_fn", atom()},
+          activation: {"act_fn", activation()},
           group_norm_num_groups: {"norm_num_groups", number()},
           group_norm_epsilon: {"norm_eps", number()}
         )

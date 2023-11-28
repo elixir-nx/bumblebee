@@ -3,7 +3,7 @@ defmodule Bumblebee.Layers do
 
   import Nx.Defn
 
-  @unsupported_activations [:gelu_new, :quick_gelu]
+  @unsupported_activations [:gelu_approx_tanh, :gelu_approx_sigmoid]
 
   @pi :math.pi()
 
@@ -30,17 +30,29 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Implements the GeLU new activation from huggingface/transformers.
+  Implements the GeLU activation approximated with tanh.
+
+  ## References
+
+    * [Gaussian Error Linear Units (GeLUs)](https://arxiv.org/pdf/1606.08415.pdf)
+
   """
-  defn gelu_new(input, _opts \\ []) do
+  defn gelu_approx_tanh(input, _opts \\ []) do
     0.5 * input *
       (1.0 + Nx.tanh(Nx.sqrt(2.0 / @pi) * (input + 0.044715 * Nx.pow(input, 3.0))))
   end
 
   @doc """
-  Implements the GeLU quick activation from huggingface/transformers.
+  Implements the GeLU activation approximated with sigmoid.
+
+  Note that this approximation is less accurate than `gelu_approx_tanh/2`.
+
+  ## References
+
+    * [Gaussian Error Linear Units (GeLUs)](https://arxiv.org/pdf/1606.08415.pdf)
+
   """
-  defn quick_gelu(input, _opts \\ []) do
+  defn gelu_approx_sigmoid(input, _opts \\ []) do
     input * Nx.sigmoid(1.702 * input)
   end
 
@@ -184,7 +196,7 @@ defmodule Bumblebee.Layers do
 
   ## Options
 
-    * `:scale_query?` - whether to scale the query. Defaults to `true`
+    * `:scale` - whether to scale the weights. Defaults to `true`
 
   """
   def attention_weights(query, key, bias, opts \\ []) do
@@ -192,20 +204,21 @@ defmodule Bumblebee.Layers do
   end
 
   defnp attention_weights_impl(query, key, bias, opts \\ []) do
-    opts = keyword!(opts, mode: :train, scale_query?: true)
+    opts = keyword!(opts, mode: :train, scale: true)
 
     key = Nx.transpose(key, axes: [0, 2, 1, 3])
     query = Nx.transpose(query, axes: [0, 2, 1, 3])
 
-    query =
-      if opts[:scale_query?] do
+    weights = Nx.dot(query, [3], [0, 1], key, [3], [0, 1])
+
+    weights =
+      if opts[:scale] do
         depth = Nx.axis_size(query, -1)
-        query / Nx.sqrt(depth)
+        weights / Nx.sqrt(depth)
       else
-        query
+        weights
       end
 
-    weights = Nx.dot(query, [3], [0, 1], key, [3], [0, 1])
     weights = weights + bias
     Axon.Activations.softmax(weights, axis: -1)
   end

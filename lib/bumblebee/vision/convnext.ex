@@ -313,7 +313,7 @@ defmodule Bumblebee.Vision.ConvNext do
           patch_size: {"patch_size", number()},
           hidden_sizes: {"hidden_sizes", list(number())},
           depths: {"depths", list(number())},
-          activation: {"hidden_act", atom()},
+          activation: {"hidden_act", activation()},
           scale_initial_value: {"layer_scale_init_value", number()},
           drop_path_rate: {"drop_path_rate", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()},

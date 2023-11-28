@@ -415,7 +415,7 @@ defmodule Bumblebee.Text.T5 do
           max_distance: spec.relative_attention_max_distance
         ],
         share_attention_relative_bias: true,
-        scale_query?: false,
+        scale_attention_weights: false,
         name: join(name, "blocks")
       )
 
@@ -452,7 +452,7 @@ defmodule Bumblebee.Text.T5 do
         cross_attention_mask: encoder_attention_mask,
         cross_attention_head_mask: cross_attention_head_mask,
         cache: cache,
-        causal?: true,
+        causal: true,
         num_blocks: spec.decoder_num_blocks,
         num_attention_heads: spec.decoder_num_attention_heads,
         hidden_size: spec.hidden_size,
@@ -474,7 +474,7 @@ defmodule Bumblebee.Text.T5 do
           max_distance: spec.relative_attention_max_distance
         ],
         share_attention_relative_bias: true,
-        scale_query?: false,
+        scale_attention_weights: false,
         name: join(name, "blocks")
       )
 
@@ -551,7 +551,7 @@ defmodule Bumblebee.Text.T5 do
           relative_attention_num_buckets: {"relative_attention_num_buckets", number()},
           relative_attention_max_distance: {"relative_attention_max_distance", number()},
           intermediate_size: {"d_ff", number()},
-          activation: {"feed_forward_proj", activation()},
+          activation: {"feed_forward_proj", t5_activation()},
           ffn_gated_activation: {"feed_forward_proj", ffn_gated_activation()},
           dropout_rate: {"dropout", number()},
           initializer_scale: {"initializer_factor", number()}
@@ -560,17 +560,12 @@ defmodule Bumblebee.Text.T5 do
       @for.config(spec, opts)
     end
 
-    defp activation() do
+    defp t5_activation() do
       fn name, value ->
-        try do
-          case String.replace_prefix(value, "gated-", "") do
-            # See https://github.com/huggingface/transformers/pull/17420
-            "gelu" -> {:ok, :gelu_new}
-            value -> {:ok, String.to_atom(value)}
-          end
-        rescue
-          _error ->
-            {:error, "unsupported value for #{inspect(name)}, got: #{inspect(value)}"}
+        case String.replace_prefix(value, "gated-", "") do
+          # See https://github.com/huggingface/transformers/pull/17420
+          "gelu" -> {:ok, :gelu_approx_tanh}
+          value -> Shared.Converters.activation().(name, value)
         end
       end
     end
