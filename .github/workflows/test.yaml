@@ -38,12 +38,6 @@ jobs:
             _build
             cache
           key: ${{ runner.os }}-mix-${{ matrix.pair.elixir }}-${{ matrix.pair.otp }}-${{ hashFiles('**/mix.lock') }}
-      - uses: actions/cache@v3
-        with:
-          path: bumblebee_cache
-          key: bumblebee-cache-${{ hashFiles('bumblebee_cache/**/*.json') }}
-          restore-keys: |
-            bumblebee-cache-
       - run: mix deps.get
       - run: mix format --check-formatted
         if: ${{ matrix.lint }}
@@ -52,19 +46,24 @@ jobs:
       - run: mix deps.compile
       - run: mix compile --warnings-as-errors
         if: ${{ matrix.lint }}
+      - name: Restore bumblebee cache
+        id: cache-bumblebee-restore
+        uses: actions/cache/restore@v3
+        with:
+          path: bumblebee_cache
+        key: ${{ runner.os }}-primes
       - run: mix test
         env:
           BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/bumblebee_cache
+      - name: Save bumblebee cache
+        id: cache-bumblebee-save
+        uses: actions/cache/save@v3
+        with:
+          path: bumblebee_cache
+        key: ${{ steps.cache-bumblebee-restore.outputs.cache-primary-key }}
       - uses: technote-space/get-diff-action@v6
         with:
           PATTERNS: test/**/*_test.exs
-      # Cache models for slow tests separately, in case the cache is
-      # wiped because of size limit
-      - uses: actions/cache@v3
-        with:
-          path: bumblebee_cache_slow
-          key: bumblebee-cache-slow-${{ hashFiles(format('{0}/bumblebee_cache_slow/**/*.json', github.workspace)) }}
-        if: ${{ matrix.slow && env.GIT_DIFF_FILTERED != '' }}
       - name: Changed slow tests
         # mix test exits with a non-zero code if there are no matching tests,
         # so we make sure we fail only when the test suite fails
