@@ -25,7 +25,6 @@ jobs:
       MIX_ENV: test
       XLA_CACHE_DIR: ${{ github.workspace }}/cache/xla
       LIBTORCH_DIR: ${{ github.workspace }}/cache/torch
-      BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/cache/bumblebee
     steps:
       - uses: actions/checkout@v3
       - uses: erlef/setup-beam@v1
@@ -39,6 +38,11 @@ jobs:
             _build
             cache
           key: ${{ runner.os }}-mix-${{ matrix.pair.elixir }}-${{ matrix.pair.otp }}-${{ hashFiles('**/mix.lock') }}
+      - uses: actions/cache@v3
+        with:
+          path: bumblebee_cache
+          key: bumblebee-cache-${{ hashFiles(format('{0}/bumblebee_cache/**/*.json', github.workspace)) }}
+          restore-keys: bumblebee-cache-
       - run: mix deps.get
       - run: mix format --check-formatted
         if: ${{ matrix.lint }}
@@ -48,6 +52,8 @@ jobs:
       - run: mix compile --warnings-as-errors
         if: ${{ matrix.lint }}
       - run: mix test
+        env:
+          BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/bumblebee_cache
       - uses: technote-space/get-diff-action@v6
         with:
           PATTERNS: test/**/*_test.exs
@@ -55,7 +61,9 @@ jobs:
       # wiped because of size limit
       - uses: actions/cache@v3
         with:
-          path: bumblebee_slow_cache
+          path: bumblebee_cache_slow
+          key: bumblebee-cache-slow-${{ hashFiles(format('{0}/bumblebee_cache_slow/**/*.json', github.workspace)) }}
+          restore-keys: bumblebee-cache-slow-
         if: ${{ matrix.slow && env.GIT_DIFF_FILTERED != '' }}
       - name: Changed slow tests
         # mix test exits with a non-zero code if there are no matching tests,
@@ -63,4 +71,4 @@ jobs:
         run: mix test test/bumblebee_test.exs --only slow --exit-status 100 ${{ env.GIT_DIFF_FILTERED }} || [ $? -ne 100 ]
         if: ${{ matrix.slow && env.GIT_DIFF_FILTERED != '' }}
         env:
-          BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/bumblebee_slow_cache
+          BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/bumblebee_cache_slow

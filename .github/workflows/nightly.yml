@@ -31,8 +31,10 @@ jobs:
             ${{ runner.os }}-mix-
       - uses: actions/cache@v3
         with:
-          path: bumblebee_slow_cache
+          path: bumblebee_cache_slow
+          key: bumblebee-cache-slow-${{ hashFiles(format('{0}/bumblebee_cache_slow/**/*.json', github.workspace)) }}
+          restore-keys: bumblebee-cache-slow-
       - run: mix deps.get
       - run: mix test --include slow
         env:
-          BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/bumblebee_slow_cache
+          BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/bumblebee_cache_slow
