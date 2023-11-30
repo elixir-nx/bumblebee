@@ -90,12 +90,9 @@ defmodule Bumblebee.HuggingFace.Hub do
 
         case load_json(metadata_path) do
           {:ok, %{"etag" => ^etag}} ->
-            IO.puts("Cache hit for #{url}")
             {:ok, entry_path}
 
           _ ->
-            IO.puts("Cache miss for #{url}")
-
             case HTTP.download(download_url, entry_path, headers: headers)
                  |> finish_request(download_url) do
               :ok ->
