@@ -95,6 +95,7 @@ defmodule Bumblebee.HuggingFace.Hub do
 
           _ ->
             IO.puts("Cache miss for #{url}")
+
             case HTTP.download(download_url, entry_path, headers: headers)
                  |> finish_request(download_url) do
               :ok ->
