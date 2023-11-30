@@ -52,10 +52,6 @@ defmodule Bumblebee.Text.Distilbert do
         doc:
           "the dropout rate for the classification head. If not specified, the value of `:dropout_rate` is used instead"
       ],
-      layer_norm_epsilon: [
-        default: 1.0e-12,
-        doc: "the epsilon used by the layer normalization layers"
-      ],
       initializer_scale: [
         default: 0.02,
         doc:
@@ -361,7 +357,7 @@ defmodule Bumblebee.Text.Distilbert do
       )
 
     Axon.add([inputs_embeddings, position_embeddings])
-    |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "norm"))
+    |> Axon.layer_norm(epsilon: 1.0e-12, name: join(name, "norm"))
     |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
   end
 
@@ -385,7 +381,7 @@ defmodule Bumblebee.Text.Distilbert do
       dropout_rate: spec.dropout_rate,
       attention_dropout_rate: spec.attention_dropout_rate,
       layer_norm: [
-        epsilon: spec.layer_norm_epsilon
+        epsilon: 1.0e-12
       ],
       ffn: [
         intermediate_size: spec.intermediate_size,
@@ -421,7 +417,7 @@ defmodule Bumblebee.Text.Distilbert do
       name: join(name, "dense")
     )
     |> Layers.activation(spec.activation, name: join(name, "activation"))
-    |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "norm"))
+    |> Axon.layer_norm(epsilon: 1.0e-12, name: join(name, "norm"))
     # We reuse the kernel of input embeddings and add bias for each token
     |> Layers.dense_transposed(spec.vocab_size,
       kernel_initializer: kernel_initializer(spec),
@@ -446,15 +442,14 @@ defmodule Bumblebee.Text.Distilbert do
         convert!(data,
           vocab_size: {"vocab_size", number()},
           max_positions: {"max_position_embeddings", number()},
-          hidden_size: {"hidden_size", number()},
-          num_blocks: {"num_hidden_layers", number()},
-          num_attention_heads: {"num_attention_heads", number()},
-          intermediate_size: {"intermediate_size", number()},
-          activation: {"hidden_act", activation()},
-          dropout_rate: {"hidden_dropout_prob", number()},
-          attention_dropout_rate: {"attention_probs_dropout_prob", number()},
-          classifier_dropout_rate: {"classifier_dropout", optional(number())},
-          layer_norm_epsilon: {"layer_norm_eps", number()},
+          hidden_size: {"dim", number()},
+          num_blocks: {"n_layers", number()},
+          num_attention_heads: {"n_heads", number()},
+          intermediate_size: {"hidden_dim", number()},
+          activation: {"activation", activation()},
+          dropout_rate: {"dropout", number()},
+          attention_dropout_rate: {"attention_dropout", number()},
+          classifier_dropout_rate: {"seq_classif_dropout", optional(number())},
           initializer_scale: {"initializer_range", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 

@@ -22,4 +22,8 @@ Application.put_env(:exla, :preferred_clients, [:tpu, :cuda, :rocm, :other_host,
 
 Application.put_env(:nx, :default_backend, {EXLA.Backend, client: :host})
 
+if System.fetch_env("BUMBLEBEE_OFFLINE") == :error do
+  IO.puts("To run tests without hitting the network: BUMBLEBEE_OFFLINE=true mix test")
+end
+
 ExUnit.start(exclude: [:slow] ++ exclude_multi_device)

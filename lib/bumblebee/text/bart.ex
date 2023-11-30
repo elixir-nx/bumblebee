@@ -652,7 +652,7 @@ defmodule Bumblebee.Text.Bart do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(_spec) do
+    def params_mapping(spec) do
       %{
         "encoder_embedder.token_embedding" => "model.encoder.embed_tokens",
         "encoder_embedder.position_embedding" => "model.encoder.embed_positions",
@@ -690,7 +690,11 @@ defmodule Bumblebee.Text.Bart do
         "decoder.blocks.{n}.ffn.intermediate" => "model.decoder.layers.{n}.fc1",
         "decoder.blocks.{n}.ffn.output" => "model.decoder.layers.{n}.fc2",
         "decoder.blocks.{n}.output_norm" => "model.decoder.layers.{n}.final_layer_norm",
-        "language_modeling_head.output" => "model.shared",
+        "language_modeling_head.output" =>
+          case spec.architecture do
+            :for_causal_language_modeling -> "lm_head"
+            _other -> "model.shared"
+          end,
         "language_modeling_head.logits_bias" => %{
           "bias" => {[{"model", "final_logits_bias"}], fn [value] -> Nx.squeeze(value) end}
         },

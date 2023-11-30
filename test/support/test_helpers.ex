@@ -39,7 +39,11 @@ defmodule Bumblebee.TestHelpers do
   end
 
   def model_test_tags() do
-    [slow: true, capture_log: true, timeout: 600_000]
+    [model: true, capture_log: true, timeout: 60_000]
+  end
+
+  def serving_test_tags() do
+    [serving: true, slow: true, capture_log: true, timeout: 600_000]
   end
 
   def to_channels_first(tensor) do

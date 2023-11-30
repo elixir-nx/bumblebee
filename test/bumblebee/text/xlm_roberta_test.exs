@@ -1,55 +1,31 @@
 defmodule Bumblebee.Text.XlmRobertaTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
 
   @moduletag model_test_tags()
 
-  describe "integration" do
-    test "base model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "xlm-roberta-base"}, architecture: :base)
+  test ":base" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-XLMRobertaModel"})
 
-      assert %Bumblebee.Text.Roberta{architecture: :base} = spec
+    assert %Bumblebee.Text.Roberta{architecture: :base} = spec
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[0, 581, 10323, 111, 9942, 83, 250_001, 6, 5, 2]])
-      }
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      outputs = Axon.predict(model, params, inputs)
+    outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.hidden_state) == {1, 10, 768}
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
 
-      assert_all_close(
-        outputs.hidden_state[[.., 0..2, 0..2]],
-        Nx.tensor([
-          [[0.4921, 0.3050, 0.1307], [-0.0038, -0.0187, -0.0312], [0.0248, -0.0300, 0.0382]]
-        ]),
-        atol: 1.0e-4
-      )
-    end
-
-    test "masked language modeling model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "xlm-roberta-base"})
-
-      assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = spec
-
-      inputs = %{
-        "input_ids" => Nx.tensor([[0, 581, 10323, 111, 9942, 83, 250_001, 6, 5, 2]])
-      }
-
-      outputs = Axon.predict(model, params, inputs)
-
-      assert Nx.shape(outputs.logits) == {1, 10, 250_002}
-
-      assert_all_close(
-        outputs.logits[[.., 0..2, 0..2]],
-        Nx.tensor([
-          [[64.3345, 0.1994, 38.5827], [28.9445, -1.5083, 73.2020], [21.0732, -1.0673, 52.7042]]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[-0.6455, -0.4189, 0.3424], [-0.4303, -0.6731, 0.2534], [-0.5240, 0.0864, -0.5632]]
+      ]),
+      atol: 1.0e-4
+    )
   end
 end

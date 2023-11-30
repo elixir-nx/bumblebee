@@ -1,109 +1,59 @@
 defmodule Bumblebee.Text.WhisperTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
 
   @moduletag model_test_tags()
 
-  describe "integration" do
-    test "base model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "openai/whisper-tiny"}, architecture: :base)
+  test ":base" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-WhisperModel"})
 
-      assert %Bumblebee.Audio.Whisper{architecture: :base} = spec
+    assert %Bumblebee.Audio.Whisper{architecture: :base} = spec
 
-      input_features = Nx.sin(Nx.iota({1, 3000, 80}, type: :f32))
-      decoder_input_ids = Nx.tensor([[50258, 50259, 50359, 50363]])
+    inputs = %{
+      "input_features" => Nx.sin(Nx.iota({1, 60, 80}, type: :f32)),
+      "decoder_input_ids" => Nx.tensor([[15, 25, 35, 45, 55, 65, 0, 0]]),
+      "decoder_attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      inputs = %{
-        "input_features" => input_features,
-        "decoder_input_ids" => decoder_input_ids
-      }
+    outputs = Axon.predict(model, params, inputs)
 
-      outputs = Axon.predict(model, params, inputs)
+    assert Nx.shape(outputs.hidden_state) == {1, 8, 16}
 
-      assert Nx.shape(outputs.hidden_state) == {1, 4, 384}
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[-0.3791, -1.6131, -0.6913], [0.1247, -1.3631, 0.0034], [-0.0097, 0.2039, 1.9897]]
+      ]),
+      atol: 1.0e-4
+    )
+  end
 
-      assert_all_close(
-        outputs.hidden_state[[.., .., 1..3]],
-        Nx.tensor([
-          [
-            [9.1349, 0.5695, 8.7758],
-            [0.0160, -7.0785, 1.1313],
-            [6.1074, -2.0481, -1.5687],
-            [5.6247, -10.3924, 7.2008]
-          ]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+  test ":for_conditional_generation" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-WhisperForConditionalGeneration"}
+             )
 
-    test "base model with safetensors" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model(
-                 {:hf, "openai/whisper-tiny"},
-                 architecture: :base,
-                 params_filename: "model.safetensors"
-               )
+    assert %Bumblebee.Audio.Whisper{architecture: :for_conditional_generation} = spec
 
-      assert %Bumblebee.Audio.Whisper{architecture: :base} = spec
+    inputs = %{
+      "input_features" => Nx.sin(Nx.iota({1, 60, 80}, type: :f32)),
+      "decoder_input_ids" => Nx.tensor([[15, 25, 35, 45, 55, 65, 0, 0]]),
+      "decoder_attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      input_features = Nx.sin(Nx.iota({1, 3000, 80}, type: :f32))
-      decoder_input_ids = Nx.tensor([[50258, 50259, 50359, 50363]])
+    outputs = Axon.predict(model, params, inputs)
 
-      inputs = %{
-        "input_features" => input_features,
-        "decoder_input_ids" => decoder_input_ids
-      }
+    assert Nx.shape(outputs.logits) == {1, 8, 50257}
 
-      outputs = Axon.predict(model, params, inputs)
-
-      assert Nx.shape(outputs.hidden_state) == {1, 4, 384}
-
-      assert_all_close(
-        outputs.hidden_state[[.., .., 1..3]],
-        Nx.tensor([
-          [
-            [9.1349, 0.5695, 8.7758],
-            [0.0160, -7.0785, 1.1313],
-            [6.1074, -2.0481, -1.5687],
-            [5.6247, -10.3924, 7.2008]
-          ]
-        ]),
-        atol: 1.0e-4
-      )
-    end
-
-    test "for conditional generation model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "openai/whisper-tiny"})
-
-      assert %Bumblebee.Audio.Whisper{architecture: :for_conditional_generation} = spec
-
-      input_features = Nx.sin(Nx.iota({1, 3000, 80}, type: :f32))
-      decoder_input_ids = Nx.tensor([[50258, 50259, 50359, 50363]])
-
-      inputs = %{
-        "input_features" => input_features,
-        "decoder_input_ids" => decoder_input_ids
-      }
-
-      outputs = Axon.predict(model, params, inputs)
-
-      assert Nx.shape(outputs.logits) == {1, 4, 51865}
-
-      assert_all_close(
-        outputs.logits[[.., .., 1..3]],
-        Nx.tensor([
-          [
-            [2.0805, 6.0644, 7.0570],
-            [-7.8065, -3.0313, -5.1049],
-            [17.4098, 16.2510, 16.0446],
-            [-7.7142, -5.9466, -6.1812]
-          ]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+    assert_all_close(
+      outputs.logits[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[0.0942, 0.1288, 0.0243], [-0.1667, -0.1401, 0.1191], [0.0398, -0.0449, -0.0574]]
+      ]),
+      atol: 1.0e-4
+    )
   end
 end

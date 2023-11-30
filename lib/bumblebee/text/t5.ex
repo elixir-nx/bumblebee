@@ -580,9 +580,8 @@ defmodule Bumblebee.Text.T5 do
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(spec) do
       %{
-        # encoder
-        "encoder_embedder.token_embedding" =>
-          if(spec.tie_word_embeddings, do: "shared", else: "encoder.embed_tokens"),
+        # Encoder and decoder embeddings are always shared
+        "encoder_embedder.token_embedding" => "shared",
         "encoder.blocks.{n}.self_attention_norm" => "encoder.block.{n}.layer.0.layer_norm",
         "encoder.blocks.{n}.self_attention.query" => "encoder.block.{n}.layer.0.SelfAttention.q",
         "encoder.blocks.{n}.self_attention.key" => "encoder.block.{n}.layer.0.SelfAttention.k",
@@ -599,9 +598,7 @@ defmodule Bumblebee.Text.T5 do
           ),
         "encoder.blocks.{n}.ffn.output" => "encoder.block.{n}.layer.1.DenseReluDense.wo",
         "encoder.output_norm" => "encoder.final_layer_norm",
-        # decoder
-        "decoder_embedder.token_embedding" =>
-          if(spec.tie_word_embeddings, do: "shared", else: "decoder.embed_tokens"),
+        "decoder_embedder.token_embedding" => "shared",
         "decoder.blocks.{n}.self_attention_norm" => "decoder.block.{n}.layer.0.layer_norm",
         "decoder.blocks.{n}.self_attention.query" => "decoder.block.{n}.layer.0.SelfAttention.q",
         "decoder.blocks.{n}.self_attention.key" => "decoder.block.{n}.layer.0.SelfAttention.k",
@@ -626,7 +623,6 @@ defmodule Bumblebee.Text.T5 do
           ),
         "decoder.blocks.{n}.ffn.output" => "decoder.block.{n}.layer.2.DenseReluDense.wo",
         "decoder.output_norm" => "decoder.final_layer_norm",
-        # language modeling
         "language_modeling_head.output" =>
           if(spec.tie_word_embeddings, do: "shared", else: "lm_head")
       }

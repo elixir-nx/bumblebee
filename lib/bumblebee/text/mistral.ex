@@ -202,7 +202,8 @@ defmodule Bumblebee.Text.Mistral do
     logits =
       Axon.dense(outputs.hidden_state, spec.num_labels,
         kernel_initializer: kernel_initializer(spec),
-        name: "sequence_classification_head.output"
+        name: "sequence_classification_head.output",
+        use_bias: false
       )
 
     pooled_logits =

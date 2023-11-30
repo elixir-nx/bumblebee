@@ -25,6 +25,7 @@ jobs:
       MIX_ENV: test
       XLA_CACHE_DIR: ${{ github.workspace }}/cache/xla
       LIBTORCH_DIR: ${{ github.workspace }}/cache/torch
+      BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/cache/bumblebee
     steps:
       - uses: actions/checkout@v3
       - uses: erlef/setup-beam@v1
@@ -50,8 +51,16 @@ jobs:
       - uses: technote-space/get-diff-action@v6
         with:
           PATTERNS: test/**/*_test.exs
+      # Cache models for slow tests separately, in case the cache is
+      # wiped because of size limit
+      - uses: actions/cache@v3
+        with:
+          path: bumblebee_slow_cache
+        if: ${{ matrix.slow && env.GIT_DIFF_FILTERED != '' }}
       - name: Changed slow tests
         # mix test exits with a non-zero code if there are no matching tests,
         # so we make sure we fail only when the test suite fails
         run: mix test test/bumblebee_test.exs --only slow --exit-status 100 ${{ env.GIT_DIFF_FILTERED }} || [ $? -ne 100 ]
         if: ${{ matrix.slow && env.GIT_DIFF_FILTERED != '' }}
+        env:
+          BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/bumblebee_slow_cache

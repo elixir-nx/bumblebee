@@ -1,109 +1,101 @@
 defmodule Bumblebee.Text.Gpt2Test do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
 
   @moduletag model_test_tags()
 
-  describe "integration" do
-    test "base model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "gpt2"}, architecture: :base)
+  test ":base" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-GPT2Model"})
 
-      assert %Bumblebee.Text.Gpt2{architecture: :base} = spec
+    assert %Bumblebee.Text.Gpt2{architecture: :base} = spec
 
-      input_ids = Nx.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      inputs = %{
-        "input_ids" => input_ids
-      }
+    outputs = Axon.predict(model, params, inputs)
 
-      outputs = Axon.predict(model, params, inputs)
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
 
-      assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[-0.8136, -0.2392, 0.2378], [0.9714, -0.4651, 0.8788], [-0.0980, 0.2294, -1.1416]]
+      ]),
+      atol: 1.0e-4
+    )
+  end
 
-      assert_all_close(
-        outputs.hidden_state[[.., 1..3, 1..3]],
-        Nx.tensor([
-          [
-            [-0.0436, 0.0046, -0.1025],
-            [-0.4822, 0.2564, 0.1926],
-            [-0.2747, 0.0428, -0.1841]
-          ]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+  test ":for_causal_language_modeling" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-GPT2LMHeadModel"})
 
-    test "causal language modeling" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "gpt2"})
+    assert %Bumblebee.Text.Gpt2{architecture: :for_causal_language_modeling} = spec
 
-      assert %Bumblebee.Text.Gpt2{architecture: :for_causal_language_modeling} = spec
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[15496, 11, 616, 3290, 318, 13779]])
-      }
+    outputs = Axon.predict(model, params, inputs)
 
-      outputs = Axon.predict(model, params, inputs)
+    assert Nx.shape(outputs.logits) == {1, 10, 1024}
 
-      assert Nx.shape(outputs.logits) == {1, 6, 50257}
+    assert_all_close(
+      outputs.logits[[.., 1..3, 1..3]],
+      Nx.tensor([[[0.1184, -0.0259, 0.1688], [0.1064, 0.1412, 0.1120], [0.1421, -0.2010, 0.3757]]]),
+      atol: 1.0e-4
+    )
+  end
 
-      assert_all_close(
-        outputs.logits[[.., 1..3, 1..3]],
-        Nx.tensor([
-          [
-            [-114.5832, -116.5725, -116.0830],
-            [-89.8644, -93.1977, -94.4351],
-            [-88.3380, -92.8703, -94.4454]
-          ]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+  test ":for_token_classification" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-GPT2ForTokenClassification"}
+             )
 
-    test "token classification" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "brad1141/gpt2-finetuned-comp2"})
+    assert %Bumblebee.Text.Gpt2{architecture: :for_token_classification} = spec
 
-      assert %Bumblebee.Text.Gpt2{architecture: :for_token_classification} = spec
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[15496, 11, 616, 3290, 318, 13779]])
-      }
+    outputs = Axon.predict(model, params, inputs)
 
-      outputs = Axon.predict(model, params, inputs)
+    assert Nx.shape(outputs.logits) == {1, 10, 2}
 
-      assert Nx.shape(outputs.logits) == {1, 6, 7}
+    assert_all_close(
+      outputs.logits[[.., 1..3//1, ..]],
+      Nx.tensor([[[0.0207, 0.1338], [-0.1582, -0.0384], [-0.2225, -0.0400]]]),
+      atol: 1.0e-4
+    )
+  end
 
-      assert_all_close(
-        outputs.logits[[.., 1..3, 1..3]],
-        Nx.tensor([
-          [[0.4187, 3.4156, -2.8762], [2.9556, 0.9153, -1.0290], [1.3047, 1.0234, -1.2765]]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+  test ":for_sequence_classification" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-GPT2ForSequenceClassification"}
+             )
 
-    test "sequence classification" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "microsoft/DialogRPT-updown"})
+    assert %Bumblebee.Text.Gpt2{architecture: :for_sequence_classification} = spec
 
-      assert %Bumblebee.Text.Gpt2{architecture: :for_sequence_classification} = spec
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 1023, 1023]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[15496, 11, 616, 3290, 318, 13779]])
-      }
+    outputs = Axon.predict(model, params, inputs)
 
-      outputs = Axon.predict(model, params, inputs)
+    assert Nx.shape(outputs.logits) == {1, 2}
 
-      assert Nx.shape(outputs.logits) == {1, 1}
-
-      assert_all_close(
-        outputs.logits,
-        Nx.tensor([[-1.2981]]),
-        atol: 1.0e-4
-      )
-    end
+    assert_all_close(
+      outputs.logits,
+      Nx.tensor([[-0.0098, -0.0456]]),
+      atol: 1.0e-4
+    )
   end
 end

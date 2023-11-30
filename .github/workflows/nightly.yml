@@ -29,5 +29,8 @@ jobs:
           key: ${{ runner.os }}-mix-${{env.elixir}}-${{env.otp}}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-
+      - uses: actions/cache@v3
+        with:
+          path: bumblebee_slow_cache
       - run: mix deps.get
       - run: mix test --include slow

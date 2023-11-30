@@ -4,7 +4,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizerTest do
   import Bumblebee.TestHelpers
 
   describe "integration" do
-    test "encoding model input" do
+    test "encodes text" do
       assert {:ok, featurizer} = Bumblebee.load_featurizer({:hf, "openai/whisper-tiny"})
 
       assert %Bumblebee.Audio.WhisperFeaturizer{} = featurizer

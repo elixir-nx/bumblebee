@@ -255,12 +255,7 @@ defmodule Bumblebee.Multimodal.LayoutLm do
     outputs = core(inputs, spec)
 
     logits =
-      outputs.hidden_state
-      |> Axon.dropout(
-        rate: classifier_dropout_rate(spec),
-        name: "question_answering_head.dropout"
-      )
-      |> Axon.dense(2,
+      Axon.dense(outputs.hidden_state, 2,
         kernel_initializer: kernel_initializer(spec),
         name: "question_answering_head.output"
       )
@@ -542,7 +537,7 @@ defmodule Bumblebee.Multimodal.LayoutLm do
         "language_modeling_head.norm" => "cls.predictions.transform.LayerNorm",
         "language_modeling_head.output" => "cls.predictions.decoder",
         "language_modeling_head.bias" => "cls.predictions",
-        "sequence_classification_head.output" => "cls.seq_relationship",
+        "sequence_classification_head.output" => "classifier",
         "token_classification_head.output" => "classifier",
         "multiple_choice_head.output" => "classifier",
         "question_answering_head.output" => "qa_outputs"
