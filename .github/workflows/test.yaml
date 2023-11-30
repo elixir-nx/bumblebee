@@ -41,8 +41,9 @@ jobs:
       - uses: actions/cache@v3
         with:
           path: bumblebee_cache
-          key: bumblebee-cache-${{ hashFiles(format('{0}/bumblebee_cache/**/*.json', github.workspace)) }}
-          restore-keys: bumblebee-cache-
+          key: bumblebee-cache-${{ hashFiles('bumblebee_cache/**/*.json') }}
+          restore-keys: |
+            bumblebee-cache-
       - run: mix deps.get
       - run: mix format --check-formatted
         if: ${{ matrix.lint }}
@@ -63,12 +64,9 @@ jobs:
         with:
           path: bumblebee_cache_slow
           key: bumblebee-cache-slow-${{ hashFiles(format('{0}/bumblebee_cache_slow/**/*.json', github.workspace)) }}
-          restore-keys: bumblebee-cache-slow-
         if: ${{ matrix.slow && env.GIT_DIFF_FILTERED != '' }}
       - name: Changed slow tests
         # mix test exits with a non-zero code if there are no matching tests,
         # so we make sure we fail only when the test suite fails
         run: mix test test/bumblebee_test.exs --only slow --exit-status 100 ${{ env.GIT_DIFF_FILTERED }} || [ $? -ne 100 ]
         if: ${{ matrix.slow && env.GIT_DIFF_FILTERED != '' }}
-        env:
-          BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/bumblebee_cache_slow
