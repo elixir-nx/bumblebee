@@ -1,43 +1,32 @@
 defmodule Bumblebee.Multimodal.BlipTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
 
   @moduletag model_test_tags()
 
-  describe "integration" do
-    test "conditional generation model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "Salesforce/blip-image-captioning-base"})
+  test ":for_conditional_generation" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-BlipForConditionalGeneration"}
+             )
 
-      assert %Bumblebee.Multimodal.Blip{architecture: :for_conditional_generation} = spec
+    assert %Bumblebee.Multimodal.Blip{architecture: :for_conditional_generation} = spec
 
-      inputs = %{
-        "decoder_input_ids" =>
-          Nx.tensor([
-            [101, 2019],
-            [101, 2019]
-          ]),
-        "decoder_attention_mask" => Nx.tensor([[1, 1], [1, 1]]),
-        "pixel_values" =>
-          Nx.concatenate([
-            Nx.broadcast(0.25, {1, 384, 384, 3}),
-            Nx.broadcast(0.75, {1, 384, 384, 3})
-          ])
-      }
+    inputs = %{
+      "decoder_input_ids" => Nx.tensor([[15, 25, 35, 45, 55, 65, 0, 0]]),
+      "decoder_attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 0, 0]]),
+      "pixel_values" => Nx.broadcast(0.5, {1, 30, 30, 3})
+    }
 
-      outputs = Axon.predict(model, params, inputs)
+    outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.logits) == {2, 2, 30524}
+    assert Nx.shape(outputs.logits) == {1, 8, 1124}
 
-      assert_all_close(
-        outputs.logits[[.., .., 1..3]],
-        Nx.tensor([
-          [[-3.6837, -3.6838, -3.6837], [-1.4808, -1.4809, -1.4808]],
-          [[-3.5190, -3.5191, -3.5190], [-1.4715, -1.4715, -1.4715]]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+    assert_all_close(
+      outputs.logits[[.., 1..3, 1..3]],
+      Nx.tensor([[[0.1215, 0.0226, -0.1134], [0.1472, 0.1118, 0.1031], [-0.0687, 0.0104, 0.1781]]]),
+      atol: 1.0e-4
+    )
   end
 end

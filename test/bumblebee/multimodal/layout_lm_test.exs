@@ -1,181 +1,208 @@
 defmodule Bumblebee.Multimodal.LayoutLmTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
 
   @moduletag model_test_tags()
 
-  describe "integration" do
-    test "base model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
-                 module: Bumblebee.Multimodal.LayoutLm,
-                 architecture: :base
-               )
+  test ":base" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-LayoutLMModel"})
 
-      assert %Bumblebee.Multimodal.LayoutLm{architecture: :base} = spec
+    assert %Bumblebee.Multimodal.LayoutLm{architecture: :base} = spec
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[101, 7592, 2088, 102]]),
-        "attention_mask" => Nx.tensor([[1, 1, 1, 1]]),
-        "token_type_ids" => Nx.tensor([[0, 0, 0, 0]]),
-        "bounding_box" =>
-          Nx.tensor([
-            [[0, 0, 0, 0], [637, 773, 693, 782], [698, 773, 733, 782], [1000, 1000, 1000, 1000]]
-          ])
-      }
-
-      outputs = Axon.predict(model, params, inputs)
-
-      assert Nx.shape(outputs.hidden_state) == {1, 4, 768}
-
-      assert_all_close(
-        outputs.hidden_state[[.., 1..3, 1..3]],
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
+      "bounding_box" =>
         Nx.tensor([
-          [[-0.0126, 0.2175, 0.1398], [0.0240, 0.5338, -0.1337], [-0.0190, 0.5194, 0.0706]]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+          [
+            [10, 12, 16, 18],
+            [20, 22, 26, 28],
+            [30, 32, 36, 38],
+            [40, 42, 46, 48],
+            [50, 52, 56, 58],
+            [60, 62, 66, 68],
+            [70, 72, 76, 78],
+            [80, 82, 86, 88],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]
+          ]
+        ])
+    }
 
-    test "masked language modeling model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
-                 module: Bumblebee.Multimodal.LayoutLm,
-                 architecture: :for_masked_language_modeling
-               )
+    outputs = Axon.predict(model, params, inputs)
 
-      assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_masked_language_modeling} = spec
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[101, 7592, 2088, 102]]),
-        "attention_mask" => Nx.tensor([[1, 1, 1, 1]]),
-        "token_type_ids" => Nx.tensor([[0, 0, 0, 0]]),
-        "bounding_box" =>
-          Nx.tensor([
-            [[0, 0, 0, 0], [637, 773, 693, 782], [698, 773, 733, 782], [1000, 1000, 1000, 1000]]
-          ])
-      }
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([[[0.0240, -0.8855, 1.8877], [1.8435, 0.6223, 2.0573], [1.6961, -1.2411, 1.2824]]]),
+      atol: 1.0e-4
+    )
+  end
 
-      outputs = Axon.predict(model, params, inputs)
+  test ":for_masked_language_modeling" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-LayoutLMForMaskedLM"})
 
-      assert Nx.shape(outputs.logits) == {1, 4, 30522}
+    assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_masked_language_modeling} = spec
 
-      assert_all_close(
-        outputs.logits[[.., 1..3, 1..3]],
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
+      "bounding_box" =>
         Nx.tensor([
-          [[-0.9018, -0.7695, 1.1371], [0.1485, -0.1378, 1.6499], [-0.5236, -0.4974, -0.6739]]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+          [
+            [10, 12, 16, 18],
+            [20, 22, 26, 28],
+            [30, 32, 36, 38],
+            [40, 42, 46, 48],
+            [50, 52, 56, 58],
+            [60, 62, 66, 68],
+            [70, 72, 76, 78],
+            [80, 82, 86, 88],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]
+          ]
+        ])
+    }
 
-    test "sequence classification model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
-                 module: Bumblebee.Multimodal.LayoutLm,
-                 architecture: :for_sequence_classification
-               )
+    outputs = Axon.predict(model, params, inputs)
 
-      assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_sequence_classification} = spec
+    assert Nx.shape(outputs.logits) == {1, 10, 1124}
 
-      params =
-        update_in(params["sequence_classification_head.output"], fn %{"kernel" => k, "bias" => b} ->
-          %{"kernel" => Nx.broadcast(1.0, k), "bias" => Nx.broadcast(0.0, b)}
-        end)
+    assert_all_close(
+      outputs.logits[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[0.2101, -0.0342, 0.1613], [-0.0734, 0.1874, -0.0231], [-0.0776, 0.0145, 0.2504]]
+      ]),
+      atol: 1.0e-4
+    )
+  end
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[101, 7592, 2088, 102]]),
-        "attention_mask" => Nx.tensor([[1, 1, 1, 1]]),
-        "token_type_ids" => Nx.tensor([[0, 0, 0, 0]]),
-        "bounding_box" =>
-          Nx.tensor([
-            [[0, 0, 0, 0], [637, 773, 693, 782], [698, 773, 733, 782], [1000, 1000, 1000, 1000]]
-          ])
-      }
+  test ":for_sequence_classification" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-LayoutLMForSequenceClassification"}
+             )
 
-      outputs = Axon.predict(model, params, inputs)
+    assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_sequence_classification} = spec
 
-      assert Nx.shape(outputs.logits) == {1, 2}
-
-      assert_all_close(
-        outputs.logits,
-        Nx.tensor([[-0.6356, -0.6356]]),
-        atol: 1.0e-4
-      )
-    end
-
-    test "token classification model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "microsoft/layoutlm-base-uncased"},
-                 module: Bumblebee.Multimodal.LayoutLm,
-                 architecture: :for_token_classification
-               )
-
-      assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_token_classification} = spec
-
-      params =
-        update_in(params["token_classification_head.output"], fn %{"kernel" => k, "bias" => b} ->
-          %{"kernel" => Nx.broadcast(1.0, k), "bias" => Nx.broadcast(0.0, b)}
-        end)
-
-      inputs = %{
-        "input_ids" => Nx.tensor([[101, 7592, 2088, 102]]),
-        "attention_mask" => Nx.tensor([[1, 1, 1, 1]]),
-        "token_type_ids" => Nx.tensor([[0, 0, 0, 0]]),
-        "bounding_box" =>
-          Nx.tensor([
-            [[0, 0, 0, 0], [637, 773, 693, 782], [698, 773, 733, 782], [1000, 1000, 1000, 1000]]
-          ])
-      }
-
-      outputs = Axon.predict(model, params, inputs)
-
-      assert Nx.shape(outputs.logits) == {1, 4, 2}
-
-      assert_all_close(
-        outputs.logits,
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
+      "bounding_box" =>
         Nx.tensor([
-          [[-9.0337, -9.0337], [-7.6490, -7.6490], [-6.9672, -6.9672], [-9.0373, -9.0373]]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+          [
+            [10, 12, 16, 18],
+            [20, 22, 26, 28],
+            [30, 32, 36, 38],
+            [40, 42, 46, 48],
+            [50, 52, 56, 58],
+            [60, 62, 66, 68],
+            [70, 72, 76, 78],
+            [80, 82, 86, 88],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]
+          ]
+        ])
+    }
 
-    test "question answering model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "impira/layoutlm-document-qa"},
-                 module: Bumblebee.Multimodal.LayoutLm,
-                 architecture: :for_question_answering
-               )
+    outputs = Axon.predict(model, params, inputs)
 
-      assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_question_answering} = spec
+    assert Nx.shape(outputs.logits) == {1, 2}
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[0, 20920, 232, 2]]),
-        "attention_mask" => Nx.tensor([[1, 1, 1, 1]]),
-        "bounding_box" =>
-          Nx.tensor([
-            [[0, 0, 0, 0], [637, 773, 693, 782], [698, 773, 733, 782], [1000, 1000, 1000, 1000]]
-          ])
-      }
+    assert_all_close(
+      outputs.logits,
+      Nx.tensor([[-0.0241, 0.0096]]),
+      atol: 1.0e-4
+    )
+  end
 
-      outputs = Axon.predict(model, params, inputs)
+  test ":for_token_classification" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-LayoutLMForTokenClassification"}
+             )
 
-      assert Nx.shape(outputs.start_logits) == {1, 4}
-      assert Nx.shape(outputs.end_logits) == {1, 4}
+    assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_token_classification} = spec
 
-      assert_all_close(
-        outputs.start_logits,
-        Nx.tensor([[-5.7846, -9.4211, -14.8011, -18.0101]]),
-        atol: 1.0e-4
-      )
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
+      "bounding_box" =>
+        Nx.tensor([
+          [
+            [10, 12, 16, 18],
+            [20, 22, 26, 28],
+            [30, 32, 36, 38],
+            [40, 42, 46, 48],
+            [50, 52, 56, 58],
+            [60, 62, 66, 68],
+            [70, 72, 76, 78],
+            [80, 82, 86, 88],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]
+          ]
+        ])
+    }
 
-      assert_all_close(
-        outputs.end_logits,
-        Nx.tensor([[-7.8913, -11.3020, -10.6801, -19.1530]]),
-        atol: 1.0e-4
-      )
-    end
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.logits) == {1, 10, 2}
+
+    assert_all_close(
+      outputs.logits[[.., 1..3//1, ..]],
+      Nx.tensor([[[-0.1849, 0.1134], [-0.1329, 0.0025], [-0.0454, 0.0441]]]),
+      atol: 1.0e-4
+    )
+  end
+
+  test ":for_question_answering" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-LayoutLMForQuestionAnswering"}
+             )
+
+    assert %Bumblebee.Multimodal.LayoutLm{architecture: :for_question_answering} = spec
+
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
+      "token_type_ids" => Nx.tensor([[0, 0, 0, 0, 1, 1, 1, 1, 0, 0]]),
+      "bounding_box" =>
+        Nx.tensor([
+          [
+            [10, 12, 16, 18],
+            [20, 22, 26, 28],
+            [30, 32, 36, 38],
+            [40, 42, 46, 48],
+            [50, 52, 56, 58],
+            [60, 62, 66, 68],
+            [70, 72, 76, 78],
+            [80, 82, 86, 88],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]
+          ]
+        ])
+    }
+
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.start_logits) == {1, 10}
+    assert Nx.shape(outputs.end_logits) == {1, 10}
+
+    assert_all_close(
+      outputs.start_logits[[.., 1..3]],
+      Nx.tensor([[-0.1853, 0.1580, 0.2387]]),
+      atol: 1.0e-3
+    )
+
+    assert_all_close(
+      outputs.end_logits[[.., 1..3]],
+      Nx.tensor([[-0.1854, -0.0074, 0.0670]]),
+      atol: 1.0e-3
+    )
   end
 end

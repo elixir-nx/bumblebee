@@ -21,7 +21,7 @@ defmodule Bumblebee.HuggingFace.HubTest do
 
       url = url(bypass.port) <> "/file.json"
 
-      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir)
+      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
       assert File.read!(path) == "{}"
     end
 
@@ -37,8 +37,8 @@ defmodule Bumblebee.HuggingFace.HubTest do
 
       url = url(bypass.port) <> "/file.json"
 
-      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir)
-      assert {:ok, ^path} = Hub.cached_download(url, cache_dir: tmp_dir)
+      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
+      assert {:ok, ^path} = Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
       assert File.read!(path) == "{}"
     end
 
@@ -64,8 +64,8 @@ defmodule Bumblebee.HuggingFace.HubTest do
 
       url = url(bypass.port) <> "/file.json"
 
-      assert {:ok, path1} = Hub.cached_download(url, cache_dir: tmp_dir)
-      assert {:ok, path2} = Hub.cached_download(url, cache_dir: tmp_dir)
+      assert {:ok, path1} = Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
+      assert {:ok, path2} = Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
       assert path1 != path2
       assert File.read!(path2) == "[]"
     end
@@ -89,7 +89,7 @@ defmodule Bumblebee.HuggingFace.HubTest do
 
       url = url(bypass.port) <> "/file.bin"
 
-      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir)
+      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
       assert File.read!(path) == <<0, 1>>
     end
 
@@ -110,8 +110,8 @@ defmodule Bumblebee.HuggingFace.HubTest do
 
       url = url(bypass.port) <> "/file.bin"
 
-      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir)
-      assert {:ok, ^path} = Hub.cached_download(url, cache_dir: tmp_dir)
+      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
+      assert {:ok, ^path} = Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
       assert File.read!(path) == <<0, 1>>
     end
 
@@ -124,7 +124,7 @@ defmodule Bumblebee.HuggingFace.HubTest do
       url = url(bypass.port) <> "/file.json"
 
       assert {:error, "no ETag found on the resource"} =
-               Hub.cached_download(url, cache_dir: tmp_dir)
+               Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
     end
 
     @tag :tmp_dir
@@ -136,7 +136,7 @@ defmodule Bumblebee.HuggingFace.HubTest do
       url = url(bypass.port) <> "/file.json"
 
       assert {:error, "HTTP request failed with status 500, url: " <> _} =
-               Hub.cached_download(url, cache_dir: tmp_dir)
+               Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
     end
 
     @tag :tmp_dir
@@ -151,7 +151,7 @@ defmodule Bumblebee.HuggingFace.HubTest do
       url = url(bypass.port) <> "/file.json"
 
       assert {:error, "repository not found, url: " <> _} =
-               Hub.cached_download(url, cache_dir: tmp_dir)
+               Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
     end
 
     @tag :tmp_dir
@@ -167,7 +167,7 @@ defmodule Bumblebee.HuggingFace.HubTest do
 
       url = url(bypass.port) <> "/file.json"
 
-      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir)
+      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
       assert File.read!(path) == "{}"
 
       assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir, offline: true)

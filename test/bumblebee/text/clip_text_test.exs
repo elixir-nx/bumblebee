@@ -1,75 +1,66 @@
 defmodule Bumblebee.Text.ClipTextTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
 
   @moduletag model_test_tags()
 
-  describe "integration" do
-    test "base model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "openai/clip-vit-base-patch32"},
-                 module: Bumblebee.Text.ClipText,
-                 architecture: :base
-               )
+  test ":base" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-CLIPModel"},
+               module: Bumblebee.Text.ClipText,
+               architecture: :base
+             )
 
-      assert %Bumblebee.Text.ClipText{architecture: :base} = spec
+    assert %Bumblebee.Text.ClipText{architecture: :base} = spec
 
-      inputs = %{
-        "input_ids" =>
-          Nx.tensor([
-            [49406, 320, 1125, 539, 320, 2368, 49407],
-            [49406, 320, 1125, 539, 320, 1929, 49407]
-          ]),
-        "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1], [1, 1, 0, 0, 0, 0, 0]])
-      }
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      outputs = Axon.predict(model, params, inputs)
+    outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.hidden_state) == {2, 7, 512}
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
+    assert Nx.shape(outputs.pooled_state) == {1, 32}
 
-      assert_all_close(
-        outputs.hidden_state[[.., 1..3, 1..3]],
-        Nx.tensor([
-          [[-0.5844, 0.3685, -2.0744], [-0.9600, 1.0018, -0.2415], [-0.5957, -0.1719, 0.4689]],
-          [[-0.5844, 0.3685, -2.0744], [-0.0025, 0.1219, -0.0435], [0.0661, 0.1142, 0.0056]]
-        ]),
-        atol: 1.0e-4
-      )
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[0.1696, -0.2324, -0.1659], [-0.0525, -0.3103, 0.1557], [-0.2566, -0.4519, 0.6398]]
+      ]),
+      atol: 1.0e-4
+    )
 
-      assert_all_close(
-        outputs.pooled_state[[.., 1..3]],
-        Nx.tensor([[0.1658, 0.8876, 10.6313], [0.0130, 0.1167, 0.0371]]),
-        atol: 1.0e-4
-      )
-    end
+    assert_all_close(
+      outputs.pooled_state[[.., 1..3]],
+      Nx.tensor([[-0.6903, -1.2524, 1.5328]]),
+      atol: 1.0e-4
+    )
+  end
 
-    test "embedding model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "openai/clip-vit-base-patch32"},
-                 module: Bumblebee.Text.ClipText,
-                 architecture: :for_embedding
-               )
+  test ":for_embedding" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-CLIPModel"},
+               module: Bumblebee.Text.ClipText,
+               architecture: :for_embedding
+             )
 
-      assert %Bumblebee.Text.ClipText{architecture: :for_embedding} = spec
+    assert %Bumblebee.Text.ClipText{architecture: :for_embedding} = spec
 
-      inputs = %{
-        "input_ids" =>
-          Nx.tensor([
-            [49406, 320, 1125, 539, 320, 2368, 49407]
-          ]),
-        "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1]])
-      }
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      outputs = Axon.predict(model, params, inputs)
+    outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.embedding) == {1, 512}
+    assert Nx.shape(outputs.embedding) == {1, 64}
 
-      assert_all_close(
-        outputs.embedding[[.., 1..3]],
-        Nx.tensor([[0.0733, -0.2448, -0.2212]]),
-        atol: 1.0e-4
-      )
-    end
+    assert_all_close(
+      outputs.embedding[[.., 1..3]],
+      Nx.tensor([[1.1069, -0.0839, -1.6185]]),
+      atol: 1.0e-4
+    )
   end
 end

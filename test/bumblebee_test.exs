@@ -12,21 +12,22 @@ defmodule BumblebeeTest do
 
     @tag :capture_log
     test "supports sharded models" do
-      assert {:ok, %{params: params}} = Bumblebee.load_model({:hf, "sshleifer/tiny-gpt2"})
+      assert {:ok, %{params: params}} =
+               Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-GPT2Model"})
 
       assert {:ok, %{params: sharded_params}} =
-               Bumblebee.load_model({:hf, "jonatanklosko/test-tiny-gpt2-sharded"})
+               Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-GPT2Model-sharded"})
 
       assert Enum.sort(Map.keys(params)) == Enum.sort(Map.keys(sharded_params))
     end
 
     test "supports .safetensors params file" do
-      assert {:ok, %{params: params}} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
+      assert {:ok, %{params: params}} =
+               Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-GPT2Model"})
 
       assert {:ok, %{params: safetensors_params}} =
                Bumblebee.load_model(
-                 {:hf, "openai/whisper-tiny"},
-                 params_filename: "model.safetensors"
+                 {:hf, "bumblebee-testing/tiny-random-GPT2Model-safetensors-only"}
                )
 
       assert Enum.sort(Map.keys(params)) == Enum.sort(Map.keys(safetensors_params))

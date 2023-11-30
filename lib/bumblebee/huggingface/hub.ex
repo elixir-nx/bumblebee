@@ -51,7 +51,7 @@ defmodule Bumblebee.HuggingFace.Hub do
   @spec cached_download(String.t(), keyword()) :: {:ok, String.t()} | {:error, String.t()}
   def cached_download(url, opts \\ []) do
     cache_dir = opts[:cache_dir] || Bumblebee.cache_dir()
-    offline = opts[:offline] || bumblebee_offline?()
+    offline = Keyword.get(opts, :offline, bumblebee_offline?())
     auth_token = opts[:auth_token]
 
     dir = Path.join(cache_dir, "huggingface")

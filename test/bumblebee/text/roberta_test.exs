@@ -1,179 +1,184 @@
 defmodule Bumblebee.Text.RobertaTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
 
   @moduletag model_test_tags()
 
-  describe "integration" do
-    test "base model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "roberta-base"}, architecture: :base)
+  test ":base" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-RobertaModel"})
 
-      assert %Bumblebee.Text.Roberta{architecture: :base} = spec
+    assert %Bumblebee.Text.Roberta{architecture: :base} = spec
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[0, 31414, 232, 328, 740, 1140, 12695, 69, 46078, 1588, 2]])
-      }
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      outputs = Axon.predict(model, params, inputs)
+    outputs = Axon.predict(model, params, inputs)
 
-      assert Nx.shape(outputs.hidden_state) == {1, 11, 768}
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
 
-      assert_all_close(
-        outputs.hidden_state[[.., 0..2, 0..2]],
-        Nx.tensor([
-          [[-0.0231, 0.0782, 0.0074], [-0.1854, 0.0540, -0.0175], [0.0548, 0.0799, 0.1687]]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([[[-0.3633, 0.8947, 1.8965], [0.5881, 1.9730, 1.4211], [0.8067, 1.6098, 0.0291]]]),
+      atol: 1.0e-4
+    )
+  end
 
-    test "masked language modeling model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "roberta-base"})
+  test ":for_masked_language_modeling" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-RobertaForMaskedLM"})
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = spec
+    assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = spec
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[0, 31414, 232, 328, 740, 1140, 12695, 69, 46078, 1588, 2]])
-      }
+    # TODO: remove once we load tied embeddings
+    params = put_in(params["language_modeling_head.output"], params["embedder.token_embedding"])
 
-      outputs = Axon.predict(model, params, inputs)
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      assert Nx.shape(outputs.logits) == {1, 11, 50265}
+    outputs = Axon.predict(model, params, inputs)
 
-      assert_all_close(
-        outputs.logits[[.., 0..2, 0..2]],
-        Nx.tensor([
-          [[33.8802, -4.3103, 22.7761], [4.6539, -2.8098, 13.6253], [1.8228, -3.6898, 8.8600]]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+    assert Nx.shape(outputs.logits) == {1, 10, 1024}
 
-    test "sequence classification" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "cardiffnlp/twitter-roberta-base-emotion"})
+    assert_all_close(
+      outputs.logits[[.., 1..3, 1..3]],
+      Nx.tensor([[[0.0000, -0.0796, 0.1734], [0.0000, -0.0754, 0.0755], [0.0000, 0.0299, 0.1902]]]),
+      atol: 1.0e-4
+    )
+  end
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_sequence_classification} = spec
+  test ":for_sequence_classification" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-RobertaForSequenceClassification"}
+             )
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[0, 31414, 6, 127, 2335, 16, 11962, 37, 11639, 1168, 2]])
-      }
+    assert %Bumblebee.Text.Roberta{architecture: :for_sequence_classification} = spec
 
-      outputs = Axon.predict(model, params, inputs)
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      assert Nx.shape(outputs.logits) == {1, 4}
+    outputs = Axon.predict(model, params, inputs)
 
-      assert_all_close(
-        outputs.logits,
-        Nx.tensor([[-1.3661, 3.0174, -0.9609, -0.4145]]),
-        atol: 1.0e-4
-      )
-    end
+    assert Nx.shape(outputs.logits) == {1, 2}
 
-    test "token classification model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "Jean-Baptiste/roberta-large-ner-english"})
+    assert_all_close(
+      outputs.logits,
+      Nx.tensor([[-0.0032, 0.0017]]),
+      atol: 1.0e-4
+    )
+  end
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_token_classification} = spec
+  test ":for_token_classification" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-RobertaForTokenClassification"}
+             )
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[30581, 3923, 34892, 16, 10, 138, 716, 11, 2201, 8, 188, 469]])
-      }
+    assert %Bumblebee.Text.Roberta{architecture: :for_token_classification} = spec
 
-      outputs = Axon.predict(model, params, inputs)
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      assert Nx.shape(outputs.logits) == {1, 12, 5}
+    outputs = Axon.predict(model, params, inputs)
 
-      assert_all_close(
-        outputs.logits[[.., 0..2, 0..1]],
-        Nx.tensor([[[4.1969, -2.5614], [-1.4174, -0.6959], [-1.3807, 0.1313]]]),
-        atol: 1.0e-4
-      )
-    end
+    assert Nx.shape(outputs.logits) == {1, 10, 2}
 
-    test "question answering model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
+    assert_all_close(
+      outputs.logits[[.., 1..3//1, ..]],
+      Nx.tensor([[[-0.0276, 0.0128], [-0.1321, 0.0960], [0.1680, 0.0699]]]),
+      atol: 1.0e-4
+    )
+  end
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_question_answering} = spec
+  test ":for_question_answering" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-RobertaForQuestionAnswering"}
+             )
 
-      inputs = %{
-        "input_ids" =>
-          Nx.tensor([
-            [0, 12375, 21, 2488, 289, 13919, 116, 2, 2, 24021, 289, 13919, 21, 10, 2579, 29771, 2]
-          ])
-      }
+    assert %Bumblebee.Text.Roberta{architecture: :for_question_answering} = spec
 
-      outputs = Axon.predict(model, params, inputs)
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
+      "token_type_ids" => Nx.tensor([[0, 0, 0, 0, 1, 1, 1, 1, 0, 0]])
+    }
 
-      assert Nx.shape(outputs.start_logits) == {1, 17}
-      assert Nx.shape(outputs.end_logits) == {1, 17}
+    outputs = Axon.predict(model, params, inputs)
 
-      assert_all_close(
-        outputs.start_logits[[.., 0..2]],
-        Nx.tensor([[0.5901, -8.3490, -8.8031]]),
-        atol: 1.0e-4
-      )
+    assert Nx.shape(outputs.start_logits) == {1, 10}
+    assert Nx.shape(outputs.end_logits) == {1, 10}
 
-      assert_all_close(
-        outputs.end_logits[[.., 0..2]],
-        Nx.tensor([[1.1207, -7.5968, -7.6151]]),
-        atol: 1.0e-4
-      )
-    end
+    assert_all_close(
+      outputs.start_logits[[.., 1..3]],
+      Nx.tensor([[-0.1215, -0.1325, -0.1389]]),
+      atol: 1.0e-4
+    )
 
-    test "multiple choice model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "LIAMF-USP/aristo-roberta"})
+    assert_all_close(
+      outputs.end_logits[[.., 1..3]],
+      Nx.tensor([[-0.2795, -0.0051, -0.1547]]),
+      atol: 1.0e-4
+    )
+  end
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_multiple_choice} = spec
+  test ":for_multiple_choice" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-RobertaForMultipleChoice"}
+             )
 
-      inputs = %{
-        "input_ids" =>
-          Nx.tensor([
-            [[0, 38576, 103, 4437, 2, 2, 725, 895, 2], [0, 38576, 103, 4437, 2, 2, 487, 895, 2]]
-          ]),
-        "attention_mask" =>
-          Nx.tensor([[[1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1]]])
-      }
+    assert %Bumblebee.Text.Roberta{architecture: :for_multiple_choice} = spec
 
-      outputs = Axon.predict(model, params, inputs)
+    inputs = %{
+      "input_ids" => Nx.tensor([[[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]]),
+      "attention_mask" => Nx.tensor([[[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]]),
+      "token_type_ids" => Nx.tensor([[[0, 0, 0, 0, 1, 1, 1, 1, 0, 0]]])
+    }
 
-      assert Nx.shape(outputs.logits) == {1, 2}
+    outputs = Axon.predict(model, params, inputs)
 
-      assert_all_close(
-        outputs.logits,
-        Nx.tensor([[-13.9123, -13.4582]]),
-        atol: 1.0e-3
-      )
-    end
+    assert Nx.shape(outputs.logits) == {1, 1}
 
-    test "casual language modeling model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "roberta-base"},
-                 architecture: :for_causal_language_modeling
-               )
+    assert_all_close(
+      outputs.logits,
+      Nx.tensor([[-0.0257]]),
+      atol: 1.0e-4
+    )
+  end
 
-      assert %Bumblebee.Text.Roberta{architecture: :for_causal_language_modeling} = spec
+  test ":for_causal_language_modeling" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-RobertaForCausalLM"})
 
-      inputs = %{
-        "input_ids" => Nx.tensor([[0, 31414, 6, 127, 2335, 16, 11962, 2]])
-      }
+    assert %Bumblebee.Text.Roberta{architecture: :for_causal_language_modeling} = spec
 
-      outputs = Axon.predict(model, params, inputs)
+    # TODO: remove once we load tied embeddings
+    params = put_in(params["language_modeling_head.output"], params["embedder.token_embedding"])
 
-      assert Nx.shape(outputs.logits) == {1, 8, 50265}
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      assert_all_close(
-        outputs.logits[[.., 1..3, 1..3]],
-        Nx.tensor([
-          [[-3.3435, 32.1472, -3.5083], [-3.5373, 21.8191, -3.5197], [-4.2189, 22.5419, -3.9859]]
-        ]),
-        atol: 1.0e-4
-      )
-    end
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.logits) == {1, 10, 1024}
+
+    assert_all_close(
+      outputs.logits[[.., 1..3, 1..3]],
+      Nx.tensor([[[0.0000, 0.0661, -0.0063], [0.0000, 0.1107, -0.1137], [0.0000, 0.1044, 0.0803]]]),
+      atol: 1.0e-4
+    )
   end
 end

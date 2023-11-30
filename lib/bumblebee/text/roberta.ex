@@ -262,12 +262,7 @@ defmodule Bumblebee.Text.Roberta do
     outputs = core(inputs, spec)
 
     logits =
-      outputs.hidden_state
-      |> Axon.dropout(
-        rate: classifier_dropout_rate(spec),
-        name: "question_answering_head.dropout"
-      )
-      |> Axon.dense(2,
+      Axon.dense(outputs.hidden_state, 2,
         kernel_initializer: kernel_initializer(spec),
         name: "question_answering_head.output"
       )

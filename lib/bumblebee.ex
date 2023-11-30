@@ -124,10 +124,11 @@ defmodule Bumblebee do
       {Bumblebee.Text.Distilbert, :for_sequence_classification},
     "DistilBertForQuestionAnswering" => {Bumblebee.Text.Distilbert, :for_question_answering},
     "DistilBertForTokenClassification" => {Bumblebee.Text.Distilbert, :for_token_classification},
+    "DistilBertForMultipleChoice" => {Bumblebee.Text.Distilbert, :for_multiple_choice},
     "GPT2ForSequenceClassification" => {Bumblebee.Text.Gpt2, :for_sequence_classification},
     "GPT2ForTokenClassification" => {Bumblebee.Text.Gpt2, :for_token_classification},
     "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling},
-    "GPT2Model" => {BumbleBee.Text.Gpt2, :base},
+    "GPT2Model" => {Bumblebee.Text.Gpt2, :base},
     "GPTBigCodeModel" => {Bumblebee.Text.GptBigCode, :base},
     "GPTBigCodeForCausalLM" => {Bumblebee.Text.GptBigCode, :for_causal_language_modeling},
     "GPTBigCodeForSequenceClassification" =>
@@ -137,8 +138,7 @@ defmodule Bumblebee do
     "GPTNeoXForCausalLM" => {Bumblebee.Text.GptNeoX, :for_causal_language_modeling},
     "GPTNeoXForSequenceClassification" => {Bumblebee.Text.GptNeoX, :for_sequence_classification},
     "GPTNeoXForTokenClassification" => {Bumblebee.Text.GptNeoX, :for_token_classification},
-    "LayoutLMForMaskedLanguageModeling" =>
-      {Bumblebee.Multimodal.LayoutLm, :for_masked_language_modeling},
+    "LayoutLMForMaskedLM" => {Bumblebee.Multimodal.LayoutLm, :for_masked_language_modeling},
     "LayoutLMForQuestionAnswering" => {Bumblebee.Multimodal.LayoutLm, :for_question_answering},
     "LayoutLMForSequenceClassification" =>
       {Bumblebee.Multimodal.LayoutLm, :for_sequence_classification},

@@ -46,7 +46,21 @@ jobs:
       - run: mix deps.compile
       - run: mix compile --warnings-as-errors
         if: ${{ matrix.lint }}
+      - name: Restore bumblebee cache
+        id: cache-bumblebee-restore
+        uses: actions/cache/restore@v3
+        with:
+          path: bumblebee_cache
+          key: ${{ runner.os }}-bumblebee-cache-${{ matrix.pair.elixir }}-${{ matrix.pair.otp }}
       - run: mix test
+        env:
+          BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/bumblebee_cache
+      - name: Save bumblebee cache
+        id: cache-bumblebee-save
+        uses: actions/cache/save@v3
+        with:
+          path: bumblebee_cache
+          key: ${{ steps.cache-bumblebee-restore.outputs.cache-primary-key }}
       - uses: technote-space/get-diff-action@v6
         with:
           PATTERNS: test/**/*_test.exs

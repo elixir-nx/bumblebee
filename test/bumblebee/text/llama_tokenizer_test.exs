@@ -4,7 +4,7 @@ defmodule Bumblebee.Text.LlamaTokenizerTest do
   import Bumblebee.TestHelpers
 
   describe "integration" do
-    test "encoding model input" do
+    test "encodes text" do
       assert {:ok, tokenizer} =
                Bumblebee.load_tokenizer({:hf, "hf-internal-testing/llama-tokenizer"},
                  module: Bumblebee.Text.LlamaTokenizer

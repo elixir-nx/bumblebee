@@ -1,85 +1,79 @@
 defmodule Bumblebee.Text.LlamaTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
 
   @moduletag model_test_tags()
 
-  describe "integration" do
-    test "base model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "seanmor5/tiny-llama-test"}, architecture: :base)
+  test ":base" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-LlamaModel"})
 
-      assert %Bumblebee.Text.Llama{architecture: :base} = spec
+    assert %Bumblebee.Text.Llama{architecture: :base} = spec
 
-      input_ids = Nx.tensor([[1, 15043, 3186, 825, 29915, 29879, 701]])
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      inputs = %{
-        "input_ids" => input_ids
-      }
+    outputs = Axon.predict(model, params, inputs)
 
-      outputs = Axon.predict(model, params, inputs)
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
 
-      assert Nx.shape(outputs.hidden_state) == {1, 7, 32}
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[1.4799, -2.0333, 0.4759], [2.3749, -0.8369, -0.0206], [0.5767, -0.0515, -1.1795]]
+      ]),
+      atol: 1.0e-4
+    )
+  end
 
-      assert_all_close(
-        outputs.hidden_state[[.., 1..3, 1..3]],
-        Nx.tensor([
-          [[-0.4411, -1.9037, 0.9454], [0.8148, -1.4606, 0.0076], [0.9480, 0.6038, 0.1649]]
-        ]),
-        atol: 1.0e-2
-      )
-    end
+  test ":for_sequence_classification" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "bumblebee-testing/tiny-random-LlamaForSequenceClassification"}
+             )
 
-    test "sequence classification model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model(
-                 {:hf, "HuggingFaceH4/tiny-random-LlamaForSequenceClassification"}
-               )
+    assert %Bumblebee.Text.Llama{architecture: :for_sequence_classification} = spec
 
-      assert %Bumblebee.Text.Llama{architecture: :for_sequence_classification} = spec
-      input_ids = Nx.tensor([[1, 15043, 3186, 825, 29915, 29879, 701]])
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      inputs = %{
-        "input_ids" => input_ids
-      }
+    outputs = Axon.predict(model, params, inputs)
 
-      outputs = Axon.predict(model, params, inputs)
+    assert Nx.shape(outputs.logits) == {1, 2}
 
-      assert Nx.shape(outputs.logits) == {1, 1}
+    assert_all_close(
+      outputs.logits,
+      Nx.tensor([[-0.1964, -0.1069]]),
+      atol: 1.0e-4
+    )
+  end
 
-      assert_all_close(
-        outputs.logits,
-        Nx.tensor([[-0.0977]]),
-        atol: 1.0e-4
-      )
-    end
+  test ":for_causal_language_modeling" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-LlamaForCausalLM"})
 
-    test "causal language model" do
-      assert {:ok, %{model: model, params: params, spec: spec}} =
-               Bumblebee.load_model({:hf, "seanmor5/tiny-llama-test"},
-                 architecture: :for_causal_language_modeling
-               )
+    assert %Bumblebee.Text.Llama{architecture: :for_causal_language_modeling} = spec
 
-      assert %Bumblebee.Text.Llama{architecture: :for_causal_language_modeling} = spec
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-      input_ids = Nx.tensor([[1, 15043, 3186, 825, 29915, 29879, 701]])
+    outputs = Axon.predict(model, params, inputs)
 
-      inputs = %{
-        "input_ids" => input_ids
-      }
+    assert Nx.shape(outputs.logits) == {1, 10, 1024}
 
-      outputs = Axon.predict(model, params, inputs)
-
-      assert Nx.shape(outputs.logits) == {1, 7, 32000}
-
-      assert_all_close(
-        outputs.logits[[.., 1..3, 1..3]],
-        Nx.tensor([
-          [[0.0592, 0.1188, -0.1214], [-0.0331, 0.0335, -0.1808], [-0.1825, -0.0711, 0.0497]]
-        ]),
-        atol: 1.0e-2
-      )
-    end
+    assert_all_close(
+      outputs.logits[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[0.0469, -0.0751, 0.0349], [0.0617, -0.1357, -0.0204], [-0.1495, 0.0557, -0.0737]]
+      ]),
+      atol: 1.0e-4
+    )
   end
 end

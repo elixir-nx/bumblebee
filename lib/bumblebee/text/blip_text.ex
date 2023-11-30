@@ -387,8 +387,8 @@ defmodule Bumblebee.Text.BlipText do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    # Support loading from the entire Clip configuration
-    def load(spec, %{"model_type" => "clip", "text_config" => data}) do
+    # Support loading from the entire Blip configuration
+    def load(spec, %{"model_type" => "blip", "text_config" => data}) do
       load(spec, data)
     end
 
@@ -419,7 +419,7 @@ defmodule Bumblebee.Text.BlipText do
     def params_mapping(spec) do
       prefix =
         case spec.architecture do
-          :base -> "text_encoder."
+          :base -> "text_model."
           :for_causal_language_modeling -> "text_decoder.bert."
         end
 

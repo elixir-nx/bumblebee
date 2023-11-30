@@ -196,7 +196,7 @@ defmodule Bumblebee.Vision.ResNet do
         name: join(name, "blocks.0")
       )
 
-    for idx <- 1..(depth - 1), reduce: hidden_state do
+    for idx <- 1..(depth - 1)//1, reduce: hidden_state do
       hidden_state ->
         residual_block.(hidden_state, out_channels, out_channels,
           activation: spec.activation,
