@@ -34,3 +34,5 @@ jobs:
           path: bumblebee_slow_cache
       - run: mix deps.get
       - run: mix test --include slow
+        env:
+          BUMBLEBEE_CACHE_DIR: ${{ github.workspace }}/bumblebee_slow_cache
