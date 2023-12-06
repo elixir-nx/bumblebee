@@ -78,7 +78,8 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     ],
     cross_attention_size: [
       default: 1280,
-      doc: "the dimensionality of the cross attention features (required if apply_cross_attention is true)"
+      doc:
+        "the dimensionality of the cross attention features (required if apply_cross_attention is true)"
     ],
     use_linear_projection: [
       default: false,
@@ -156,7 +157,10 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
     if spec.apply_cross_attention do
       encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
-      Map.merge(template, %{"encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)})
+
+      Map.merge(template, %{
+        "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)
+      })
     else
       template
     end
