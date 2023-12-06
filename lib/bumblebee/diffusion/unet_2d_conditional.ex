@@ -72,9 +72,13 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       doc:
         "the number of attention heads for each attention layer. Optionally can be a list with one number per block"
     ],
+    apply_cross_attention: [
+      default: true,
+      doc: "weither or not to apply cross attention"
+    ],
     cross_attention_size: [
       default: 1280,
-      doc: "the dimensionality of the cross attention features"
+      doc: "the dimensionality of the cross attention features (required if apply_cross_attention is true)"
     ],
     use_linear_projection: [
       default: false,
@@ -115,7 +119,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
     * `"encoder_hidden_state"` - `{batch_size, sequence_length, hidden_size}`
 
-      The conditional state (context) to use with cross-attention.
+      The conditional state (context) to use with cross-attention. Only required if model built with apply_cross_attention = true spec.
 
   ## Configuration
 
@@ -144,13 +148,18 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   def input_template(spec) do
     sample_shape = {1, spec.sample_size, spec.sample_size, spec.in_channels}
     timestep_shape = {}
-    encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
-    %{
+    template = %{
       "sample" => Nx.template(sample_shape, :f32),
-      "timestep" => Nx.template(timestep_shape, :u32),
-      "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)
+      "timestep" => Nx.template(timestep_shape, :u32)
     }
+
+    if spec.apply_cross_attention do
+      encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
+      Map.merge(template, %{"encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)})
+    else
+      template
+    end
   end
 
   @impl true
@@ -163,11 +172,19 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   defp inputs(spec) do
     sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
 
-    Bumblebee.Utils.Model.inputs_to_map([
+    inputs = [
       Axon.input("sample", shape: sample_shape),
-      Axon.input("timestep", shape: {}),
-      Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size})
-    ])
+      Axon.input("timestep", shape: {})
+    ]
+
+    inputs =
+      if spec.apply_cross_attention do
+        Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size})
+      else
+        inputs
+      end
+
+    Bumblebee.Utils.Model.inputs_to_map(inputs)
   end
 
   defp core(inputs, spec) do
