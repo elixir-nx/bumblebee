@@ -183,7 +183,8 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
     inputs =
       if spec.apply_cross_attention do
-        Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size})
+        inputs ++
+          [Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size})]
       else
         inputs
       end
