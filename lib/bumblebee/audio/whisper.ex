@@ -398,7 +398,7 @@ defmodule Bumblebee.Audio.Whisper do
           offset =
             case offset do
               %Axon.None{} -> 0
-              offset -> Nx.as_type(offset, {:s, 64})
+              offset -> offset
             end
 
           input_sequence_length = Nx.axis_size(input_embeddings, 1)

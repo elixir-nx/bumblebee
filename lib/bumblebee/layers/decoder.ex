@@ -82,9 +82,9 @@ defmodule Bumblebee.Layers.Decoder do
       |> List.duplicate(decoder_num_blocks)
       |> List.to_tuple()
 
-    offset = Nx.tensor(0.0)
+    offset = Nx.tensor(0)
 
-    attention_mask = Nx.broadcast(0.0, {batch_size, max_length})
+    attention_mask = Nx.broadcast(0, {batch_size, max_length})
 
     %{blocks: blocks, offset: offset, attention_mask: attention_mask}
   end
@@ -170,7 +170,7 @@ defmodule Bumblebee.Layers.Decoder do
 
   defnp append_attention_cache(key, value, attention_cache, offset, _opts \\ []) do
     %{key: cached_key, value: cached_value} = attention_cache
-    indices = [0, Nx.as_type(offset, {:s, 64}), 0, 0]
+    indices = [0, offset, 0, 0]
     key = Nx.put_slice(cached_key, indices, key)
     value = Nx.put_slice(cached_value, indices, value)
     updated_cache = %{key: key, value: value}
@@ -276,7 +276,7 @@ defmodule Bumblebee.Layers.Decoder do
                 causal_mask
 
               offset ->
-                mask_shift = Nx.as_type(offset, {:s, 64})
+                mask_shift = offset
                 query_length = Nx.axis_size(query, 1)
                 Nx.slice_along_axis(causal_mask, mask_shift, query_length, axis: 2)
             end
