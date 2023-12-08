@@ -120,7 +120,7 @@ defmodule Bumblebee.Layers do
             bias
 
           offset ->
-            mask_shift = Nx.as_type(offset, {:s, 64})
+            mask_shift = offset
             query_length = Nx.axis_size(query, 1)
             Nx.slice_along_axis(bias, mask_shift, query_length, axis: 2)
         end

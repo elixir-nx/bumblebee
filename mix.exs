@@ -30,7 +30,8 @@ defmodule Bumblebee.MixProject do
 
   defp deps do
     [
-      {:axon, "~> 0.6.0", axon_opts()},
+      # {:axon, "~> 0.6.0", axon_opts()},
+      {:axon, github: "elixir-nx/axon", override: true},
       {:tokenizers, "~> 0.4"},
       # {:nx, "~> 0.6.2"},
       # {:exla, ">= 0.0.0", only: [:dev, :test]},
