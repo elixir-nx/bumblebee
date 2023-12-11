@@ -57,33 +57,6 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Expands an attention mask of shape `{batch_size, sequence_length}` to
-  a full mask.
-  """
-  def expand_attention_mask(attention_mask) do
-    Axon.nx(attention_mask, fn attention_mask ->
-      attention_mask
-      |> Nx.new_axis(-2)
-      |> Nx.new_axis(-2)
-    end)
-  end
-
-  @doc """
-  Converts attention mask to bias.
-  """
-  def attention_bias(attention_mask) do
-    attention_mask
-    |> Axon.optional()
-    |> Axon.nx(fn
-      %Axon.None{} ->
-        Nx.tensor(0)
-
-      attention_mask ->
-        Nx.select(Nx.greater(attention_mask, 0), 0, -1.0e10)
-    end)
-  end
-
-  @doc """
   Computes relative attention bias.
   """
   def relative_attention_bias(query, key, attention_cache, offset, opts \\ []) do
@@ -130,7 +103,8 @@ defmodule Bumblebee.Layers do
   end
 
   defnp compute_relative_position_buckets(query, key, attention_cache, opts \\ []) do
-    opts = keyword!(opts, mode: :train, bidirectional: true, num_buckets: 32, max_distance: 128)
+    opts =
+      keyword!(opts, mode: :inference, bidirectional: true, num_buckets: 32, max_distance: 128)
 
     {key_length, query_length} = key_query_lengths(query, key, attention_cache)
 
@@ -191,69 +165,183 @@ defmodule Bumblebee.Layers do
     end
   end
 
-  @doc """
-  Computes attention weights.
+  @doc ~S"""
+  Computes scaled dot-product attention for multiple attention heads.
+
+  This is the core calculation behind multi-head attention, the projection
+  layers should be applied on top of this layer.
+
+  Given input sequences $Q, K, V \in R^{N \times d}$, where $N$ is the
+  sequence length and $d$ is the head dimension, the scaled dot-product
+  attention is defined as:
+
+  $$
+  Attention(Q, K, V) = softmax(\frac{QK^T}{\sqrt{d}})V
+  $$
+
+  This operations is further batched across multiple heads and multiple
+  input sequences.
+
+  Intuitively scaled dot-product attention can be thought of as information
+  retrieval, where for each sequence element in $Q$ the objective is
+  to extract relevant context from sequence elements in $V$. In this
+  analogy, $K$ is the summarization of information, while $V$ is the
+  actual information. Then, assuming $Q$ and $K$ are embedded into a
+  common space (which is the job of prior projection layers), the
+  $QK^T$ dot product is a cosine similarity and gives us relevance
+  weights for sequence elements in $V$.
+
+  In case of self-attention, where $Q, K, V$ originate from the same
+  sequence, the $QK^T$ weights indicate how much "each word attends
+  to other words".
+
+  ## Parameter Shapes
+
+    * `query` - `{batch_size, sequence_length, num_heads, head_size}`
+    * `key` - `{batch_size, kv_sequence_length, num_heads, head_size}`
+    * `value` - `{batch_size, kv_sequence_length, num_heads, head_size}`
+    * `key_mask` (optional) - `{batch_size, kv_sequence_length}`
+    * `head_mask` (optional) - `{num_heads}`
+    * `bias` (optional) - `{batch_size | 1, num_heads | 1, sequence_length, kv_sequence_length}`
+    * `offset` (optional) - `{}`
+
+  ## Output Shape
+
+    `{batch_size, sequence_length, num_heads, head_size}`
 
   ## Options
 
-    * `:scale` - whether to scale the weights. Defaults to `true`
+    * `:causal` - whether to apply causal mask to attention weights.
+      This is typically used for next token prediction and it
+      effectively makes each input token use information exclusively
+      from prior tokens. Defaults to `false`
+
+    * `:scale` - whether to scale attention weights by $\frac{1}{\sqrt{d}}$.
+      Defaults to `true`
+
+    * `:dropout_rate` - the dropout rate for attention weights dropout.
+      Defaults to `0.0`
+
+  ## References
+
+    * [Attention Is All You Need](https://arxiv.org/abs/1706.03762), Figure 2 (left)
 
   """
-  def attention_weights(query, key, bias, opts \\ []) do
-    Axon.layer(&attention_weights_impl/4, [query, key, bias], opts)
+  def attention(query, key, value, key_mask, head_mask, bias, offset, opts \\ []) do
+    opts = Keyword.validate!(opts, causal: false, scale: true, dropout_rate: 0.0)
+
+    weights =
+      Axon.layer(
+        &attention_weights_impl/7,
+        [
+          query,
+          key,
+          Axon.optional(key_mask),
+          Axon.optional(head_mask),
+          Axon.optional(bias),
+          Axon.optional(offset)
+        ],
+        causal: opts[:causal],
+        scale: opts[:scale]
+      )
+      |> Axon.dropout(rate: opts[:dropout_rate])
+
+    output = Axon.layer(&attention_output_impl/3, [weights, value], opts)
+
+    {output, weights}
   end
 
-  defnp attention_weights_impl(query, key, bias, opts \\ []) do
-    opts = keyword!(opts, mode: :train, scale: true)
+  defnp attention_weights_impl(query, key, key_mask, head_mask, bias, offset, opts \\ []) do
+    opts = keyword!(opts, mode: :inference, scale: true, causal: false)
 
-    key = Nx.transpose(key, axes: [0, 2, 1, 3])
     query = Nx.transpose(query, axes: [0, 2, 1, 3])
+    key = Nx.transpose(key, axes: [0, 2, 1, 3])
 
     weights = Nx.dot(query, [3], [0, 1], key, [3], [0, 1])
 
     weights =
       if opts[:scale] do
         depth = Nx.axis_size(query, -1)
-        weights / Nx.sqrt(depth)
+        weights / Nx.as_type(Nx.sqrt(depth), Nx.type(query))
       else
         weights
       end
 
+    key_mask =
+      case key_mask do
+        %Axon.None{} -> Nx.broadcast(1, {1, 1, 1, 1})
+        key_mask -> key_mask |> Nx.new_axis(1) |> Nx.new_axis(1)
+      end
+
+    causal_mask =
+      if opts[:causal] do
+        query_sequence_length = Nx.axis_size(query, 2)
+        key_sequence_length = Nx.axis_size(key, 2)
+        offset = ensure_offset(offset)
+
+        Nx.greater_equal(
+          Nx.iota({query_sequence_length, 1}) + offset,
+          Nx.iota({1, key_sequence_length})
+        )
+        |> Nx.new_axis(0)
+        |> Nx.new_axis(0)
+      else
+        Nx.broadcast(1, {1, 1, 1, 1})
+      end
+
+    mask = Nx.logical_and(key_mask, causal_mask)
+
+    bias =
+      case bias do
+        %Axon.None{} ->
+          Nx.select(
+            mask,
+            Nx.tensor(0.0, type: Nx.type(query)),
+            Nx.Constants.min_finite(Nx.type(query))
+          )
+
+        bias ->
+          Nx.select(
+            Nx.broadcast(mask, max_shape(mask, bias)),
+            bias,
+            Nx.Constants.min_finite(Nx.type(query))
+          )
+      end
+
     weights = weights + bias
-    Axon.Activations.softmax(weights, axis: -1)
+
+    weights = Axon.Activations.softmax(weights, axis: -1)
+
+    case head_mask do
+      %Axon.None{} ->
+        weights
+
+      head_mask ->
+        head_mask = Nx.reshape(head_mask, {1, :auto, 1, 1})
+        Nx.multiply(weights, head_mask)
+    end
   end
 
-  @doc """
-  Computes attention outputs.
-  """
-  def attention_output(attention_weights, value) do
-    Axon.layer(&attention_output_impl/3, [attention_weights, value])
-  end
-
-  defnp attention_output_impl(attention_weights, value, _opts \\ []) do
+  defnp attention_output_impl(weights, value, _opts \\ []) do
     value = Nx.transpose(value, axes: [0, 2, 1, 3])
-    out = Nx.dot(attention_weights, [3], [0, 1], value, [2], [0, 1])
+    out = Nx.dot(weights, [3], [0, 1], value, [2], [0, 1])
     Nx.transpose(out, axes: [0, 2, 1, 3])
   end
 
-  @doc """
-  Applies head mask to the given attention weights.
-
-  This layer expects computed attention weights and an optional mask.
-  If the mask is not specified, it will skip masking altogether.
-  """
-  def apply_attention_head_mask(attention_weights, head_mask) do
-    if_present head_mask do
-      Axon.layer(
-        fn attention_weights, head_mask, _ ->
-          head_mask = Nx.reshape(head_mask, {1, :auto, 1, 1})
-          Nx.multiply(attention_weights, head_mask)
-        end,
-        [attention_weights, head_mask]
-      )
-    else
-      attention_weights
+  defnp ensure_offset(offset) do
+    case offset do
+      %Axon.None{} -> 0
+      offset -> offset
     end
+  end
+
+  deftransformp max_shape(left, right) do
+    Enum.zip_with(
+      Tuple.to_list(Nx.shape(left)),
+      Tuple.to_list(Nx.shape(right)),
+      &max/2
+    )
+    |> List.to_tuple()
   end
 
   @doc """
@@ -1063,8 +1151,8 @@ defmodule Bumblebee.Layers do
 
     position_ids = Nx.as_type(position_ids, :s64)
 
-    cos = cos |> Nx.take(position_ids) |> Nx.new_axis(2)
-    sin = sin |> Nx.take(position_ids) |> Nx.new_axis(2)
+    cos = cos |> Nx.take(position_ids) |> Nx.new_axis(2) |> Nx.as_type(Nx.type(query))
+    sin = sin |> Nx.take(position_ids) |> Nx.new_axis(2) |> Nx.as_type(Nx.type(query))
 
     rotated_query = query * cos + rotate_half(query) * sin
     rotated_key = key * cos + rotate_half(key) * sin
