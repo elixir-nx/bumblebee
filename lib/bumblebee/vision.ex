@@ -86,7 +86,7 @@ defmodule Bumblebee.Vision do
   defdelegate image_classification(model_info, featurizer, opts \\ []),
     to: Bumblebee.Vision.ImageClassification
 
-  @type image_to_text_input :: image()
+  @type image_to_text_input :: image() | %{:image => image(), optional(:seed) => integer()}
   @type image_to_text_output :: %{results: list(image_to_text_result())}
   @type image_to_text_result :: %{text: String.t()}
 
@@ -97,9 +97,6 @@ defmodule Bumblebee.Vision do
   `t:image_to_text_output/0`. A list of inputs is also supported.
 
   ## Options
-
-    * `:seed` - random seed to use when sampling. By default the current
-      timestamp is used
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the

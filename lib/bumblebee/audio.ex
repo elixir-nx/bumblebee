@@ -40,7 +40,10 @@ defmodule Bumblebee.Audio do
       requires `ffmpeg` installed)
 
   """
-  @type speech_to_text_whisper_input :: Nx.t() | {:file, String.t()}
+  @type audio :: Nx.t() | {:file, String.t()}
+
+  @type speech_to_text_whisper_input ::
+          audio() | %{:audio => audio(), optional(:seed) => integer()}
   @type speech_to_text_whisper_output :: %{
           chunks: list(speech_to_text_whisper_chunk())
         }
@@ -87,9 +90,6 @@ defmodule Bumblebee.Audio do
       annotated segment becomes an output chunk. Currently the only
       supported value is `:segments`, the length of each segment is up
       to the model
-
-    * `:seed` - random seed to use when sampling. By default the current
-      timestamp is used
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the

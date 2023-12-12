@@ -126,7 +126,8 @@ defmodule Bumblebee.Text do
   defdelegate token_classification(model_info, tokenizer, opts \\ []),
     to: Bumblebee.Text.TokenClassification
 
-  @type generation_input :: String.t()
+  @type generation_input ::
+          String.t() | %{:text => String.t(), optional(:seed) => integer()}
   @type generation_output :: %{results: list(generation_result())}
   @type generation_result :: %{text: String.t()}
 
@@ -137,9 +138,6 @@ defmodule Bumblebee.Text do
   A list of inputs is also supported.
 
   ## Options
-
-    * `:seed` - random seed to use when sampling. By default the current
-      timestamp is used
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
@@ -215,7 +213,11 @@ defmodule Bumblebee.Text do
   defdelegate generation(model_info, tokenizer, generation_config, opts \\ []),
     to: Bumblebee.Text.Generation
 
-  @type conversation_input :: %{text: String.t(), history: conversation_history() | nil}
+  @type conversation_input :: %{
+          :text => String.t(),
+          :history => conversation_history() | nil,
+          optional(:seed) => integer()
+        }
   @type conversation_output :: %{text: String.t(), history: conversation_history()}
 
   @type conversation_history :: list({:user | :generated, String.t()})
@@ -232,9 +234,6 @@ defmodule Bumblebee.Text do
   Note that either `:max_new_tokens` or `:max_length` must be specified.
 
   ## Options
-
-    * `:seed` - random seed to use when sampling. By default the current
-      timestamp is used
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the

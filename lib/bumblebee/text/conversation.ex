@@ -19,7 +19,7 @@ defmodule Bumblebee.Text.Conversation do
         %Text.GenerationConfig{} = generation_config,
         opts \\ []
       ) do
-    opts = Keyword.validate!(opts, [:seed, :compile, defn_options: [], preallocate_params: false])
+    opts = Keyword.validate!(opts, [:compile, defn_options: [], preallocate_params: false])
 
     %{model: model, params: params, spec: spec} = model_info
 
@@ -41,8 +41,7 @@ defmodule Bumblebee.Text.Conversation do
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
 
-    generate_fun =
-      Text.Generation.build_generate(model, spec, generation_config, Keyword.take(opts, [:seed]))
+    generate_fun = Text.Generation.build_generate(model, spec, generation_config)
 
     batch_keys = Shared.sequence_batch_keys(sequence_length)
 
@@ -56,7 +55,8 @@ defmodule Bumblebee.Text.Conversation do
 
             inputs = %{
               "input_ids" => Nx.template({batch_size, sequence_length}, :u32),
-              "attention_mask" => Nx.template({batch_size, sequence_length}, :u32)
+              "attention_mask" => Nx.template({batch_size, sequence_length}, :u32),
+              "seed" => Nx.template({batch_size}, :s64)
             }
 
             [params, inputs]
@@ -72,7 +72,10 @@ defmodule Bumblebee.Text.Conversation do
     |> Nx.Serving.batch_size(batch_size)
     |> Nx.Serving.process_options(batch_keys: batch_keys)
     |> Nx.Serving.client_preprocessing(fn input ->
-      {histories, multi?} = Shared.validate_serving_input!(input, &validate_input/1)
+      {inputs, multi?} = Shared.validate_serving_input!(input, &validate_input/1)
+
+      histories = Enum.map(inputs, & &1.history)
+      seed = Enum.map(inputs, & &1.seed) |> Nx.tensor(backend: Nx.BinaryBackend)
 
       texts =
         for history <- histories do
@@ -89,6 +92,8 @@ defmodule Bumblebee.Text.Conversation do
           )
         end)
 
+      inputs = Map.put(inputs, "seed", seed)
+
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
       batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)
 
@@ -104,9 +109,10 @@ defmodule Bumblebee.Text.Conversation do
     end)
   end
 
-  defp validate_input(%{text: text, history: history}) when is_binary(text) do
+  defp validate_input(%{text: text, history: history} = input) when is_binary(text) do
     history = history || []
-    {:ok, [{:user, text} | history]}
+    history = [{:user, text} | history]
+    {:ok, %{history: history, seed: input[:seed] || :erlang.system_time()}}
   end
 
   defp validate_input(input) do

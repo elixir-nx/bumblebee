@@ -55,13 +55,13 @@ defmodule Bumblebee.Text.GenerationTest do
         strategy: %{type: :multinomial_sampling}
       )
 
-    serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config, seed: 0)
+    serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
 
     # Note that this is just a snapshot test, we do not use any
     # reference value, because of PRNG difference
 
-    assert %{results: [%{text: " to fall asleep.\"\n\nThis is not Wallace's fifth"}]} =
-             Nx.Serving.run(serving, "I was going")
+    assert %{results: [%{text: " to give a speech to these execs. I don't"}]} =
+             Nx.Serving.run(serving, %{text: "I was going", seed: 0})
   end
 
   test "contrastive search" do

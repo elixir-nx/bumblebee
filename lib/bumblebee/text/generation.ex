@@ -87,10 +87,12 @@ defmodule Bumblebee.Text.Generation do
   `%Bumblebee.Text.GenerationConfig{}`, see the corresponding docs
   for more details.
 
-  ## Options
+  Returns a defn JIT-compatible anonymous function, which expects the
+  model params as the first argument and inputs map as the second
+  argument. Note that the inputs map should additionally include a
+  `"seed"` tensor, with one value per input in the batch.
 
-    * `:seed` - random seed to use when sampling. By default the current
-      timestamp is used
+  ## Options
 
     * `:logits_processors` - a list of numerical functions to modify
       predicted scores at each generation step. The functions are
@@ -104,8 +106,7 @@ defmodule Bumblebee.Text.Generation do
           keyword()
         ) :: (params :: map(), inputs :: map() -> Nx.t())
   def build_generate(model, spec, config, opts \\ []) do
-    opts = Keyword.validate!(opts, [:seed, logits_processors: []])
-    seed = Keyword.get_lazy(opts, :seed, &:erlang.system_time/0)
+    opts = Keyword.validate!(opts, logits_processors: [])
 
     decoder_start_token_id = config.decoder_start_token_id || config.bos_token_id
     eos_token_id = config.eos_token_id
@@ -141,7 +142,6 @@ defmodule Bumblebee.Text.Generation do
       traverse_cache_fun,
       pad_token_id: pad_token_id,
       eos_token_id: eos_token_id,
-      seed: seed,
       strategy: config.strategy
     )
   end
@@ -339,6 +339,8 @@ defmodule Bumblebee.Text.Generation do
           traverse_cache_fun,
           opts \\ []
         ) do
+    {seed, inputs} = pop_seed(inputs)
+
     {decoder_inputs, decoder_input_ids, max_length} = prepare_inputs_fun.(inputs, params)
 
     length = Nx.axis_size(decoder_input_ids, 1)
@@ -350,7 +352,6 @@ defmodule Bumblebee.Text.Generation do
     end
 
     strategy = opts[:strategy]
-    seed = opts[:seed]
 
     sequences =
       case strategy.type do
@@ -381,22 +382,23 @@ defmodule Bumblebee.Text.Generation do
           )
 
         :multinomial_sampling ->
-          prng_key = Nx.Random.key(seed)
-
           sampling(
             decoder_inputs,
             decoder_input_ids,
             predict_fun,
             params,
+            seed,
             logits_processor_fun,
             update_inputs_fun,
-            merge_options([max_length: max_length, prng_key: prng_key], opts)
+            merge_options([max_length: max_length], opts)
           )
       end
 
     # Output only the newly generated tokens
     sequences[[.., length..-1//1]]
   end
+
+  deftransformp pop_seed(inputs), do: Map.pop!(inputs, "seed")
 
   deftransformp merge_options(left, right), do: left ++ right
 
@@ -707,6 +709,7 @@ defmodule Bumblebee.Text.Generation do
           decoder_input_ids,
           predict_fun,
           params,
+          seed,
           logits_processor_fun,
           update_inputs_fun,
           opts \\ []
@@ -714,10 +717,11 @@ defmodule Bumblebee.Text.Generation do
     max_length = opts[:max_length]
     pad_token_id = opts[:pad_token_id]
     eos_token_id = opts[:eos_token_id]
-    prng_key = opts[:prng_key]
 
     {sequences, length = input_length, finished?} =
       init_sequences(decoder_input_ids, max_length, pad_token_id)
+
+    prng_key = seed |> Nx.vectorize(:batch) |> Nx.Random.key()
 
     # The loop works with inputs of length 1, so if the initial input
     # is longer, we make the initial pass outside
@@ -801,13 +805,10 @@ defmodule Bumblebee.Text.Generation do
   end
 
   deftransformp batched_choice(key, scores) do
-    {batch_size, vocab_size} = Nx.shape(scores)
+    vocab_size = Nx.axis_size(scores, 1)
 
     vocab = Nx.iota({vocab_size})
 
-    keys = Nx.Random.split(key, parts: batch_size)
-
-    key = Nx.vectorize(keys, :batch)
     probabilities = Nx.vectorize(scores, :batch)
 
     {tokens, _} = Nx.Random.choice(key, vocab, probabilities, samples: 1)
@@ -823,7 +824,6 @@ defmodule Bumblebee.Text.Generation do
   def generation(model_info, tokenizer, %Text.GenerationConfig{} = generation_config, opts \\ []) do
     opts =
       Keyword.validate!(opts, [
-        :seed,
         :compile,
         defn_options: [],
         preallocate_params: false,
@@ -850,7 +850,7 @@ defmodule Bumblebee.Text.Generation do
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
 
-    generate_fun = build_generate(model, spec, generation_config, Keyword.take(opts, [:seed]))
+    generate_fun = build_generate(model, spec, generation_config)
 
     batch_keys = Shared.sequence_batch_keys(sequence_length)
 
@@ -864,7 +864,8 @@ defmodule Bumblebee.Text.Generation do
 
             inputs = %{
               "input_ids" => Nx.template({batch_size, sequence_length}, :u32),
-              "attention_mask" => Nx.template({batch_size, sequence_length}, :u32)
+              "attention_mask" => Nx.template({batch_size, sequence_length}, :u32),
+              "seed" => Nx.template({batch_size}, :s64)
             }
 
             [params, inputs]
@@ -884,7 +885,10 @@ defmodule Bumblebee.Text.Generation do
         Shared.validate_input_for_stream!(input)
       end
 
-      {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
+      {inputs, multi?} = Shared.validate_serving_input!(input, &validate_input/1)
+
+      texts = Enum.map(inputs, & &1.text)
+      seed = Enum.map(inputs, & &1.seed) |> Nx.tensor(backend: Nx.BinaryBackend)
 
       inputs =
         Nx.with_default_backend(Nx.BinaryBackend, fn ->
@@ -895,12 +899,28 @@ defmodule Bumblebee.Text.Generation do
           )
         end)
 
+      inputs = Map.put(inputs, "seed", seed)
+
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
       batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)
 
       {batch, multi?}
     end)
     |> maybe_stream(opts[:stream], tokenizer)
+  end
+
+  defp validate_input(text) when is_binary(text), do: validate_input(%{text: text})
+
+  defp validate_input(%{text: text} = input) do
+    {:ok, %{text: text, seed: input[:seed] || :erlang.system_time()}}
+  end
+
+  defp validate_input(%{} = input) do
+    {:error, "expected the input map to have :text key, got: #{inspect(input)}"}
+  end
+
+  defp validate_input(input) do
+    {:error, "expected either a string or a map, got: #{inspect(input)}"}
   end
 
   defp maybe_stream(serving, false, tokenizer) do
