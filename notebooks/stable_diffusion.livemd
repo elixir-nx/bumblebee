@@ -29,20 +29,9 @@ Stable Diffusion is composed of several separate models and preprocessors, so we
 repository_id = "CompVis/stable-diffusion-v1-4"
 
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
-
 {:ok, clip} = Bumblebee.load_model({:hf, repository_id, subdir: "text_encoder"})
-
-{:ok, unet} =
-  Bumblebee.load_model({:hf, repository_id, subdir: "unet"},
-    params_filename: "diffusion_pytorch_model.bin"
-  )
-
-{:ok, vae} =
-  Bumblebee.load_model({:hf, repository_id, subdir: "vae"},
-    architecture: :decoder,
-    params_filename: "diffusion_pytorch_model.bin"
-  )
-
+{:ok, unet} = Bumblebee.load_model({:hf, repository_id, subdir: "unet"})
+{:ok, vae} = Bumblebee.load_model({:hf, repository_id, subdir: "vae"}, architecture: :decoder)
 {:ok, scheduler} = Bumblebee.load_scheduler({:hf, repository_id, subdir: "scheduler"})
 {:ok, featurizer} = Bumblebee.load_featurizer({:hf, repository_id, subdir: "feature_extractor"})
 {:ok, safety_checker} = Bumblebee.load_model({:hf, repository_id, subdir: "safety_checker"})

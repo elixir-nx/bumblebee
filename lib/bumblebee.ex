@@ -71,8 +71,13 @@ defmodule Bumblebee do
   @tokenizer_special_tokens_filename "special_tokens_map.json"
   @generation_filename "generation_config.json"
   @scheduler_filename "scheduler_config.json"
-  @pytorch_params_filename "pytorch_model.bin"
-  @safetensors_params_filename "model.safetensors"
+
+  @params_filenames [
+    "pytorch_model.bin",
+    "diffusion_pytorch_model.bin",
+    "model.safetensors",
+    "diffusion_pytorch_model.safetensors"
+  ]
 
   @transformers_class_to_model %{
     "AlbertForMaskedLM" => {Bumblebee.Text.Albert, :for_masked_language_modeling},
@@ -534,36 +539,22 @@ defmodule Bumblebee do
   end
 
   defp infer_params_filename(repo_files, nil = _filename) do
-    cond do
-      Map.has_key?(repo_files, @pytorch_params_filename) ->
-        {@pytorch_params_filename, false}
-
-      Map.has_key?(repo_files, @pytorch_params_filename <> ".index.json") ->
-        {@pytorch_params_filename, true}
-
-      Map.has_key?(repo_files, @safetensors_params_filename) ->
-        {@safetensors_params_filename, false}
-
-      Map.has_key?(repo_files, @safetensors_params_filename <> ".index.json") ->
-        {@safetensors_params_filename, true}
-
-      true ->
-        raise ArgumentError,
-              "none of the expected parameters files found in the repository." <>
-                " If the file exists under an unusual name, try specifying :params_filename"
-    end
+    Enum.find_value(@params_filenames, &lookup_params_filename(repo_files, &1)) ||
+      raise ArgumentError,
+            "none of the expected parameters files found in the repository." <>
+              " If the file exists under an unusual name, try specifying :params_filename"
   end
 
   defp infer_params_filename(repo_files, filename) do
+    lookup_params_filename(repo_files, filename) ||
+      raise ArgumentError, "could not find file #{inspect(filename)} in the repository"
+  end
+
+  defp lookup_params_filename(repo_files, filename) do
     cond do
-      Map.has_key?(repo_files, filename) ->
-        {filename, false}
-
-      Map.has_key?(repo_files, filename <> ".index.json") ->
-        {filename, true}
-
-      true ->
-        raise ArgumentError, "could not find file #{inspect(filename)} in the repository"
+      Map.has_key?(repo_files, filename) -> {filename, false}
+      Map.has_key?(repo_files, filename <> ".index.json") -> {filename, true}
+      true -> nil
     end
   end
 

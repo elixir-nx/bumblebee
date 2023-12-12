@@ -8,8 +8,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
   test ":base" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(
-               {:hf, "hf-internal-testing/tiny-stable-diffusion-torch", subdir: "unet"},
-               params_filename: "diffusion_pytorch_model.bin"
+               {:hf, "hf-internal-testing/tiny-stable-diffusion-torch", subdir: "unet"}
              )
 
     assert %Bumblebee.Diffusion.UNet2DConditional{architecture: :base} = spec

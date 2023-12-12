@@ -15,19 +15,11 @@ defmodule Bumblebee.Diffusion.StableDiffusionTest do
       repository_id = "bumblebee-testing/tiny-stable-diffusion"
 
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
-
       {:ok, clip} = Bumblebee.load_model({:hf, repository_id, subdir: "text_encoder"})
-
-      {:ok, unet} =
-        Bumblebee.load_model({:hf, repository_id, subdir: "unet"},
-          params_filename: "diffusion_pytorch_model.bin"
-        )
+      {:ok, unet} = Bumblebee.load_model({:hf, repository_id, subdir: "unet"})
 
       {:ok, vae} =
-        Bumblebee.load_model({:hf, repository_id, subdir: "vae"},
-          architecture: :decoder,
-          params_filename: "diffusion_pytorch_model.bin"
-        )
+        Bumblebee.load_model({:hf, repository_id, subdir: "vae"}, architecture: :decoder)
 
       {:ok, scheduler} = Bumblebee.load_scheduler({:hf, repository_id, subdir: "scheduler"})
 
