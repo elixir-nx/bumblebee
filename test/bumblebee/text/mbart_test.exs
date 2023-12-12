@@ -155,6 +155,6 @@ defmodule Bumblebee.Text.MbartTest do
     generate = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
     token_ids = generate.(params, inputs)
 
-    assert_equal(token_ids, Nx.tensor([[0, 230_521, 20386, 20386]]))
+    assert_equal(token_ids, Nx.tensor([[230_521, 20386, 20386]]))
   end
 end

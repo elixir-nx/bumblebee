@@ -329,16 +329,16 @@ defmodule Bumblebee.Text.Generation do
     end
   end
 
-  deftransformp generate_impl(
-                  inputs,
-                  predict_fun,
-                  params,
-                  logits_processor_fun,
-                  prepare_inputs_fun,
-                  update_inputs_fun,
-                  traverse_cache_fun,
-                  opts \\ []
-                ) do
+  defnp generate_impl(
+          inputs,
+          predict_fun,
+          params,
+          logits_processor_fun,
+          prepare_inputs_fun,
+          update_inputs_fun,
+          traverse_cache_fun,
+          opts \\ []
+        ) do
     {decoder_inputs, decoder_input_ids, max_length} = prepare_inputs_fun.(inputs, params)
 
     length = Nx.axis_size(decoder_input_ids, 1)
@@ -352,44 +352,53 @@ defmodule Bumblebee.Text.Generation do
     strategy = opts[:strategy]
     seed = opts[:seed]
 
-    case strategy.type do
-      :greedy_search ->
-        greedy(
-          decoder_inputs,
-          decoder_input_ids,
-          predict_fun,
-          params,
-          logits_processor_fun,
-          update_inputs_fun,
-          [max_length: max_length] ++ opts
-        )
+    sequences =
+      case strategy.type do
+        :greedy_search ->
+          greedy(
+            decoder_inputs,
+            decoder_input_ids,
+            predict_fun,
+            params,
+            logits_processor_fun,
+            update_inputs_fun,
+            merge_options([max_length: max_length], opts)
+          )
 
-      :contrastive_search ->
-        contrastive(
-          decoder_inputs,
-          decoder_input_ids,
-          predict_fun,
-          params,
-          logits_processor_fun,
-          update_inputs_fun,
-          traverse_cache_fun,
-          [max_length: max_length, top_k: strategy.top_k, penalty_alpha: strategy.alpha] ++ opts
-        )
+        :contrastive_search ->
+          contrastive(
+            decoder_inputs,
+            decoder_input_ids,
+            predict_fun,
+            params,
+            logits_processor_fun,
+            update_inputs_fun,
+            traverse_cache_fun,
+            merge_options(
+              [max_length: max_length, top_k: strategy.top_k, penalty_alpha: strategy.alpha],
+              opts
+            )
+          )
 
-      :multinomial_sampling ->
-        prng_key = Nx.Random.key(seed)
+        :multinomial_sampling ->
+          prng_key = Nx.Random.key(seed)
 
-        sampling(
-          decoder_inputs,
-          decoder_input_ids,
-          predict_fun,
-          params,
-          logits_processor_fun,
-          update_inputs_fun,
-          [max_length: max_length, prng_key: prng_key] ++ opts
-        )
-    end
+          sampling(
+            decoder_inputs,
+            decoder_input_ids,
+            predict_fun,
+            params,
+            logits_processor_fun,
+            update_inputs_fun,
+            merge_options([max_length: max_length, prng_key: prng_key], opts)
+          )
+      end
+
+    # Output only the newly generated tokens
+    sequences[[.., length..-1//1]]
   end
+
+  deftransformp merge_options(left, right), do: left ++ right
 
   # Greedy search
 
@@ -456,10 +465,6 @@ defmodule Bumblebee.Text.Generation do
 
   defnp init_sequences(decoder_input_ids, max_length, pad_token_id) do
     {batch_size, length} = Nx.shape(decoder_input_ids)
-
-    if length > max_length do
-      raise ArgumentError, "expected the input to be at most #{max_length} tokens, got: #{length}"
-    end
 
     sequences = Nx.broadcast(pad_token_id, {batch_size, max_length})
     sequences = Nx.put_slice(sequences, [0, 0], decoder_input_ids)

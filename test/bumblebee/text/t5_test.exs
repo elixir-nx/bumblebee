@@ -167,7 +167,7 @@ defmodule Bumblebee.Text.T5Test do
     generate = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
     token_ids = generate.(params, inputs)
 
-    assert_equal(token_ids, Nx.tensor([[0, 0, 0, 0]]))
+    assert_equal(token_ids, Nx.tensor([[0, 0, 0]]))
   end
 
   test "generation with :for_conditional_generation without tied embeddings" do
@@ -195,6 +195,6 @@ defmodule Bumblebee.Text.T5Test do
     generate = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
     token_ids = generate.(params, inputs)
 
-    assert_equal(token_ids, Nx.tensor([[0, 6161, 29516, 9788]]))
+    assert_equal(token_ids, Nx.tensor([[6161, 29516, 9788]]))
   end
 end

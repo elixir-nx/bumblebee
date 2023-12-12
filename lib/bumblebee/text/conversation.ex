@@ -41,8 +41,6 @@ defmodule Bumblebee.Text.Conversation do
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
 
-    encoder_decoder? = encoder_decoder?(model)
-
     generate_fun =
       Text.Generation.build_generate(model, spec, generation_config, Keyword.take(opts, [:seed]))
 
@@ -66,18 +64,7 @@ defmodule Bumblebee.Text.Conversation do
 
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
-          sequences = generate_fun.(params, inputs)
-          inputs = Nx.Defn.jit_apply(&Function.identity/1, [inputs])
-
-          start_idx =
-            if encoder_decoder? do
-              1
-            else
-              Nx.axis_size(inputs["input_ids"], 1)
-            end
-
-          sequences[[.., start_idx..-1//1]]
-          |> Shared.serving_post_computation()
+          generate_fun.(params, inputs) |> Shared.serving_post_computation()
         end
       end,
       defn_options
@@ -124,10 +111,5 @@ defmodule Bumblebee.Text.Conversation do
 
   defp validate_input(input) do
     {:error, "expected input to be a map with :text and :history, got: #{inspect(input)}"}
-  end
-
-  defp encoder_decoder?(model) do
-    inputs = Axon.get_inputs(model)
-    Map.has_key?(inputs, "input_ids") and Map.has_key?(inputs, "decoder_input_ids")
   end
 end

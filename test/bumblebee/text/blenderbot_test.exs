@@ -82,6 +82,6 @@ defmodule Bumblebee.Text.BlenderbotTest do
     generate = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
     token_ids = generate.(params, inputs)
 
-    assert_equal(token_ids, Nx.tensor([[1, 382, 382, 382]]))
+    assert_equal(token_ids, Nx.tensor([[382, 382, 382]]))
   end
 end
