@@ -230,25 +230,44 @@ defmodule Bumblebee.Layers do
   def attention(query, key, value, key_mask, head_mask, bias, offset, opts \\ []) do
     opts = Keyword.validate!(opts, causal: false, scale: true, dropout_rate: 0.0)
 
-    weights =
-      Axon.layer(
-        &attention_weights_impl/7,
-        [
-          query,
-          key,
-          Axon.optional(key_mask),
-          Axon.optional(head_mask),
-          Axon.optional(bias),
-          Axon.optional(offset)
-        ],
-        causal: opts[:causal],
-        scale: opts[:scale]
-      )
-      |> Axon.dropout(rate: opts[:dropout_rate])
+    if Application.get_env(:bumblebee, :flash_attention, true) do
+      output =
+        Axon.layer(
+          &attention_flash_impl/8,
+          [
+            query,
+            key,
+            value,
+            Axon.optional(key_mask),
+            Axon.optional(head_mask),
+            Axon.optional(bias),
+            Axon.optional(offset)
+          ],
+          opts
+        )
 
-    output = Axon.layer(&attention_output_impl/3, [weights, value], opts)
+      {output, none()}
+    else
+      weights =
+        Axon.layer(
+          &attention_weights_impl/7,
+          [
+            query,
+            key,
+            Axon.optional(key_mask),
+            Axon.optional(head_mask),
+            Axon.optional(bias),
+            Axon.optional(offset)
+          ],
+          causal: opts[:causal],
+          scale: opts[:scale]
+        )
+        |> Axon.dropout(rate: opts[:dropout_rate])
 
-    {output, weights}
+      output = Axon.layer(&attention_output_impl/3, [weights, value], opts)
+
+      {output, weights}
+    end
   end
 
   defnp attention_weights_impl(query, key, key_mask, head_mask, bias, offset, opts \\ []) do
@@ -342,6 +361,241 @@ defmodule Bumblebee.Layers do
       &max/2
     )
     |> List.to_tuple()
+  end
+
+  # TODO remove, this is just for testing
+  deftransformp query_block_size(), do: Application.get_env(:bumblebee, :query_block_size, 128)
+  deftransformp kv_block_size(), do: Application.get_env(:bumblebee, :kv_block_size, 128)
+  deftransformp causal_shortcut(), do: Application.get_env(:bumblebee, :causal_shortcut, true)
+
+  # TODO support dropout
+  # TODO head_mask
+  defn attention_flash_impl(query, key, value, key_mask, _head_mask, bias, offset, opts \\ []) do
+    opts = keyword!(opts, mode: :train, scale: true, causal: false, dropout_rate: 0.0)
+
+    query_block_size = query_block_size()
+    kv_block_size = kv_block_size()
+
+    {batch_size, sequence_length, num_heads, head_size} = Nx.shape(query)
+    kv_sequence_length = Nx.axis_size(key, 1)
+
+    query = Nx.transpose(query, axes: [0, 2, 1, 3])
+    key = Nx.transpose(key, axes: [0, 2, 1, 3])
+    value = Nx.transpose(value, axes: [0, 2, 1, 3])
+
+    query_block_size = min(query_block_size, sequence_length)
+    query_pad_size = pad_size_to_even(sequence_length, query_block_size)
+
+    query = Nx.pad(query, 0, [{0, 0, 0}, {0, 0, 0}, {0, query_pad_size, 0}, {0, 0, 0}])
+    num_query_blocks = exact_div!(sequence_length + query_pad_size, query_block_size)
+
+    kv_block_size = min(kv_block_size, kv_sequence_length)
+    kv_pad_size = pad_size_to_even(kv_sequence_length, kv_block_size)
+
+    key = Nx.pad(key, 0, [{0, 0, 0}, {0, 0, 0}, {0, kv_pad_size, 0}, {0, 0, 0}])
+    value = Nx.pad(value, 0, [{0, 0, 0}, {0, 0, 0}, {0, kv_pad_size, 0}, {0, 0, 0}])
+    num_kv_blocks = exact_div!(kv_sequence_length + kv_pad_size, kv_block_size)
+
+    type = Nx.type(query)
+
+    key_mask =
+      case key_mask do
+        %Axon.None{} -> %Axon.None{}
+        key_mask -> Nx.pad(key_mask, 0, [{0, 0, 0}, {0, kv_pad_size, 0}])
+      end
+
+    bias =
+      case bias do
+        %Axon.None{} ->
+          %Axon.None{}
+
+        bias ->
+          Nx.pad(
+            bias,
+            Nx.Constants.min_finite(type),
+            [{0, 0, 0}, {0, 0, 0}, {0, query_pad_size, 0}, {0, kv_pad_size, 0}]
+          )
+      end
+
+    output =
+      Nx.tensor(0, type: type)
+      |> Nx.broadcast({batch_size, num_heads, sequence_length + query_pad_size, head_size})
+
+    offset = ensure_offset(offset)
+
+    {_, output} =
+      while {{query, key, value, key_mask, bias, offset}, output},
+            query_block_idx <- 0..(num_query_blocks - 1)//1 do
+        query_block =
+          Nx.slice_along_axis(query, query_block_idx * query_block_size, query_block_size,
+            axis: 2
+          )
+
+        bias_query_block =
+          case bias do
+            %Axon.None{} ->
+              %Axon.None{}
+
+            bias ->
+              Nx.slice_along_axis(bias, query_block_idx * query_block_size, query_block_size,
+                axis: 2
+              )
+          end
+
+        query_block =
+          if opts[:scale] do
+            depth = Nx.axis_size(query_block, -1)
+            query_block / Nx.as_type(Nx.sqrt(depth), type)
+          else
+            query_block
+          end
+
+        block_output =
+          Nx.tensor(0, type: type)
+          |> Nx.broadcast({batch_size, num_heads, query_block_size, head_size})
+
+        max_weight =
+          Nx.Constants.min(type)
+          |> Nx.broadcast({batch_size, num_heads, query_block_size, 1})
+
+        exp_sum =
+          Nx.tensor(0, type: type)
+          |> Nx.broadcast({batch_size, num_heads, query_block_size, 1})
+
+        # In causal case we can skip key blocks that are ignored via
+        # causal mask anyway
+        kv_blocks_bound =
+          if opts[:causal] and causal_shortcut() do
+            Nx.min(
+              Nx.ceil((offset + (query_block_idx + 1) * query_block_size) / kv_block_size),
+              num_kv_blocks
+            )
+          else
+            num_kv_blocks
+          end
+
+        {_, {block_output, _max_weight, exp_sum, _kv_block_idx}} =
+          while {{query_block, key, value, key_mask, bias_query_block, kv_blocks_bound, offset,
+                  query_block_idx}, {block_output, max_weight, exp_sum, kv_block_idx = 0}},
+                kv_block_idx < kv_blocks_bound do
+            key_block =
+              Nx.slice_along_axis(key, kv_block_idx * kv_block_size, kv_block_size, axis: 2)
+
+            value_block =
+              Nx.slice_along_axis(value, kv_block_idx * kv_block_size, kv_block_size, axis: 2)
+
+            key_mask_block =
+              case key_mask do
+                %Axon.None{} ->
+                  Nx.broadcast(1, {1, 1, 1, 1})
+
+                key_mask ->
+                  key_mask
+                  |> Nx.slice_along_axis(kv_block_idx * kv_block_size, kv_block_size, axis: 1)
+                  |> Nx.new_axis(1)
+                  |> Nx.new_axis(1)
+              end
+
+            causal_mask =
+              if opts[:causal] do
+                offset = ensure_offset(offset)
+
+                Nx.greater_equal(
+                  Nx.iota({query_block_size, 1}) + offset + query_block_idx * query_block_size,
+                  Nx.iota({1, kv_block_size}) + kv_block_idx * kv_block_size
+                )
+                |> Nx.new_axis(0)
+                |> Nx.new_axis(0)
+              else
+                Nx.broadcast(1, {1, 1, 1, 1})
+              end
+
+            pad_mask =
+              if kv_pad_size > 0 do
+                Nx.iota({1, 1, 1, kv_block_size}) + kv_block_idx * kv_block_size <
+                  kv_sequence_length
+              else
+                Nx.broadcast(1, {1, 1, 1, 1})
+              end
+
+            mask =
+              key_mask_block
+              |> Nx.logical_and(causal_mask)
+              |> Nx.logical_and(pad_mask)
+
+            bias_block =
+              case bias_query_block do
+                %Axon.None{} ->
+                  Nx.select(
+                    mask,
+                    Nx.tensor(0.0, type: Nx.type(query)),
+                    Nx.Constants.min_finite(Nx.type(query))
+                  )
+
+                bias_query_block ->
+                  bias_query_block =
+                    Nx.slice_along_axis(
+                      bias_query_block,
+                      kv_block_idx * kv_block_size,
+                      kv_block_size,
+                      axis: 3
+                    )
+
+                  Nx.select(
+                    Nx.broadcast(mask, max_shape(mask, bias_query_block)),
+                    bias_query_block,
+                    Nx.Constants.min_finite(Nx.type(query))
+                  )
+              end
+
+            weights = Nx.dot(query_block, [3], [0, 1], key_block, [3], [0, 1])
+            weights = weights + bias_block
+            block_max_weight = Nx.reduce_max(weights, axes: [-1], keep_axes: true)
+            new_max_weight = Nx.max(max_weight, block_max_weight)
+            exp_weights = Nx.exp(weights - new_max_weight)
+
+            exp_output = Nx.dot(exp_weights, [3], [0, 1], value_block, [2], [0, 1])
+            block_exp_sum = Nx.sum(exp_weights, axes: [-1], keep_axes: true)
+
+            exp_max_weight_diff = Nx.exp(max_weight - new_max_weight)
+            exp_sum = exp_max_weight_diff * exp_sum + block_exp_sum
+            block_output = exp_max_weight_diff * block_output + exp_output
+
+            {{query_block, key, value, key_mask, bias_query_block, kv_blocks_bound, offset,
+              query_block_idx}, {block_output, new_max_weight, exp_sum, kv_block_idx + 1}}
+          end
+
+        block_output = block_output / exp_sum
+
+        output = Nx.put_slice(output, [0, 0, query_block_idx * query_block_size, 0], block_output)
+
+        {{query, key, value, key_mask, bias, offset}, output}
+      end
+
+    # Ignore optional last block padding
+    output =
+      if query_pad_size > 0 do
+        Nx.slice_along_axis(output, 0, sequence_length, axis: 2)
+      else
+        output
+      end
+
+    Nx.transpose(output, axes: [0, 2, 1, 3])
+  end
+
+  deftransformp exact_div!(left, right) do
+    unless rem(left, right) == 0 do
+      raise ArgumentError, "expected #{left} to be a multiple of #{right}"
+    end
+
+    div(left, right)
+  end
+
+  deftransformp pad_size_to_even(left, right) do
+    case rem(left, right) do
+      0 -> 0
+      rem -> right - rem
+    end
   end
 
   @doc """
