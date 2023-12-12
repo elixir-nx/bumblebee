@@ -8,8 +8,7 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
   test ":base" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(
-               {:hf, "hf-internal-testing/tiny-stable-diffusion-torch", subdir: "vae"},
-               params_filename: "diffusion_pytorch_model.bin"
+               {:hf, "hf-internal-testing/tiny-stable-diffusion-torch", subdir: "vae"}
              )
 
     assert %Bumblebee.Diffusion.VaeKl{architecture: :base} = spec
@@ -39,8 +38,7 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(
                {:hf, "hf-internal-testing/tiny-stable-diffusion-torch", subdir: "vae"},
-               architecture: :decoder,
-               params_filename: "diffusion_pytorch_model.bin"
+               architecture: :decoder
              )
 
     assert %Bumblebee.Diffusion.VaeKl{architecture: :decoder} = spec
@@ -70,8 +68,7 @@ defmodule Bumblebee.Diffusion.VaeKlTest do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(
                {:hf, "hf-internal-testing/tiny-stable-diffusion-torch", subdir: "vae"},
-               architecture: :encoder,
-               params_filename: "diffusion_pytorch_model.bin"
+               architecture: :encoder
              )
 
     assert %Bumblebee.Diffusion.VaeKl{architecture: :encoder} = spec
