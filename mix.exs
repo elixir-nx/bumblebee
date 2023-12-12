@@ -30,7 +30,7 @@ defmodule Bumblebee.MixProject do
 
   defp deps do
     [
-      # {:axon, "~> 0.6.0", axon_opts()},
+      # {:axon, "~> 0.6.0"},
       {:axon, github: "elixir-nx/axon", override: true},
       {:tokenizers, "~> 0.4"},
       # {:nx, "~> 0.6.2"},
@@ -51,14 +51,6 @@ defmodule Bumblebee.MixProject do
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
       {:nx_signal, "~> 0.2.0"}
     ]
-  end
-
-  defp axon_opts do
-    if path = System.get_env("AXON_PATH") do
-      [path: path]
-    else
-      []
-    end
   end
 
   defp docs do
