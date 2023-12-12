@@ -710,7 +710,7 @@ defmodule Bumblebee.Layers.Transformer do
 
   ## References
 
-    * [Attention Is All You Need](https://arxiv.org/abs/1706.03762), Figure 2
+    * [Attention Is All You Need](https://arxiv.org/abs/1706.03762), Figure 2 (right)
 
   """
   def multi_head_attention(query, key, value, opts) do
@@ -847,17 +847,6 @@ defmodule Bumblebee.Layers.Transformer do
     {key, value, attention_cache} =
       Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset)
 
-    attention_mask = Layers.expand_attention_mask(attention_mask)
-
-    attention_mask =
-      if causal do
-        Layers.Decoder.apply_causal_mask(attention_mask, query, offset)
-      else
-        attention_mask
-      end
-
-    attention_bias = Layers.attention_bias(attention_mask)
-
     attention_relative_bias =
       case attention_relative_bias do
         %Axon{} ->
@@ -876,21 +865,22 @@ defmodule Bumblebee.Layers.Transformer do
           )
       end
 
-    attention_bias =
-      Layers.if_present attention_relative_bias do
-        Axon.add(attention_bias, attention_relative_bias)
-      else
-        attention_bias
-      end
-
-    attention_weights =
-      Layers.attention_weights(query, key, attention_bias, scale: scale_attention_weights)
-      |> Axon.dropout(rate: dropout_rate)
-      |> Layers.apply_attention_head_mask(attention_head_mask)
+    {attention_output, attention_weights} =
+      Layers.attention(
+        query,
+        key,
+        value,
+        attention_mask,
+        attention_head_mask,
+        attention_relative_bias,
+        offset,
+        scale: scale_attention_weights,
+        causal: causal,
+        dropout_rate: dropout_rate
+      )
 
     attention_output =
-      attention_weights
-      |> Layers.attention_output(value)
+      attention_output
       |> Layers.flatten_trailing()
       |> Axon.dense(hidden_size,
         kernel_initializer: kernel_initializer,
