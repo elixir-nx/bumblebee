@@ -38,9 +38,9 @@ defmodule Bumblebee.Text.GenerationTest do
     serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
 
     # Without :no_repeat_ngram_length we get
-    # %{results: [%{text: "I was going to say, 'Well, I'm going to say,"}]}
+    # %{results: [%{text: " to say, 'Well, I'm going to say,"}]}
 
-    assert %{results: [%{text: "I was going to say, 'Well, I'm going back to the"}]} =
+    assert %{results: [%{text: " to say, 'Well, I'm going back to the"}]} =
              Nx.Serving.run(serving, "I was going")
   end
 
@@ -60,11 +60,8 @@ defmodule Bumblebee.Text.GenerationTest do
     # Note that this is just a snapshot test, we do not use any
     # reference value, because of PRNG difference
 
-    assert %{
-             results: [
-               %{text: "I was going to fall asleep.\"\n\nThis is not Wallace's fifth"}
-             ]
-           } = Nx.Serving.run(serving, "I was going")
+    assert %{results: [%{text: " to fall asleep.\"\n\nThis is not Wallace's fifth"}]} =
+             Nx.Serving.run(serving, "I was going")
   end
 
   test "contrastive search" do
@@ -80,7 +77,7 @@ defmodule Bumblebee.Text.GenerationTest do
 
     serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
 
-    assert %{results: [%{text: "I was going to say, 'Well, I don't know what you"}]} =
+    assert %{results: [%{text: " to say, 'Well, I don't know what you"}]} =
              Nx.Serving.run(serving, "I was going")
   end
 

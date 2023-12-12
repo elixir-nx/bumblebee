@@ -157,6 +157,6 @@ defmodule Bumblebee.Text.BartTest do
     generate = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
     token_ids = generate.(params, inputs)
 
-    assert_equal(token_ids, Nx.tensor([[2, 988, 988, 988]]))
+    assert_equal(token_ids, Nx.tensor([[988, 988, 988]]))
   end
 end
