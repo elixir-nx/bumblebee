@@ -28,12 +28,26 @@ defmodule Bumblebee.HuggingFace.Transformers.Utils do
   @spec map_params_source_layer_names(
           Transformers.Model.params_source(),
           (String.t() -> String.t())
-        ) :: Transformers.Model.layer_name() | Transformers.Model.params_source()
-  def map_params_source_layer_names(%{} = params_source, fun) do
-    Map.new(params_source, fn {param_name, {sources, source_fun}} ->
-      sources = for {layer_name, param_name} <- sources, do: {fun.(layer_name), param_name}
-      {param_name, {sources, source_fun}}
+        ) :: Transformers.Model.params_source()
+  def map_params_source_layer_names(%{} = param_builders, fun) do
+    Map.new(param_builders, fn {param_name, {sources, builder_fun}} ->
+      sources =
+        for ref_or_refs <- sources do
+          case ref_or_refs do
+            {layer_name, param_name} ->
+              {fun.(layer_name), param_name}
+
+            refs ->
+              for {layer_name, param_name} <- refs, do: {fun.(layer_name), param_name}
+          end
+        end
+
+      {param_name, {sources, builder_fun}}
     end)
+  end
+
+  def map_params_source_layer_names(layer_names, fun) when is_list(layer_names) do
+    Enum.map(layer_names, fun)
   end
 
   def map_params_source_layer_names(layer_name, fun) when is_binary(layer_name) do
