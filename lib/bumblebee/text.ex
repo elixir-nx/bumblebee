@@ -211,7 +211,7 @@ defmodule Bumblebee.Text do
           keyword()
         ) :: Nx.Serving.t()
   defdelegate generation(model_info, tokenizer, generation_config, opts \\ []),
-    to: Bumblebee.Text.Generation
+    to: Bumblebee.Text.TextGeneration
 
   @type conversation_input :: %{
           :text => String.t(),

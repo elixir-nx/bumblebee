@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.GenerationTest do
+defmodule Bumblebee.Text.TextGenerationTest do
   use ExUnit.Case, async: false
 
   import Bumblebee.TestHelpers
