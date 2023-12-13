@@ -5,6 +5,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
   import Nx.Defn
 
+  alias Bumblebee.Utils
   alias Bumblebee.Shared
 
   @type text_to_image_input ::
@@ -279,7 +280,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
         end
 
       output
-      |> Bumblebee.Utils.Nx.composite_unflatten_batch(inputs.size)
+      |> Utils.Nx.composite_unflatten_batch(Utils.Nx.batch_size(inputs))
       |> Shared.serving_post_computation()
     end
   end
@@ -315,9 +316,9 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   end
 
   defp client_postprocessing({outputs, _metadata}, multi?, safety_checker?) do
-    for outputs <- Bumblebee.Utils.Nx.batch_to_list(outputs) do
+    for outputs <- Utils.Nx.batch_to_list(outputs) do
       results =
-        for outputs = %{image: image} <- Bumblebee.Utils.Nx.batch_to_list(outputs) do
+        for outputs = %{image: image} <- Utils.Nx.batch_to_list(outputs) do
           if safety_checker? do
             if Nx.to_number(outputs.is_unsafe) == 1 do
               %{image: zeroed(image), is_safe: false}
@@ -359,8 +360,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     seed = inputs["seed"]
 
-    inputs =
-      Bumblebee.Utils.Nx.composite_concatenate(inputs["unconditional"], inputs["conditional"])
+    inputs = Utils.Nx.composite_concatenate(inputs["unconditional"], inputs["conditional"])
 
     %{hidden_state: text_embeddings} = encoder_predict.(encoder_params, inputs)
 

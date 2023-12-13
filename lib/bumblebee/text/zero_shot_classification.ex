@@ -77,7 +77,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
         fn inputs ->
           inputs = Shared.maybe_pad(inputs, batch_size)
           logits = logits_fun.(params, inputs)
-          logits = Utils.Nx.composite_unflatten_batch(logits, inputs.size)
+          logits = Utils.Nx.composite_unflatten_batch(logits, Utils.Nx.batch_size(inputs))
           scores = Axon.Activations.softmax(logits[[.., .., entailment_id]])
           k = min(top_k, Nx.axis_size(scores, 1))
           {top_scores, top_indices} = Nx.top_k(scores, k: k)

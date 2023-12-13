@@ -412,4 +412,12 @@ defmodule Bumblebee.Utils.Nx do
 
     Nx.take(tensor, flat_idx, axis: opts[:axis])
   end
+
+  @doc """
+  Returns size of the given `Nx.Batch`, including padding.
+  """
+  @spec batch_size(Nx.Batch.t()) :: non_neg_integer()
+  def batch_size(batch) do
+    batch.size + batch.pad
+  end
 end
