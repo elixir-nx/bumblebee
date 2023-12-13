@@ -430,7 +430,7 @@ defmodule Bumblebee.Text.Gpt2 do
   end
 
   defp classifier_dropout_rate(spec) do
-    spec.classifier_dropout_rate || spec.hidden_dropout
+    spec.classifier_dropout_rate || spec.dropout_rate
   end
 
   defp kernel_initializer(spec) do
