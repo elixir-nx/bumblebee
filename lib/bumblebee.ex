@@ -796,6 +796,17 @@ defmodule Bumblebee do
                   raise ArgumentError, "#{error}, please specify the :module option"
               end
 
+          tokenizer_config_result =
+            if Map.has_key?(repo_files, @tokenizer_config_filename) do
+              etag = repo_files[@tokenizer_config_filename]
+
+              with {:ok, path} <- download(repository, @tokenizer_config_filename, etag) do
+                decode_config(path)
+              end
+            else
+              {:ok, %{}}
+            end
+
           special_tokens_map_result =
             if Map.has_key?(repo_files, @tokenizer_special_tokens_filename) do
               etag = repo_files[@tokenizer_special_tokens_filename]
@@ -807,13 +818,17 @@ defmodule Bumblebee do
               {:ok, %{}}
             end
 
-          with {:ok, special_tokens_map} <- special_tokens_map_result do
+          with {:ok, tokenizer_config} <- tokenizer_config_result,
+               {:ok, special_tokens_map} <- special_tokens_map_result do
             tokenizer = struct!(module)
 
             tokenizer =
               HuggingFace.Transformers.Config.load(tokenizer, %{
                 "tokenizer_file" => path,
-                "special_tokens_map" => special_tokens_map
+                # Note: special_tokens_map.json is a legacy file, now
+                # tokenizer_config.json includes the same information
+                # and takes precedence
+                "special_tokens_map" => Map.merge(tokenizer_config, special_tokens_map)
               })
 
             {:ok, tokenizer}
