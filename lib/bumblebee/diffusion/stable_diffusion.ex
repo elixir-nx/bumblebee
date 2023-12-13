@@ -8,7 +8,12 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   alias Bumblebee.Shared
 
   @type text_to_image_input ::
-          String.t() | %{:prompt => String.t(), optional(:negative_prompt) => String.t()}
+          String.t()
+          | %{
+              :prompt => String.t(),
+              optional(:negative_prompt) => String.t(),
+              optional(:seed) => integer()
+            }
   @type text_to_image_output :: %{results: list(text_to_image_result())}
   @type text_to_image_result :: %{:image => Nx.Tensor.t(), optional(:is_safe) => boolean()}
 
@@ -43,8 +48,6 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
       closely reflect the text prompt. This parameter corresponds to
       $\omega$ in Equation (2) of the [Imagen paper](https://arxiv.org/pdf/2205.11487.pdf).
       Defaults to `7.5`
-
-    * `:seed` - a seed for the random number generator. Defaults to `0`
 
     * `:compile` - compiles all computations for predefined input shapes
       during serving initialization. Should be a keyword list with the
@@ -131,7 +134,6 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
         num_steps: 50,
         num_images_per_prompt: 1,
         guidance_scale: 7.5,
-        seed: 0,
         defn_options: [],
         preallocate_params: false
       ])
@@ -183,7 +185,6 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
         num_images_per_prompt: opts[:num_images_per_prompt],
         latents_sample_size: unet.spec.sample_size,
         latents_channels: unet.spec.in_channels,
-        seed: opts[:seed],
         guidance_scale: opts[:guidance_scale]
       )
 
@@ -237,7 +238,11 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
           "input_ids" => Nx.template({batch_size, sequence_length}, :u32)
         }
 
-        inputs = %{"unconditional" => text_inputs, "conditional" => text_inputs}
+        inputs = %{
+          "unconditional" => text_inputs,
+          "conditional" => text_inputs,
+          "seed" => Nx.template({batch_size}, :s64)
+        }
 
         [encoder_params, unet_params, vae_params, inputs]
       end)
@@ -284,6 +289,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     prompts = Enum.map(inputs, & &1.prompt)
     negative_prompts = Enum.map(inputs, & &1.negative_prompt)
+    seed = Enum.map(inputs, & &1.seed) |> Nx.tensor(backend: Nx.BinaryBackend)
 
     conditional =
       Nx.with_default_backend(Nx.BinaryBackend, fn ->
@@ -303,7 +309,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
         )
       end)
 
-    inputs = %{"unconditional" => unconditional, "conditional" => conditional}
+    inputs = %{"unconditional" => unconditional, "conditional" => conditional, "seed" => seed}
 
     {Nx.Batch.concatenate([inputs]), multi?}
   end
@@ -349,8 +355,9 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     num_images_per_prompt = opts[:num_images_per_prompt]
     latents_sample_size = opts[:latents_sample_size]
     latents_in_channels = opts[:latents_channels]
-    seed = opts[:seed]
     guidance_scale = opts[:guidance_scale]
+
+    seed = inputs["seed"]
 
     inputs =
       Bumblebee.Utils.Nx.composite_concatenate(inputs["unconditional"], inputs["conditional"])
@@ -372,8 +379,15 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     {scheduler_state, timesteps} = scheduler_init.(latents_shape)
 
-    key = Nx.Random.key(seed)
-    {latents, _key} = Nx.Random.normal(key, shape: latents_shape)
+    key = seed |> Nx.vectorize(:batch) |> Nx.Random.key()
+
+    {latents, _key} =
+      Nx.Random.normal(key,
+        shape:
+          {num_images_per_prompt, latents_sample_size, latents_sample_size, latents_in_channels}
+      )
+
+    latents = latents |> Nx.devectorize() |> Nx.reshape(latents_shape)
 
     {_, latents, _, _} =
       while {scheduler_state, latents, text_embeddings, unet_params}, timestep <- timesteps do
@@ -411,7 +425,12 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   defp validate_input(prompt) when is_binary(prompt), do: validate_input(%{prompt: prompt})
 
   defp validate_input(%{prompt: prompt} = input) do
-    {:ok, %{prompt: prompt, negative_prompt: input[:negative_prompt] || ""}}
+    {:ok,
+     %{
+       prompt: prompt,
+       negative_prompt: input[:negative_prompt] || "",
+       seed: input[:seed] || :erlang.system_time()
+     }}
   end
 
   defp validate_input(%{} = input) do

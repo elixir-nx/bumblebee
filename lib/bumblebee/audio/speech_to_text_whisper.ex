@@ -17,7 +17,6 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         :chunk_num_seconds,
         :context_num_seconds,
         :language,
-        :seed,
         :compile,
         :timestamps,
         defn_options: [],
@@ -50,8 +49,9 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     {generate_opts, generation_config} = generate_opts(generation_config, opts)
     generate_fun = Text.Generation.build_generate(model, spec, generation_config, generate_opts)
 
-    generate_fun = fn params, inputs ->
+    generate_fun = fn params, {inputs, seed} ->
       inputs = Bumblebee.Featurizer.process_batch(featurizer, inputs)
+      inputs = Map.put(inputs, "seed", seed)
       generate_fun.(params, inputs)
     end
 
@@ -62,7 +62,8 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         generate_fun =
           Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
             inputs = Bumblebee.Featurizer.batch_template(featurizer, batch_size)
-            [params, inputs]
+            seed = Nx.template({batch_size}, :s64)
+            [params, {inputs, seed}]
           end)
 
         fn inputs ->
@@ -78,24 +79,17 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         Shared.validate_input_for_stream!(input)
       end
 
-      {inputs, multi?} =
-        Shared.validate_serving_input!(input, fn
-          %Nx.Tensor{shape: {_}} = input ->
-            {:ok, Nx.backend_transfer(input, Nx.BinaryBackend)}
-
-          {:file, path} when is_binary(path) ->
-            ffmpeg_read_as_pcm(path, sampling_rate)
-
-          other ->
-            {:error, "expected a 1-dimensional tensor or {:file, path}, got: #{inspect(other)}"}
-        end)
+      {inputs, multi?} = Shared.validate_serving_input!(input, &validate_input(&1, sampling_rate))
 
       all_chunks =
         for input <- inputs do
           if chunk_num_seconds do
-            chunk_input(input, sampling_rate, chunk_num_seconds, context_num_seconds)
+            chunks =
+              chunk_input(input.audio, sampling_rate, chunk_num_seconds, context_num_seconds)
+
+            for {chunk, lengths} <- chunks, do: {{chunk, input.seed}, lengths}
           else
-            [{input, nil}]
+            [{{input.audio, input.seed}, nil}]
           end
         end
 
@@ -109,17 +103,43 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
           all_chunks
           |> Stream.chunk_every(batch_size)
           |> Stream.map(fn all_chunks ->
+            {all_chunks, seed} = Enum.unzip(all_chunks)
+            seed = Nx.tensor(seed, backend: Nx.BinaryBackend)
             inputs = Bumblebee.Featurizer.process_input(featurizer, all_chunks)
-            Nx.Batch.concatenate([inputs])
+            Nx.Batch.concatenate([{inputs, seed}])
           end)
 
         {stream, {multi?, all_num_chunks, lengths}}
       else
+        {all_chunks, seed} = Enum.unzip(all_chunks)
+        seed = Nx.tensor(seed, backend: Nx.BinaryBackend)
         inputs = Bumblebee.Featurizer.process_input(featurizer, all_chunks)
-        {Nx.Batch.concatenate([inputs]), {multi?, all_num_chunks, lengths}}
+        {Nx.Batch.concatenate([{inputs, seed}]), {multi?, all_num_chunks, lengths}}
       end
     end)
     |> maybe_stream(opts[:stream], spec, featurizer, tokenizer, timestamps?)
+  end
+
+  defp validate_input(%{audio: audio} = input, sampling_rate) do
+    with {:ok, audio} <- parse_audio(audio, sampling_rate) do
+      {:ok, %{audio: audio, seed: input[:seed] || :erlang.system_time()}}
+    end
+  end
+
+  defp validate_input(input, sampling_rate), do: validate_input(%{audio: input}, sampling_rate)
+
+  defp parse_audio(input, sampling_rate) do
+    case input do
+      %Nx.Tensor{shape: {_}} = input ->
+        {:ok, Nx.backend_transfer(input, Nx.BinaryBackend)}
+
+      {:file, path} when is_binary(path) ->
+        ffmpeg_read_as_pcm(path, sampling_rate)
+
+      other ->
+        {:error,
+         "expected audio to be a 1-dimensional tensor or {:file, path}, got: #{inspect(other)}"}
+    end
   end
 
   defp maybe_stream(serving, false, spec, featurizer, tokenizer, timestamps?) do
@@ -170,10 +190,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         []
       end
 
-    opts =
-      opts
-      |> Keyword.take([:seed])
-      |> Keyword.put(:logits_processors, logits_processors)
+    opts = [logits_processors: logits_processors]
 
     {opts, generation_config}
   end
