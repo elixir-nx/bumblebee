@@ -4,16 +4,17 @@ defprotocol Bumblebee.HuggingFace.Transformers.Model do
   # This protocol defines details related to loading Bumblebee model
   # from huggingface/transformers model.
 
-  @type params_mapping :: %{
-          layer_name() => layer_name() | params_source()
-        }
+  @type params_mapping :: %{layer_name() => params_source()}
 
-  @type params_source :: %{
-          param_name() =>
-            {list(source()), (list(Nx.tensor()) -> Nx.Tensor.t() | Nx.Container.t())}
-        }
+  @type params_source :: layer_name() | list(layer_name()) | param_builders()
 
-  @type source :: {layer_name(), param_name() | list(param_name())}
+  @type param_builders :: %{param_name() => param_builder()}
+
+  @type param_builder ::
+          {list(param_source()), (list(Nx.tensor()) -> Nx.Tensor.t() | Nx.Container.t())}
+
+  @type param_source :: param_ref() | list(param_ref())
+  @type param_ref :: {layer_name(), param_name()}
 
   @type layer_name :: String.t()
   @type param_name :: String.t()
@@ -53,8 +54,8 @@ defprotocol Bumblebee.HuggingFace.Transformers.Model do
   automatically.
 
   In some cases, particularly with model-specific layers/parameters,
-  we may need more control over the parameter mapping. In such cases, instead
-  of source layer name, a map with parameter-level transformations
+  we may need more control over the parameter mapping. In such cases,
+  instead of source layer name, a map with parameter-level transformations
   may be specified:
 
       %{
@@ -69,9 +70,10 @@ defprotocol Bumblebee.HuggingFace.Transformers.Model do
 
   For each parameter, we specify a list of source parameters in the
   form of `{source_layer_name, source_param_name}`, then a function
-  to build our parameter value. Multiple source parameter names to
-  try may be specified. With the explicit transformation we can
-  handle arbitrary parameter name and value transformations.
+  to build our parameter value. Instead of a single tuple, we can
+  specify a list of those to try one by one. With the explicit
+  transformation we can handle arbitrary parameter name and value
+  transformations.
   """
   @spec params_mapping(t()) :: params_mapping()
   def params_mapping(spec)

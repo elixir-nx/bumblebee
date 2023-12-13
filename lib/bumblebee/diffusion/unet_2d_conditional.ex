@@ -407,6 +407,8 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
+    alias Bumblebee.HuggingFace.Transformers
+
     def params_mapping(_spec) do
       block_mapping = %{
         "transformers.{m}.norm" => "attentions.{m}.norm",
@@ -449,10 +451,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       }
 
       blocks_mapping =
-        for {target, source} <- block_mapping,
-            prefix <- ["down_blocks.{n}", "mid_block", "up_blocks.{n}"],
-            do: {prefix <> "." <> target, prefix <> "." <> source},
-            into: %{}
+        ["down_blocks.{n}", "mid_block", "up_blocks.{n}"]
+        |> Enum.map(&Transformers.Utils.prefix_params_mapping(block_mapping, &1, &1))
+        |> Enum.reduce(&Map.merge/2)
 
       %{
         "time_embedding.intermediate" => "time_embedding.linear_1",

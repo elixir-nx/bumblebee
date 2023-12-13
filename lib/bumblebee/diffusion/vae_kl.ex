@@ -443,13 +443,16 @@ defmodule Bumblebee.Diffusion.VaeKl do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
+    alias Bumblebee.HuggingFace.Transformers
+
     def params_mapping(_spec) do
       block_mapping = %{
         "attentions.{m}.norm" => "attentions.{m}.group_norm",
-        "attentions.{m}.query" => "attentions.{m}.query",
-        "attentions.{m}.key" => "attentions.{m}.key",
-        "attentions.{m}.value" => "attentions.{m}.value",
-        "attentions.{m}.output" => "attentions.{m}.proj_attn",
+        # The layer name has been renamed upstream, so we try both
+        "attentions.{m}.query" => ["attentions.{m}.to_q", "attentions.{m}.query"],
+        "attentions.{m}.key" => ["attentions.{m}.to_k", "attentions.{m}.key"],
+        "attentions.{m}.value" => ["attentions.{m}.to_v", "attentions.{m}.value"],
+        "attentions.{m}.output" => ["attentions.{m}.to_out.0", "attentions.{m}.proj_attn"],
         "residual_blocks.{m}.norm_1" => "resnets.{m}.norm1",
         "residual_blocks.{m}.conv_1" => "resnets.{m}.conv1",
         "residual_blocks.{m}.norm_2" => "resnets.{m}.norm2",
@@ -460,15 +463,14 @@ defmodule Bumblebee.Diffusion.VaeKl do
       }
 
       blocks_mapping =
-        for {target, source} <- block_mapping,
-            prefix <- [
-              "encoder.down_blocks.{n}",
-              "encoder.mid_block",
-              "decoder.mid_block",
-              "decoder.up_blocks.{n}"
-            ],
-            do: {prefix <> "." <> target, prefix <> "." <> source},
-            into: %{}
+        [
+          "encoder.down_blocks.{n}",
+          "encoder.mid_block",
+          "decoder.mid_block",
+          "decoder.up_blocks.{n}"
+        ]
+        |> Enum.map(&Transformers.Utils.prefix_params_mapping(block_mapping, &1, &1))
+        |> Enum.reduce(&Map.merge/2)
 
       %{
         "encoder.input_conv" => "encoder.conv_in",
