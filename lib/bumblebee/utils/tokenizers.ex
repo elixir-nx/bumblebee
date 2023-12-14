@@ -21,14 +21,26 @@ defmodule Bumblebee.Utils.Tokenizers do
 
     input = List.wrap(input)
 
+    tokenizer =
+      if length = opts[:length] do
+        upper_bound_length = length |> List.wrap() |> Enum.max()
+
+        Tokenizer.set_truncation(tokenizer,
+          max_length: upper_bound_length,
+          direction: opts[:truncate_direction]
+        )
+      else
+        tokenizer
+      end
+
     {:ok, encodings} =
       Tokenizer.encode_batch(tokenizer, input, add_special_tokens: opts[:add_special_tokens])
 
     length = opts[:length]
 
-    {pad_length, truncate_length} =
+    pad_length =
       if is_number(length) do
-        {length, length}
+        length
       else
         max_length =
           encodings
@@ -36,12 +48,8 @@ defmodule Bumblebee.Utils.Tokenizers do
           |> Enum.max()
 
         case length do
-          nil ->
-            {max_length, nil}
-
-          lengths when is_list(lengths) ->
-            bounding_length = find_bounding_length(max_length, lengths)
-            {bounding_length, bounding_length}
+          nil -> max_length
+          lengths when is_list(lengths) -> find_bounding_length(max_length, lengths)
         end
       end
 
@@ -49,27 +57,11 @@ defmodule Bumblebee.Utils.Tokenizers do
 
     encodings =
       Enum.map(encodings, fn encoding ->
-        transformations = [
-          Encoding.Transformation.pad(pad_length,
-            pad_id: pad_id,
-            pad_token: pad_token,
-            direction: opts[:pad_direction]
-          )
-        ]
-
-        transformations =
-          transformations ++
-            if truncate_length do
-              [
-                Encoding.Transformation.truncate(truncate_length,
-                  direction: opts[:truncate_direction]
-                )
-              ]
-            else
-              []
-            end
-
-        Encoding.transform(encoding, transformations)
+        Encoding.pad(encoding, pad_length,
+          pad_id: pad_id,
+          pad_token: pad_token,
+          direction: opts[:pad_direction]
+        )
       end)
 
     input_ids = encodings |> Enum.map(&Encoding.get_u32_ids/1) |> u32_binaries_to_tensor()

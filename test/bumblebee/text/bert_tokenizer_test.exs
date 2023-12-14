@@ -43,11 +43,7 @@ defmodule Bumblebee.Text.BertTokenizerTest do
     assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
 
     inputs =
-      Bumblebee.apply_tokenizer(
-        tokenizer,
-        [
-          "Test sentence with [MASK]."
-        ],
+      Bumblebee.apply_tokenizer(tokenizer, ["Test sentence with [MASK]."],
         return_special_tokens_mask: true
       )
 
@@ -58,13 +54,7 @@ defmodule Bumblebee.Text.BertTokenizerTest do
     assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
 
     inputs =
-      Bumblebee.apply_tokenizer(
-        tokenizer,
-        [
-          "Test sentence with [MASK]."
-        ],
-        return_offsets: true
-      )
+      Bumblebee.apply_tokenizer(tokenizer, ["Test sentence with [MASK]."], return_offsets: true)
 
     assert_equal(inputs["start_offsets"], Nx.tensor([[0, 0, 5, 14, 19, 25, 0]]))
     assert_equal(inputs["end_offsets"], Nx.tensor([[0, 4, 13, 18, 25, 26, 0]]))
@@ -83,5 +73,14 @@ defmodule Bumblebee.Text.BertTokenizerTest do
       )
 
     assert {1, 16} = Nx.shape(inputs["input_ids"])
+  end
+
+  test "adds template tokens when the sequence is truncated" do
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+
+    inputs = Bumblebee.apply_tokenizer(tokenizer, ["This is a long test sentence."], length: 5)
+
+    assert_equal(inputs["input_ids"], Nx.tensor([[101, 1188, 1110, 170, 102]]))
+    assert_equal(inputs["attention_mask"], Nx.tensor([[1, 1, 1, 1, 1]]))
   end
 end
