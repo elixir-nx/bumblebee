@@ -50,7 +50,7 @@ defmodule Bumblebee.Text.AlbertTokenizerTest do
       Nx.tensor([
         [2, 4310, 111, 3, 0, 0],
         [2, 4310, 111, 748, 3, 0],
-        [2, 4310, 111, 748, 19674, 6582]
+        [2, 4310, 111, 748, 19674, 3]
       ])
     )
 
