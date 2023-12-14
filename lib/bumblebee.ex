@@ -458,6 +458,9 @@ defmodule Bumblebee do
     * `:architecture` - the model architecture, must be supported by
       `:module`. By default it is inferred from the configuration file
 
+    * `:params_variant` - when specified, instead of loading parameters
+      from "<name>.<ext>", loads from "<name>.<variant>.<ext>"
+
     * `:params_filename` - the file with the model parameters to be loaded
 
     * `:log_params_diff` - whether to log missing, mismatched and unused
@@ -497,6 +500,7 @@ defmodule Bumblebee do
         :spec,
         :module,
         :architecture,
+        :params_variant,
         :params_filename,
         :backend,
         :log_params_diff
@@ -523,7 +527,9 @@ defmodule Bumblebee do
 
     params_mapping = Bumblebee.HuggingFace.Transformers.Model.params_mapping(spec)
 
-    {filename, sharded?} = infer_params_filename(repo_files, opts[:params_filename])
+    {filename, sharded?} =
+      infer_params_filename(repo_files, opts[:params_filename], opts[:params_variant])
+
     loader_fun = filename |> Path.extname() |> params_file_loader_fun()
 
     with {:ok, paths} <- download_params_files(repository, repo_files, filename, sharded?) do
@@ -538,24 +544,78 @@ defmodule Bumblebee do
     end
   end
 
-  defp infer_params_filename(repo_files, nil = _filename) do
-    Enum.find_value(@params_filenames, &lookup_params_filename(repo_files, &1)) ||
+  defp infer_params_filename(repo_files, nil = _filename, variant) do
+    validate_variant!(repo_files, variant)
+
+    Enum.find_value(@params_filenames, &lookup_params_filename(repo_files, &1, variant)) ||
       raise ArgumentError,
             "none of the expected parameters files found in the repository." <>
               " If the file exists under an unusual name, try specifying :params_filename"
   end
 
-  defp infer_params_filename(repo_files, filename) do
-    lookup_params_filename(repo_files, filename) ||
+  defp infer_params_filename(repo_files, filename, variant) do
+    if variant do
+      IO.warn("ignoring :params_variant, because :params_filename was specified")
+    end
+
+    lookup_params_filename(repo_files, filename, nil) ||
       raise ArgumentError, "could not find file #{inspect(filename)} in the repository"
   end
 
-  defp lookup_params_filename(repo_files, filename) do
+  defp lookup_params_filename(repo_files, filename, variant) do
+    full_filename = add_variant(filename, variant)
+    full_filename_sharded = add_variant(filename <> ".index.json", variant)
+
     cond do
-      Map.has_key?(repo_files, filename) -> {filename, false}
-      Map.has_key?(repo_files, filename <> ".index.json") -> {filename, true}
+      Map.has_key?(repo_files, full_filename) -> {full_filename, false}
+      Map.has_key?(repo_files, full_filename_sharded) -> {full_filename_sharded, true}
       true -> nil
     end
+  end
+
+  defp add_variant(filename, nil), do: filename
+
+  defp add_variant(filename, variant) do
+    ext = Path.extname(filename)
+    base = Path.basename(filename, ext)
+    base <> "." <> variant <> ext
+  end
+
+  defp validate_variant!(_repo_files, nil), do: :ok
+
+  defp validate_variant!(repo_files, variant) do
+    variants = params_variants_in_repo(repo_files)
+
+    cond do
+      variant in variants ->
+        :ok
+
+      Enum.empty?(variants) ->
+        raise ArgumentError,
+              "parameters variant #{inspect(variant)} not found, the repository has no variants"
+
+      true ->
+        raise ArgumentError,
+              "parameters variant #{inspect(variant)} not found, available variants: " <>
+                Enum.map_join(variants, ", ", &inspect/1)
+    end
+  end
+
+  defp params_variants_in_repo(repo_files) do
+    params_filenames = MapSet.new(@params_filenames)
+
+    Enum.reduce(repo_files, MapSet.new(), fn {name, _etag}, variants ->
+      parts = String.split(name, ".")
+      {variant, parts} = List.pop_at(parts, -2)
+      name = Enum.join(parts, ".")
+
+      if String.replace_suffix(name, ".index.json", "") in params_filenames and
+           not String.contains?(variant, "-of-") do
+        MapSet.put(variants, variant)
+      else
+        variants
+      end
+    end)
   end
 
   defp download_params_files(repository, repo_files, filename, false = _sharded?) do
@@ -564,9 +624,7 @@ defmodule Bumblebee do
     end
   end
 
-  defp download_params_files(repository, repo_files, filename, true = _sharded?) do
-    index_filename = filename <> ".index.json"
-
+  defp download_params_files(repository, repo_files, index_filename, true = _sharded?) do
     with {:ok, path} <- download(repository, index_filename, repo_files[index_filename]),
          {:ok, sharded_metadata} <- decode_config(path) do
       filenames =

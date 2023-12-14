@@ -11,7 +11,7 @@ defmodule BumblebeeTest do
     end
 
     @tag :capture_log
-    test "supports sharded models" do
+    test "supports sharded params" do
       assert {:ok, %{params: params}} =
                Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-GPT2Model"})
 
@@ -21,7 +21,7 @@ defmodule BumblebeeTest do
       assert Enum.sort(Map.keys(params)) == Enum.sort(Map.keys(sharded_params))
     end
 
-    test "supports .safetensors params file" do
+    test "supports .safetensors params" do
       assert {:ok, %{params: params}} =
                Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-GPT2Model"})
 
@@ -31,6 +31,37 @@ defmodule BumblebeeTest do
                )
 
       assert Enum.sort(Map.keys(params)) == Enum.sort(Map.keys(safetensors_params))
+    end
+
+    test "supports params variants" do
+      assert {:ok, %{params: params}} =
+               Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-bert-variant"},
+                 params_variant: "v2"
+               )
+
+      assert {:ok, %{params: sharded_params}} =
+               Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-bert-variant-sharded"},
+                 params_variant: "v2"
+               )
+
+      assert Enum.sort(Map.keys(params)) == Enum.sort(Map.keys(sharded_params))
+
+      assert_raise ArgumentError,
+                   ~s/parameters variant "v3" not found, available variants: "v2"/,
+                   fn ->
+                     Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-bert-variant"},
+                       params_variant: "v3"
+                     )
+                   end
+
+      assert_raise ArgumentError,
+                   ~s/parameters variant "v3" not found, available variants: "v2"/,
+                   fn ->
+                     Bumblebee.load_model(
+                       {:hf, "hf-internal-testing/tiny-random-bert-variant-sharded"},
+                       params_variant: "v3"
+                     )
+                   end
     end
   end
 end
