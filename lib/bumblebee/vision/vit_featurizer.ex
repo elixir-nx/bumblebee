@@ -49,7 +49,7 @@ defmodule Bumblebee.Vision.VitFeaturizer do
   alias Bumblebee.Utils.Image
 
   @impl true
-  def config(featurizer, opts \\ []) do
+  def config(featurizer, opts) do
     Shared.put_config_attrs(featurizer, opts)
   end
 

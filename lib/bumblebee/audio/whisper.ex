@@ -180,7 +180,7 @@ defmodule Bumblebee.Audio.Whisper do
   def architectures(), do: [:base, :for_conditional_generation]
 
   @impl true
-  def config(spec, opts \\ []) do
+  def config(spec, opts) do
     spec
     |> Shared.put_config_attrs(opts)
   end

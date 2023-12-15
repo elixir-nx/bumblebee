@@ -89,7 +89,7 @@ defmodule Bumblebee.Vision.ClipVision do
   def architectures(), do: [:base, :for_embedding]
 
   @impl true
-  def config(spec, opts \\ []) do
+  def config(spec, opts) do
     Shared.put_config_attrs(spec, opts)
   end
 

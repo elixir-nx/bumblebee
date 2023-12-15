@@ -77,7 +77,7 @@ defmodule Bumblebee.Multimodal.Clip do
   def architectures(), do: [:base]
 
   @impl true
-  def config(spec, opts \\ []) do
+  def config(spec, opts) do
     Shared.put_config_attrs(spec, opts)
   end
 

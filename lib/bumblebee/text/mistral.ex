@@ -144,7 +144,7 @@ defmodule Bumblebee.Text.Mistral do
     ]
 
   @impl true
-  def config(spec, opts \\ []) do
+  def config(spec, opts) do
     spec
     |> Shared.put_config_attrs(opts)
     |> Shared.validate_label_options()

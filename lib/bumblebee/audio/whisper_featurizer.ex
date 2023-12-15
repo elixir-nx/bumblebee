@@ -48,7 +48,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
   @behaviour Bumblebee.Configurable
 
   @impl true
-  def config(featurizer, opts \\ []) do
+  def config(featurizer, opts) do
     Shared.put_config_attrs(featurizer, opts)
   end
 

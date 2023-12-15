@@ -106,7 +106,7 @@ defmodule Bumblebee.Text.ClipText do
   def architectures(), do: [:base, :for_embedding]
 
   @impl true
-  def config(spec, opts \\ []) do
+  def config(spec, opts) do
     spec
     |> Shared.put_config_attrs(opts)
     |> Shared.validate_label_options()

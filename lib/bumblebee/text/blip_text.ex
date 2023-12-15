@@ -147,7 +147,7 @@ defmodule Bumblebee.Text.BlipText do
   def architectures(), do: [:base, :for_causal_language_modeling]
 
   @impl true
-  def config(spec, opts \\ []) do
+  def config(spec, opts) do
     Shared.put_config_attrs(spec, opts)
   end
 

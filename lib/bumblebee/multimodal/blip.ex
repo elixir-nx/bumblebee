@@ -94,7 +94,7 @@ defmodule Bumblebee.Multimodal.Blip do
   def architectures(), do: [:for_conditional_generation]
 
   @impl true
-  def config(spec, opts \\ []) do
+  def config(spec, opts) do
     Shared.put_config_attrs(spec, opts)
   end
 

@@ -88,7 +88,7 @@ defmodule Bumblebee.Diffusion.VaeKl do
   def architectures(), do: [:base, :encoder, :decoder]
 
   @impl true
-  def config(spec, opts \\ []) do
+  def config(spec, opts) do
     Shared.put_config_attrs(spec, opts)
   end
 
