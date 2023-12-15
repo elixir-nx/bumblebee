@@ -23,6 +23,13 @@ defmodule Bumblebee.Text.QuestionAnswering do
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
 
+    tokenizer =
+      Bumblebee.configure(tokenizer,
+        length: sequence_length,
+        return_token_type_ids: true,
+        return_offsets: true
+      )
+
     {_init_fun, predict_fun} = Axon.build(model)
 
     scores_fun = fn params, input ->
@@ -87,11 +94,7 @@ defmodule Bumblebee.Text.QuestionAnswering do
 
       all_inputs =
         Nx.with_default_backend(Nx.BinaryBackend, fn ->
-          Bumblebee.apply_tokenizer(tokenizer, raw_inputs,
-            length: sequence_length,
-            return_token_type_ids: true,
-            return_offsets: true
-          )
+          Bumblebee.apply_tokenizer(tokenizer, raw_inputs)
         end)
 
       inputs = Map.take(all_inputs, ["input_ids", "attention_mask", "token_type_ids"])

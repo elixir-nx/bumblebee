@@ -347,30 +347,6 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
-  Updates each of the special token with the value in `data`.
-  """
-  @spec load_special_tokens(map(), map()) :: map()
-  def load_special_tokens(special_tokens, data) do
-    for {key, default_token} <- special_tokens, into: %{} do
-      token =
-        if token = data["#{key}_token"] do
-          load_token(token)
-        else
-          default_token
-        end
-
-      {key, token}
-    end
-  end
-
-  @doc """
-  Normalizes a persisted token into token string.
-  """
-  @spec load_token(String.t() | map()) :: String.t()
-  def load_token(token) when is_binary(token), do: token
-  def load_token(%{"content" => token}) when is_binary(token), do: token
-
-  @doc """
   Converts logits to scores as per the given scores function.
 
   Raises `ArgumentError` if the scores function is invalid.
@@ -435,81 +411,6 @@ defmodule Bumblebee.Shared do
       Nx.Defn.jit_apply(&Function.identity/1, [params], defn_options)
     else
       params
-    end
-  end
-
-  @doc """
-  Generates tokenizer implementation.
-  """
-  defmacro tokenizer_impl(opts) do
-    special_tokens = Keyword.fetch!(opts, :special_tokens)
-
-    quote do
-      defstruct [
-        :tokenizer,
-        special_tokens: unquote(special_tokens),
-        additional_special_tokens: []
-      ]
-
-      @behaviour Bumblebee.Tokenizer
-
-      @impl true
-      def apply(%{tokenizer: tokenizer, special_tokens: %{pad: pad_token}}, input, opts \\ []) do
-        Bumblebee.Utils.Tokenizers.apply(tokenizer, input, pad_token, opts)
-      end
-
-      @impl true
-      def decode(%{tokenizer: tokenizer}, ids) do
-        Bumblebee.Utils.Tokenizers.decode(tokenizer, ids)
-      end
-
-      @impl true
-      def id_to_token(%{tokenizer: tokenizer}, id) do
-        Bumblebee.Utils.Tokenizers.id_to_token(tokenizer, id)
-      end
-
-      @impl true
-      def token_to_id(%{tokenizer: tokenizer}, token) do
-        Bumblebee.Utils.Tokenizers.token_to_id(tokenizer, token)
-      end
-
-      @impl true
-      def special_tokens(tokenizer) do
-        tokenizer.special_tokens
-      end
-
-      @impl true
-      def additional_special_tokens(tokenizer) do
-        tokenizer.additional_special_tokens
-      end
-
-      defimpl Bumblebee.HuggingFace.Transformers.Config do
-        def load(tokenizer, %{
-              "tokenizer_file" => path,
-              "special_tokens_map" => special_tokens_map
-            }) do
-          native_tokenizer = Bumblebee.Utils.Tokenizers.load!(path)
-
-          special_tokens =
-            Bumblebee.Shared.load_special_tokens(tokenizer.special_tokens, special_tokens_map)
-
-          additional_special_tokens =
-            case special_tokens_map do
-              %{"additional_special_tokens" => tokens} ->
-                for token <- tokens, do: Bumblebee.Shared.load_token(token), into: MapSet.new()
-
-              _ ->
-                []
-            end
-
-          %{
-            tokenizer
-            | tokenizer: native_tokenizer,
-              special_tokens: special_tokens,
-              additional_special_tokens: additional_special_tokens
-          }
-        end
-      end
     end
   end
 

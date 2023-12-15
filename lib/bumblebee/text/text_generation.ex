@@ -33,6 +33,13 @@ defmodule Bumblebee.Text.TextGeneration do
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
 
+    tokenizer =
+      Bumblebee.configure(tokenizer,
+        length: sequence_length,
+        pad_direction: :left,
+        return_token_type_ids: false
+      )
+
     generate_fun = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
 
     batch_keys = Shared.sequence_batch_keys(sequence_length)
@@ -75,11 +82,7 @@ defmodule Bumblebee.Text.TextGeneration do
 
       inputs =
         Nx.with_default_backend(Nx.BinaryBackend, fn ->
-          Bumblebee.apply_tokenizer(tokenizer, texts,
-            length: sequence_length,
-            pad_direction: :left,
-            return_token_type_ids: false
-          )
+          Bumblebee.apply_tokenizer(tokenizer, texts)
         end)
 
       inputs = Map.put(inputs, "seed", seed)

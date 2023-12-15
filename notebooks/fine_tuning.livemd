@@ -111,11 +111,13 @@ defmodule Yelp do
   end
 
   def tokenize_and_batch(stream, tokenizer, batch_size, sequence_length) do
+    tokenizer = Bumblebee.configure(tokenizer, length: sequence_length)
+
     stream
     |> Stream.chunk_every(batch_size)
     |> Stream.map(fn batch ->
       {text, labels} = Enum.unzip(batch)
-      tokenized = Bumblebee.apply_tokenizer(tokenizer, text, length: sequence_length)
+      tokenized = Bumblebee.apply_tokenizer(tokenizer, text)
       {tokenized, Nx.stack(labels)}
     end)
   end
