@@ -214,26 +214,26 @@ defmodule Bumblebee do
     "whisper" => Bumblebee.Audio.WhisperFeaturizer
   }
 
-  @model_type_to_tokenizer %{
-    "albert" => Bumblebee.Text.AlbertTokenizer,
-    "bart" => Bumblebee.Text.BartTokenizer,
-    "bert" => Bumblebee.Text.BertTokenizer,
-    "blenderbot" => Bumblebee.Text.BlenderbotTokenizer,
-    "blip" => Bumblebee.Text.BertTokenizer,
-    "distilbert" => Bumblebee.Text.DistilbertTokenizer,
-    "camembert" => Bumblebee.Text.CamembertTokenizer,
-    "clip" => Bumblebee.Text.ClipTokenizer,
-    "gpt_neox" => Bumblebee.Text.GptNeoXTokenizer,
-    "gpt2" => Bumblebee.Text.Gpt2Tokenizer,
-    "gpt_bigcode" => Bumblebee.Text.Gpt2Tokenizer,
-    "layoutlm" => Bumblebee.Text.LayoutLmTokenizer,
-    "llama" => Bumblebee.Text.LlamaTokenizer,
-    "mistral" => Bumblebee.Text.LlamaTokenizer,
-    "mbart" => Bumblebee.Text.MbartTokenizer,
-    "roberta" => Bumblebee.Text.RobertaTokenizer,
-    "t5" => Bumblebee.Text.T5Tokenizer,
-    "whisper" => Bumblebee.Text.WhisperTokenizer,
-    "xlm-roberta" => Bumblebee.Text.XlmRobertaTokenizer
+  @model_type_to_tokenizer_type %{
+    "albert" => :albert,
+    "bart" => :bart,
+    "bert" => :bert,
+    "blenderbot" => :blenderbot,
+    "blip" => :bert,
+    "distilbert" => :distilbert,
+    "camembert" => :camembert,
+    "clip" => :clip,
+    "gpt_neox" => :gpt_neo_x,
+    "gpt2" => :gpt2,
+    "gpt_bigcode" => :gpt2,
+    "layoutlm" => :layout_lm,
+    "llama" => :llama,
+    "mistral" => :llama,
+    "mbart" => :mbart,
+    "roberta" => :roberta,
+    "t5" => :t5,
+    "whisper" => :whisper,
+    "xlm-roberta" => :xlm_roberta
   }
 
   @diffusers_class_to_scheduler %{
@@ -766,31 +766,6 @@ defmodule Bumblebee do
   @doc """
   Tokenizes and encodes `input` with the given tokenizer.
 
-  ## Options
-
-    * `:add_special_tokens` - whether to add special tokens. Defaults
-      to `true`
-
-    * `:pad_direction` - the padding direction, either `:right` or
-      `:left`. Defaults to `:right`
-
-    * `:return_attention_mask` - whether to return attention mask for
-      encoded sequence. Defaults to `true`
-
-    * `:return_token_type_ids` - whether to return token type ids for
-      encoded sequence. Defaults to `true`
-
-    * `:return_special_tokens_mask` - whether to return special tokens
-      mask for encoded sequence. Defaults to `false`
-
-    * `:return_offsets` - whether to return token offsets for encoded
-      sequence. Defaults to `false`
-
-    * `:length` - applies fixed length padding or truncation to the
-      given input if set. Can be either a specific number or a list
-      of numbers. When a list is given, the smallest number that
-      exceeds all input lengths is used as the padding length
-
   ## Examples
 
       tokenizer = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
@@ -804,19 +779,20 @@ defmodule Bumblebee do
           keyword()
         ) :: any()
   def apply_tokenizer(%module{} = tokenizer, input, opts \\ []) do
-    opts =
-      Keyword.validate!(opts,
-        add_special_tokens: true,
-        pad_direction: :right,
-        truncate_direction: :right,
-        length: nil,
-        return_attention_mask: true,
-        return_token_type_ids: true,
-        return_special_tokens_mask: false,
-        return_offsets: false
-      )
+    tokenizer =
+      if opts == [] do
+        tokenizer
+      else
+        # TODO: remove options on v0.6
+        IO.warn(
+          "passing options to Bumblebee.apply_tokenizer/3 is deprecated," <>
+            " please use Bumblebee.configure/2 to set tokenizer options"
+        )
 
-    module.apply(tokenizer, input, opts)
+        Bumblebee.configure(tokenizer, opts)
+      end
+
+    module.apply(tokenizer, input)
   end
 
   @doc """
@@ -824,7 +800,7 @@ defmodule Bumblebee do
 
   ## Options
 
-    * `:module` - the tokenizer module. By default it is inferred from
+    * `:type` - the tokenizer type. By default it is inferred from
       the configuration files, if that is not possible, it must be
       specified explicitly
 
@@ -838,17 +814,17 @@ defmodule Bumblebee do
           {:ok, Bumblebee.Tokenizer.t()} | {:error, String.t()}
   def load_tokenizer(repository, opts \\ []) do
     repository = normalize_repository!(repository)
-    opts = Keyword.validate!(opts, [:module])
-    module = opts[:module]
+    opts = Keyword.validate!(opts, [:type])
+    type = opts[:type]
 
     case get_repo_files(repository) do
       {:ok, %{@tokenizer_filename => etag} = repo_files} ->
         with {:ok, path} <- download(repository, @tokenizer_filename, etag) do
-          module =
-            module ||
+          type =
+            type ||
               case infer_tokenizer_type(repository, repo_files) do
-                {:ok, module} ->
-                  module
+                {:ok, type} ->
+                  type
 
                 {:error, error} ->
                   raise ArgumentError, "#{error}, please specify the :module option"
@@ -878,7 +854,7 @@ defmodule Bumblebee do
 
           with {:ok, tokenizer_config} <- tokenizer_config_result,
                {:ok, special_tokens_map} <- special_tokens_map_result do
-            tokenizer = struct!(module)
+            tokenizer = struct!(Bumblebee.Text.PreTrainedTokenizer, type: type)
 
             tokenizer =
               HuggingFace.Transformers.Config.load(tokenizer, %{
@@ -912,13 +888,13 @@ defmodule Bumblebee do
          {:ok, tokenizer_data} <- decode_config(path) do
       case tokenizer_data do
         %{"model_type" => model_type} ->
-          case @model_type_to_tokenizer[model_type] do
+          case @model_type_to_tokenizer_type[model_type] do
             nil ->
               {:error,
-               "could not match model type #{inspect(model_type)} to any of the supported tokenizers"}
+               "could not match model type #{inspect(model_type)} to any of the supported tokenizer types"}
 
-            module ->
-              {:ok, module}
+            type ->
+              {:ok, type}
           end
 
         _ ->

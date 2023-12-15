@@ -27,6 +27,9 @@ defmodule Bumblebee.Text.FillMask do
     mask_token_id = Bumblebee.Tokenizer.special_token_id(tokenizer, :mask)
     mask_token = Bumblebee.Tokenizer.id_to_token(tokenizer, mask_token_id)
 
+    tokenizer =
+      Bumblebee.configure(tokenizer, length: sequence_length, return_token_type_ids: false)
+
     {_init_fun, predict_fun} = Axon.build(model)
 
     scores_fun = fn params, inputs ->
@@ -89,10 +92,7 @@ defmodule Bumblebee.Text.FillMask do
 
       inputs =
         Nx.with_default_backend(Nx.BinaryBackend, fn ->
-          Bumblebee.apply_tokenizer(tokenizer, texts,
-            length: sequence_length,
-            return_token_type_ids: false
-          )
+          Bumblebee.apply_tokenizer(tokenizer, texts)
         end)
 
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)

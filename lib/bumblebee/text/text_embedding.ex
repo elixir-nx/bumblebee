@@ -32,6 +32,9 @@ defmodule Bumblebee.Text.TextEmbedding do
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
 
+    tokenizer =
+      Bumblebee.configure(tokenizer, length: sequence_length, return_token_type_ids: false)
+
     {_init_fun, encoder} = Axon.build(model)
 
     embedding_fun = fn params, inputs ->
@@ -119,10 +122,7 @@ defmodule Bumblebee.Text.TextEmbedding do
 
       inputs =
         Nx.with_default_backend(Nx.BinaryBackend, fn ->
-          Bumblebee.apply_tokenizer(tokenizer, texts,
-            length: sequence_length,
-            return_token_type_ids: false
-          )
+          Bumblebee.apply_tokenizer(tokenizer, texts)
         end)
 
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)

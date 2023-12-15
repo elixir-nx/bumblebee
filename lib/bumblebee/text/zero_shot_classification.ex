@@ -46,6 +46,9 @@ defmodule Bumblebee.Text.ZeroShotClassification do
             ~s/expected model specification to include "entailment" label in :id_to_label/
     end
 
+    tokenizer =
+      Bumblebee.configure(tokenizer, length: sequence_length, return_token_type_ids: false)
+
     {_init_fun, predict_fun} = Axon.build(model)
 
     logits_fun = fn params, input ->
@@ -95,10 +98,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
       inputs =
         Nx.with_default_backend(Nx.BinaryBackend, fn ->
-          Bumblebee.apply_tokenizer(tokenizer, pairs,
-            length: sequence_length,
-            return_token_type_ids: false
-          )
+          Bumblebee.apply_tokenizer(tokenizer, pairs)
         end)
 
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)

@@ -162,6 +162,13 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
 
+    tokenizer =
+      Bumblebee.configure(tokenizer,
+        length: sequence_length,
+        return_token_type_ids: false,
+        return_attention_mask: false
+      )
+
     {_, encoder_predict} = Axon.build(encoder.model)
     {_, vae_predict} = Axon.build(vae.model)
     {_, unet_predict} = Axon.build(unet.model)
@@ -213,7 +220,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
       defn_options
     )
     |> Nx.Serving.batch_size(batch_size)
-    |> Nx.Serving.client_preprocessing(&client_preprocessing(&1, tokenizer, sequence_length))
+    |> Nx.Serving.client_preprocessing(&client_preprocessing(&1, tokenizer))
     |> Nx.Serving.client_postprocessing(&client_postprocessing(&1, &2, safety_checker))
   end
 
@@ -235,13 +242,10 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     image_fun =
       Shared.compile_or_jit(image_fun, defn_options, compile?, fn ->
-        text_inputs = %{
-          "input_ids" => Nx.template({batch_size, sequence_length}, :u32)
-        }
-
         inputs = %{
-          "unconditional" => text_inputs,
-          "conditional" => text_inputs,
+          "conditional_and_unconditional" => %{
+            "input_ids" => Nx.template({batch_size, 2, sequence_length}, :u32)
+          },
           "seed" => Nx.template({batch_size}, :s64)
         }
 
@@ -285,32 +289,22 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     end
   end
 
-  defp client_preprocessing(input, tokenizer, sequence_length) do
+  defp client_preprocessing(input, tokenizer) do
     {inputs, multi?} = Shared.validate_serving_input!(input, &validate_input/1)
 
-    prompts = Enum.map(inputs, & &1.prompt)
-    negative_prompts = Enum.map(inputs, & &1.negative_prompt)
     seed = Enum.map(inputs, & &1.seed) |> Nx.tensor(backend: Nx.BinaryBackend)
 
-    conditional =
+    # Note: we need to tokenize all sequences together, so that
+    # they are padded to the same length (if not specified)
+    prompts = Enum.flat_map(inputs, &[&1.prompt, &1.negative_prompt])
+
+    prompt_pairs =
       Nx.with_default_backend(Nx.BinaryBackend, fn ->
-        Bumblebee.apply_tokenizer(tokenizer, prompts,
-          length: sequence_length,
-          return_token_type_ids: false,
-          return_attention_mask: false
-        )
+        inputs = Bumblebee.apply_tokenizer(tokenizer, prompts)
+        Utils.Nx.composite_unflatten_batch(inputs, Nx.axis_size(seed, 0))
       end)
 
-    unconditional =
-      Nx.with_default_backend(Nx.BinaryBackend, fn ->
-        Bumblebee.apply_tokenizer(tokenizer, negative_prompts,
-          length: Nx.axis_size(conditional["input_ids"], 1),
-          return_attention_mask: false,
-          return_token_type_ids: false
-        )
-      end)
-
-    inputs = %{"unconditional" => unconditional, "conditional" => conditional, "seed" => seed}
+    inputs = %{"conditional_and_unconditional" => prompt_pairs, "seed" => seed}
 
     {Nx.Batch.concatenate([inputs]), multi?}
   end
@@ -360,7 +354,11 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     seed = inputs["seed"]
 
-    inputs = Utils.Nx.composite_concatenate(inputs["unconditional"], inputs["conditional"])
+    inputs =
+      inputs["conditional_and_unconditional"]
+      # Transpose conditional and unconditional to separate blocks
+      |> composite_transpose_leading()
+      |> Utils.Nx.composite_flatten_batch()
 
     %{hidden_state: text_embeddings} = encoder_predict.(encoder_params, inputs)
 
@@ -399,7 +397,8 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
         %{sample: noise_pred} = unet_predict.(unet_params, unet_inputs)
 
-        {noise_pred_unconditional, noise_pred_text} = split_in_half(noise_pred)
+        {noise_pred_text, noise_pred_unconditional} =
+          split_conditional_and_unconditional(noise_pred)
 
         noise_pred =
           noise_pred_unconditional + guidance_scale * (noise_pred_text - noise_pred_unconditional)
@@ -416,7 +415,14 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     NxImage.from_continuous(image, -1, 1)
   end
 
-  defnp split_in_half(tensor) do
+  deftransformp composite_transpose_leading(container) do
+    Utils.Nx.map(container, fn tensor ->
+      [first, second | rest] = Nx.axes(tensor)
+      Nx.transpose(tensor, axes: [second, first | rest])
+    end)
+  end
+
+  defnp split_conditional_and_unconditional(tensor) do
     batch_size = Nx.axis_size(tensor, 0)
     half_size = div(batch_size, 2)
     {tensor[0..(half_size - 1)//1], tensor[half_size..-1//1]}
