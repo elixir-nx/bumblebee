@@ -783,6 +783,7 @@ defmodule Bumblebee do
       if opts == [] do
         tokenizer
       else
+        # TODO: remove options on v0.6
         IO.warn(
           "passing options to Bumblebee.apply_tokenizer/3 is deprecated," <>
             " please use Bumblebee.configure/2 to set tokenizer options"
