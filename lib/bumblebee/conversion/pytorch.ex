@@ -145,6 +145,7 @@ defmodule Bumblebee.Conversion.PyTorch do
 
                 case verify_param_shape(param_expr, value) do
                   :ok ->
+                    value = ensure_type(param_expr, value)
                     {value, diff}
 
                   {:error, expected, actual} ->
@@ -484,6 +485,15 @@ defmodule Bumblebee.Conversion.PyTorch do
 
   defp expr_shape(expr) do
     Utils.Nx.map(expr, &Nx.shape/1)
+  end
+
+  defp ensure_type(param_expr, value) do
+    Utils.Nx.zip_with(param_expr, value, fn expr, tensor ->
+      case {Nx.type(expr), Nx.type(tensor)} do
+        {type, type} -> tensor
+        {expected, _actual} -> Nx.as_type(tensor, expected)
+      end
+    end)
   end
 
   defp unflatten_leading(tensor, axis_size) do

@@ -24,6 +24,46 @@ defmodule Bumblebee.Utils.Nx do
   end
 
   @doc """
+  Recursively zips the given containers with the given function.
+  """
+  @spec zip_with(
+          tensor_or_container,
+          tensor_or_container,
+          (Nx.Tensor.t(), Nx.Tensor.t() -> term())
+        ) :: tensor_or_container
+        when tensor_or_container: Nx.Tensor.t() | Nx.Container.t()
+  def zip_with(left, right, fun)
+
+  def zip_with(%Nx.Tensor{} = left, %Nx.Tensor{} = right, fun) do
+    fun.(left, right)
+  end
+
+  def zip_with(left, right, fun) do
+    right_items =
+      right
+      |> Nx.Container.reduce([], fn item, acc -> [item | acc] end)
+      |> Enum.reverse()
+
+    case Nx.Container.traverse(left, right_items, &recur_zip_with(&1, &2, fun)) do
+      {result, []} ->
+        result
+
+      {_result, _leftover} ->
+        raise ArgumentError, "unable to merge arguments with incompatible structure"
+    end
+  end
+
+  defp recur_zip_with(left, [right | right_items], fun) do
+    case {left, right} do
+      {%Nx.Tensor{} = left, %Nx.Tensor{} = right} ->
+        {fun.(left, right), right_items}
+
+      {left, right} ->
+        {recur_zip_with(left, right, fun), right_items}
+    end
+  end
+
+  @doc """
   Returns the underlying tensor as a list.
 
   The list nesting matches the tensor shape.
