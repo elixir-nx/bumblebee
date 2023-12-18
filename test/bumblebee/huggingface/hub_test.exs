@@ -116,6 +116,28 @@ defmodule Bumblebee.HuggingFace.HubTest do
     end
 
     @tag :tmp_dir
+    test "follows relative redirect before checking etag", %{bypass: bypass, tmp_dir: tmp_dir} do
+      Bypass.expect_once(bypass, "HEAD", "/repo/file.json", fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("location", "/repo-renamed/file.json")
+        |> Plug.Conn.resp(307, "")
+      end)
+
+      Bypass.expect_once(bypass, "HEAD", "/repo-renamed/file.json", fn conn ->
+        serve_with_etag(conn, ~s/"hash"/, "{}")
+      end)
+
+      Bypass.expect_once(bypass, "GET", "/repo-renamed/file.json", fn conn ->
+        serve_with_etag(conn, ~s/"hash"/, "{}")
+      end)
+
+      url = url(bypass.port) <> "/repo/file.json"
+
+      assert {:ok, path} = Hub.cached_download(url, cache_dir: tmp_dir, offline: false)
+      assert File.read!(path) == "{}"
+    end
+
+    @tag :tmp_dir
     test "returns an error on missing etag header", %{bypass: bypass, tmp_dir: tmp_dir} do
       Bypass.expect_once(bypass, "HEAD", "/file.json", fn conn ->
         Plug.Conn.resp(conn, 200, "")
@@ -182,6 +204,62 @@ defmodule Bumblebee.HuggingFace.HubTest do
       assert {:error,
               "could not find file in local cache and outgoing traffic is disabled, url: " <> _} =
                Hub.cached_download(url, cache_dir: tmp_dir, offline: true)
+    end
+
+    @tag :tmp_dir
+    test "includes authorization header when :auth_token is given",
+         %{bypass: bypass, tmp_dir: tmp_dir} do
+      Bypass.expect_once(bypass, "HEAD", "/file.json", fn conn ->
+        assert {"authorization", "Bearer token"} in conn.req_headers
+
+        serve_with_etag(conn, ~s/"hash"/, "")
+      end)
+
+      Bypass.expect_once(bypass, "GET", "/file.json", fn conn ->
+        assert {"authorization", "Bearer token"} in conn.req_headers
+
+        serve_with_etag(conn, ~s/"hash"/, "{}")
+      end)
+
+      url = url(bypass.port) <> "/file.json"
+
+      assert {:ok, _path} =
+               Hub.cached_download(url, auth_token: "token", cache_dir: tmp_dir, offline: false)
+    end
+
+    @tag :tmp_dir
+    test "skips authentication header for redirected requests",
+         %{bypass: bypass, tmp_dir: tmp_dir} do
+      # Context: HuggingFace Hub returns redirects for files stored
+      # in LFS and the redirect location already has S3 signature in
+      # URL params. If the location points to S3 directly, which is
+      # the case within HF spaces, passing the Authorization header
+      # leads to failure, presumably because it takes precedence over
+      # the params signature
+
+      Bypass.expect_once(bypass, "HEAD", "/file.bin", fn conn ->
+        assert {"authorization", "Bearer token"} in conn.req_headers
+
+        url = Plug.Conn.request_url(conn)
+
+        conn
+        |> Plug.Conn.put_resp_header("x-linked-etag", ~s/"hash"/)
+        |> Plug.Conn.put_resp_header("location", url <> "/storage")
+        |> Plug.Conn.resp(302, "")
+      end)
+
+      Bypass.expect_once(bypass, "GET", "/file.bin/storage", fn conn ->
+        assert {"authorization", "Bearer token"} not in conn.req_headers
+
+        conn
+        |> Plug.Conn.put_resp_header("etag", ~s/"hash"/)
+        |> Plug.Conn.resp(200, <<0, 1>>)
+      end)
+
+      url = url(bypass.port) <> "/file.bin"
+
+      assert {:ok, _path} =
+               Hub.cached_download(url, auth_token: "token", cache_dir: tmp_dir, offline: false)
     end
   end
 
