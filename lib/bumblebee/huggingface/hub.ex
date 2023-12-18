@@ -67,34 +67,39 @@ defmodule Bumblebee.HuggingFace.Hub do
 
     metadata_path = Path.join(dir, metadata_filename(url))
 
-    if offline do
-      case load_json(metadata_path) do
-        {:ok, %{"etag" => etag}} ->
-          entry_path = Path.join(dir, entry_filename(url, etag))
-          {:ok, entry_path}
-
-        _ ->
-          {:error,
-           "could not find file in local cache and outgoing traffic is disabled, url: #{url}"}
-      end
-    else
-      head_result =
-        if etag = opts[:etag] do
-          {:ok, etag, url}
-        else
-          head_download(url, headers)
-        end
-
-      with {:ok, etag, download_url} <- head_result do
-        entry_path = Path.join(dir, entry_filename(url, etag))
-
+    cond do
+      offline ->
         case load_json(metadata_path) do
-          {:ok, %{"etag" => ^etag}} ->
+          {:ok, %{"etag" => etag}} ->
+            entry_path = Path.join(dir, entry_filename(url, etag))
             {:ok, entry_path}
 
           _ ->
-            case HTTP.download(download_url, entry_path, headers: headers)
-                 |> finish_request(download_url) do
+            {:error,
+             "could not find file in local cache and outgoing traffic is disabled, url: #{url}"}
+        end
+
+      entry_path = opts[:etag] && cached_path_for_etag(dir, url, opts[:etag]) ->
+        {:ok, entry_path}
+
+      true ->
+        with {:ok, etag, download_url, redirect?} <- head_download(url, headers) do
+          if entry_path = cached_path_for_etag(dir, url, etag) do
+            {:ok, entry_path}
+          else
+            entry_path = Path.join(dir, entry_filename(url, etag))
+
+            headers =
+              if redirect? do
+                List.keydelete(headers, "Authorization", 0)
+              else
+                headers
+              end
+
+            download_url
+            |> HTTP.download(entry_path, headers: headers)
+            |> finish_request(download_url)
+            |> case do
               :ok ->
                 :ok = store_json(metadata_path, %{"etag" => etag, "url" => url})
                 {:ok, entry_path}
@@ -104,24 +109,45 @@ defmodule Bumblebee.HuggingFace.Hub do
                 File.rm_rf!(entry_path)
                 error
             end
+          end
         end
-      end
+    end
+  end
+
+  defp cached_path_for_etag(dir, url, etag) do
+    metadata_path = Path.join(dir, metadata_filename(url))
+
+    case load_json(metadata_path) do
+      {:ok, %{"etag" => ^etag}} ->
+        Path.join(dir, entry_filename(url, etag))
+
+      _ ->
+        nil
     end
   end
 
   defp head_download(url, headers) do
     with {:ok, response} <-
            HTTP.request(:head, url, follow_redirects: false, headers: headers)
-           |> finish_request(url),
-         {:ok, etag} <- fetch_etag(response) do
-      download_url =
-        if response.status in 300..399 do
-          HTTP.get_header(response, "location")
-        else
-          url
-        end
+           |> finish_request(url) do
+      if response.status in 300..399 do
+        location = HTTP.get_header(response, "location")
 
-      {:ok, etag, download_url}
+        # Follow relative redirects
+        if URI.parse(location).host == nil do
+          url =
+            url
+            |> URI.parse()
+            |> Map.replace!(:path, location)
+            |> URI.to_string()
+
+          head_download(url, headers)
+        else
+          with {:ok, etag} <- fetch_etag(response), do: {:ok, etag, location, true}
+        end
+      else
+        with {:ok, etag} <- fetch_etag(response), do: {:ok, etag, url, false}
+      end
     end
   end
 
