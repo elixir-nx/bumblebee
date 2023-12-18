@@ -317,6 +317,11 @@ defmodule Bumblebee do
   @doc """
   Builds an `Axon` model according to the given specification.
 
+  ## Options
+
+    * `:type` - either a type or `Axon.MixedPrecision` policy to apply
+      to the model
+
   ## Example
 
       spec = Bumblebee.configure(Bumblebee.Vision.ResNet, architecture: :base, embedding_size: 128)
@@ -324,9 +329,24 @@ defmodule Bumblebee do
 
   """
   @doc type: :model
-  @spec build_model(Bumblebee.ModelSpec.t()) :: Axon.t()
-  def build_model(%module{} = spec) do
-    module.model(spec)
+  @spec build_model(Bumblebee.ModelSpec.t(), keyword()) :: Axon.t()
+  def build_model(%module{} = spec, opts \\ []) do
+    opts = Keyword.validate!(opts, [:type])
+
+    model = module.model(spec)
+
+    case opts[:type] do
+      nil ->
+        model
+
+      %Axon.MixedPrecision.Policy{} = policy ->
+        Axon.MixedPrecision.apply_policy(model, policy)
+
+      type ->
+        type = Nx.Type.normalize!(type)
+        policy = Axon.MixedPrecision.create_policy(params: type, compute: type, output: type)
+        Axon.MixedPrecision.apply_policy(model, policy)
+    end
   end
 
   @doc """
@@ -446,6 +466,22 @@ defmodule Bumblebee do
   The model is downloaded and cached on your disk, use `cache_dir/0` to
   find the location.
 
+  ## Parameters precision
+
+  On GPUs computations that use numeric type of lower precision can
+  be faster and use less memory, while still providing valid results.
+  You can configure the model to use particular type by passing the
+  `:type` option, such as `:bf16`.
+
+  Some repositories have multiple variants of the parameter files
+  with different numeric types. The variant is usually indicated in
+  the file extension and you can load a particular file by specifying
+  `:params_variant`, or `:params_filename`. Note however that this
+  does not determine the numeric type used for inference. The file
+  type is relevant in context of download bandwidth and disk space.
+  If you want to use a lower precision for inference, make sure to
+  also specify `:type`.
+
   ## Options
 
     * `:spec` - the model specification to use when building the model.
@@ -469,6 +505,10 @@ defmodule Bumblebee do
 
     * `:backend` - the backend to allocate the tensors on. It is either
       an atom or a tuple in the shape `{backend, options}`
+
+    * `:type` - either a type or `Axon.MixedPrecision` policy to apply
+      to the model. Passing this option automatically casts parameters
+      to the desired type
 
   ## Examples
 
@@ -502,13 +542,14 @@ defmodule Bumblebee do
         :architecture,
         :params_variant,
         :params_filename,
+        :log_params_diff,
         :backend,
-        :log_params_diff
+        :type
       ])
 
     with {:ok, repo_files} <- get_repo_files(repository),
          {:ok, spec} <- maybe_load_model_spec(opts, repository, repo_files),
-         model <- build_model(spec),
+         model <- build_model(spec, Keyword.take(opts, [:type])),
          {:ok, params} <- load_params(spec, model, repository, repo_files, opts) do
       {:ok, %{model: model, params: params, spec: spec}}
     end
