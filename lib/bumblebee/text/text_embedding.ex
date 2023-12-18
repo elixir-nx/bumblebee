@@ -62,6 +62,16 @@ defmodule Bumblebee.Text.TextEmbedding do
             output
 
           :mean_pooling ->
+            case Nx.rank(output) do
+              3 ->
+                :ok
+
+              rank ->
+                raise ArgumentError,
+                      "expected the output tensor to have rank 3 to apply :output_pool, got: #{rank}." <>
+                        " You should either disable pooling or pick a different output using :output_attribute"
+            end
+
             input_mask_expanded = Nx.new_axis(inputs["attention_mask"], -1)
 
             output
