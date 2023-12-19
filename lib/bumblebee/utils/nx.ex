@@ -68,6 +68,8 @@ defmodule Bumblebee.Utils.Nx do
 
   The list nesting matches the tensor shape.
   """
+  # TODO: remove in v0.6
+  @deprecated "Use Nx.to_list/1 instead."
   @spec to_list(Nx.Tensor.t()) :: list()
   def to_list(tensor) do
     list = Nx.to_flat_list(tensor)

@@ -102,8 +102,8 @@ defmodule Bumblebee.Text.FillMask do
     end)
     |> Nx.Serving.client_postprocessing(fn {{top_scores, top_indices}, _metadata}, multi? ->
       Enum.zip_with(
-        Bumblebee.Utils.Nx.to_list(top_scores),
-        Bumblebee.Utils.Nx.to_list(top_indices),
+        Nx.to_list(top_scores),
+        Nx.to_list(top_indices),
         fn top_scores, top_indices ->
           predictions =
             Enum.zip_with(top_scores, top_indices, fn score, token_id ->

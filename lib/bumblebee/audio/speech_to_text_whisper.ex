@@ -145,7 +145,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
   defp maybe_stream(serving, false, spec, featurizer, tokenizer, timestamps?) do
     Nx.Serving.client_postprocessing(serving, fn
       {outputs, _metadata}, {multi?, all_num_chunks, lengths} ->
-        chunk_outputs = Bumblebee.Utils.Nx.to_list(outputs)
+        chunk_outputs = Nx.to_list(outputs)
 
         all_num_chunks
         |> Enum.map_reduce(chunk_outputs, fn num_chunks, chunk_outputs ->
@@ -166,7 +166,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
       state = decode_chunk_outputs_init(lengths, spec, featurizer, tokenizer)
 
       Stream.transform(stream, state, fn {:batch, outputs, _metadata}, state ->
-        outputs = Bumblebee.Utils.Nx.to_list(outputs)
+        outputs = Nx.to_list(outputs)
         decode_chunk_outputs_update(state, outputs, timestamps?, tokenizer)
       end)
     end)
