@@ -78,7 +78,7 @@ defmodule Bumblebee.Tokenizer do
           token() | list(token_id()) | list(list(token_id())) | Nx.Tensor.t()
         ) :: String.t()
   def decode(%module{} = tokenizer, ids) do
-    ids = with %Nx.Tensor{} <- ids, do: Bumblebee.Utils.Nx.to_list(ids)
+    ids = with %Nx.Tensor{} <- ids, do: Nx.to_list(ids)
     ids = List.wrap(ids)
     module.decode(tokenizer, ids)
   end

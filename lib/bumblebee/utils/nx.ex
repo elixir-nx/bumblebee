@@ -64,24 +64,6 @@ defmodule Bumblebee.Utils.Nx do
   end
 
   @doc """
-  Returns the underlying tensor as a list.
-
-  The list nesting matches the tensor shape.
-  """
-  @spec to_list(Nx.Tensor.t()) :: list()
-  def to_list(tensor) do
-    list = Nx.to_flat_list(tensor)
-
-    tensor
-    |> Nx.shape()
-    |> Tuple.to_list()
-    |> Enum.drop(1)
-    |> Enum.reverse()
-    |> Enum.reduce(list, &Stream.chunk_every(&2, &1))
-    |> Enum.to_list()
-  end
-
-  @doc """
   Splits tensor or container along the first axis.
 
   Note: this function traverses the container N times, where N is the
