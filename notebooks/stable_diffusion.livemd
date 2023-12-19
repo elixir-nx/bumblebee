@@ -2,13 +2,16 @@
 
 ```elixir
 Mix.install([
-  {:bumblebee, "~> 0.4.2"},
-  {:nx, "~> 0.6.1"},
-  {:exla, "~> 0.6.1"},
-  {:kino, "~> 0.10.0"}
+  # {:bumblebee, "~> 0.4.2"},
+  # {:nx, "~> 0.6.1"},
+  # {:exla, "~> 0.6.1"},
+  {:bumblebee, github: "elixir-nx/bumblebee"},
+  {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
+  {:exla, github: "elixir-nx/nx", sparse: "exla", override: true},
+  {:kino, "~> 0.11.0"}
 ])
 
-Nx.global_default_backend(EXLA.Backend)
+Nx.global_default_backend({EXLA.Backend, client: :host})
 ```
 
 ## Introduction
@@ -17,7 +20,7 @@ Stable Diffusion is a latent text-to-image diffusion model, primarily used to ge
 
 <!-- livebook:{"break_markdown":true} -->
 
-> **Note:** Stable Diffusion is a very involved model, so the generation can take a long time if you run it on a CPU. Also, running on the GPU currently requires at least 10 GB of VRAM.
+> **Note:** Stable Diffusion is a very involved model, so the generation can take a long time if you run it on a CPU. Also, running on the GPU currently requires at least 5GB of VRAM (or 3GB with lower speed, see below).
 
 <!-- livebook:{"branch_parent_index":0} -->
 
@@ -26,15 +29,16 @@ Stable Diffusion is a latent text-to-image diffusion model, primarily used to ge
 Stable Diffusion is composed of several separate models and preprocessors, so we will load all of them.
 
 ```elixir
-repository_id = "CompVis/stable-diffusion-v1-4"
+repo_id = "CompVis/stable-diffusion-v1-4"
+opts = [params_variant: "fp16", type: :bf16]
 
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
-{:ok, clip} = Bumblebee.load_model({:hf, repository_id, subdir: "text_encoder"})
-{:ok, unet} = Bumblebee.load_model({:hf, repository_id, subdir: "unet"})
-{:ok, vae} = Bumblebee.load_model({:hf, repository_id, subdir: "vae"}, architecture: :decoder)
-{:ok, scheduler} = Bumblebee.load_scheduler({:hf, repository_id, subdir: "scheduler"})
-{:ok, featurizer} = Bumblebee.load_featurizer({:hf, repository_id, subdir: "feature_extractor"})
-{:ok, safety_checker} = Bumblebee.load_model({:hf, repository_id, subdir: "safety_checker"})
+{:ok, clip} = Bumblebee.load_model({:hf, repo_id, subdir: "text_encoder"}, opts)
+{:ok, unet} = Bumblebee.load_model({:hf, repo_id, subdir: "unet"}, opts)
+{:ok, vae} = Bumblebee.load_model({:hf, repo_id, subdir: "vae"}, [architecture: :decoder] ++ opts)
+{:ok, scheduler} = Bumblebee.load_scheduler({:hf, repo_id, subdir: "scheduler"})
+{:ok, featurizer} = Bumblebee.load_featurizer({:hf, repo_id, subdir: "feature_extractor"})
+{:ok, safety_checker} = Bumblebee.load_model({:hf, repo_id, subdir: "safety_checker"}, opts)
 
 :ok
 ```
@@ -49,13 +53,21 @@ With all the models loaded, we can now configure a serving implementation of the
 serving =
   Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, unet, vae, tokenizer, scheduler,
     num_steps: 20,
-    num_images_per_prompt: 2,
+    num_images_per_prompt: 1,
     safety_checker: safety_checker,
     safety_checker_featurizer: featurizer,
     compile: [batch_size: 1, sequence_length: 60],
+    # Option 1
+    preallocate_params: true,
     defn_options: [compiler: EXLA]
+    # Option 2 (reduces GPU usage, but runs noticeably slower)
+    # defn_options: [compiler: EXLA, lazy_transfers: :always]
   )
 
+Kino.start_child({Nx.Serving, name: StableDiffusion, serving: serving})
+```
+
+```elixir
 prompt_input =
   Kino.Input.text("Prompt", default: "numbat, forest, high quality, detailed, digital art")
 
@@ -70,7 +82,8 @@ We are ready to generate images!
 prompt = Kino.Input.read(prompt_input)
 negative_prompt = Kino.Input.read(negative_prompt_input)
 
-output = Nx.Serving.run(serving, %{prompt: prompt, negative_prompt: negative_prompt})
+output =
+  Nx.Serving.batched_run(StableDiffusion, %{prompt: prompt, negative_prompt: negative_prompt})
 
 for result <- output.results do
   Kino.Image.new(result.image)
