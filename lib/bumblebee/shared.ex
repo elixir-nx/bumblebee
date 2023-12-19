@@ -408,7 +408,8 @@ defmodule Bumblebee.Shared do
   @spec maybe_preallocate(map(), boolean(), keyword()) :: map()
   def maybe_preallocate(params, preallocate?, defn_options) do
     if preallocate? do
-      Nx.Defn.jit_apply(&Function.identity/1, [params], defn_options)
+      backend = Nx.Defn.to_backend(defn_options)
+      Nx.backend_copy(params, backend)
     else
       params
     end
