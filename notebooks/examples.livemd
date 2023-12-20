@@ -46,7 +46,9 @@ image = Kino.Input.read(image_input)
 
 # Build a tensor from the raw pixel data
 image =
-  image.data
+  image.file_ref
+  |> Kino.Input.file_path()
+  |> File.read!()
   |> Nx.from_binary(:u8)
   |> Nx.reshape({image.height, image.width, 3})
 
