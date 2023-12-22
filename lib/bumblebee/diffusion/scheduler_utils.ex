@@ -31,11 +31,10 @@ defmodule Bumblebee.Diffusion.SchedulerUtils do
 
     case type do
       :linear ->
-        Bumblebee.Utils.Nx.linspace(beta_start, beta_end, steps: num_timesteps)
+        Nx.linspace(beta_start, beta_end, n: num_timesteps)
 
       :quadratic ->
-        Bumblebee.Utils.Nx.linspace(Nx.sqrt(beta_start), Nx.sqrt(beta_end), steps: num_timesteps)
-        |> Nx.pow(2)
+        Nx.linspace(Nx.sqrt(beta_start), Nx.sqrt(beta_end), n: num_timesteps) |> Nx.pow(2)
 
       :squared_cosine ->
         betas_for_alpha_bar(&squared_cosine_alpha_bar/1, num_timesteps: num_timesteps)
