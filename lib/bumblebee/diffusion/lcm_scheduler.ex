@@ -108,16 +108,15 @@ defmodule Bumblebee.Diffusion.LcmScheduler do
   end
 
   @impl true
-  def init(scheduler, num_steps, _sample_shape, opts \\ []) do
-    opts = Keyword.validate!(opts, [:seed, :strength])
+  def init(scheduler, num_steps, _sample_template, prng_key, opts \\ []) do
+    opts = Keyword.validate!(opts, [:strength])
 
-    seed = Keyword.get_lazy(opts, :seed, fn -> :erlang.system_time() end)
     strength = Keyword.get(opts, :strength, 1.0)
 
     timesteps =
       timesteps(num_steps, scheduler.num_original_steps, scheduler.num_train_steps, strength)
 
-    {alpha_bars, prng_key} = init_parameters(scheduler: scheduler, seed: seed)
+    {alpha_bars} = init_parameters(scheduler: scheduler)
 
     state = %{
       timesteps: timesteps,
@@ -179,9 +178,6 @@ defmodule Bumblebee.Diffusion.LcmScheduler do
       num_train_steps: num_train_steps
     } = opts[:scheduler]
 
-    seed = opts[:seed]
-    prng_key = Nx.Random.key(seed)
-
     betas =
       SchedulerUtils.beta_schedule(beta_schedule, num_train_steps,
         start: beta_start,
@@ -190,7 +186,7 @@ defmodule Bumblebee.Diffusion.LcmScheduler do
 
     alphas = 1 - betas
 
-    {Nx.cumulative_product(alphas), prng_key}
+    {Nx.cumulative_product(alphas)}
   end
 
   @impl true

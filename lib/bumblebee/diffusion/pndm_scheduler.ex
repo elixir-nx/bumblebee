@@ -80,7 +80,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
   end
 
   @impl true
-  def init(scheduler, num_steps, sample_shape) do
+  def init(scheduler, num_steps, sample_template, _prng_key) do
     timesteps =
       timesteps(
         scheduler.num_train_steps,
@@ -91,7 +91,11 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
     alpha_bars = init_parameters(scheduler: scheduler)
 
-    empty = Nx.broadcast(0.0, sample_shape)
+    [empty, _] =
+      Nx.broadcast_vectors([
+        Nx.tensor(0.0, type: Nx.type(sample_template)) |> Nx.broadcast(sample_template),
+        sample_template
+      ])
 
     state = %{
       timesteps: timesteps,

@@ -173,10 +173,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     {_, vae_predict} = Axon.build(vae.model)
     {_, unet_predict} = Axon.build(unet.model)
 
-    scheduler_init = fn latents_shape ->
-      Bumblebee.scheduler_init(scheduler, num_steps, latents_shape)
-    end
-
+    scheduler_init = &Bumblebee.scheduler_init(scheduler, num_steps, &1, &2)
     scheduler_step = &Bumblebee.scheduler_step(scheduler, &1, &2, &3)
 
     image_fun =
@@ -362,8 +359,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     %{hidden_state: text_embeddings} = encoder_predict.(encoder_params, inputs)
 
-    {twice_batch_size, sequence_length, hidden_size} = Nx.shape(text_embeddings)
-    batch_size = div(twice_batch_size, 2)
+    {_twice_batch_size, sequence_length, hidden_size} = Nx.shape(text_embeddings)
 
     text_embeddings =
       text_embeddings
@@ -371,24 +367,26 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
       |> Nx.tile([1, num_images_per_prompt, 1, 1])
       |> Nx.reshape({:auto, sequence_length, hidden_size})
 
-    latents_shape =
-      {batch_size * num_images_per_prompt, latents_sample_size, latents_sample_size,
-       latents_in_channels}
+    prng_key =
+      seed
+      |> Nx.vectorize(:batch)
+      |> Nx.Random.key()
+      |> Nx.Random.split(parts: num_images_per_prompt)
+      |> Nx.devectorize()
+      |> Nx.flatten(axes: [0, 1])
+      |> Nx.vectorize(:batch)
 
-    {scheduler_state, timesteps} = scheduler_init.(latents_shape)
-
-    key = seed |> Nx.vectorize(:batch) |> Nx.Random.key()
-
-    {latents, _key} =
-      Nx.Random.normal(key,
-        shape:
-          {num_images_per_prompt, latents_sample_size, latents_sample_size, latents_in_channels}
+    {latents, prng_key} =
+      Nx.Random.normal(prng_key,
+        shape: {latents_sample_size, latents_sample_size, latents_in_channels}
       )
 
-    latents = latents |> Nx.devectorize() |> Nx.reshape(latents_shape)
+    {scheduler_state, timesteps} = scheduler_init.(Nx.to_template(latents), prng_key)
 
-    {_, latents, _, _} =
-      while {scheduler_state, latents, text_embeddings, unet_params}, timestep <- timesteps do
+    latents = Nx.devectorize(latents)
+
+    {latents, _} =
+      while {latents, {scheduler_state, text_embeddings, unet_params}}, timestep <- timesteps do
         unet_inputs = %{
           "sample" => Nx.concatenate([latents, latents]),
           "timestep" => timestep,
@@ -397,15 +395,23 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
         %{sample: noise_pred} = unet_predict.(unet_params, unet_inputs)
 
-        {noise_pred_text, noise_pred_unconditional} =
+        {noise_pred_conditional, noise_pred_unconditional} =
           split_conditional_and_unconditional(noise_pred)
 
         noise_pred =
-          noise_pred_unconditional + guidance_scale * (noise_pred_text - noise_pred_unconditional)
+          noise_pred_unconditional +
+            guidance_scale * (noise_pred_conditional - noise_pred_unconditional)
 
-        {scheduler_state, latents} = scheduler_step.(scheduler_state, latents, noise_pred)
+        {scheduler_state, latents} =
+          scheduler_step.(
+            scheduler_state,
+            Nx.vectorize(latents, :batch),
+            Nx.vectorize(noise_pred, :batch)
+          )
 
-        {scheduler_state, latents, text_embeddings, unet_params}
+        latents = Nx.devectorize(latents)
+
+        {latents, {scheduler_state, text_embeddings, unet_params}}
       end
 
     latents = latents * (1 / 0.18215)

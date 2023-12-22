@@ -50,7 +50,8 @@ defmodule Bumblebee.Scheduler do
   @callback init(
               t(),
               num_steps :: pos_integer(),
-              sample_shape :: tuple()
+              sample_template :: Nx.Tensor.t(),
+              prng_key :: Nx.Tensor.t()
             ) :: {state :: map(), timesteps :: Nx.Tensor.t()}
 
   @doc """

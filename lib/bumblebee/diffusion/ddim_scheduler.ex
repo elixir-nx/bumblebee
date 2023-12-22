@@ -112,11 +112,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
   end
 
   @impl true
-  def init(scheduler, num_steps, _sample_shape, opts \\ []) do
-    opts = Keyword.validate!(opts, [:seed])
-
-    seed = Keyword.get_lazy(opts, :seed, fn -> :erlang.system_time() end)
-
+  def init(scheduler, num_steps, _sample_template, prng_key) do
     timesteps =
       SchedulerUtils.ddim_timesteps(
         scheduler.num_train_steps,
@@ -124,7 +120,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
         scheduler.timesteps_offset
       )
 
-    {alpha_bars, prng_key} = init_parameters(scheduler: scheduler, seed: seed)
+    {alpha_bars} = init_parameters(scheduler: scheduler)
 
     state = %{
       timesteps: timesteps,
@@ -145,9 +141,6 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
       num_train_steps: num_train_steps
     } = opts[:scheduler]
 
-    seed = opts[:seed]
-    prng_key = Nx.Random.key(seed)
-
     betas =
       SchedulerUtils.beta_schedule(beta_schedule, num_train_steps,
         start: beta_start,
@@ -156,7 +149,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
 
     alphas = 1 - betas
 
-    {Nx.cumulative_product(alphas), prng_key}
+    {Nx.cumulative_product(alphas)}
   end
 
   @impl true
