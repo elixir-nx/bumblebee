@@ -277,7 +277,7 @@ defmodule Bumblebee.Diffusion.LcmScheduler do
   defnp consistency_model_coefficients(timestep, opts) do
     # See Appendix C in https://arxiv.org/pdf/2303.01469.pdf
     #
-    # Note that LCM authors use a different coefficients for the
+    # Note that LCM authors use different coefficients for the
     # consistency function than the original CM paper. In their
     # formulation the timestep is scaled by a constant factor.
 
