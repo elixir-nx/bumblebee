@@ -113,6 +113,7 @@ defmodule Bumblebee.MixProject do
         ],
         Schedulers: [
           Bumblebee.Diffusion.DdimScheduler,
+          Bumblebee.Diffusion.LcmScheduler,
           Bumblebee.Diffusion.PndmScheduler
         ],
         Interfaces: [

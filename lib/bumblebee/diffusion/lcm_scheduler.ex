@@ -45,44 +45,42 @@ defmodule Bumblebee.Diffusion.LcmScheduler do
       default: false,
       doc: """
       whether to clip the predicted denoised sample ($x_0$ in Equation (12)) into $[-1, 1]$
-      for numerical stability.
+      for numerical stability
       """
     ],
-    original_inference_steps: [
+    num_original_steps: [
       default: 50,
       doc: ~S"""
-      Default number of inference steps used to generate a linearly-spaced
-      timestep schedule. from which we will ultimately take `num_inference_steps`
-      evenly spaced timesteps to form the final timestep schedule.
+      the number of denoising steps used during Latent Consistency Distillation (LCD).
+      The LCD procedure distills a base diffusion model, but instead of sampling all
+      `:num_train_steps` it skips steps and uses another scheduler accordingly. See
+      Section 4.3
       """
     ],
-    timestep_scaling: [
+    boundary_condition_timestep_scale: [
       default: 10.0,
       doc: ~S"""
-      Multiplier factor for timesteps. Used when calculating the consistency model
-      boundary conditions `c_skip` and `c_out`. Increasing this will decrease
-      the approximation error (although the approximation error at the default of
-      `10.0` is already pretty small).
-      """
-    ],
-    sigma_data: [
-      default: 0.5,
-      doc: ~S"""
-      Used to calculate the scaling factors for denoising model output.
+      the scaling factor used in the consistency function coefficients. In the original
+      LCM implementation the authors use the formulation
+      $$
+      c_{skip}(t) = \frac{\sigma_{data}^2}{(st)^2 + \sigma_{data}^2}, \quad
+      c_{out}(t) = \frac{st}{\sqrt{(st)^2 + \sigma_{data}^2}}
+      $$
+      where $\sigma_{data} = 0.5$ and $s$ is the scaling factor. Increasing the scaling
+      factor will decrease approximation error, although the approximation error at the
+      default of `10.0` is already pretty small
       """
     ]
   ]
 
   @moduledoc """
-  Latent Consistency Model (LCM) sampling
+  Latent Consistency Model (LCM) sampling.
 
-  This sampling method uses classifier-free guidance and cycles of
-  denoising and noise injection to improve sample quality.
-  Although the maximum number of inference steps can be set to 50,
-  steps of 2-4 with a guidance_scale of 1.0 - 2.0 generate better results.
-  This scheduler does not support custom timesteps or img2img workflows.
-
-  See Appendix B in the paper below for more details.
+  This sampling method should be used in combination with LCM. LCM is
+  a model distilled from a regular diffusion model to predict the
+  final denoised sample in a single step. The sample quality can be
+  improved by alternating a couple denoising and noise injection
+  steps (multi-step sampling), as per Appendix B.
 
   ## Configuration
 
@@ -91,6 +89,7 @@ defmodule Bumblebee.Diffusion.LcmScheduler do
   ## References
 
     * [Latent Consistency Models: Synthesizing High-Resolution Images with Few-Step Inference](https://arxiv.org/abs/2310.04378)
+    * [Consistency Models](https://arxiv.org/pdf/2303.01469.pdf)
 
   """
 
@@ -116,26 +115,60 @@ defmodule Bumblebee.Diffusion.LcmScheduler do
     strength = Keyword.get(opts, :strength, 1.0)
 
     timesteps =
-      timesteps(
-        num_steps,
-        scheduler.original_inference_steps,
-        scheduler.num_train_steps,
-        strength
-      )
+      timesteps(num_steps, scheduler.num_original_steps, scheduler.num_train_steps, strength)
 
     {alpha_bars, prng_key} = init_parameters(scheduler: scheduler, seed: seed)
 
-    state =
-      %{
-        timesteps: timesteps,
-        timestep_gap: div(scheduler.num_train_steps, num_steps),
-        num_steps: num_steps,
-        alpha_bars: alpha_bars,
-        prng_key: prng_key,
-        step_index: 0
-      }
+    state = %{
+      timesteps: timesteps,
+      alpha_bars: alpha_bars,
+      iteration: 0,
+      prng_key: prng_key
+    }
 
     {state, timesteps}
+  end
+
+  deftransformp timesteps(num_steps, num_original_steps, num_train_steps, strength) do
+    skipping_step_k = div(num_train_steps, num_original_steps)
+
+    # Original steps used during Latent Consistency Distillation
+    original_timesteps =
+      {floor(num_original_steps * strength)}
+      |> Nx.iota()
+      |> Nx.add(1)
+      |> Nx.multiply(skipping_step_k)
+      |> Nx.subtract(1)
+
+    if num_steps > num_train_steps do
+      raise ArgumentError,
+            "expected the number of steps to be less or equal to the number of" <>
+              " training steps (#{num_train_steps}), got: #{num_steps}"
+    end
+
+    if num_steps > num_original_steps do
+      raise ArgumentError,
+            "expected the number of steps to be less or equal to the number of" <>
+              " original steps (#{num_original_steps}), got: #{num_steps}"
+    end
+
+    if num_steps > Nx.size(original_timesteps) do
+      raise ArgumentError,
+            "expected the number of steps to be less or equal to num_original_steps * strength" <>
+              " (#{num_original_steps} * #{strength}). Either reduce the number of steps or" <>
+              "increase the strength"
+    end
+
+    # We select evenly spaced indices from the original timesteps.
+    # See the discussion in https://github.com/huggingface/diffusers/pull/5836
+    indices =
+      Nx.linspace(0, Nx.size(original_timesteps), n: num_steps, endpoint: false)
+      |> Nx.floor()
+      |> Nx.as_type(:s64)
+
+    original_timesteps
+    |> Nx.reverse()
+    |> Nx.take(indices)
   end
 
   defnp init_parameters(opts \\ []) do
@@ -168,8 +201,8 @@ defmodule Bumblebee.Diffusion.LcmScheduler do
   defnp do_step(state, sample, prediction, opts) do
     scheduler = opts[:scheduler]
 
-    step_index = state.step_index
-    prev_step_index = state.step_index + 1
+    step_index = state.iteration
+    prev_step_index = state.iteration + 1
 
     timestep = state.timesteps[step_index]
 
@@ -179,6 +212,9 @@ defmodule Bumblebee.Diffusion.LcmScheduler do
       else
         timestep
       end
+
+    # Note that in the paper alpha_bar_t is denoted as a(t) and
+    # beta_bar_t is denoted as sigma(t)^2
 
     alpha_bar_t = state.alpha_bars[timestep]
 
@@ -195,12 +231,7 @@ defmodule Bumblebee.Diffusion.LcmScheduler do
     beta_bar_t = 1 - alpha_bar_t
     beta_bar_t_prev = 1 - alpha_bar_t_prev
 
-    {c_skip, c_out} =
-      get_scalings_for_boundary_condition_discrete(timestep,
-        timestep_scaling: scheduler.timestep_scaling,
-        sigma_data: scheduler.sigma_data
-      )
-
+    # See Appendix D
     pred_denoised_sample =
       case scheduler.prediction_type do
         :noise ->
@@ -217,83 +248,80 @@ defmodule Bumblebee.Diffusion.LcmScheduler do
         pred_denoised_sample
       end
 
-    denoised = c_out * pred_denoised_sample + c_skip * sample
+    {c_skip, c_out} =
+      consistency_model_coefficients(timestep,
+        boundary_condition_timestep_scale: scheduler.boundary_condition_timestep_scale
+      )
 
-    # Noise is not used on the final timestep of the timestep schedule.
-    # This also means that noise is not used for one-step sampling
+    # See Equation (9)
+    denoised_sample = c_skip * sample + c_out * pred_denoised_sample
 
+    # See Appendix B
+    #
+    # We insert additional noise after each but last step. This also
+    # means no noise is used for one-step sampling
     {prev_sample, next_key} =
-      if step_index != state.num_steps - 1 do
-        {noise, next_key} = Nx.Random.normal(state.prng_key, shape: prediction)
-        out = Nx.sqrt(alpha_bar_t_prev) * denoised + Nx.sqrt(beta_bar_t_prev) * noise
+      if state.iteration < Nx.size(state.timesteps) - 1 do
+        {rand, next_key} = Nx.Random.normal(state.prng_key, shape: Nx.shape(denoised_sample))
+        out = Nx.sqrt(alpha_bar_t_prev) * denoised_sample + Nx.sqrt(beta_bar_t_prev) * rand
         {out, next_key}
       else
-        {denoised, state.prng_key}
+        {denoised_sample, state.prng_key}
       end
 
-    state = %{
-      state
-      | step_index: step_index + 1,
-        prng_key: next_key
-    }
+    state = %{state | iteration: state.iteration + 1, prng_key: next_key}
 
     {state, prev_sample}
   end
 
-  defnp get_scalings_for_boundary_condition_discrete(timestep, opts) do
-    timestep_scaling = opts[:timestep_scaling]
-    sigma_data = opts[:sigma_data]
+  defnp consistency_model_coefficients(timestep, opts) do
+    # See Appendix C in https://arxiv.org/pdf/2303.01469.pdf
+    #
+    # Note that LCM authors use a different coefficients for the
+    # consistency function than the original CM paper. In their
+    # formulation the timestep is scaled by a constant factor.
 
-    scaled_timestep = timestep * timestep_scaling
+    boundary_condition_timestep_scale = opts[:boundary_condition_timestep_scale]
+    sigma_data = 0.5
 
-    c_skip = Nx.pow(sigma_data, 2) / (Nx.pow(scaled_timestep, 2) + Nx.pow(sigma_data, 2))
-    c_out = scaled_timestep / Nx.sqrt(Nx.pow(scaled_timestep, 2) + Nx.pow(sigma_data, 2))
+    scaled_timestep = timestep * boundary_condition_timestep_scale
+
+    c_skip = sigma_data ** 2 / (scaled_timestep ** 2 + sigma_data ** 2)
+    c_out = scaled_timestep / Nx.sqrt(scaled_timestep ** 2 + sigma_data ** 2)
+
     {c_skip, c_out}
   end
 
-  deftransformp timesteps(
-                  num_steps,
-                  original_inference_steps,
-                  num_train_timesteps,
-                  strength
-                ) do
-    k = div(num_train_timesteps, original_inference_steps)
+  defimpl Bumblebee.HuggingFace.Transformers.Config do
+    def load(scheduler, data) do
+      import Bumblebee.Shared.Converters
 
-    lcm_origin_timesteps =
-      {round(original_inference_steps * strength)}
-      |> Nx.iota()
-      |> Nx.add(1)
-      |> Nx.multiply(k)
-      |> Nx.subtract(1)
+      opts =
+        convert!(data,
+          num_train_steps: {"num_train_timesteps", number()},
+          beta_schedule: {
+            "beta_schedule",
+            mapping(%{
+              "linear" => :linear,
+              "scaled_linear" => :quadratic,
+              "squaredcos_cap_v2" => :squared_cosine
+            })
+          },
+          beta_start: {"beta_start", number()},
+          beta_end: {"beta_end", number()},
+          prediction_type:
+            {"prediction_type",
+             mapping(%{"epsilon" => :noise, "v_prediction" => :angular_velocity})},
+          alpha_clip_strategy: {
+            "set_alpha_to_one",
+            mapping(%{true => :one, false => :alpha_zero})
+          },
+          clip_denoised_sample: {"clip_sample", boolean()},
+          num_original_steps: {"original_inference_steps", number()},
+          boundary_condition_timestep_scale: {"timestep_scaling", number()}
+        )
 
-    if num_steps > num_train_timesteps do
-      raise ArgumentError,
-            "the number of inference steps needs to be less than the original training timesteps (#{num_train_timesteps}), got: #{num_steps}"
+      @for.config(scheduler, opts)
     end
-
-    skipping_step = div(Nx.size(lcm_origin_timesteps), num_steps)
-
-    if skipping_step < 1 do
-      raise ArgumentError,
-            "the steps between lcm_origin_timesteps needs to be a positive integer, " <>
-              "change inference steps (#{num_steps}) to be" <>
-              " less than original_inference_steps (#{original_inference_steps})" <>
-              " * strength (#{strength})"
-    end
-
-    if num_steps > original_inference_steps do
-      raise ArgumentError,
-            "the number of inference steps (#{num_steps}) cannot be greater than" <>
-              " original_inference_steps (#{original_inference_steps})"
-    end
-
-    lcm_origin_timesteps = Nx.reverse(lcm_origin_timesteps)
-
-    inference_indices =
-      Bumblebee.Utils.Nx.linspace(0, Nx.size(lcm_origin_timesteps) - 1, steps: num_steps)
-
-    inference_indices = Nx.floor(inference_indices) |> Nx.as_type({:s, 64})
-
-    Nx.take(lcm_origin_timesteps, inference_indices)
   end
- end
+end

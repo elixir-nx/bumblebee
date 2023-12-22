@@ -238,6 +238,7 @@ defmodule Bumblebee do
 
   @diffusers_class_to_scheduler %{
     "DDIMScheduler" => Bumblebee.Diffusion.DdimScheduler,
+    "LCMScheduler" => Bumblebee.Diffusion.LcmScheduler,
     "PNDMScheduler" => Bumblebee.Diffusion.PndmScheduler
   }
 
