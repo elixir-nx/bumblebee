@@ -1048,10 +1048,11 @@ defmodule Bumblebee do
   @spec scheduler_init(
           Bumblebee.Scheduler.t(),
           non_neg_integer(),
-          tuple()
+          Nx.Tensor.t(),
+          Nx.Tensor.t()
         ) :: {Bumblebee.Scheduler.state(), Nx.Tensor.t()}
-  def scheduler_init(%module{} = scheduler, num_steps, sample_shape) do
-    module.init(scheduler, num_steps, sample_shape)
+  def scheduler_init(%module{} = scheduler, num_steps, sample_template, prng_key) do
+    module.init(scheduler, num_steps, sample_template, prng_key)
   end
 
   @doc """
