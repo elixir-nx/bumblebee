@@ -217,7 +217,7 @@ defmodule Bumblebee.Diffusion.DdimScheduler do
     # See Equation (16)
     sigma_t =
       scheduler.eta *
-        Nx.sqrt((beta_bar_t_prev) / (beta_bar_t) * (1 - alpha_bar_t / alpha_bar_t_prev))
+        Nx.sqrt(beta_bar_t_prev / beta_bar_t * (1 - alpha_bar_t / alpha_bar_t_prev))
 
     noise =
       if scheduler.rederive_noise do
