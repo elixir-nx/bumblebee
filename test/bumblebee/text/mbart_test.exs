@@ -148,7 +148,7 @@ defmodule Bumblebee.Text.MbartTest do
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
       "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
-      "seed" => Nx.tensor([[0]])
+      "seed" => Nx.tensor([0])
     }
 
     generation_config = Bumblebee.configure(generation_config, max_new_tokens: 3)
