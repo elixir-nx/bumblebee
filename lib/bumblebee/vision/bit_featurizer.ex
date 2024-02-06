@@ -80,37 +80,26 @@ defmodule Bumblebee.Vision.BitFeaturizer do
     images = List.wrap(images)
 
     for image <- images do
-      images =
-        image
-        |> Image.to_batched_tensor()
-        |> Nx.as_type(:f32)
-        |> Image.normalize_channels(length(featurizer.image_mean))
-
-      images =
-        if featurizer.resize do
-          resize(images, featurizer)
-        else
-          images
-        end
-
-      images =
-        if featurizer.center_crop do
-          %{"height" => crop_height, "width" => crop_width} = featurizer.crop_size
-          NxImage.center_crop(images, {crop_height, crop_width})
-        else
-          images
-        end
-
-      if featurizer.rescale do
-        Nx.multiply(images, featurizer.rescale_factor)
-      else
-        images
-      end
+      image
+      |> Image.to_batched_tensor()
+      |> Nx.as_type(:f32)
+      |> Image.normalize_channels(length(featurizer.image_mean))
+      |> maybe_resize(featurizer)
+      |> maybe_center_crop(featurizer)
+      |> maybe_rescale(featurizer)
     end
     |> Nx.concatenate()
   end
 
-  def resize(images, featurizer) do
+  defp maybe_resize(images, featurizer) do
+    if featurizer.resize do
+      resize(images, featurizer)
+    else
+      images
+    end
+  end
+
+  defp resize(images, featurizer) do
     case featurizer.size do
       %{"shortest_edge" => size} ->
         NxImage.resize_short(images, size, method: featurizer.resize_method)
@@ -118,6 +107,23 @@ defmodule Bumblebee.Vision.BitFeaturizer do
       _ ->
         size = Image.normalize_size(featurizer.size)
         NxImage.resize(images, size, method: featurizer.resize_method)
+    end
+  end
+
+  defp maybe_center_crop(images, featurizer) do
+    if featurizer.center_crop do
+      %{"height" => crop_height, "width" => crop_width} = featurizer.crop_size
+      NxImage.center_crop(images, {crop_height, crop_width})
+    else
+      images
+    end
+  end
+
+  defp maybe_rescale(images, featurizer) do
+    if featurizer.rescale do
+      Nx.multiply(images, featurizer.rescale_factor)
+    else
+      images
     end
   end
 
