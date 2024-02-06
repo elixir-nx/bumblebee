@@ -203,7 +203,8 @@ defmodule Bumblebee do
   }
 
   @transformers_image_processor_type_to_featurizer %{
-    "BlipImageProcessor" => Bumblebee.Vision.BlipFeaturizer
+    "BlipImageProcessor" => Bumblebee.Vision.BlipFeaturizer,
+    "BitImageProcessor" => Bumblebee.Vision.BitFeaturizer
   }
 
   @model_type_to_featurizer %{
