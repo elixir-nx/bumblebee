@@ -268,18 +268,20 @@ defmodule Bumblebee.Vision.DinoV2 do
     original_positions = div(spec.image_size, spec.patch_size)
     resized_positions = div(input_size, spec.patch_size)
 
-    class_embeds =
+    class_position_embedding =
       Layers.take_token(position_embeddings, index: 0, axis: 1)
       |> Axon.reshape({1, 1, dim})
 
-    interpolated_embeds =
-      position_embeddings
-      |> Axon.nx(fn tensor -> tensor[[.., 1..-1//1, ..]] end)
+    other_position_embeddings =
+      Axon.nx(position_embeddings, fn tensor -> tensor[[.., 1..-1//1, ..]] end)
+
+    interpolated_embeddings =
+      other_position_embeddings
       |> Axon.reshape({:batch, original_positions, original_positions, dim})
       |> Axon.resize({resized_positions, resized_positions}, method: :bicubic)
       |> Axon.reshape({:batch, :auto, dim})
 
-    Layers.concatenate_embeddings([class_embeds, interpolated_embeds])
+    Layers.concatenate_embeddings([class_position_embedding, interpolated_embeddings])
   end
 
   defp embedder(pixel_values, patch_mask, spec, opts) do
