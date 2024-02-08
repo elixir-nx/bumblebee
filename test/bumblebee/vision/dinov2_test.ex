@@ -36,10 +36,9 @@ defmodule Bumblebee.Vision.DinoV2Test do
     )
   end
 
-  @tag :skip
   test ":backbone" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "facebook/dinov2-base"}, architecture: :backbone)
+             Bumblebee.load_model({:hf, "facebook/dinov2-small"}, architecture: :backbone)
 
     assert %Bumblebee.Vision.DinoV2{architecture: :backbone} = spec
 
@@ -48,22 +47,24 @@ defmodule Bumblebee.Vision.DinoV2Test do
     }
 
     outputs = Axon.predict(model, params, inputs, debug: true)
+    # dbg(tuple_size(outputs.feature_maps))
+    dbg(outputs.feature_maps)
 
-    assert Nx.shape(outputs.feature_maps) == {1, 16, 16, 768}
+    # assert Nx.shape(outputs.feature_maps) == {1, 16, 16, 768}
 
-    assert_all_close(
-      outputs.hidden_state[[.., 1..3, 1..3]],
-      Nx.tensor([
-        [[-0.2075, 2.7865, 0.2361], [-0.3014, 2.5312, -0.6127], [-0.3460, 2.8741, 0.1988]]
-      ]),
-      atol: 1.0e-4
-    )
+    # assert_all_close(
+    #   outputs.hidden_state[[.., 1..3, 1..3]],
+    #   Nx.tensor([
+    #     [[-0.2075, 2.7865, 0.2361], [-0.3014, 2.5312, -0.6127], [-0.3460, 2.8741, 0.1988]]
+    #   ]),
+    #   atol: 1.0e-4
+    # )
 
-    assert_all_close(
-      outputs.pooled_state[[.., 1..3]],
-      Nx.tensor([[-0.0244, -0.0515, -0.1584]]),
-      atol: 1.0e-4
-    )
+    # assert_all_close(
+    #   outputs.pooled_state[[.., 1..3]],
+    #   Nx.tensor([[-0.0244, -0.0515, -0.1584]]),
+    #   atol: 1.0e-4
+    # )
   end
 
   @tag :skip

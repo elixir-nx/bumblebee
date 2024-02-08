@@ -69,15 +69,14 @@ defmodule Bumblebee.Vision.DinoV2 do
         default: false,
         doc: "whether to use the SwiGLU feedforward neural network"
       ],
-      #       out_features: [
-      #         default: nil,
-      #         doc:
-      #           "            If used as backbone, list of features to output. Can be any of `"stem"`, `"stage1"`, `"stage2"`, etc.
-      #             (depending on how many stages the model has). If unset and `out_indices` is set, will default to the
-      #             corresponding stages. If unset and `out_indices` is unset, will default to the last stage. Must be in the
-      #             same order as defined in the `stage_names` attribute.
-      # "
-      #       ],
+      out_features: [
+        default: nil,
+        doc:
+          "If used as backbone, list of features to output. Can be any of `stem`, `stage1`, `stage2`,
+           etc. (depending on how many stages the model has). If unset and `out_indices` is set,
+           will default to the corresponding stages. If unset and `out_indices` is unset, will default to the last stage.
+           Must be in the same order as defined in the `stage_names` attribute."
+      ],
       #       out_indices: [
       #         default: nil,
       #         doc:
@@ -167,14 +166,18 @@ defmodule Bumblebee.Vision.DinoV2 do
     spec
     |> inputs()
     |> core(spec)
+    |> base_output(spec)
     |> Layers.output()
   end
 
   @impl true
   def model(%__MODULE__{architecture: :backbone} = spec) do
+    spec = Shared.put_config_attrs(spec, output_hidden_states: true)
+
     spec
     |> inputs()
     |> core(spec)
+    |> backbone_output(spec)
     |> Layers.output()
   end
 
@@ -197,33 +200,6 @@ defmodule Bumblebee.Vision.DinoV2 do
     })
   end
 
-  # def model(%__MODULE__{architecture: :for_masked_image_modeling} = spec) do
-  #   inputs = inputs(spec)
-  #   outputs = core(inputs, spec)
-
-  #   logits =
-  #     outputs.hidden_state
-  #     |> Axon.nx(fn x ->
-  #       x = x[[.., 1..-1//1]]
-  #       {batch_size, sequence_length, channels} = Nx.shape(x)
-  #       height = width = sequence_length |> :math.sqrt() |> floor()
-  #       Nx.reshape(x, {batch_size, height, width, channels})
-  #     end)
-  #     # Upsample to the original spatial resolution
-  #     |> Axon.conv(spec.patch_size ** 2 * 3,
-  #       kernel_size: 1,
-  #       kernel_initializer: kernel_initializer(spec),
-  #       name: "masked_image_modeling_head.output"
-  #     )
-  #     |> Layers.pixel_shuffle(spec.patch_size)
-
-  #   Layers.output(%{
-  #     logits: logits,
-  #     hidden_states: outputs.hidden_states,
-  #     attentions: outputs.attentions
-  #   })
-  # end
-
   defp inputs(spec) do
     # is it really image_size (518) and not 224?
     shape = {nil, 224, 224, spec.num_channels}
@@ -241,7 +217,11 @@ defmodule Bumblebee.Vision.DinoV2 do
     embeddings =
       embedder(inputs["pixel_values"], inputs["patch_mask"], spec, name: join(name, "embedder"))
 
-    encoder_outputs = encoder(embeddings, spec, name: join(name, "encoder"))
+    encoder(embeddings, spec, name: join(name, "encoder"))
+  end
+
+  defp base_output(encoder_outputs, spec, opts \\ []) do
+    name = opts[:name]
 
     hidden_state =
       Axon.layer_norm(encoder_outputs.hidden_state,
@@ -254,6 +234,40 @@ defmodule Bumblebee.Vision.DinoV2 do
     %{
       hidden_state: hidden_state,
       pooled_state: pooled,
+      hidden_states: encoder_outputs.hidden_states,
+      attentions: encoder_outputs.attentions
+    }
+  end
+
+  @stage_names [
+    "stem",
+    "stage1",
+    "stage2",
+    "stage3",
+    "stage4",
+    "stage5",
+    "stage6",
+    "stage7",
+    "stage8",
+    "stage9",
+    "stage10",
+    "stage11",
+    "stage12"
+  ]
+
+  defp backbone_output(encoder_outputs, spec, opts \\ []) do
+    name = opts[:name]
+
+    hidden_states = encoder_outputs.hidden_states
+
+    feature_maps =
+      for {stage_name, index} <- Enum.with_index(@stage_names) do
+        Axon.nx(hidden_states, fn states -> %{stage_name => elem(states, index)} end)
+      end
+      |> List.to_tuple()
+
+    %{
+      feature_maps: feature_maps,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions
     }
@@ -371,18 +385,6 @@ defmodule Bumblebee.Vision.DinoV2 do
       name: join(name, "blocks")
     )
   end
-
-  # defp pooler(hidden_state, spec, opts) do
-  #   name = opts[:name]
-
-  #   hidden_state
-  #   |> Layers.take_token(index: 0, axis: 1)
-  #   |> Axon.dense(spec.hidden_size,
-  #     kernel_initializer: kernel_initializer(spec),
-  #     name: join(name, "output")
-  #   )
-  #   |> Axon.tanh()
-  # end
 
   defp kernel_initializer(spec) do
     Axon.Initializers.normal(scale: spec.initializer_scale)
