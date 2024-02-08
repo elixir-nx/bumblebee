@@ -144,7 +144,7 @@ defmodule Bumblebee.Vision.DinoV2 do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base]
+  def architectures(), do: [:base, :backbone]
 
   @impl true
   def config(spec, opts) do
@@ -155,14 +155,23 @@ defmodule Bumblebee.Vision.DinoV2 do
 
   @impl true
   def input_template(spec) do
+    # is it really image_size (518) and not 224?
     %{
-      "pixel_values" =>
-        Nx.template({1, spec.image_size, spec.image_size, spec.num_channels}, :f32)
+      # Nx.template({1, spec.image_size, spec.image_size, spec.num_channels}, :f32)
+      "pixel_values" => Nx.template({1, 224, 224, spec.num_channels}, :f32)
     }
   end
 
   @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
+    spec
+    |> inputs()
+    |> core(spec)
+    |> Layers.output()
+  end
+
+  @impl true
+  def model(%__MODULE__{architecture: :backbone} = spec) do
     spec
     |> inputs()
     |> core(spec)
@@ -216,7 +225,9 @@ defmodule Bumblebee.Vision.DinoV2 do
   # end
 
   defp inputs(spec) do
-    shape = {nil, spec.image_size, spec.image_size, spec.num_channels}
+    # is it really image_size (518) and not 224?
+    shape = {nil, 224, 224, spec.num_channels}
+    # shape = {nil, spec.image_size, spec.image_size, spec.num_channels}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("pixel_values", shape: shape),
@@ -238,8 +249,7 @@ defmodule Bumblebee.Vision.DinoV2 do
         name: join(name, "norm")
       )
 
-    # ?? 
-    pooled = Axon.nx(hidden_state, fn hs -> hs[[.., 0, ..]] end)
+    pooled = Layers.take_token(hidden_state, index: 0, axis: 1)
 
     %{
       hidden_state: hidden_state,
@@ -247,6 +257,29 @@ defmodule Bumblebee.Vision.DinoV2 do
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions
     }
+  end
+
+  defp interpolate_position_encoding(
+         position_embeddings,
+         spec,
+         input_size
+       ) do
+    dim = spec.hidden_size
+    original_positions = div(spec.image_size, spec.patch_size)
+    resized_positions = div(input_size, spec.patch_size)
+
+    class_embeds =
+      Layers.take_token(position_embeddings, index: 0, axis: 1)
+      |> Axon.reshape({1, 1, dim})
+
+    interpolated_embeds =
+      position_embeddings
+      |> Axon.nx(fn tensor -> tensor[[.., 1..-1//1, ..]] end)
+      |> Axon.reshape({:batch, original_positions, original_positions, dim})
+      |> Axon.resize({resized_positions, resized_positions}, method: :bicubic)
+      |> Axon.reshape({:batch, :auto, dim})
+
+    Layers.concatenate_embeddings([class_embeds, interpolated_embeds])
   end
 
   defp embedder(pixel_values, patch_mask, spec, opts) do
@@ -264,11 +297,14 @@ defmodule Bumblebee.Vision.DinoV2 do
 
     num_patches = div(spec.image_size, spec.patch_size) ** 2
 
+    {_, input_size, _, _} = Axon.get_inputs(pixel_values)["pixel_values"]
+
     position_embeddings =
       Layers.learned_embeddings(num_patches + 1, spec.hidden_size,
         initializer: :zeros,
         name: join(name, "position_embedding")
       )
+      |> interpolate_position_encoding(spec, input_size)
 
     Axon.add(input_embeddings, position_embeddings)
     |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
