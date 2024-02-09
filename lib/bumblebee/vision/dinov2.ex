@@ -840,8 +840,9 @@ defmodule Bumblebee.Vision.DinoV2 do
       |> self_attention_norm.()
       |> self_attention.()
 
-    hidden_state = scale.(hidden_state)
-    hidden_state = Axon.add(hidden_state, shortcut)
+    hidden_state =
+      scale.(hidden_state)
+      |> Axon.add(shortcut)
 
     {hidden_state, cross_attention_info} =
       cross_attention_maybe.(hidden_state, fn hidden_state ->
