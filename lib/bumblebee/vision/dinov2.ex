@@ -160,9 +160,7 @@ defmodule Bumblebee.Vision.DinoV2 do
 
   @impl true
   def input_template(spec) do
-    # is it really image_size (518) and not 224?
     %{
-      # Nx.template({1, spec.image_size, spec.image_size, spec.num_channels}, :f32)
       "pixel_values" => Nx.template({1, 224, 224, spec.num_channels}, :f32)
     }
   end
@@ -217,9 +215,7 @@ defmodule Bumblebee.Vision.DinoV2 do
   end
 
   defp inputs(spec) do
-    # is it really image_size (518) and not 224?
     shape = {nil, 224, 224, spec.num_channels}
-    # shape = {nil, spec.image_size, spec.image_size, spec.num_channels}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("pixel_values", shape: shape),
