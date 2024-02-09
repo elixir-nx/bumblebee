@@ -116,6 +116,9 @@ defmodule Bumblebee.Vision.DinoV2 do
 
     * `:base` - plain DinoV2 without any head on top
 
+    * `:backbone` - outputs feature maps
+
+    * `:for_image_classification` - DinoV2 with head for image classification
   ## Inputs
 
     * `"pixel_values"` - `{batch_size, image_size, image_size, num_channels}`
@@ -146,7 +149,7 @@ defmodule Bumblebee.Vision.DinoV2 do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:base, :backbone]
+  def architectures(), do: [:base, :backbone, :for_image_classification]
 
   @impl true
   def config(spec, opts) do
@@ -186,11 +189,21 @@ defmodule Bumblebee.Vision.DinoV2 do
 
   def model(%__MODULE__{architecture: :for_image_classification} = spec) do
     inputs = inputs(spec)
-    outputs = core(inputs, spec)
+    outputs = core(inputs, spec) |> base_output(spec)
 
-    logits =
+    class_token =
       outputs.hidden_state
       |> Layers.take_token(index: 0, axis: 1)
+      |> Axon.reshape({:batch, 1, :auto})
+
+    patch_embeddings_mean =
+      Axon.nx(outputs.hidden_state, fn state ->
+        patch_embeddings = state[[.., 1..-1//1, ..]]
+        Nx.mean(patch_embeddings, axes: [1], keep_axes: true)
+      end)
+
+    logits =
+      Axon.concatenate(class_token, patch_embeddings_mean)
       |> Axon.dense(spec.num_labels,
         kernel_initializer: kernel_initializer(spec),
         name: "image_classification_head.output"
@@ -444,47 +457,48 @@ defmodule Bumblebee.Vision.DinoV2 do
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(_spec) do
       %{
-        "embedder.patch_embedding.projection" => "vit.embeddings.patch_embeddings.projection",
+        "embedder.patch_embedding.projection" => "dinov2.embeddings.patch_embeddings.projection",
+        # "embedder.mask_embedding" => "dinov2.embeddings.mask_token",
         "embedder.class_embedding" => %{
           "embeddings" => {
-            [{"vit.embeddings", "cls_token"}],
+            [{"dinov2.embeddings", "cls_token"}],
             fn [value] -> Nx.squeeze(value, axes: [0]) end
           }
         },
         "embedder.position_embedding" => %{
           "embeddings" => {
-            [{"vit.embeddings", "position_embeddings"}],
+            [{"dinov2.embeddings", "position_embeddings"}],
             fn [value] -> Nx.squeeze(value, axes: [0]) end
           }
         },
-        "encoder.blocks.{n}.self_attention_norm" => "vit.encoder.layer.{n}.norm1",
+        "encoder.blocks.{n}.self_attention_norm" => "dinov2.encoder.layer.{n}.norm1",
         "encoder.blocks.{n}.self_attention.key" =>
-          "vit.encoder.layer.{n}.attention.attention.key",
+          "dinov2.encoder.layer.{n}.attention.attention.key",
         "encoder.blocks.{n}.self_attention.query" =>
-          "vit.encoder.layer.{n}.attention.attention.query",
+          "dinov2.encoder.layer.{n}.attention.attention.query",
         "encoder.blocks.{n}.self_attention.value" =>
-          "vit.encoder.layer.{n}.attention.attention.value",
+          "dinov2.encoder.layer.{n}.attention.attention.value",
         "encoder.blocks.{n}.self_attention.output" =>
-          "vit.encoder.layer.{n}.attention.output.dense",
-        "encoder.blocks.{n}.mlp.fc1" => "vit.encoder.layer.{n}.mlp.fc1",
-        "encoder.blocks.{n}.mlp.fc2" => "vit.encoder.layer.{n}.mlp.fc2",
+          "dinov2.encoder.layer.{n}.attention.output.dense",
+        "encoder.blocks.{n}.mlp.fc1" => "dinov2.encoder.layer.{n}.mlp.fc1",
+        "encoder.blocks.{n}.mlp.fc2" => "dinov2.encoder.layer.{n}.mlp.fc2",
         "encoder.blocks.{n}.layer_scale1" => %{
           "scale" => {
-            [{"vit.encoder.layer.{n}.layer_scale1", "lambda1"}],
+            [{"dinov2.encoder.layer.{n}.layer_scale1", "lambda1"}],
             fn [lambda1] -> lambda1 end
           }
         },
         "encoder.blocks.{n}.layer_scale2" => %{
           "scale" => {
-            [{"vit.encoder.layer.{n}.layer_scale2", "lambda1"}],
+            [{"dinov2.encoder.layer.{n}.layer_scale2", "lambda1"}],
             fn [lambda1] -> lambda1 end
           }
         },
-        "encoder.blocks.{n}.ffn.intermediate" => "vit.encoder.layer.{n}.intermediate.dense",
-        "encoder.blocks.{n}.ffn.output" => "vit.encoder.layer.{n}.output.dense",
-        "encoder.blocks.{n}.output_norm" => "vit.encoder.layer.{n}.norm2",
-        "norm" => "vit.layernorm",
-        "pooler.output" => "vit.pooler.dense",
+        "encoder.blocks.{n}.ffn.intermediate" => "dinov2.encoder.layer.{n}.intermediate.dense",
+        "encoder.blocks.{n}.ffn.output" => "dinov2.encoder.layer.{n}.output.dense",
+        "encoder.blocks.{n}.output_norm" => "dinov2.encoder.layer.{n}.norm2",
+        "norm" => "dinov2.layernorm",
+        "pooler.output" => "dinov2.pooler.dense",
         "image_classification_head.output" => "classifier",
         "masked_image_modeling_head.output" => "decoder.0"
       }

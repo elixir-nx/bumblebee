@@ -124,6 +124,7 @@ defmodule Bumblebee do
     "DeiTForMaskedImageModeling" => {Bumblebee.Vision.Deit, :for_masked_image_modeling},
     "DeiTModel" => {Bumblebee.Vision.Deit, :base},
     "Dinov2Model" => {Bumblebee.Vision.DinoV2, :base},
+    "Dinov2ForImageClassification" => {Bumblebee.Vision.DinoV2, :for_image_classification},
     "DistilBertModel" => {Bumblebee.Text.Distilbert, :base},
     "DistilBertForMaskedLM" => {Bumblebee.Text.Distilbert, :for_masked_language_modeling},
     "DistilBertForSequenceClassification" =>
