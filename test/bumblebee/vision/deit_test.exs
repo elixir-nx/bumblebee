@@ -95,10 +95,10 @@ defmodule Bumblebee.Vision.DeitTest do
 
     outputs = Axon.predict(model, params, inputs)
 
-    assert Nx.shape(outputs.logits) == {1, 30, 30, 3}
+    assert Nx.shape(outputs.pixel_values) == {1, 30, 30, 3}
 
     assert_all_close(
-      to_channels_first(outputs.logits)[[.., 1..2, 1..2, 1..2]],
+      to_channels_first(outputs.pixel_values)[[.., 1..2, 1..2, 1..2]],
       Nx.tensor([[[[0.1455, 0.0229], [-0.0097, 0.0525]], [[0.1889, 0.0910], [-0.1083, -0.0244]]]]),
       atol: 1.0e-4
     )

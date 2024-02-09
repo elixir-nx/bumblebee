@@ -72,10 +72,10 @@ defmodule Bumblebee.Vision.VitTest do
 
     outputs = Axon.predict(model, params, inputs)
 
-    assert Nx.shape(outputs.logits) == {1, 30, 30, 3}
+    assert Nx.shape(outputs.pixel_values) == {1, 30, 30, 3}
 
     assert_all_close(
-      to_channels_first(outputs.logits)[[.., 1..2, 1..2, 1..2]],
+      to_channels_first(outputs.pixel_values)[[.., 1..2, 1..2, 1..2]],
       Nx.tensor([[[[0.0752, -0.0192], [-0.0252, 0.0232]], [[0.0548, -0.0216], [0.0728, -0.1687]]]]),
       atol: 1.0e-4
     )
