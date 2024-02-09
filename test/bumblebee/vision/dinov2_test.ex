@@ -37,8 +37,38 @@ defmodule Bumblebee.Vision.DinoV2Test do
   end
 
   test ":backbone" do
+    {:ok, spec} = Bumblebee.load_spec({:hf, "facebook/dinov2-base"}, architecture: :backbone)
+
+    spec =
+      Bumblebee.configure(spec,
+        stage_names: [
+          "stem",
+          "stage1",
+          "stage2",
+          "stage3",
+          "stage4",
+          "stage5",
+          "stage6",
+          "stage7",
+          "stage8",
+          "stage9",
+          "stage10",
+          "stage11",
+          "stage12"
+        ],
+        output_features: ["stage12"]
+      )
+
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "facebook/dinov2-small"}, architecture: :backbone)
+             Bumblebee.load_model({:hf, "facebook/dinov2-base"},
+               architecture: :backbone,
+               spec: spec
+             )
+
+    # Bumblebee.load_model({:hf, "facebook/dinov2-small-imagenet1k-1-layer"},
+    #   module: Bumblebee.Vision.DinoV2,
+    #   architecture: :backbone
+    # )
 
     assert %Bumblebee.Vision.DinoV2{architecture: :backbone} = spec
 
@@ -47,10 +77,9 @@ defmodule Bumblebee.Vision.DinoV2Test do
     }
 
     outputs = Axon.predict(model, params, inputs, debug: true)
-    # dbg(tuple_size(outputs.feature_maps))
-    dbg(outputs.feature_maps)
 
-    # assert Nx.shape(outputs.feature_maps) == {1, 16, 16, 768}
+    last_feature_map = Map.get(outputs.feature_maps, "stage12")
+    assert Nx.shape(last_feature_map) == {1, 16, 16, 768}
 
     # assert_all_close(
     #   outputs.hidden_state[[.., 1..3, 1..3]],

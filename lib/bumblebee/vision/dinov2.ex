@@ -69,8 +69,12 @@ defmodule Bumblebee.Vision.DinoV2 do
         default: false,
         doc: "whether to use the SwiGLU feedforward neural network"
       ],
-      out_features: [
-        default: nil,
+      stage_names: [
+        default: [],
+        doc: "the names of the stages of the model when used as backbone"
+      ],
+      output_features: [
+        default: [],
         doc:
           "If used as backbone, list of features to output. Can be any of `stem`, `stage1`, `stage2`,
            etc. (depending on how many stages the model has). If unset and `out_indices` is set,
@@ -89,15 +93,14 @@ defmodule Bumblebee.Vision.DinoV2 do
         default: true,
         doc:
           "whether to apply layer normalization to the feature maps in case the model is used as backbone"
+      ],
+      reshape_hidden_states: [
+        default: true,
+        doc:
+          "Whether to reshape the feature maps to 4D tensors of shape `(batch_size, hidden_size, height, width)` in
+           case the model is used as backbone. If `False`, the feature maps will be 3D tensors of shape `(batch_size,
+           seq_len, hidden_size)`."
       ]
-      #       reshape_hidden_states: [
-      #         default: true,
-      #         doc:
-      #           "            Whether to reshape the feature maps to 4D tensors of shape `(batch_size, hidden_size, height, width)` in
-      #             case the model is used as backbone. If `False`, the feature maps will be 3D tensors of shape `(batch_size,
-      #             seq_len, hidden_size)`.
-      # "
-      #       ],
     ] ++
       Shared.common_options([
         :output_hidden_states,
@@ -239,32 +242,49 @@ defmodule Bumblebee.Vision.DinoV2 do
     }
   end
 
-  @stage_names [
-    "stem",
-    "stage1",
-    "stage2",
-    "stage3",
-    "stage4",
-    "stage5",
-    "stage6",
-    "stage7",
-    "stage8",
-    "stage9",
-    "stage10",
-    "stage11",
-    "stage12"
-  ]
+  defp feature_map(hidden_states, index, spec, opts \\ []) do
+    name = opts[:name]
+
+    {_, input_size, _, _} = Axon.get_inputs(hidden_states)["pixel_values"]
+    num_patches = div(input_size, spec.patch_size)
+
+    hidden_state =
+      Axon.nx(hidden_states, fn states -> elem(states, index) end)
+
+    hidden_state =
+      if spec.apply_layernorm do
+        Axon.layer_norm(hidden_state, epsilon: spec.layer_norm_epsilon, name: join(name, "norm"))
+      else
+        hidden_state
+      end
+
+    if spec.reshape_hidden_states do
+      Axon.nx(hidden_state, fn tensor -> tensor[[.., 1..-1//1, ..]] end)
+      |> Axon.reshape({:batch, num_patches, num_patches, :auto})
+    else
+      hidden_state
+    end
+  end
 
   defp backbone_output(encoder_outputs, spec, opts \\ []) do
     name = opts[:name]
 
     hidden_states = encoder_outputs.hidden_states
 
+    stage_names = spec.stage_names
+    output_features = spec.output_features
+
     feature_maps =
-      for {stage_name, index} <- Enum.with_index(@stage_names) do
-        Axon.nx(hidden_states, fn states -> %{stage_name => elem(states, index)} end)
+      for {stage_name, index} <- Enum.with_index(stage_names),
+          stage_name in output_features,
+          reduce: %{} do
+        acc ->
+          Map.put(
+            acc,
+            stage_name,
+            feature_map(hidden_states, index, spec, name: join(name, "feature_mapping"))
+          )
       end
-      |> List.to_tuple()
 
     %{
       feature_maps: feature_maps,
@@ -412,6 +432,8 @@ defmodule Bumblebee.Vision.DinoV2 do
           layerscale_value: {:layerscale_value, number()},
           drop_path_rate: {:drop_path_rate, number()},
           use_swiglu_ffn: {:use_swiglu_ffn, boolean()},
+          stage_names: {"stage_names", list(string())},
+          output_features: {"_out_features", list(string())},
           apply_layernorm: {:apply_layernorm, boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
