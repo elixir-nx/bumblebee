@@ -218,4 +218,34 @@ defmodule Bumblebee.Shared.Converters do
       end
     end
   end
+
+  def image_size(opts \\ []) do
+    opts = Keyword.validate!(opts, single_as: :both_edges)
+    single_as = opts[:single_as]
+
+    true = single_as in [:both_edges, :shortest_edge]
+
+    fn name, value ->
+      case value do
+        %{"height" => height, "width" => width} ->
+          {:ok, %{height: height, width: width}}
+
+        [height, width] ->
+          {:ok, %{height: height, width: width}}
+
+        size when is_number(size) and single_as == :both_edges ->
+          {:ok, %{height: size, width: size}}
+
+        size when is_number(size) and single_as == :shortest_edge ->
+          {:ok, %{shortest_edge: size}}
+
+        %{"shortest_edge" => shortest_edge} ->
+          {:ok, %{shortest_edge: shortest_edge}}
+
+        _ ->
+          {:error,
+           "expected #{inspect(name)} to be a number, a list or a map with height and width, got: #{inspect(value)}"}
+      end
+    end
+  end
 end
