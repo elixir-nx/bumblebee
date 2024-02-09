@@ -454,7 +454,6 @@ defmodule Bumblebee.Vision.DinoV2 do
     def params_mapping(_spec) do
       %{
         "embedder.patch_embedding.projection" => "dinov2.embeddings.patch_embeddings.projection",
-        # "embedder.mask_embedding" => "dinov2.embeddings.mask_token",
         "embedder.class_embedding" => %{
           "embeddings" => {
             [{"dinov2.embeddings", "cls_token"}],
@@ -494,9 +493,7 @@ defmodule Bumblebee.Vision.DinoV2 do
         "encoder.blocks.{n}.ffn.output" => "dinov2.encoder.layer.{n}.output.dense",
         "encoder.blocks.{n}.output_norm" => "dinov2.encoder.layer.{n}.norm2",
         "norm" => "dinov2.layernorm",
-        "pooler.output" => "dinov2.pooler.dense",
-        "image_classification_head.output" => "classifier",
-        "masked_image_modeling_head.output" => "decoder.0"
+        "image_classification_head.output" => "classifier"
       }
     end
   end
