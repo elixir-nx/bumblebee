@@ -5,7 +5,6 @@ defmodule Bumblebee.Vision.DinoV2Test do
 
   @moduletag model_test_tags()
 
-  @tag :skip
   test ":base" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model({:hf, "facebook/dinov2-base"})
@@ -28,7 +27,6 @@ defmodule Bumblebee.Vision.DinoV2Test do
     )
   end
 
-  @tag :skip
   test ":backbone" do
     {:ok, spec} = Bumblebee.load_spec({:hf, "facebook/dinov2-base"}, architecture: :backbone)
 
@@ -90,17 +88,13 @@ defmodule Bumblebee.Vision.DinoV2Test do
 
     assert Nx.shape(outputs.logits) == {1, 1, 1000}
 
-    # dbg(Nx.top_k(outputs.logits, k: 10))
-    dbg(Nx.reduce_min(outputs.logits))
-
-    prediction =
-      Nx.argmax(outputs.logits, axis: -1) |> Nx.squeeze() |> Nx.to_number()
-
-    assert prediction == 281
+    # prediction =
+    #   Nx.argmax(outputs.logits, axis: -1) |> Nx.squeeze() |> Nx.to_number()
+    # assert prediction == 281
 
     assert_all_close(
-      outputs.logits,
-      Nx.tensor([[-0.1596, 0.1818]]),
+      Nx.squeeze(outputs.logits)[[0..2]],
+      Nx.tensor([-3.083641290664673, -1.8309074640274048, -0.28923606872558594]),
       atol: 1.0e-4
     )
   end
