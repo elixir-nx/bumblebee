@@ -121,7 +121,7 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
       opts =
         convert!(data,
           resize: {"do_resize", boolean()},
-          size: {"size", number()},
+          size: {"size", size()},
           resize_method: {"resample", resize_method()},
           crop_percentage: {"crop_pct", number()},
           normalize: {"do_normalize", boolean()},
@@ -130,6 +130,26 @@ defmodule Bumblebee.Vision.ConvNextFeaturizer do
         )
 
       @for.config(featurizer, opts)
+    end
+
+    defp size() do
+      # Note that in contrast to other featurizers, in this case size
+      # is always a single number and its meaning depends on the input
+      # size. huggingface/transformers put it under the "shortest_edge"
+      # key, but we keep it as a single number as it is more clear.
+      fn name, value ->
+        case value do
+          %{"shortest_edge" => size} ->
+            {:ok, size}
+
+          size when is_number(size) ->
+            {:ok, size}
+
+          _ ->
+            {:error,
+             "expected #{inspect(name)} to be a number or a map with shortest_edge, got: #{inspect(value)}"}
+        end
+      end
     end
   end
 end
