@@ -380,19 +380,42 @@ defmodule Bumblebee.Vision.DinoV2 do
     |> Axon.dense(out_features, name: join(name, "fc2"))
   end
 
+  defp ffn_mlp(layer_output, name, spec) do
+    layer_output
+    |> mlp(
+      spec.hidden_size,
+      spec.mlp_ratio,
+      spec.activation,
+      name: join(name, "mlp")
+    )
+    |> Bumblebee.Layers.scale(name: join(name, "layer_scale2"))
+  end
+
+  defp swiglu(input, hidden_features, output_features, name) do
+    hidden_state =
+      input
+      |> Axon.dense(2 * hidden_features, name: join(name, "weights_in"))
+
+    {x1, x2} = Axon.split(hidden_state, 2)
+
+    Axon.silu(x1)
+    |> Axon.multiply(x2)
+    |> Axon.dense(output_features, name: join(name, "weights_out"))
+  end
+
+  defp ffn_swiglu(layer_output, name, spec) do
+    hidden_features =
+      Integer.floor_div(round(round(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
+
+    layer_output
+    |> swiglu(hidden_features, spec.hidden_size, join(name, "mlp"))
+    |> Bumblebee.Layers.scale(name: join(name, "layer_scale2"))
+  end
+
   defp encoder(hidden_state, spec, opts) do
     name = opts[:name]
 
-    ffn = fn layer_output, name ->
-      layer_output
-      |> mlp(
-        spec.hidden_size,
-        spec.mlp_ratio,
-        spec.activation,
-        name: join(name, "mlp")
-      )
-      |> Bumblebee.Layers.scale(name: join(name, "layer_scale2"))
-    end
+    ffn = if spec.use_swiglu_ffn, do: &ffn_swiglu(&1, &2, spec), else: &ffn_mlp(&1, &2, spec)
 
     blocks(hidden_state,
       num_blocks: spec.num_blocks,
@@ -477,6 +500,8 @@ defmodule Bumblebee.Vision.DinoV2 do
           "dinov2.encoder.layer.{n}.attention.output.dense",
         "encoder.blocks.{n}.mlp.fc1" => "dinov2.encoder.layer.{n}.mlp.fc1",
         "encoder.blocks.{n}.mlp.fc2" => "dinov2.encoder.layer.{n}.mlp.fc2",
+        "encoder.blocks.{n}.mlp.weights_in" => "dinov2.encoder.layer.{n}.mlp.weights_in",
+        "encoder.blocks.{n}.mlp.weights_out" => "dinov2.encoder.layer.{n}.mlp.weights_out",
         "encoder.blocks.{n}.layer_scale1" => %{
           "scale" => {
             [{"dinov2.encoder.layer.{n}.layer_scale1", "lambda1"}],
