@@ -45,4 +45,41 @@ defmodule Bumblebee.TestHelpers do
   def serving_test_tags() do
     [serving: true, slow: true, capture_log: true, timeout: 600_000]
   end
+
+  def scheduler_loop(scheduler, num_steps) do
+    sample = dummy_sample()
+
+    {state, timesteps} =
+      Bumblebee.scheduler_init(scheduler, num_steps, Nx.to_template(sample), Nx.Random.key(0))
+
+    {_state, sample} =
+      for i <- 0..(Nx.size(timesteps) - 1), reduce: {state, sample} do
+        {state, sample} ->
+          prediction = dummy_model(sample, timesteps[i])
+          Bumblebee.scheduler_step(scheduler, state, sample, prediction)
+      end
+
+    sample
+  end
+
+  def scheduler_timesteps(scheduler, num_steps) do
+    sample = dummy_sample()
+
+    {_state, timesteps} =
+      Bumblebee.scheduler_init(scheduler, num_steps, Nx.to_template(sample), Nx.Random.key(0))
+
+    timesteps
+  end
+
+  defp dummy_sample() do
+    shape = {_height = 8, _width = 8, _channels = 4}
+    sample = Nx.iota(shape)
+    Nx.divide(sample, Nx.size(sample))
+  end
+
+  defp dummy_model(sample, timestep) do
+    sample
+    |> Nx.multiply(timestep)
+    |> Nx.divide(Nx.add(timestep, 1))
+  end
 end
