@@ -21,8 +21,8 @@ defmodule Bumblebee.Vision.ResNetTest do
     assert Nx.shape(outputs.pooled_state) == {1, 40}
 
     assert_all_close(
-      to_channels_first(outputs.hidden_state)[[.., 2..3, 2..3, 2..3]],
-      Nx.tensor([[[[0.0000, 0.0000], [0.0000, 0.0000]], [[0.9835, 0.9835], [0.9835, 0.9835]]]])
+      outputs.hidden_state[[.., 2..3, 2..3, 2..3]],
+      Nx.tensor([[[[0.0000, 0.9835], [0.0000, 0.9835]], [[0.0000, 0.9835], [0.0000, 0.9835]]]])
     )
 
     assert_all_close(Nx.sum(outputs.hidden_state), Nx.tensor(209.6328))

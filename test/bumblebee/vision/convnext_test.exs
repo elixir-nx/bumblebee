@@ -21,8 +21,8 @@ defmodule Bumblebee.Vision.ConvNextTest do
     assert Nx.shape(outputs.pooled_state) == {1, 40}
 
     assert_all_close(
-      to_channels_first(outputs.hidden_state)[[.., 1..2, 1..2, 1..2]],
-      Nx.tensor([[[[0.3924, 0.3924], [0.3924, 0.3924]], [[-0.2330, -0.2330], [-0.2330, -0.2330]]]])
+      outputs.hidden_state[[.., 1..2, 1..2, 1..2]],
+      Nx.tensor([[[[0.3924, -0.2330], [0.3924, -0.2330]], [[0.3924, -0.2330], [0.3924, -0.2330]]]])
     )
 
     assert_all_close(
