@@ -22,8 +22,7 @@ defmodule Bumblebee.Vision.ImageEmbeddingTest do
 
     assert_all_close(
       embedding[1..3],
-      Nx.tensor([0.0978, -0.7233, -0.7707]),
-      atol: 1.0e-4
+      Nx.tensor([0.0978, -0.7233, -0.7707])
     )
   end
 
@@ -47,8 +46,7 @@ defmodule Bumblebee.Vision.ImageEmbeddingTest do
 
     assert_all_close(
       embedding[1..3],
-      Nx.tensor([0.0036, -0.0269, -0.0286]),
-      atol: 1.0e-4
+      Nx.tensor([0.0036, -0.0269, -0.0286])
     )
   end
 end

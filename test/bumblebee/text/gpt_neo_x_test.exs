@@ -24,8 +24,7 @@ defmodule Bumblebee.Text.GptNeoXTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.4428, 0.3349, -1.1917], [-0.1550, -0.4439, -0.5855], [0.3737, 3.4893, -0.6499]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -48,8 +47,7 @@ defmodule Bumblebee.Text.GptNeoXTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[0.1089, -0.3733]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.1089, -0.3733]])
     )
   end
 
@@ -72,8 +70,7 @@ defmodule Bumblebee.Text.GptNeoXTest do
 
     assert_all_close(
       outputs.logits[[.., 1..3//1, ..]],
-      Nx.tensor([[[-0.0900, -0.1853], [0.0567, -0.0443], [-0.0104, -0.1112]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[-0.0900, -0.1853], [0.0567, -0.0443], [-0.0104, -0.1112]]])
     )
   end
 
@@ -96,8 +93,7 @@ defmodule Bumblebee.Text.GptNeoXTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.1134, 0.0507, -0.0534], [-0.1113, 0.0035, -0.0319], [0.0019, -0.0273, -0.0151]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 end

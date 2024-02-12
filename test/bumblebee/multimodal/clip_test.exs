@@ -36,14 +36,12 @@ defmodule Bumblebee.Multimodal.ClipTest do
 
     assert_all_close(
       outputs.logits_per_text,
-      Nx.tensor([[0.5381, 0.1981], [0.5212, 0.3291]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.5381, 0.1981], [0.5212, 0.3291]])
     )
 
     assert_all_close(
       outputs.logits_per_image,
-      Nx.tensor([[0.5381, 0.5212], [0.1981, 0.3291]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.5381, 0.5212], [0.1981, 0.3291]])
     )
   end
 end

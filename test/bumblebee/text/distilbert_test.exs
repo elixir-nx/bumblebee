@@ -24,8 +24,7 @@ defmodule Bumblebee.Text.DistilbertTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.9427, 0.7933, 0.1031], [1.0913, 1.0214, -1.5890], [-2.1149, -0.3367, -0.6268]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -48,8 +47,7 @@ defmodule Bumblebee.Text.DistilbertTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.1839, -0.0195, 0.1220], [-0.2048, 0.0667, 0.0878], [-0.2045, -0.0483, -0.1567]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -72,8 +70,7 @@ defmodule Bumblebee.Text.DistilbertTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.0047, -0.0103]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.0047, -0.0103]])
     )
   end
 
@@ -96,8 +93,7 @@ defmodule Bumblebee.Text.DistilbertTest do
 
     assert_all_close(
       outputs.logits[[.., 1..3//1, ..]],
-      Nx.tensor([[[-0.0504, -0.0751], [0.1354, 0.2180], [-0.0386, 0.1059]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[-0.0504, -0.0751], [0.1354, 0.2180], [-0.0386, 0.1059]]])
     )
   end
 
@@ -121,14 +117,12 @@ defmodule Bumblebee.Text.DistilbertTest do
 
     assert_all_close(
       outputs.start_logits[[.., 1..3]],
-      Nx.tensor([[0.1790, -0.0074, 0.0412]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.1790, -0.0074, 0.0412]])
     )
 
     assert_all_close(
       outputs.end_logits[[.., 1..3]],
-      Nx.tensor([[-0.1520, -0.0973, 0.0166]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.1520, -0.0973, 0.0166]])
     )
   end
 
@@ -151,8 +145,7 @@ defmodule Bumblebee.Text.DistilbertTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.0027]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.0027]])
     )
   end
 end

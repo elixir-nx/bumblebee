@@ -184,8 +184,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.SafetyCheckerTest do
 
     assert_all_close(
       outputs.is_unsafe,
-      Nx.tensor([0, 0, 1, 1]),
-      atol: 1.0e-4
+      Nx.tensor([0, 0, 1, 1])
     )
   end
 end

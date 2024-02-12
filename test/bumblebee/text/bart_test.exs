@@ -24,8 +24,7 @@ defmodule Bumblebee.Text.BartTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.9984, -0.0751, 0.4176], [0.0095, -0.3245, -0.4237], [-0.8061, -0.3498, 0.9201]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -50,8 +49,7 @@ defmodule Bumblebee.Text.BartTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.0000, -0.0601, -0.0501], [0.0000, 0.0443, 0.0813], [0.0000, -0.1303, 0.0968]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -74,8 +72,7 @@ defmodule Bumblebee.Text.BartTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.0075, -0.0078, -0.0073]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.0075, -0.0078, -0.0073]])
     )
   end
 
@@ -99,14 +96,12 @@ defmodule Bumblebee.Text.BartTest do
 
     assert_all_close(
       outputs.start_logits[[.., 1..3]],
-      Nx.tensor([[0.0474, -0.0767, 0.0278]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.0474, -0.0767, 0.0278]])
     )
 
     assert_all_close(
       outputs.end_logits[[.., 1..3]],
-      Nx.tensor([[0.1557, -0.1034, -0.1271]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.1557, -0.1034, -0.1271]])
     )
   end
 
@@ -129,8 +124,7 @@ defmodule Bumblebee.Text.BartTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.0000, -0.2084, -0.0013], [0.0000, -0.0502, 0.0656], [0.0000, -0.1301, -0.1234]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 

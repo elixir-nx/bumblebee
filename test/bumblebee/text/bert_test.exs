@@ -24,8 +24,7 @@ defmodule Bumblebee.Text.BertTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.2331, 1.7817, 1.1736], [-1.1001, 1.3922, -0.3391], [0.0408, 0.8677, -0.0779]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -46,8 +45,7 @@ defmodule Bumblebee.Text.BertTest do
 
     assert_all_close(
       outputs.logits[[.., 1..3, 1..3]],
-      Nx.tensor([[[-0.0127, 0.0508, 0.0904], [0.1151, 0.1189, 0.0922], [0.0089, 0.1132, -0.2470]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[-0.0127, 0.0508, 0.0904], [0.1151, 0.1189, 0.0922], [0.0089, 0.1132, -0.2470]]])
     )
   end
 
@@ -70,8 +68,7 @@ defmodule Bumblebee.Text.BertTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.0037, -0.0239]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.0037, -0.0239]])
     )
   end
 
@@ -94,8 +91,7 @@ defmodule Bumblebee.Text.BertTest do
 
     assert_all_close(
       outputs.logits[[.., 1..3//1, ..]],
-      Nx.tensor([[[0.2078, 0.0055], [0.0681, 0.1132], [0.1049, 0.0479]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[0.2078, 0.0055], [0.0681, 0.1132], [0.1049, 0.0479]]])
     )
   end
 
@@ -120,14 +116,12 @@ defmodule Bumblebee.Text.BertTest do
 
     assert_all_close(
       outputs.start_logits[[.., 1..3]],
-      Nx.tensor([[0.0465, 0.1204, 0.2137]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.0465, 0.1204, 0.2137]])
     )
 
     assert_all_close(
       outputs.end_logits[[.., 1..3]],
-      Nx.tensor([[0.1654, 0.0930, 0.1304]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.1654, 0.0930, 0.1304]])
     )
   end
 
@@ -149,8 +143,7 @@ defmodule Bumblebee.Text.BertTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[0.0033]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.0033]])
     )
   end
 
@@ -174,8 +167,7 @@ defmodule Bumblebee.Text.BertTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.0072, 0.0098]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.0072, 0.0098]])
     )
   end
 
@@ -198,8 +190,7 @@ defmodule Bumblebee.Text.BertTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.0498, 0.0272, -0.0722], [-0.2410, 0.1069, -0.2430], [-0.0683, 0.0077, -0.1277]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 end

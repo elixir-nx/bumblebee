@@ -39,8 +39,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
           ],
           [[1.3359, 0.8373, -0.2392], [0.9448, -0.0478, 0.6881], [-0.0154, -0.5304, 0.2081]]
         ]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 end

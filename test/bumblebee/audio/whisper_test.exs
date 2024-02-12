@@ -25,8 +25,7 @@ defmodule Bumblebee.Text.WhisperTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.3791, -1.6131, -0.6913], [0.1247, -1.3631, 0.0034], [-0.0097, 0.2039, 1.9897]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -52,8 +51,7 @@ defmodule Bumblebee.Text.WhisperTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.0942, 0.1288, 0.0243], [-0.1667, -0.1401, 0.1191], [0.0398, -0.0449, -0.0574]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 end

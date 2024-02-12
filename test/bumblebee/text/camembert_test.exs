@@ -24,8 +24,7 @@ defmodule Bumblebee.Text.CamembertTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.1734, -0.5058, 0.6278], [-0.2506, -0.3877, -0.0394], [-0.4477, 1.9433, -0.7990]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 end

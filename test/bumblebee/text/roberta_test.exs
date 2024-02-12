@@ -22,8 +22,7 @@ defmodule Bumblebee.Text.RobertaTest do
 
     assert_all_close(
       outputs.hidden_state[[.., 1..3, 1..3]],
-      Nx.tensor([[[-0.3633, 0.8947, 1.8965], [0.5881, 1.9730, 1.4211], [0.8067, 1.6098, 0.0291]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[-0.3633, 0.8947, 1.8965], [0.5881, 1.9730, 1.4211], [0.8067, 1.6098, 0.0291]]])
     )
   end
 
@@ -47,8 +46,7 @@ defmodule Bumblebee.Text.RobertaTest do
 
     assert_all_close(
       outputs.logits[[.., 1..3, 1..3]],
-      Nx.tensor([[[0.0000, -0.0796, 0.1734], [0.0000, -0.0754, 0.0755], [0.0000, 0.0299, 0.1902]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[0.0000, -0.0796, 0.1734], [0.0000, -0.0754, 0.0755], [0.0000, 0.0299, 0.1902]]])
     )
   end
 
@@ -71,8 +69,7 @@ defmodule Bumblebee.Text.RobertaTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.0032, 0.0017]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.0032, 0.0017]])
     )
   end
 
@@ -95,8 +92,7 @@ defmodule Bumblebee.Text.RobertaTest do
 
     assert_all_close(
       outputs.logits[[.., 1..3//1, ..]],
-      Nx.tensor([[[-0.0276, 0.0128], [-0.1321, 0.0960], [0.1680, 0.0699]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[-0.0276, 0.0128], [-0.1321, 0.0960], [0.1680, 0.0699]]])
     )
   end
 
@@ -121,14 +117,12 @@ defmodule Bumblebee.Text.RobertaTest do
 
     assert_all_close(
       outputs.start_logits[[.., 1..3]],
-      Nx.tensor([[-0.1215, -0.1325, -0.1389]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.1215, -0.1325, -0.1389]])
     )
 
     assert_all_close(
       outputs.end_logits[[.., 1..3]],
-      Nx.tensor([[-0.2795, -0.0051, -0.1547]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.2795, -0.0051, -0.1547]])
     )
   end
 
@@ -152,8 +146,7 @@ defmodule Bumblebee.Text.RobertaTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.0257]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.0257]])
     )
   end
 
@@ -177,8 +170,7 @@ defmodule Bumblebee.Text.RobertaTest do
 
     assert_all_close(
       outputs.logits[[.., 1..3, 1..3]],
-      Nx.tensor([[[0.0000, 0.0661, -0.0063], [0.0000, 0.1107, -0.1137], [0.0000, 0.1044, 0.0803]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[0.0000, 0.0661, -0.0063], [0.0000, 0.1107, -0.1137], [0.0000, 0.1044, 0.0803]]])
     )
   end
 end

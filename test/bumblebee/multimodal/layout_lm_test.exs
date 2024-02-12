@@ -37,8 +37,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
 
     assert_all_close(
       outputs.hidden_state[[.., 1..3, 1..3]],
-      Nx.tensor([[[0.0240, -0.8855, 1.8877], [1.8435, 0.6223, 2.0573], [1.6961, -1.2411, 1.2824]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[0.0240, -0.8855, 1.8877], [1.8435, 0.6223, 2.0573], [1.6961, -1.2411, 1.2824]]])
     )
   end
 
@@ -76,8 +75,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.2101, -0.0342, 0.1613], [-0.0734, 0.1874, -0.0231], [-0.0776, 0.0145, 0.2504]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -115,8 +113,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.0241, 0.0096]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.0241, 0.0096]])
     )
   end
 
@@ -154,8 +151,7 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
 
     assert_all_close(
       outputs.logits[[.., 1..3//1, ..]],
-      Nx.tensor([[[-0.1849, 0.1134], [-0.1329, 0.0025], [-0.0454, 0.0441]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[-0.1849, 0.1134], [-0.1329, 0.0025], [-0.0454, 0.0441]]])
     )
   end
 
