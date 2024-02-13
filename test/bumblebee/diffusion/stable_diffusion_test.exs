@@ -59,6 +59,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionTest do
           num_steps: 3,
           safety_checker: safety_checker,
           safety_checker_featurizer: featurizer,
+          compile: [batch_size: 1, sequence_length: 50],
           defn_options: [compiler: EXLA]
         )
 
