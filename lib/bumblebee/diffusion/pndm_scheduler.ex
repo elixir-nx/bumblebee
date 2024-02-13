@@ -105,11 +105,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
     alpha_bars = init_parameters(scheduler: scheduler)
 
-    [empty, _] =
-      Nx.broadcast_vectors([
-        Nx.tensor(0.0, type: Nx.type(sample_template)) |> Nx.broadcast(sample_template),
-        sample_template
-      ])
+    empty = Nx.fill(sample_template, 0)
 
     state = %{
       timesteps: timesteps,
