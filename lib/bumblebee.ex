@@ -1163,11 +1163,12 @@ defmodule Bumblebee do
   defp get_repo_files({:hf, repository_id, opts}) do
     subdir = opts[:subdir]
     url = HuggingFace.Hub.file_listing_url(repository_id, subdir, opts[:revision])
+    cache_scope = repository_id_to_cache_scope(repository_id)
 
     result =
       HuggingFace.Hub.cached_download(
         url,
-        Keyword.take(opts, [:cache_dir, :offline, :auth_token])
+        [cache_scope: cache_scope] ++ Keyword.take(opts, [:cache_dir, :offline, :auth_token])
       )
 
     with {:ok, path} <- result,
@@ -1211,11 +1212,19 @@ defmodule Bumblebee do
       end
 
     url = HuggingFace.Hub.file_url(repository_id, filename, opts[:revision])
+    cache_scope = repository_id_to_cache_scope(repository_id)
 
     HuggingFace.Hub.cached_download(
       url,
-      [etag: etag] ++ Keyword.take(opts, [:cache_dir, :offline, :auth_token])
+      [etag: etag, cache_scope: cache_scope] ++
+        Keyword.take(opts, [:cache_dir, :offline, :auth_token])
     )
+  end
+
+  defp repository_id_to_cache_scope(repository_id) do
+    repository_id
+    |> String.replace("/", "--")
+    |> String.replace(~r/[^\w-]/, "")
   end
 
   defp normalize_repository!({:hf, repository_id}) when is_binary(repository_id) do
