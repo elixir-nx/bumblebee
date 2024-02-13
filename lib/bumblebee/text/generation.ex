@@ -110,6 +110,13 @@ defmodule Bumblebee.Text.Generation do
     eos_token_id = config.eos_token_id
     pad_token_id = config.pad_token_id || config.eos_token_id
 
+    unless pad_token_id do
+      raise ArgumentError,
+            "expected :pad_token_id (or :eos_token_id as a fallback) to be present in" <>
+              " generation config, but it was not set. Make sure to load a complete" <>
+              " generation config or update it accordingly using Bumblebee.configure/2"
+    end
+
     {max_length_fun, min_length_fun} = lazy_lengths_from_opts(config)
 
     {prepare_inputs_fun, update_inputs_fun} =
