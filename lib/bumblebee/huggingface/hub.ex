@@ -119,7 +119,12 @@ defmodule Bumblebee.HuggingFace.Hub do
 
     case load_json(metadata_path) do
       {:ok, %{"etag" => ^etag}} ->
-        Path.join(dir, entry_filename(url, etag))
+        path = Path.join(dir, entry_filename(url, etag))
+
+        # Make sure the file exists, in case someone manually removed it
+        if File.exists?(path) do
+          path
+        end
 
       _ ->
         nil
