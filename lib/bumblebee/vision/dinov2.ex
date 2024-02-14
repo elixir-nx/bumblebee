@@ -110,7 +110,7 @@ defmodule Bumblebee.Vision.DinoV2 do
       ])
 
   @moduledoc """
-  DinoV2 model family.
+  DinoV2 model.
 
   ## Architectures
 
@@ -135,7 +135,7 @@ defmodule Bumblebee.Vision.DinoV2 do
 
   ## References
 
-    * [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929)
+    * [DINOv2: Learning Robust Visual Features without Supervision](https://arxiv.org/abs/2304.07193)
 
   """
 
