@@ -186,8 +186,10 @@ defmodule Bumblebee.Vision.DinoV2 do
   end
 
   def model(%__MODULE__{architecture: :for_image_classification} = spec) do
-    inputs = inputs(spec)
-    outputs = core(inputs, spec) |> base_output(spec)
+    outputs =
+      inputs(spec)
+      |> core(spec)
+      |> base_output(spec)
 
     class_token =
       outputs.hidden_state
@@ -195,8 +197,8 @@ defmodule Bumblebee.Vision.DinoV2 do
       |> Axon.reshape({:batch, 1, :auto})
 
     patch_embeddings_mean =
-      Axon.nx(outputs.hidden_state, fn state ->
-        patch_embeddings = state[[.., 1..-1//1, ..]]
+      Axon.nx(outputs.hidden_state, fn hidden_state ->
+        patch_embeddings = hidden_state[[.., 1..-1//1, ..]]
         Nx.mean(patch_embeddings, axes: [1], keep_axes: true)
       end)
 
@@ -291,7 +293,7 @@ defmodule Bumblebee.Vision.DinoV2 do
           Map.put(
             acc,
             stage_name,
-            feature_map(hidden_states, index, spec, name: join(name, "feature_mapping"))
+            feature_map(hidden_states, index, spec, name: join(name, "feature_map"))
           )
       end
 
@@ -304,25 +306,24 @@ defmodule Bumblebee.Vision.DinoV2 do
 
   defp interpolate_position_encoding(
          position_embeddings,
-         spec,
-         input_size
+         input_size,
+         spec
        ) do
-    dim = spec.hidden_size
     original_positions = div(spec.image_size, spec.patch_size)
     resized_positions = div(input_size, spec.patch_size)
 
     class_position_embedding =
       Layers.take_token(position_embeddings, index: 0, axis: 1)
-      |> Axon.reshape({1, 1, dim})
+      |> Axon.reshape({1, 1, spec.hidden_size})
 
     other_position_embeddings =
       Axon.nx(position_embeddings, fn tensor -> tensor[[.., 1..-1//1, ..]] end)
 
     interpolated_embeddings =
       other_position_embeddings
-      |> Axon.reshape({:batch, original_positions, original_positions, dim})
+      |> Axon.reshape({:batch, original_positions, original_positions, spec.hidden_size})
       |> Axon.resize({resized_positions, resized_positions}, method: :bicubic)
-      |> Axon.reshape({:batch, :auto, dim})
+      |> Axon.reshape({:batch, :auto, spec.hidden_size})
 
     Layers.concatenate_embeddings([class_position_embedding, interpolated_embeddings])
   end
@@ -349,7 +350,7 @@ defmodule Bumblebee.Vision.DinoV2 do
         initializer: :zeros,
         name: join(name, "position_embedding")
       )
-      |> interpolate_position_encoding(spec, input_size)
+      |> interpolate_position_encoding(input_size, spec)
 
     Axon.add(input_embeddings, position_embeddings)
     |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
@@ -386,7 +387,7 @@ defmodule Bumblebee.Vision.DinoV2 do
     name = opts[:name]
 
     hidden_features =
-      Integer.floor_div(round(round(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
+      div(round(round(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
 
     output_features = spec.hidden_size
 
