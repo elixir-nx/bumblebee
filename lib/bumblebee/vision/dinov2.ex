@@ -420,7 +420,7 @@ defmodule Bumblebee.Vision.DinoV2 do
         epsilon: spec.layer_norm_epsilon
       ],
       ffn: ffn,
-      block_type: :norm_first,
+      block_type: :norm_first_with_scale,
       output_hidden_states: spec.output_hidden_states,
       output_attentions: spec.output_attentions,
       name: join(name, "blocks")
@@ -844,7 +844,7 @@ defmodule Bumblebee.Vision.DinoV2 do
   end
 
   defp block_impl(
-         :norm_first,
+         :norm_first_with_scale,
          hidden_state,
          self_attention_norm,
          self_attention,
