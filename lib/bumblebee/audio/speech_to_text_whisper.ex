@@ -52,7 +52,8 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     generate_fun = fn params, {inputs, seed} ->
       inputs = Bumblebee.Featurizer.process_batch(featurizer, inputs)
       inputs = Map.put(inputs, "seed", seed)
-      generate_fun.(params, inputs)
+      %{token_ids: token_ids} = generate_fun.(params, inputs)
+      token_ids
     end
 
     Nx.Serving.new(
