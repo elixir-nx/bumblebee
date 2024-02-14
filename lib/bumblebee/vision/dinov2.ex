@@ -383,7 +383,7 @@ defmodule Bumblebee.Vision.DinoV2 do
 
   defp swiglu(input, name, spec) do
     hidden_features =
-      div(round(round(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
+      div(floor(floor(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
 
     output_features = spec.hidden_size
 

@@ -22,8 +22,7 @@ defmodule Bumblebee.Vision.DinoV2Test do
 
     assert_all_close(
       outputs.pooled_state[[.., 1..3]],
-      Nx.tensor([[-6.0413055419921875, 2.106351137161255, -0.10576345771551132]]),
-      atol: 1.0e-4
+      Nx.tensor([[-6.0413055419921875, 2.106351137161255, -0.10576345771551132]])
     )
   end
 
@@ -69,8 +68,7 @@ defmodule Bumblebee.Vision.DinoV2Test do
 
     assert_all_close(
       last_feature_map[[0, 1, 1, 1..3]],
-      Nx.tensor([-3.0963878631591797, -1.9401777982711792, -1.4899224042892456]),
-      atol: 1.0e-4
+      Nx.tensor([-3.0963878631591797, -1.9401777982711792, -1.4899224042892456])
     )
   end
 
@@ -94,8 +92,7 @@ defmodule Bumblebee.Vision.DinoV2Test do
 
     assert_all_close(
       Nx.squeeze(outputs.logits)[[0..2]],
-      Nx.tensor([-3.083641290664673, -1.8309074640274048, -0.28923606872558594]),
-      atol: 1.0e-4
+      Nx.tensor([-3.083641290664673, -1.8309074640274048, -0.28923606872558594])
     )
   end
 end
