@@ -251,7 +251,7 @@ defmodule Bumblebee.Vision.DinoV2 do
     }
   end
 
-  defp feature_map(hidden_states, index, spec, opts \\ []) do
+  defp feature_map(hidden_states, index, spec, opts) do
     name = opts[:name]
 
     {_, input_size, _, _} = Axon.get_inputs(hidden_states)["pixel_values"]
@@ -381,14 +381,13 @@ defmodule Bumblebee.Vision.DinoV2 do
   end
 
   defp ffn_mlp(layer_output, name, spec) do
-    layer_output
-    |> mlp(
+    mlp(
+      layer_output,
       spec.hidden_size,
       spec.mlp_ratio,
       spec.activation,
       name: join(name, "mlp")
     )
-    |> Bumblebee.Layers.scale(name: join(name, "layer_scale2"))
   end
 
   defp swiglu(input, hidden_features, output_features, name) do
@@ -409,7 +408,6 @@ defmodule Bumblebee.Vision.DinoV2 do
 
     layer_output
     |> swiglu(hidden_features, spec.hidden_size, join(name, "mlp"))
-    |> Bumblebee.Layers.scale(name: join(name, "layer_scale2"))
   end
 
   defp encoder(hidden_state, spec, opts) do
@@ -734,7 +732,10 @@ defmodule Bumblebee.Vision.DinoV2 do
 
     self_attention = fn hidden_state ->
       {hidden_state, attention, self_attention_cache, attention_relative_bias} =
-        multi_head_attention(hidden_state, hidden_state, hidden_state,
+        Bumblebee.Layers.Transformer.multi_head_attention(
+          hidden_state,
+          hidden_state,
+          hidden_state,
           attention_mask: attention_mask,
           attention_head_mask: attention_head_mask,
           attention_relative_bias: attention_relative_bias,
@@ -780,7 +781,10 @@ defmodule Bumblebee.Vision.DinoV2 do
 
     cross_attention = fn hidden_state ->
       {hidden_state, cross_attention, cross_attention_cache, _cross_attention_relative_bias} =
-        multi_head_attention(hidden_state, cross_hidden_state, cross_hidden_state,
+        Bumblebee.Layers.Transformer.multi_head_attention(
+          hidden_state,
+          cross_hidden_state,
+          cross_hidden_state,
           attention_mask: cross_attention_mask,
           attention_head_mask: cross_attention_head_mask,
           attention_cache: cross_attention_cache,
@@ -817,7 +821,8 @@ defmodule Bumblebee.Vision.DinoV2 do
     ffn =
       &ffn_fun.(&1, name)
 
-    scale = &Bumblebee.Layers.scale(&1, name: join(name, "layer_scale1"))
+    scale1 = &Bumblebee.Layers.scale(&1, name: join(name, "layer_scale1"))
+    scale2 = &Bumblebee.Layers.scale(&1, name: join(name, "layer_scale2"))
 
     {hidden_state, attention_info, cross_attention_info} =
       block_impl(
@@ -825,7 +830,8 @@ defmodule Bumblebee.Vision.DinoV2 do
         hidden_state,
         self_attention_norm,
         self_attention,
-        scale,
+        scale1,
+        scale2,
         cross_attention_maybe,
         cross_attention_norm,
         cross_attention,
@@ -851,7 +857,8 @@ defmodule Bumblebee.Vision.DinoV2 do
          hidden_state,
          self_attention_norm,
          self_attention,
-         scale,
+         scale1,
+         scale2,
          cross_attention_maybe,
          cross_attention_norm,
          cross_attention,
@@ -866,7 +873,7 @@ defmodule Bumblebee.Vision.DinoV2 do
       |> self_attention.()
 
     hidden_state =
-      scale.(hidden_state)
+      scale1.(hidden_state)
       |> Axon.add(shortcut)
 
     {hidden_state, cross_attention_info} =
@@ -889,6 +896,7 @@ defmodule Bumblebee.Vision.DinoV2 do
       hidden_state
       |> output_norm.()
       |> ffn.()
+      |> scale2.()
       |> Axon.add(shortcut)
 
     {hidden_state, attention_info, cross_attention_info}
@@ -908,269 +916,6 @@ defmodule Bumblebee.Vision.DinoV2 do
       name: join(name, "output")
     )
     |> Axon.dropout(rate: opts[:dropout_rate])
-  end
-
-  @doc """
-  Adds a multi-head attention block to the network.
-
-  When `query`, `key` and `value` are the same, this is self-attention.
-  When `query` comes from the decoder, while `key` and `value` come from
-  the encoder, this is cross-attention.
-
-  Returns the tuple `{attention_output, attention_weights, attention_cache}`.
-
-  ## Options
-
-    * `:num_heads` (required) - the number of attention heads
-
-    * `:hidden_size` (required) - the dimensionality of query/key/value
-      projections
-
-    * `:attention_mask` - a mask indicating which positions to attend to
-
-    * `:attention_head_mask` - a mask to nullify selected attention heads
-
-    * `:attention_relative_bias` - configuration of relative bias. If set,
-      will apply relative attention bias with the given options. Valid
-      options are:
-
-        * `:num_buckets` (required) - number of relative attention buckets
-
-        * `:max_distance` (required) - maximum distance of the relative attention
-          bias
-
-        * `:bidirectional` (required) - whether to apply the relative attention
-          bias bidirectionally
-
-      Alternatively an `Axon` node may be given with the computed bias.
-
-    * `:attention_cache` - cache with accumulated key/values useful for
-      iterative decoding
-
-    * `:offset` - offset in the input sequence during iterative decoding
-
-    * `:causal` - whether to apply causal attention mask, so that tokens
-      are attended to only in a single direction. Defaults to `false`
-
-    * `:kernel_initializer` - initializer for kernel weights. Defaults
-      to `:glorot_uniform`
-
-    * `:dropout_rate` - the dropout rate for attention weights dropout.
-      Defaults to `0.0`
-
-    * `:attention_head_size` - the projection size for key, value,
-      and query states per-head. Defaults to `div(hidden_size, num_attention_heads)`
-
-    * `:query_use_bias` - whether to use bias in the query projection.
-      Defaults to `true`
-
-    * `:key_use_bias` - whether to use bias in the key projection.
-      Defaults to `true`
-
-    * `:value_use_bias` - whether to use bias in the value projection.
-      Defaults to `true`
-
-    * `:output_use_bias` - whether to use bias in the output projection.
-      Defaults to `true`
-
-    * `:rotary_embedding` - configuration of rotary embedding. If set,
-      will apply rotary position embedding with the given options. Valid
-      options are:
-
-        * `:position_ids` (required) - input position ids used for the
-          embedding
-
-        * `:max_positions` - the maximum number of distinct positions
-
-    * `:name` - the prefix for layer names
-
-  ## References
-
-    * [Attention Is All You Need](https://arxiv.org/abs/1706.03762), Figure 2 (right)
-
-  """
-  def multi_head_attention(query, key, value, opts) do
-    validate_required_keys!(opts, [:num_heads, :hidden_size])
-
-    opts =
-      Keyword.validate!(opts, [
-        :name,
-        :num_heads,
-        :hidden_size,
-        :num_key_value_heads,
-        attention_mask: Layers.none(),
-        attention_head_mask: Layers.none(),
-        attention_relative_bias: Layers.none(),
-        attention_cache: Layers.none(),
-        offset: Layers.none(),
-        causal: false,
-        scale_attention_weights: true,
-        kernel_initializer: :glorot_uniform,
-        dropout_rate: 0.0,
-        attention_head_size: nil,
-        query_use_bias: true,
-        key_use_bias: true,
-        value_use_bias: true,
-        output_use_bias: true,
-        rotary_embedding: nil
-      ])
-
-    attention_mask = opts[:attention_mask]
-    attention_head_mask = opts[:attention_head_mask]
-    attention_cache = opts[:attention_cache]
-    offset = opts[:offset]
-
-    name = opts[:name]
-    num_heads = opts[:num_heads]
-    num_key_value_heads = opts[:num_key_value_heads] || num_heads
-    hidden_size = opts[:hidden_size]
-    kernel_initializer = opts[:kernel_initializer]
-    causal = opts[:causal]
-    scale_attention_weights = opts[:scale_attention_weights]
-    dropout_rate = opts[:dropout_rate]
-    rotary_embedding = opts[:rotary_embedding]
-
-    query_use_bias = opts[:query_use_bias]
-    key_use_bias = opts[:key_use_bias]
-    value_use_bias = opts[:value_use_bias]
-    output_use_bias = opts[:output_use_bias]
-
-    attention_relative_bias = opts[:attention_relative_bias]
-
-    attention_head_size = opts[:attention_head_size] || div(hidden_size, num_heads)
-    inner_size = num_heads * attention_head_size
-    inner_kv_size = num_key_value_heads * attention_head_size
-
-    query =
-      query
-      |> Axon.dense(inner_size,
-        kernel_initializer: kernel_initializer,
-        name: join(name, "query"),
-        use_bias: query_use_bias
-      )
-      |> Layers.split_heads(num_heads)
-
-    key =
-      key
-      |> Axon.dense(inner_kv_size,
-        kernel_initializer: kernel_initializer,
-        name: join(name, "key"),
-        use_bias: key_use_bias
-      )
-      |> Layers.split_heads(num_key_value_heads)
-
-    value =
-      value
-      |> Axon.dense(inner_kv_size,
-        kernel_initializer: kernel_initializer,
-        name: join(name, "value"),
-        use_bias: value_use_bias
-      )
-      |> Layers.split_heads(num_key_value_heads)
-
-    {query, key} =
-      case rotary_embedding do
-        opts when is_list(opts) ->
-          validate_required_keys!(opts, [:position_ids])
-
-          opts =
-            Keyword.validate!(opts, [
-              :position_ids,
-              :max_positions,
-              :scaling_strategy,
-              base: 10_000,
-              percentage: 1.0
-            ])
-
-          {position_ids, opts} = Keyword.pop(opts, :position_ids)
-          {percentage, opts} = Keyword.pop(opts, :percentage)
-
-          size = trunc(attention_head_size * percentage)
-
-          rotary_opts = [name: join(name, "rotary_embedding")] ++ opts
-
-          if size == attention_head_size do
-            Layers.rotary_embedding(query, key, position_ids, attention_mask, size, rotary_opts)
-          else
-            query_rotary = Axon.nx(query, & &1[[.., .., .., 0..(size - 1)//1]])
-            query_pass = Axon.nx(query, & &1[[.., .., .., size..-1//1]])
-
-            key_rotary = Axon.nx(key, & &1[[.., .., .., 0..(size - 1)//1]])
-            key_pass = Axon.nx(key, & &1[[.., .., .., size..-1//1]])
-
-            {query_rotary, key_rotary} =
-              Layers.rotary_embedding(
-                query_rotary,
-                key_rotary,
-                position_ids,
-                attention_mask,
-                size,
-                rotary_opts
-              )
-
-            {Axon.concatenate([query_rotary, query_pass], axis: -1),
-             Axon.concatenate([key_rotary, key_pass], axis: -1)}
-          end
-
-        nil ->
-          {query, key}
-      end
-
-    num_key_value_groups = div(num_heads, num_key_value_heads)
-    key = repeat_states(key, num_key_value_groups)
-    value = repeat_states(value, num_key_value_groups)
-
-    {key, value, attention_cache} =
-      Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset)
-
-    attention_relative_bias =
-      case attention_relative_bias do
-        %Axon{} ->
-          attention_relative_bias
-
-        bias_opts when is_list(bias_opts) ->
-          validate_required_keys!(bias_opts, [:num_buckets, :max_distance, :bidirectional])
-          bias_opts = Keyword.validate!(bias_opts, [:num_buckets, :max_distance, :bidirectional])
-
-          Layers.relative_attention_bias(query, key, attention_cache, offset,
-            num_buckets: bias_opts[:num_buckets],
-            max_distance: bias_opts[:max_distance],
-            bidirectional: bias_opts[:bidirectional],
-            num_heads: num_heads,
-            name: join(name, "relative_attention_bias")
-          )
-      end
-
-    {attention_output, attention_weights} =
-      Layers.attention(
-        query,
-        key,
-        value,
-        attention_mask,
-        attention_head_mask,
-        attention_relative_bias,
-        offset,
-        scale: scale_attention_weights,
-        causal: causal,
-        dropout_rate: dropout_rate
-      )
-
-    attention_output =
-      attention_output
-      |> Layers.flatten_trailing()
-      |> Axon.dense(hidden_size,
-        kernel_initializer: kernel_initializer,
-        name: join(name, "output"),
-        use_bias: output_use_bias
-      )
-
-    {attention_output, attention_weights, attention_cache, attention_relative_bias}
-  end
-
-  defp repeat_states(state, 1), do: state
-
-  defp repeat_states(state, times) do
-    Layers.repeat_interleave(state, times, axis: 2)
   end
 
   defp validate_required_keys!(opts, keys) do
