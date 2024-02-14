@@ -10,7 +10,8 @@ defmodule Bumblebee.Text.TextGeneration do
         :compile,
         defn_options: [],
         preallocate_params: false,
-        stream: false
+        stream: false,
+        stream_done: false
       ])
 
     %{model: model, params: params, spec: spec} = model_info
@@ -37,7 +38,8 @@ defmodule Bumblebee.Text.TextGeneration do
       Bumblebee.configure(tokenizer,
         length: sequence_length,
         pad_direction: :left,
-        return_token_type_ids: false
+        return_token_type_ids: false,
+        return_length: true
       )
 
     generate_fun = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
@@ -85,14 +87,17 @@ defmodule Bumblebee.Text.TextGeneration do
           Bumblebee.apply_tokenizer(tokenizer, texts)
         end)
 
+      {input_length, inputs} = Map.pop!(inputs, "length")
+      input_padded_length = Nx.axis_size(inputs["input_ids"], 1)
+
       inputs = Map.put(inputs, "seed", seed)
 
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
       batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)
 
-      {batch, multi?}
+      {batch, {multi?, input_length, input_padded_length}}
     end)
-    |> maybe_stream(opts[:stream], tokenizer)
+    |> maybe_stream(opts[:stream], opts[:stream_done], tokenizer)
   end
 
   defp validate_input(text) when is_binary(text), do: validate_input(%{text: text})
@@ -109,25 +114,39 @@ defmodule Bumblebee.Text.TextGeneration do
     {:error, "expected either a string or a map, got: #{inspect(input)}"}
   end
 
-  defp maybe_stream(serving, false, tokenizer) do
-    Nx.Serving.client_postprocessing(serving, fn {token_ids, _metadata}, multi? ->
-      decoded = Bumblebee.Tokenizer.decode(tokenizer, token_ids)
+  defp maybe_stream(serving, false, _stream_done, tokenizer) do
+    Nx.Serving.client_postprocessing(
+      serving,
+      fn {%{token_ids: token_ids, length: length}, _metadata},
+         {multi?, input_length, input_padded_length} ->
+        decoded = Bumblebee.Tokenizer.decode(tokenizer, token_ids)
+        output_length = Nx.to_flat_list(length)
+        input_length = Nx.to_flat_list(input_length)
 
-      decoded
-      |> Enum.map(&%{results: [%{text: &1}]})
-      |> Shared.normalize_output(multi?)
-    end)
+        Enum.zip_with(
+          [decoded, output_length, input_length],
+          fn [decoded, output_length, input_length] ->
+            token_summary = token_summary(input_length, input_padded_length, output_length)
+            %{results: [%{text: decoded, token_summary: token_summary}]}
+          end
+        )
+        |> Shared.normalize_output(multi?)
+      end
+    )
   end
 
-  defp maybe_stream(serving, true, tokenizer) do
+  defp maybe_stream(serving, true, stream_done, tokenizer) do
     serving
     |> Nx.Serving.streaming(hooks: [:token])
-    |> Nx.Serving.client_postprocessing(fn stream, false = _multi? ->
+    |> Nx.Serving.client_postprocessing(fn stream,
+                                           {false = _multi?, input_length, input_padded_length} ->
+      [input_length] = Nx.to_flat_list(input_length)
+
       Stream.transform(stream, %{tokens: [], consumed_size: 0, finished?: false}, fn
         _event, %{finished?: true} = state ->
           {:halt, state}
 
-        {:token, {token_id, finished?}}, state ->
+        {:token, %{token_id: token_id, finished?: finished?, length: output_length}}, state ->
           token_id = Nx.to_number(token_id[0])
           finished? = Nx.to_number(finished?[0]) == 1
 
@@ -135,44 +154,53 @@ defmodule Bumblebee.Text.TextGeneration do
 
           chunk = pending_chunk(tokenizer, state)
 
-          cond do
-            # When the sequence is finished early or we reach a newline,
-            # we flush the cache
-            finished? or String.ends_with?(chunk, "\n") ->
-              {[chunk], %{state | tokens: [], consumed_size: 0}}
+          {items, state} =
+            cond do
+              # When the sequence is finished early or we reach a newline,
+              # we flush the cache
+              finished? or String.ends_with?(chunk, "\n") ->
+                {[chunk], %{state | tokens: [], consumed_size: 0}}
 
-            # CJK characters are tokenized atomically, so we can emit
-            # the chunk
-            chunk != "" and cjk_codepoint?(last_codepoint(chunk)) ->
-              state = update_in(state.consumed_size, &(&1 + byte_size(chunk)))
-              {[chunk], state}
-
-            # Emit chunk until the space. We need to keep tokens,
-            # because certain tokenizers do not encode whitespace in
-            # tokens and they add a space based on previous tokens
-            space_idx = find_last_occurrence(chunk, " ") ->
-              if space_idx > 0 do
-                chunk = binary_slice(chunk, 0, space_idx)
-                state = update_in(state.consumed_size, &(&1 + space_idx))
+              # CJK characters are tokenized atomically, so we can emit
+              # the chunk
+              chunk != "" and cjk_codepoint?(last_codepoint(chunk)) ->
+                state = update_in(state.consumed_size, &(&1 + byte_size(chunk)))
                 {[chunk], state}
-              else
+
+              # Emit chunk until the space. We need to keep tokens,
+              # because certain tokenizers do not encode whitespace in
+              # tokens and they add a space based on previous tokens
+              space_idx = find_last_occurrence(chunk, " ") ->
+                if space_idx > 0 do
+                  chunk = binary_slice(chunk, 0, space_idx)
+                  state = update_in(state.consumed_size, &(&1 + space_idx))
+                  {[chunk], state}
+                else
+                  {[], state}
+                end
+
+              true ->
                 {[], state}
-              end
+            end
 
-            true ->
-              {[], state}
-          end
-
-        {:batch, _, _}, state ->
-          chunk = pending_chunk(tokenizer, state)
-
-          if chunk == "" do
-            {:halt, state}
+          if finished? and stream_done do
+            output_length = Nx.to_number(output_length[0])
+            token_summary = token_summary(input_length, input_padded_length, output_length)
+            done = {:done, %{token_summary: token_summary}}
+            {items ++ [done], state}
           else
-            {[chunk], %{state | tokens: [], consumed_size: 0}}
+            {items, state}
           end
       end)
     end)
+  end
+
+  defp token_summary(input_length, input_padded_length, output_length) do
+    %{
+      input: input_length,
+      output: output_length,
+      padding: input_padded_length - input_length
+    }
   end
 
   defp pending_chunk(tokenizer, state) do

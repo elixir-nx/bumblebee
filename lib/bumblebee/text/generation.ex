@@ -102,7 +102,8 @@ defmodule Bumblebee.Text.Generation do
           Bumblebee.ModelSpec.t(),
           Bumblebee.Text.GenerationConfig.t(),
           keyword()
-        ) :: (params :: map(), inputs :: map() -> Nx.t())
+        ) ::
+          (params :: map(), inputs :: map() -> %{token_ids: Nx.Tensor.t(), length: Nx.Tensor.t()})
   def build_generate(model, spec, config, opts \\ []) do
     opts = Keyword.validate!(opts, logits_processors: [])
 
@@ -358,7 +359,7 @@ defmodule Bumblebee.Text.Generation do
 
     strategy = opts[:strategy]
 
-    sequences =
+    {sequences, finished_length} =
       case strategy.type do
         :greedy_search ->
           greedy(
@@ -399,8 +400,11 @@ defmodule Bumblebee.Text.Generation do
           )
       end
 
-    # Output only the newly generated tokens
-    sequences[[.., length..-1//1]]
+    %{
+      # Output only the newly generated tokens
+      token_ids: sequences[[.., length..-1//1]],
+      length: finished_length - length
+    }
   end
 
   deftransformp pop_seed(inputs), do: Map.pop!(inputs, "seed")
@@ -422,17 +426,17 @@ defmodule Bumblebee.Text.Generation do
     pad_token_id = opts[:pad_token_id]
     eos_token_id = opts[:eos_token_id]
 
-    {sequences, length = input_length, finished?} =
+    {sequences, length = input_length, finished_length} =
       init_sequences(decoder_input_ids, max_length, pad_token_id)
 
     # The loop works with inputs of length 1, so if the initial input
     # is longer, we make the initial pass outside
-    {sequences, length, finished?, inputs} =
+    {sequences, length, finished_length, inputs} =
       if length > 1 do
         greedy_step(
           sequences,
           length,
-          finished?,
+          finished_length,
           inputs,
           input_length,
           predict_fun,
@@ -443,17 +447,17 @@ defmodule Bumblebee.Text.Generation do
           eos_token_id: eos_token_id
         )
       else
-        {sequences, length, finished?, inputs}
+        {sequences, length, finished_length, inputs}
       end
 
-    {sequences, _length, _finished?, _inputs, _params} =
-      while {sequences, length, finished?, inputs, params},
-            continue?(finished?, length, max_length) do
-        {sequences, length, finished?, inputs} =
+    {sequences, _length, finished_length, _inputs, _params} =
+      while {sequences, length, finished_length, inputs, params},
+            continue?(finished_length) do
+        {sequences, length, finished_length, inputs} =
           greedy_step(
             sequences,
             length,
-            finished?,
+            finished_length,
             inputs,
             input_length,
             predict_fun,
@@ -464,10 +468,10 @@ defmodule Bumblebee.Text.Generation do
             eos_token_id: eos_token_id
           )
 
-        {sequences, length, finished?, inputs, params}
+        {sequences, length, finished_length, inputs, params}
       end
 
-    sequences
+    {sequences, finished_length}
   end
 
   defnp init_sequences(decoder_input_ids, max_length, pad_token_id) do
@@ -476,19 +480,21 @@ defmodule Bumblebee.Text.Generation do
     sequences = Nx.broadcast(pad_token_id, {batch_size, max_length})
     sequences = Nx.put_slice(sequences, [0, 0], decoder_input_ids)
 
-    finished? = Nx.broadcast(Nx.tensor(0, type: :u8), {batch_size})
+    # For each sequence, we keep track of its final length, where 0
+    # means that it has not been finished yet
+    finished_length = Nx.broadcast(0, {batch_size})
 
-    {sequences, length, finished?}
+    {sequences, length, finished_length}
   end
 
-  defnp continue?(finished?, length, max_length) do
-    not Nx.all(finished?) and length < max_length
+  defnp continue?(finished_length) do
+    Nx.any(finished_length == 0)
   end
 
   defnp greedy_step(
           sequences,
           length,
-          finished?,
+          finished_length,
           inputs,
           input_length,
           predict_fun,
@@ -506,29 +512,59 @@ defmodule Bumblebee.Text.Generation do
     logits = batch_process_logits(logits_processor_fun, logits, sequences, length, input_length)
     token_id = Nx.argmax(logits, axis: -1)
 
-    {sequences, length, finished?} =
-      update_sequences(sequences, length, finished?, token_id, pad_token_id, eos_token_id)
+    {sequences, length, finished_length} =
+      update_sequences(
+        sequences,
+        input_length,
+        length,
+        finished_length,
+        token_id,
+        pad_token_id,
+        eos_token_id
+      )
 
     inputs = update_inputs_fun.(inputs, outputs.cache, Nx.new_axis(token_id, -1))
 
-    {sequences, length, finished?, inputs}
+    {sequences, length, finished_length, inputs}
   end
 
-  defnp update_sequences(sequences, length, finished?, token_id, pad_token_id, eos_token_id) do
-    token_id = Nx.select(finished?, pad_token_id, token_id)
-
-    finished? =
-      case eos_token_id do
-        nil -> finished?
-        eos_token_id -> finished? or token_id == eos_token_id
-      end
-
-    {token_id, finished?} = hook({token_id, finished?}, :token)
+  defnp update_sequences(
+          sequences,
+          input_length,
+          length,
+          finished_length,
+          token_id,
+          pad_token_id,
+          eos_token_id
+        ) do
+    token_id = Nx.select(finished_length > 0, pad_token_id, token_id)
 
     token_ids = Nx.new_axis(token_id, -1)
     sequences = Nx.put_slice(sequences, [0, length], token_ids)
+    length = length + 1
 
-    {sequences, length + 1, finished?}
+    {batch_size, max_length} = Nx.shape(sequences)
+
+    finished_length =
+      case eos_token_id do
+        nil ->
+          finished_length
+
+        eos_token_id ->
+          Nx.select(
+            finished_length == 0 and (token_id == eos_token_id or length == max_length),
+            length,
+            finished_length
+          )
+      end
+
+    finished? = finished_length > 0
+    output_length = Nx.broadcast(length - input_length, {batch_size})
+    data = %{token_id: token_id, finished?: finished?, length: output_length}
+    token = create_token()
+    {token, _} = hook_token(token, data, :token)
+
+    attach_token(token, {sequences, length, finished_length})
   end
 
   defnp batch_process_logits(logits_processor_fun, logits, sequences, length, input_length) do
@@ -560,7 +596,7 @@ defmodule Bumblebee.Text.Generation do
     top_k = opts[:top_k]
     penalty_alpha = opts[:penalty_alpha]
 
-    {sequences, length = input_length, finished?} =
+    {sequences, length = input_length, finished_length} =
       init_sequences(decoder_input_ids, max_length, pad_token_id)
 
     # Step (1)
@@ -593,10 +629,10 @@ defmodule Bumblebee.Text.Generation do
     # pick the best one using the contrastive rank. From the same model
     # pass we also get the next top-k continuation tokens
 
-    {sequences, _length, _finished?, _inputs, _params, _joint_hidden_state, _top_k_values} =
-      while {sequences, length, finished?, inputs, params, joint_hidden_state,
+    {sequences, _length, finished_length, _inputs, _params, _joint_hidden_state, _top_k_values} =
+      while {sequences, length, finished_length, inputs, params, joint_hidden_state,
              {top_k_scores, top_k_token_ids}},
-            continue?(finished?, length, max_length) do
+            continue?(finished_length) do
         outputs = predict_fun.(params, inputs)
 
         hidden_state = decoder_hidden_state(outputs)
@@ -618,8 +654,16 @@ defmodule Bumblebee.Text.Generation do
 
         token_id = top_k_token_ids |> Nx.flatten() |> Utils.Nx.chunked_take(top_k, selected_idx)
 
-        {sequences, length, finished?} =
-          update_sequences(sequences, length, finished?, token_id, pad_token_id, eos_token_id)
+        {sequences, length, finished_length} =
+          update_sequences(
+            sequences,
+            input_length,
+            length,
+            finished_length,
+            token_id,
+            pad_token_id,
+            eos_token_id
+          )
 
         logits = outputs.logits[[.., -1]]
         logits = Utils.Nx.chunked_take(logits, top_k, selected_idx)
@@ -634,11 +678,11 @@ defmodule Bumblebee.Text.Generation do
         cache = reflect_cache(outputs.cache, top_k, selected_idx, traverse_cache_fun)
         inputs = update_inputs_fun.(inputs, cache, Nx.reshape(top_k_token_ids, {:auto, 1}))
 
-        {sequences, length, finished?, inputs, params, joint_hidden_state,
+        {sequences, length, finished_length, inputs, params, joint_hidden_state,
          {top_k_scores, top_k_token_ids}}
       end
 
-    sequences
+    {sequences, finished_length}
   end
 
   deftransformp decoder_hidden_state(outputs) do
@@ -723,19 +767,19 @@ defmodule Bumblebee.Text.Generation do
     pad_token_id = opts[:pad_token_id]
     eos_token_id = opts[:eos_token_id]
 
-    {sequences, length = input_length, finished?} =
+    {sequences, length = input_length, finished_length} =
       init_sequences(decoder_input_ids, max_length, pad_token_id)
 
     prng_key = seed |> Nx.vectorize(:batch) |> Nx.Random.key()
 
     # The loop works with inputs of length 1, so if the initial input
     # is longer, we make the initial pass outside
-    {sequences, length, finished?, inputs, prng_key} =
+    {sequences, length, finished_length, inputs, prng_key} =
       if length > 1 do
         sampling_step(
           sequences,
           length,
-          finished?,
+          finished_length,
           inputs,
           input_length,
           predict_fun,
@@ -747,17 +791,17 @@ defmodule Bumblebee.Text.Generation do
           eos_token_id: eos_token_id
         )
       else
-        {sequences, length, finished?, inputs, prng_key}
+        {sequences, length, finished_length, inputs, prng_key}
       end
 
-    {sequences, _length, _finished?, _inputs, _params, _key} =
-      while {sequences, length, finished?, inputs, params, prng_key},
-            continue?(finished?, length, max_length) do
-        {sequences, length, finished?, inputs, prng_key} =
+    {sequences, _length, finished_length, _inputs, _params, _key} =
+      while {sequences, length, finished_length, inputs, params, prng_key},
+            continue?(finished_length) do
+        {sequences, length, finished_length, inputs, prng_key} =
           sampling_step(
             sequences,
             length,
-            finished?,
+            finished_length,
             inputs,
             input_length,
             predict_fun,
@@ -769,16 +813,16 @@ defmodule Bumblebee.Text.Generation do
             eos_token_id: eos_token_id
           )
 
-        {sequences, length, finished?, inputs, params, prng_key}
+        {sequences, length, finished_length, inputs, params, prng_key}
       end
 
-    sequences
+    {sequences, finished_length}
   end
 
   defnp sampling_step(
           sequences,
           length,
-          finished?,
+          finished_length,
           inputs,
           input_length,
           predict_fun,
@@ -801,12 +845,20 @@ defmodule Bumblebee.Text.Generation do
     scores = Axon.Activations.softmax(logits)
     token_id = batched_choice(key, scores)
 
-    {sequences, length, finished?} =
-      update_sequences(sequences, length, finished?, token_id, pad_token_id, eos_token_id)
+    {sequences, length, finished_length} =
+      update_sequences(
+        sequences,
+        input_length,
+        length,
+        finished_length,
+        token_id,
+        pad_token_id,
+        eos_token_id
+      )
 
     inputs = update_inputs_fun.(inputs, outputs.cache, Nx.new_axis(token_id, -1))
 
-    {sequences, length, finished?, inputs, prng_key}
+    {sequences, length, finished_length, inputs, prng_key}
   end
 
   deftransformp batched_choice(key, scores) do
