@@ -370,9 +370,7 @@ defmodule Bumblebee.Vision.DinoV2 do
     |> Axon.reshape({:batch, :auto, spec.hidden_size}, name: join(name, "reshape"))
   end
 
-  defp mlp(input, spec, opts) do
-    name = opts[:name]
-
+  defp mlp(input, name, spec) do
     hidden_features = spec.hidden_size * spec.mlp_ratio
 
     out_features = spec.hidden_size
@@ -383,9 +381,7 @@ defmodule Bumblebee.Vision.DinoV2 do
     |> Axon.dense(out_features, name: name |> join("mlp") |> join("fc2"))
   end
 
-  defp swiglu(input, spec, opts) do
-    name = opts[:name]
-
+  defp swiglu(input, name, spec) do
     hidden_features =
       div(round(round(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
 
@@ -393,19 +389,19 @@ defmodule Bumblebee.Vision.DinoV2 do
 
     hidden_state =
       input
-      |> Axon.dense(2 * hidden_features, name: name |> join("mlp") |> join("weights_in"))
+      |> Axon.dense(2 * hidden_features, name: name |> join("swiglu") |> join("weights_in"))
 
     {x1, x2} = Axon.split(hidden_state, 2)
 
     Axon.silu(x1)
     |> Axon.multiply(x2)
-    |> Axon.dense(output_features, name: name |> join("mlp") |> join("weights_out"))
+    |> Axon.dense(output_features, name: name |> join("swiglu") |> join("weights_out"))
   end
 
   defp encoder(hidden_state, spec, opts) do
     name = opts[:name]
 
-    ffn = if spec.swiglu_ffn, do: &swiglu(&1, spec, &2), else: &mlp(&1, spec, &2)
+    ffn = if spec.swiglu_ffn, do: &swiglu(&1, &2, spec), else: &mlp(&1, &2, spec)
 
     blocks(hidden_state,
       num_blocks: spec.num_blocks,
@@ -488,10 +484,10 @@ defmodule Bumblebee.Vision.DinoV2 do
           "dinov2.encoder.layer.{n}.attention.attention.value",
         "encoder.blocks.{n}.self_attention.output" =>
           "dinov2.encoder.layer.{n}.attention.output.dense",
-        "encoder.blocks.{n}.mlp.fc1" => "dinov2.encoder.layer.{n}.mlp.fc1",
-        "encoder.blocks.{n}.mlp.fc2" => "dinov2.encoder.layer.{n}.mlp.fc2",
-        "encoder.blocks.{n}.mlp.weights_in" => "dinov2.encoder.layer.{n}.mlp.weights_in",
-        "encoder.blocks.{n}.mlp.weights_out" => "dinov2.encoder.layer.{n}.mlp.weights_out",
+        "encoder.blocks.{n}.ffn.mlp.fc1" => "dinov2.encoder.layer.{n}.mlp.fc1",
+        "encoder.blocks.{n}.ffn.mlp.fc2" => "dinov2.encoder.layer.{n}.mlp.fc2",
+        "encoder.blocks.{n}.ffn.swiglu.weights_in" => "dinov2.encoder.layer.{n}.mlp.weights_in",
+        "encoder.blocks.{n}.ffn.swiglu.weights_out" => "dinov2.encoder.layer.{n}.mlp.weights_out",
         "encoder.blocks.{n}.layer_scale1" => %{
           "scale" => {
             [{"dinov2.encoder.layer.{n}.layer_scale1", "lambda1"}],
@@ -811,7 +807,7 @@ defmodule Bumblebee.Vision.DinoV2 do
     output_norm = &layer_norm_fun.(&1, join(name, "output_norm"))
 
     ffn =
-      &ffn_fun.(&1, name: name)
+      &ffn_fun.(&1, join(name, "ffn"))
 
     scale1 = &Bumblebee.Layers.scale(&1, name: join(name, "layer_scale1"))
     scale2 = &Bumblebee.Layers.scale(&1, name: join(name, "layer_scale2"))
