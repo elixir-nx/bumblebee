@@ -3,7 +3,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
 
   options = [
     sample_size: [
-      default: 512,
+      default: 64,
       doc: "the size of the input spatial dimensions"
     ],
     in_channels: [
@@ -144,11 +144,13 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
   def input_template(spec) do
     sample_shape = {1, spec.sample_size, spec.sample_size, spec.in_channels}
     timestep_shape = {}
+    controlnet_conditioning_shape = {1, 512, 512, spec.in_channels}
     encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
     %{
       "sample" => Nx.template(sample_shape, :f32),
       "timestep" => Nx.template(timestep_shape, :u32),
+      "controlnet_conditioning" => Nx.template(controlnet_conditioning_shape, :f32),
       "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)
     }
   end
@@ -162,10 +164,12 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
 
   defp inputs(spec) do
     sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
+    controlnet_conditioning_shape = {nil, 512, 512, spec.in_channels}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("sample", shape: sample_shape),
       Axon.input("timestep", shape: {}),
+      Axon.input("controlnet_conditioning", shape: controlnet_conditioning_shape),
       Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size})
     ])
   end
@@ -173,6 +177,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
   defp core(inputs, spec) do
     sample = inputs["sample"]
     timestep = inputs["timestep"]
+    controlnet_conditioning = inputs["controlnet_conditioning"]
     encoder_hidden_state = inputs["encoder_hidden_state"]
 
     timestep =
@@ -195,15 +200,17 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
       )
 
     sample =
-      Axon.conv(dbg(sample), 4,
+      Axon.conv(sample, hd(spec.hidden_sizes),
         kernel_size: 3,
         padding: [{1, 1}, {1, 1}],
         name: "input_conv"
       )
 
-    control_net_cond_embeddings = control_net_embeddings(sample, spec)
+    control_net_cond_embeddings =
+      control_net_embeddings(controlnet_conditioning, spec, name: "controlnet_cond_embedding")
 
-    sample = Axon.add(sample, control_net_cond_embeddings)
+    sample =
+      Axon.add(sample, control_net_cond_embeddings, name: "add_sample_control_net_embeddings")
 
     {sample, down_block_residuals} =
       down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, name: "down_blocks")
@@ -214,16 +221,16 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
     conditioning_scale = Axon.constant(1)
 
     down_block_residuals =
-      control_net_down_blocks(down_block_residuals, spec, name: "control_net.down_blocks")
+      control_net_down_blocks(down_block_residuals, spec, name: "controlnet_down_blocks")
 
     down_block_residuals =
       for residual <- Tuple.to_list(down_block_residuals) do
-        Axon.multiply(residual, conditioning_scale, name: "control_net.down_blocks")
+        Axon.multiply(residual, conditioning_scale, name: "conditioning_scale")
       end
       |> List.to_tuple()
 
     mid_block_residual =
-      control_net_mid_block(sample, spec, name: "control_net.mid_block")
+      control_net_mid_block(sample, spec, name: "controlnet_mid_block")
       |> Axon.multiply(conditioning_scale)
 
     %{
@@ -234,29 +241,18 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
 
   defp control_net_down_blocks(down_block_residuals, spec, opts) do
     name = opts[:name]
-    # blocks = Enum.zip(spec.hidden_sizes, Tuple.to_list(down_block_residuals))
 
     residuals =
       for {{residual, out_channels}, i} <- Enum.with_index(Tuple.to_list(down_block_residuals)) do
         Axon.conv(residual, out_channels,
           kernel_size: 3,
           padding: [{1, 1}, {1, 1}],
-          name: name |> join(i) |> join("zero_conv"),
+          name: name |> join(i) |> join("test"),
           kernel_initializer: :zeros
         )
       end
 
     List.to_tuple(residuals)
-    # # last block one less
-    # for _ <- spec.depth, reduce: sample do
-    #   input ->
-    #     Axon.conv(input, spec.hidden_sizes[-1],
-    #       kernel_size: 3,
-    #       padding: [{1, 1}, {1, 1}],
-    #       name: "first",
-    #       initializer: :zero
-    #     )
-    # end
   end
 
   defp control_net_mid_block(input, spec, opts) do
@@ -265,41 +261,43 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
     Axon.conv(input, List.last(spec.hidden_sizes),
       kernel_size: 3,
       padding: [{1, 1}, {1, 1}],
-      name: join(name, "zero_conv"),
+      name: name,
       kernel_initializer: :zeros
     )
   end
 
-  defp control_net_embeddings(sample, spec) do
-    input =
+  defp control_net_embeddings(sample, spec, opts) do
+    name = opts[:name]
+
+    state =
       Axon.conv(sample, hd(spec.hidden_sizes),
         kernel_size: 3,
         padding: [{1, 1}, {1, 1}],
-        name: "input_conv",
+        name: join(name, "input_conv"),
         activation: :silu
       )
 
     block_in_channels = Enum.drop(spec.conditioning_embedding_out_channels, -1)
     block_out_channels = Enum.drop(spec.conditioning_embedding_out_channels, 1)
 
-    state = input
+    channels = Enum.zip(block_in_channels, block_out_channels)
 
     sample =
-      for {in_channels, out_channels} <- Enum.zip(block_in_channels, block_out_channels),
+      for {{in_channels, out_channels}, i} <- Enum.with_index(channels),
           reduce: state do
         input ->
           input
           |> Axon.conv(in_channels,
             kernel_size: 3,
             padding: [{1, 1}, {1, 1}],
-            name: "first",
+            name: name |> join("blocks") |> join(2 * i) |> join("t"),
             activation: :silu
           )
           |> Axon.conv(out_channels,
             kernel_size: 3,
             padding: [{1, 1}, {1, 1}],
             strides: 2,
-            name: "second",
+            name: name |> join("blocks") |> join(2 * i + 1) |> join("t"),
             activation: :silu
           )
       end
@@ -307,7 +305,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
     Axon.conv(sample, hd(spec.hidden_sizes),
       kernel_size: 3,
       padding: [{1, 1}, {1, 1}],
-      name: "out_conv",
+      name: join(name, "output_conv"),
       kernel_initializer: :zeros
     )
   end
@@ -472,9 +470,35 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
       }
 
       blocks_mapping =
-        ["down_blocks.{n}", "mid_block", "up_blocks.{n}"]
+        ["down_blocks.{n}", "mid_block"]
         |> Enum.map(&Transformers.Utils.prefix_params_mapping(block_mapping, &1, &1))
         |> Enum.reduce(&Map.merge/2)
+
+      controlnet_mapping = %{
+        "blocks.{n}.t" => %{
+          "bias" => {
+            [{"controlnet_cond_embedding.blocks.{n}", "bias"}],
+            fn value -> value end
+          },
+          "kernel" => {
+            [{"controlnet_cond_embedding.blocks.{n}", "weight"}],
+            fn value -> value end
+          }
+        },
+        # "blocks.{n}.t" => "controlnet_cond_embedding.blocks.{n}",
+        # "controlnet_down_blocks.{m}.test" => "controlnet_down_blocks.{m}",
+        "controlnet_down_blocks.{m}.test" => %{
+          "bias" => {
+            [{"controlnet_down_blocks.{m}", "bias"}],
+            fn value -> value end
+          },
+          "kernel" => {
+            [{"controlnet_down_blocks.{m}", "weight"}],
+            fn value -> value end
+          }
+        },
+        "controlnet_mid_block" => "controlnet_mid_block"
+      }
 
       %{
         "time_embedding.intermediate" => "time_embedding.linear_1",
@@ -484,6 +508,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
         "output_conv" => "conv_out"
       }
       |> Map.merge(blocks_mapping)
+      |> Map.merge(controlnet_mapping)
     end
   end
 end

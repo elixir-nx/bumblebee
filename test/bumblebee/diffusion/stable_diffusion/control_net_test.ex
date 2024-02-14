@@ -18,12 +18,13 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNetTest do
            } = spec
 
     inputs = %{
-      "sample" => Nx.broadcast(0.5, {1, 512, 512, 4}),
+      "sample" => Nx.broadcast(0.5, {1, 64, 64, 4}),
+      "controlnet_conditioning" => Nx.broadcast(0.8, {1, 512, 512, 4}),
       "timestep" => Nx.tensor(1),
       "encoder_hidden_state" => Nx.broadcast(0.5, {1, 1, 32})
     }
 
-    outputs = Axon.predict(model, params, inputs)
+    outputs = Axon.predict(model, params, inputs, debug: true)
 
     assert Nx.shape(outputs.sample) == {1, 32, 32, 4}
 
