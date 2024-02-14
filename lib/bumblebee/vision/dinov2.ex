@@ -65,7 +65,7 @@ defmodule Bumblebee.Vision.DinoV2 do
         doc:
           "the stochastic depth rate per sample (when applied in the main path of residual layers)"
       ],
-      use_swiglu_ffn: [
+      swiglu_ffn: [
         default: false,
         doc: "whether to use the SwiGLU feedforward neural network"
       ],
@@ -369,51 +369,42 @@ defmodule Bumblebee.Vision.DinoV2 do
     |> Axon.reshape({:batch, :auto, spec.hidden_size}, name: join(name, "reshape"))
   end
 
-  defp mlp(input, input_size, mlp_ratio, activation, opts) do
+  defp mlp(input, spec, opts) do
     name = opts[:name]
-    hidden_features = input_size * mlp_ratio
-    out_features = input_size
+
+    hidden_features = spec.hidden_size * spec.mlp_ratio
+
+    out_features = spec.hidden_size
 
     input
-    |> Axon.dense(hidden_features, name: join(name, "fc1"))
-    |> Bumblebee.Layers.activation(activation)
-    |> Axon.dense(out_features, name: join(name, "fc2"))
+    |> Axon.dense(hidden_features, name: name |> join("mlp") |> join("fc1"))
+    |> Bumblebee.Layers.activation(spec.activation)
+    |> Axon.dense(out_features, name: name |> join("mlp") |> join("fc2"))
   end
 
-  defp ffn_mlp(layer_output, name, spec) do
-    mlp(
-      layer_output,
-      spec.hidden_size,
-      spec.mlp_ratio,
-      spec.activation,
-      name: join(name, "mlp")
-    )
-  end
+  defp swiglu(input, spec, opts) do
+    name = opts[:name]
 
-  defp swiglu(input, hidden_features, output_features, name) do
+    hidden_features =
+      Integer.floor_div(round(round(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
+
+    output_features = spec.hidden_size
+
     hidden_state =
       input
-      |> Axon.dense(2 * hidden_features, name: join(name, "weights_in"))
+      |> Axon.dense(2 * hidden_features, name: name |> join("mlp") |> join("weights_in"))
 
     {x1, x2} = Axon.split(hidden_state, 2)
 
     Axon.silu(x1)
     |> Axon.multiply(x2)
-    |> Axon.dense(output_features, name: join(name, "weights_out"))
-  end
-
-  defp ffn_swiglu(layer_output, name, spec) do
-    hidden_features =
-      Integer.floor_div(round(round(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
-
-    layer_output
-    |> swiglu(hidden_features, spec.hidden_size, join(name, "mlp"))
+    |> Axon.dense(output_features, name: name |> join("mlp") |> join("weights_out"))
   end
 
   defp encoder(hidden_state, spec, opts) do
     name = opts[:name]
 
-    ffn = if spec.use_swiglu_ffn, do: &ffn_swiglu(&1, &2, spec), else: &ffn_mlp(&1, &2, spec)
+    ffn = if spec.swiglu_ffn, do: &swiglu(&1, spec, &2), else: &mlp(&1, spec, &2)
 
     blocks(hidden_state,
       num_blocks: spec.num_blocks,
@@ -459,12 +450,12 @@ defmodule Bumblebee.Vision.DinoV2 do
           attention_dropout_rate: {"attention_probs_dropout_prob", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()},
           initializer_scale: {"initializer_range", number()},
-          layerscale_value: {:layerscale_value, number()},
-          drop_path_rate: {:drop_path_rate, number()},
-          use_swiglu_ffn: {:use_swiglu_ffn, boolean()},
+          layerscale_value: {"layerscale_value", number()},
+          drop_path_rate: {"drop_path_rate", number()},
+          swiglu_ffn: {"use_swiglu_ffn", boolean()},
           stage_names: {"stage_names", list(string())},
           output_features: {"_out_features", list(string())},
-          apply_layernorm: {:apply_layernorm, boolean()}
+          apply_layernorm: {"apply_layernorm", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -819,7 +810,7 @@ defmodule Bumblebee.Vision.DinoV2 do
     output_norm = &layer_norm_fun.(&1, join(name, "output_norm"))
 
     ffn =
-      &ffn_fun.(&1, name)
+      &ffn_fun.(&1, name: name)
 
     scale1 = &Bumblebee.Layers.scale(&1, name: join(name, "layer_scale1"))
     scale2 = &Bumblebee.Layers.scale(&1, name: join(name, "layer_scale2"))
