@@ -22,6 +22,7 @@ This release changes the directory structure of the models cache, such that cach
 * `:params_variant` option to `Bumblebee.load_model/2` for loading parameters of different precision ([#309](https://github.com/elixir-nx/bumblebee/pull/309))
 * `:type` option to `Bumblebee.load_model/2` for loading model under a specific precision policy ([#311](https://github.com/elixir-nx/bumblebee/pull/311))
 * LCM scheduler ([#320](https://github.com/elixir-nx/bumblebee/pull/320))
+* Token summary to text generation output ([#336](https://github.com/elixir-nx/bumblebee/pull/336))
 
 ### Changed
 
@@ -33,6 +34,7 @@ This release changes the directory structure of the models cache, such that cach
 * **(Breaking)** Renamed CLIP outputs `:text_embeddings` and `:image_embeddings` to singular
 * **(Breaking)** Changed ResNet `:pooled_state` output to flatten the extra 1-sized axes
 * Cache directory structure to group files by repository ([#332](https://github.com/elixir-nx/bumblebee/pull/332))
+* **(Breaking)** Changed the output of `Bumblebee.Text.Generation.build_generate/4` to a map ([#336](https://github.com/elixir-nx/bumblebee/pull/336))
 
 ### Removed
 
