@@ -69,7 +69,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
         "the number of attention heads for each attention layer. Optionally can be a list with one number per block"
     ],
     cross_attention_size: [
-      default: 1280,
+      default: 1024,
       doc: "the dimensionality of the cross attention features"
     ],
     use_linear_projection: [
@@ -245,7 +245,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
     residuals =
       for {{residual, out_channels}, i} <- Enum.with_index(Tuple.to_list(down_block_residuals)) do
         Axon.conv(residual, out_channels,
-          kernel_size: 3,
+          kernel_size: 1,
           padding: [{1, 1}, {1, 1}],
           name: name |> join(i) |> join("zero_conv"),
           kernel_initializer: :zeros
@@ -259,7 +259,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
     name = opts[:name]
 
     Axon.conv(input, List.last(spec.hidden_sizes),
-      kernel_size: 3,
+      kernel_size: 1,
       padding: [{1, 1}, {1, 1}],
       name: name |> join("zero_conv"),
       kernel_initializer: :zeros
@@ -426,7 +426,6 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-
     def params_mapping(_spec) do
       # controlnet_cond_embedding_mapping =
       %{
@@ -701,40 +700,100 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
           "control_model.input_blocks.11.0.out_layers.3",
 
         # projection 0 0
-        "down_blocks.0.transformers.0.input_projection" =>
-          "control_model.input_blocks.1.1.proj_in",
-        "down_blocks.0.transformers.0.output_projection" =>
-          "control_model.input_blocks.1.1.proj_out",
+        "down_blocks.0.transformers.0.input_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.1.1.proj_in", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.1.1.proj_in", "bias"}], fn [value] -> value end}
+        },
+        "down_blocks.0.transformers.0.output_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.1.1.proj_out", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.1.1.proj_out", "bias"}], fn [value] -> value end}
+        },
 
         # projection 0 1
-        "down_blocks.0.transformers.1.input_projection" =>
-          "control_model.input_blocks.2.1.proj_in",
-        "down_blocks.0.transformers.1.output_projection" =>
-          "control_model.input_blocks.2.1.proj_out",
+        "down_blocks.0.transformers.1.input_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.2.1.proj_in", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.2.1.proj_in", "bias"}], fn [value] -> value end}
+        },
+        "down_blocks.0.transformers.1.output_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.2.1.proj_out", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.2.1.proj_out", "bias"}], fn [value] -> value end}
+        },
 
         # projection 1 0
-        "down_blocks.1.transformers.0.input_projection" =>
-          "control_model.input_blocks.4.1.proj_in",
-        "down_blocks.1.transformers.0.output_projection" =>
-          "control_model.input_blocks.4.1.proj_out",
+        "down_blocks.1.transformers.0.input_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.4.1.proj_in", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.4.1.proj_in", "bias"}], fn [value] -> value end}
+        },
+        "down_blocks.1.transformers.0.output_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.4.1.proj_out", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.4.1.proj_out", "bias"}], fn [value] -> value end}
+        },
 
         # projection 1 1
-        "down_blocks.1.transformers.1.input_projection" =>
-          "control_model.input_blocks.5.1.proj_in",
-        "down_blocks.1.transformers.1.output_projection" =>
-          "control_model.input_blocks.5.1.proj_out",
+        "down_blocks.1.transformers.1.input_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.5.1.proj_in", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.5.1.proj_in", "bias"}], fn [value] -> value end}
+        },
+        "down_blocks.1.transformers.1.output_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.5.1.proj_out", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.5.1.proj_out", "bias"}], fn [value] -> value end}
+        },
 
         # projection 2 0
-        "down_blocks.2.transformers.0.input_projection" =>
-          "control_model.input_blocks.7.1.proj_in",
-        "down_blocks.2.transformers.0.output_projection" =>
-          "control_model.input_blocks.7.1.proj_out",
+        "down_blocks.2.transformers.0.input_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.7.1.proj_in", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.7.1.proj_in", "bias"}], fn [value] -> value end}
+        },
+        "down_blocks.2.transformers.0.output_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.7.1.proj_out", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.7.1.proj_out", "bias"}], fn [value] -> value end}
+        },
 
         # projection 2 1
-        "down_blocks.2.transformers.1.input_projection" =>
-          "control_model.input_blocks.8.1.proj_in",
-        "down_blocks.2.transformers.1.output_projection" =>
-          "control_model.input_blocks.8.1.proj_out",
+        "down_blocks.2.transformers.1.input_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.8.1.proj_in", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.8.1.proj_in", "bias"}], fn [value] -> value end}
+        },
+        "down_blocks.2.transformers.1.output_projection" => %{
+          "kernel" =>
+            {[{"control_model.input_blocks.8.1.proj_out", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" =>
+            {[{"control_model.input_blocks.8.1.proj_out", "bias"}], fn [value] -> value end}
+        },
 
         # shortcut
         "down_blocks.1.residual_blocks.0.shortcut.projection" =>
@@ -820,8 +879,18 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
         "mid_block.residual_blocks.1.conv_2" => "control_model.middle_block.2.out_layers.3",
 
         # projection
-        "mid_block.transformers.0.input_projection" => "control_model.middle_block.1.proj_in",
-        "mid_block.transformers.0.output_projection" => "control_model.middle_block.1.proj_out",
+        "mid_block.transformers.0.input_projection" => %{
+          "kernel" =>
+            {[{"control_model.middle_block.1.proj_in", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" => {[{"control_model.middle_block.1.proj_in", "bias"}], fn [value] -> value end}
+        },
+        "mid_block.transformers.0.output_projection" => %{
+          "kernel" =>
+            {[{"control_model.middle_block.1.proj_out", "weight"}],
+             fn [value] -> value |> Nx.new_axis(0) |> Nx.new_axis(0) end},
+          "bias" => {[{"control_model.middle_block.1.proj_out", "bias"}], fn [value] -> value end}
+        },
 
         # out
         "mid_block.transformers.0.blocks.0.output_norm" =>
