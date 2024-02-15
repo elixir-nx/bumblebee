@@ -12,8 +12,8 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
           String.t()
           | %{
               :prompt => String.t(),
-              optional(:negative_prompt) => String.t(),
-              optional(:seed) => integer()
+              optional(:negative_prompt) => String.t() | nil,
+              optional(:seed) => integer() | nil
             }
   @type text_to_image_output :: %{results: list(text_to_image_result())}
   @type text_to_image_result :: %{:image => Nx.Tensor.t(), optional(:is_safe) => boolean()}

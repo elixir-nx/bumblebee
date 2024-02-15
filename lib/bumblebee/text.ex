@@ -127,7 +127,7 @@ defmodule Bumblebee.Text do
     to: Bumblebee.Text.TokenClassification
 
   @type generation_input ::
-          String.t() | %{:text => String.t(), optional(:seed) => integer()}
+          String.t() | %{:text => String.t(), optional(:seed) => integer() | nil}
   @type generation_output :: %{results: list(generation_result())}
   @type generation_result :: %{text: String.t(), token_summary: token_summary()}
   @type token_summary :: %{
