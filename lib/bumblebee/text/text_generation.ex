@@ -42,7 +42,10 @@ defmodule Bumblebee.Text.TextGeneration do
         return_length: true
       )
 
-    generate_fun = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
+    generate_fun =
+      Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
+        ignore_output: opts[:stream]
+      )
 
     batch_keys = Shared.sequence_batch_keys(sequence_length)
 
