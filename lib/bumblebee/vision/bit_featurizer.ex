@@ -7,9 +7,9 @@ defmodule Bumblebee.Vision.BitFeaturizer do
       doc: "whether to resize the input to the given `:size`"
     ],
     size: [
-      default: 224,
+      default: %{shortest_edge: 448},
       doc: """
-      the size to resize the input to. A single number, a `{height, width}` tuple, or a map specifying the shortest edge.
+      the size to resize the input to, either `%{height: ..., width: ...}` or `%{shortest_edge: ...}`.
       Only has an effect if `:resize` is `true`
       """
     ],
@@ -20,13 +20,16 @@ defmodule Bumblebee.Vision.BitFeaturizer do
     ],
     center_crop: [
       default: true,
-      doc: "whether to crop the image at the center to given `:crop_size`"
+      doc: """
+      whether to crop the input at the center. If the input size is smaller than `:crop_size` along
+      any edge, the image is padded with zeros and then center cropped
+      """
     ],
     crop_size: [
-      default: {224, 224},
+      default: %{height: 448, width: 448},
       doc: """
-      the size to crop the input to. A `{height, width}` tuple
-      Only has an effect if `:crop` is `true`
+      the size to center crop the image to, given as `%{height: ..., width: ...}`. Only has an effect
+      if `:center_crop` is `true`
       """
     ],
     rescale: [
@@ -34,7 +37,7 @@ defmodule Bumblebee.Vision.BitFeaturizer do
       doc: "whether to rescale the input by the given `:rescale_factor`"
     ],
     rescale_factor: [
-      default: 224,
+      default: 0.00392156862745098,
       doc: """
       the factor by which to rescale the input. A single number
       Only has an effect if `:rescale` is `true`
@@ -72,7 +75,16 @@ defmodule Bumblebee.Vision.BitFeaturizer do
 
   @impl true
   def config(featurizer, opts) do
-    Shared.put_config_attrs(featurizer, opts)
+    featurizer = Shared.put_config_attrs(featurizer, opts)
+
+    if featurizer.resize and Shared.featurizer_size_fixed?(featurizer.size) and
+         not featurizer.center_crop do
+      raise ArgumentError,
+            "the resize shape depends on the input shape and cropping is disabled." <>
+              "You must either configure a fixed size or enable cropping"
+    end
+
+    featurizer
   end
 
   @impl true
@@ -80,62 +92,55 @@ defmodule Bumblebee.Vision.BitFeaturizer do
     images = List.wrap(images)
 
     for image <- images do
-      image
-      |> Image.to_batched_tensor()
-      |> Nx.as_type(:f32)
-      |> Image.normalize_channels(length(featurizer.image_mean))
-      |> maybe_resize(featurizer)
-      |> maybe_center_crop(featurizer)
-      |> maybe_rescale(featurizer)
+      images =
+        image
+        |> Image.to_batched_tensor()
+        |> Nx.as_type(:f32)
+        |> Image.normalize_channels(length(featurizer.image_mean))
+
+      images =
+        if featurizer.resize do
+          size = Shared.featurizer_resize_size(images, featurizer.size)
+          NxImage.resize(images, size, method: featurizer.resize_method)
+        else
+          images
+        end
+
+      if featurizer.center_crop do
+        %{height: height, width: width} = featurizer.crop_size
+        NxImage.center_crop(images, {height, width})
+      else
+        images
+      end
     end
     |> Nx.concatenate()
   end
 
-  defp maybe_resize(images, featurizer) do
-    if featurizer.resize do
-      resize(images, featurizer)
-    else
-      images
-    end
-  end
-
-  defp resize(images, featurizer) do
-    case featurizer.size do
-      %{"shortest_edge" => size} ->
-        NxImage.resize_short(images, size, method: featurizer.resize_method)
-
-      _ ->
-        size = Image.normalize_size(featurizer.size)
-        NxImage.resize(images, size, method: featurizer.resize_method)
-    end
-  end
-
-  defp maybe_center_crop(images, featurizer) do
-    if featurizer.center_crop do
-      %{"height" => crop_height, "width" => crop_width} = featurizer.crop_size
-      NxImage.center_crop(images, {crop_height, crop_width})
-    else
-      images
-    end
-  end
-
-  defp maybe_rescale(images, featurizer) do
-    if featurizer.rescale do
-      Nx.multiply(images, featurizer.rescale_factor)
-    else
-      images
-    end
-  end
-
   @impl true
   def batch_template(featurizer, batch_size) do
-    {height, width} = Image.normalize_size(featurizer.size)
     num_channels = length(featurizer.image_mean)
+
+    {height, width} =
+      case featurizer do
+        %{center_crop: true, crop_size: %{height: height, width: width}} ->
+          {height, width}
+
+        %{resize: true, size: %{height: height, width: width}} ->
+          {height, width}
+      end
+
     Nx.template({batch_size, height, width, num_channels}, :f32)
   end
 
   @impl true
   def process_batch(featurizer, images) do
+    images =
+      if featurizer.rescale do
+        Nx.multiply(images, featurizer.rescale_factor)
+      else
+        images
+      end
+
     images =
       if featurizer.normalize do
         NxImage.normalize(
@@ -157,11 +162,10 @@ defmodule Bumblebee.Vision.BitFeaturizer do
       opts =
         convert!(data,
           resize: {"do_resize", boolean()},
-          size:
-            {"size", one_of([number(), tuple([number(), number()]), map(string(), number())])},
+          size: {"size", image_size(single_as: :shortest_edge)},
           resize_method: {"resample", resize_method()},
           center_crop: {"do_center_crop", boolean()},
-          crop_size: {"crop_size", map(string(), number())},
+          crop_size: {"crop_size", image_size()},
           rescale: {"do_rescale", boolean()},
           rescale_factor: {"rescale_factor", number()},
           normalize: {"do_normalize", boolean()},
