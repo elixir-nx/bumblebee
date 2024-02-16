@@ -310,7 +310,8 @@ defmodule Bumblebee.Vision.DinoV2 do
          spec
        ) do
     original_positions = div(spec.image_size, spec.patch_size)
-    resized_positions = div(input_size, spec.patch_size)
+    resized_height = div(input_size.height, spec.patch_size)
+    resized_width = div(input_size.width, spec.patch_size)
 
     class_position_embedding =
       Layers.take_token(position_embeddings, index: 0, axis: 1)
@@ -322,7 +323,7 @@ defmodule Bumblebee.Vision.DinoV2 do
     interpolated_embeddings =
       other_position_embeddings
       |> Axon.reshape({:batch, original_positions, original_positions, spec.hidden_size})
-      |> Axon.resize({resized_positions, resized_positions}, method: :bicubic)
+      |> Axon.resize({resized_height, resized_width}, method: :bicubic)
       |> Axon.reshape({:batch, :auto, spec.hidden_size})
 
     Layers.concatenate_embeddings([class_position_embedding, interpolated_embeddings])
@@ -343,7 +344,8 @@ defmodule Bumblebee.Vision.DinoV2 do
 
     num_patches = div(spec.image_size, spec.patch_size) ** 2
 
-    {_, input_size, _, _} = Axon.get_inputs(pixel_values)["pixel_values"]
+    {_, height, width, _} = Axon.get_inputs(pixel_values)["pixel_values"]
+    input_size = %{height: height, width: width}
 
     position_embeddings =
       Layers.learned_embeddings(num_patches + 1, spec.hidden_size,
