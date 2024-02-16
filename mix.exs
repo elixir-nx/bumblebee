@@ -44,7 +44,7 @@ defmodule Bumblebee.MixProject do
       {:safetensors, "~> 0.1.2"},
       {:castore, "~> 0.1 or ~> 1.0"},
       {:jason, "~> 1.4.0"},
-      {:unzip, "0.8.0"},
+      {:unzip, "~> 0.10.0"},
       {:progress_bar, "~> 3.0"},
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},

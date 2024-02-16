@@ -127,9 +127,14 @@ defmodule Bumblebee.Text do
     to: Bumblebee.Text.TokenClassification
 
   @type generation_input ::
-          String.t() | %{:text => String.t(), optional(:seed) => integer()}
+          String.t() | %{:text => String.t(), optional(:seed) => integer() | nil}
   @type generation_output :: %{results: list(generation_result())}
-  @type generation_result :: %{text: String.t()}
+  @type generation_result :: %{text: String.t(), token_summary: token_summary()}
+  @type token_summary :: %{
+          input: pos_integer(),
+          outout: pos_integer(),
+          padding: non_neg_integer()
+        }
 
   @doc """
   Builds serving for prompt-driven text generation.
@@ -171,6 +176,12 @@ defmodule Bumblebee.Text do
       when using streaming, only a single input can be given to the
       serving. To process a batch, call the serving with each input
       separately. Defaults to `false`
+
+    * `:stream_done` - when `:stream` is enabled, this enables a final
+      event, after all chunks have been emitted. The event has the
+      shape `{:done, result}`, where `result` includes the same fields
+      as `t:generation_result/0`, except for `:text`, which has been
+      already streamed. Defaults to `false`
 
   ## Examples
 

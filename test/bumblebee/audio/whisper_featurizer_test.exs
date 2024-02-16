@@ -22,8 +22,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizerTest do
             [-0.5938, -0.5938, -0.5938, -0.5938],
             [-0.5938, -0.5938, -0.5938, -0.5938]
           ]
-        ]),
-        atol: 1.0e-4
+        ])
       )
     end
   end

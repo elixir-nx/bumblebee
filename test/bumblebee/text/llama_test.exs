@@ -24,8 +24,7 @@ defmodule Bumblebee.Text.LlamaTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[1.4799, -2.0333, 0.4759], [2.3749, -0.8369, -0.0206], [0.5767, -0.0515, -1.1795]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -48,8 +47,7 @@ defmodule Bumblebee.Text.LlamaTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.1964, -0.1069]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.1964, -0.1069]])
     )
   end
 
@@ -72,8 +70,7 @@ defmodule Bumblebee.Text.LlamaTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.0469, -0.0751, 0.0349], [0.0617, -0.1357, -0.0204], [-0.1495, 0.0557, -0.0737]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 end

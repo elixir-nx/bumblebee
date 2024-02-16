@@ -24,8 +24,7 @@ defmodule Bumblebee.Text.Gpt2Test do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.8136, -0.2392, 0.2378], [0.9714, -0.4651, 0.8788], [-0.0980, 0.2294, -1.1416]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -46,8 +45,7 @@ defmodule Bumblebee.Text.Gpt2Test do
 
     assert_all_close(
       outputs.logits[[.., 1..3, 1..3]],
-      Nx.tensor([[[0.1184, -0.0259, 0.1688], [0.1064, 0.1412, 0.1120], [0.1421, -0.2010, 0.3757]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[0.1184, -0.0259, 0.1688], [0.1064, 0.1412, 0.1120], [0.1421, -0.2010, 0.3757]]])
     )
   end
 
@@ -70,8 +68,7 @@ defmodule Bumblebee.Text.Gpt2Test do
 
     assert_all_close(
       outputs.logits[[.., 1..3//1, ..]],
-      Nx.tensor([[[0.0207, 0.1338], [-0.1582, -0.0384], [-0.2225, -0.0400]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[0.0207, 0.1338], [-0.1582, -0.0384], [-0.2225, -0.0400]]])
     )
   end
 
@@ -94,8 +91,7 @@ defmodule Bumblebee.Text.Gpt2Test do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.0098, -0.0456]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.0098, -0.0456]])
     )
   end
 end

@@ -4,13 +4,13 @@ defmodule Bumblebee.Vision.BlipFeaturizer do
   options = [
     resize: [
       default: true,
-      doc: "whether to resize (and optionally center crop) the input to the given `:size`"
+      doc: "whether to resize the input to the given `:size`"
     ],
     size: [
-      default: 384,
+      default: %{height: 384, width: 384},
       doc: """
-      the size to resize the input to. Either a single number or a `{height, width}` tuple.
-      Only has an effect if `:resize` is `true`
+      the size to resize the input to, given as `%{height: ..., width: ...}`. Only has
+      an effect if `:resize` is `true`
       """
     ],
     resize_method: [
@@ -65,8 +65,8 @@ defmodule Bumblebee.Vision.BlipFeaturizer do
         |> Image.normalize_channels(length(featurizer.image_mean))
 
       if featurizer.resize do
-        size = Image.normalize_size(featurizer.size)
-        NxImage.resize(images, size, method: featurizer.resize_method)
+        %{height: height, width: width} = featurizer.size
+        NxImage.resize(images, {height, width}, method: featurizer.resize_method)
       else
         images
       end
@@ -76,7 +76,7 @@ defmodule Bumblebee.Vision.BlipFeaturizer do
 
   @impl true
   def batch_template(featurizer, batch_size) do
-    {height, width} = Image.normalize_size(featurizer.size)
+    %{height: height, width: width} = featurizer.size
     num_channels = length(featurizer.image_mean)
     Nx.template({batch_size, height, width, num_channels}, :f32)
   end
@@ -106,7 +106,7 @@ defmodule Bumblebee.Vision.BlipFeaturizer do
       opts =
         convert!(data,
           resize: {"do_resize", boolean()},
-          size: {"size", one_of([number(), size_as_map()])},
+          size: {"size", image_size()},
           resize_method: {"resample", resize_method()},
           normalize: {"do_normalize", boolean()},
           image_mean: {"image_mean", list(number())},
@@ -114,19 +114,6 @@ defmodule Bumblebee.Vision.BlipFeaturizer do
         )
 
       @for.config(featurizer, opts)
-    end
-
-    defp size_as_map() do
-      fn name, value ->
-        case value do
-          %{"height" => height, "width" => width} ->
-            {:ok, {height, width}}
-
-          _ ->
-            {:error,
-             "expected #{inspect(name)} to be a map with height and width, got: #{inspect(value)}"}
-        end
-      end
     end
   end
 end

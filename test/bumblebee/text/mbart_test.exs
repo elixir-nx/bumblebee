@@ -24,8 +24,7 @@ defmodule Bumblebee.Text.MbartTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.8300, -0.4815, 0.4641], [-1.6583, 0.9162, -0.3562], [-0.6983, -0.7699, 1.0282]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -48,8 +47,7 @@ defmodule Bumblebee.Text.MbartTest do
 
     assert_all_close(
       outputs.logits[[.., 1..3, 1..3]],
-      Nx.tensor([[[0.0000, 0.0923, 0.0841], [0.0000, 0.1023, -0.0938], [0.0000, 0.0703, 0.1231]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[0.0000, 0.0923, 0.0841], [0.0000, 0.1023, -0.0938], [0.0000, 0.0703, 0.1231]]])
     )
   end
 
@@ -72,8 +70,7 @@ defmodule Bumblebee.Text.MbartTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[0.0085, 0.0054]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.0085, 0.0054]])
     )
   end
 
@@ -97,14 +94,12 @@ defmodule Bumblebee.Text.MbartTest do
 
     assert_all_close(
       outputs.start_logits[[.., 1..3]],
-      Nx.tensor([[0.1063, -0.1271, -0.1534]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.1063, -0.1271, -0.1534]])
     )
 
     assert_all_close(
       outputs.end_logits[[.., 1..3]],
-      Nx.tensor([[0.0268, 0.0238, 0.0857]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.0268, 0.0238, 0.0857]])
     )
   end
 
@@ -127,8 +122,7 @@ defmodule Bumblebee.Text.MbartTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.0000, -0.0236, -0.0043], [0.0000, -0.0101, 0.0510], [0.0000, 0.0404, 0.0327]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -148,13 +142,13 @@ defmodule Bumblebee.Text.MbartTest do
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
       "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
-      "seed" => Nx.tensor([[0]])
+      "seed" => Nx.tensor([0])
     }
 
     generation_config = Bumblebee.configure(generation_config, max_new_tokens: 3)
 
     generate = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
-    token_ids = generate.(params, inputs)
+    %{token_ids: token_ids} = generate.(params, inputs)
 
     assert_equal(token_ids, Nx.tensor([[230_521, 20386, 20386]]))
   end

@@ -7,10 +7,10 @@ defmodule Bumblebee.Vision.VitFeaturizer do
       doc: "whether to resize the input to the given `:size`"
     ],
     size: [
-      default: 224,
+      default: %{height: 224, width: 224},
       doc: """
-      the size to resize the input to. Either a single number or a `{height, width}` tuple.
-      Only has an effect if `:resize` is `true`
+      the size to resize the input to, given as `%{height: ..., width: ...}`. Only has
+      an effect if `:resize` is `true`
       """
     ],
     resize_method: [
@@ -65,8 +65,8 @@ defmodule Bumblebee.Vision.VitFeaturizer do
         |> Image.normalize_channels(length(featurizer.image_mean))
 
       if featurizer.resize do
-        size = Image.normalize_size(featurizer.size)
-        NxImage.resize(images, size, method: featurizer.resize_method)
+        %{height: height, width: width} = featurizer.size
+        NxImage.resize(images, {height, width}, method: featurizer.resize_method)
       else
         images
       end
@@ -76,7 +76,7 @@ defmodule Bumblebee.Vision.VitFeaturizer do
 
   @impl true
   def batch_template(featurizer, batch_size) do
-    {height, width} = Image.normalize_size(featurizer.size)
+    %{height: height, width: width} = featurizer.size
     num_channels = length(featurizer.image_mean)
     Nx.template({batch_size, height, width, num_channels}, :f32)
   end
@@ -106,7 +106,7 @@ defmodule Bumblebee.Vision.VitFeaturizer do
       opts =
         convert!(data,
           resize: {"do_resize", boolean()},
-          size: {"size", one_of([number(), tuple([number(), number()])])},
+          size: {"size", image_size()},
           resize_method: {"resample", resize_method()},
           normalize: {"do_normalize", boolean()},
           image_mean: {"image_mean", list(number())},

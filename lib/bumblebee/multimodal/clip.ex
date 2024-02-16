@@ -132,19 +132,19 @@ defmodule Bumblebee.Multimodal.Clip do
         "pixel_values" => inputs["pixel_values"]
       })
 
-    text_embeddings =
+    text_embedding =
       text_model
       |> Axon.nx(& &1.pooled_state)
       |> Axon.dense(spec.projection_size, use_bias: false, name: "text_projection")
 
-    image_embeddings =
+    image_embedding =
       vision_model
       |> Axon.nx(& &1.pooled_state)
       |> Axon.dense(spec.projection_size, use_bias: false, name: "visual_projection")
 
     logits_per_text =
-      text_embeddings
-      |> Layers.cosine_similarity(image_embeddings)
+      text_embedding
+      |> Layers.cosine_similarity(image_embedding)
       |> exp_scale(
         name: "scale",
         scale_initializer: Axon.Initializers.full(spec.logit_scale_initial_value)
@@ -155,8 +155,8 @@ defmodule Bumblebee.Multimodal.Clip do
     Layers.output(%{
       logits_per_text: logits_per_text,
       logits_per_image: logits_per_image,
-      text_embeddings: text_embeddings,
-      image_embeddings: image_embeddings
+      text_embedding: text_embedding,
+      image_embedding: image_embedding
     })
   end
 

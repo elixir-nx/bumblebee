@@ -19,8 +19,22 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
       default: 0.02,
       doc: "the end value for the beta schedule"
     ],
+    prediction_type: [
+      default: :noise,
+      doc: """
+      prediction type of the denoising model. Either of:
+
+        * `:noise` (default) - the model predicts the noise of the diffusion process
+
+        * `:angular_velocity` - the model predicts velocity in angular parameterization.
+          See Section 2.4 in [Imagen Video: High Definition Video Generation with Diffusion Models](https://imagen.research.google/video/paper.pdf),
+          then Section 4 in [Progressive Distillation for Fast Sampling of Diffusion Models](https://arxiv.org/pdf/2202.00512.pdf)
+          and Appendix D
+
+      """
+    ],
     alpha_clip_strategy: [
-      default: :one,
+      default: :alpha_zero,
       doc: ~S"""
       each step $t$ uses the values of $\bar{\alpha}\_t$ and $\bar{\alpha}\_{t-1}$,
       however for $t = 0$ there is no previous alpha. The strategy can be either
@@ -91,20 +105,16 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
     alpha_bars = init_parameters(scheduler: scheduler)
 
-    [empty, _] =
-      Nx.broadcast_vectors([
-        Nx.tensor(0.0, type: Nx.type(sample_template)) |> Nx.broadcast(sample_template),
-        sample_template
-      ])
+    empty = Nx.fill(sample_template, 0)
 
     state = %{
       timesteps: timesteps,
       timestep_gap: div(scheduler.num_train_steps, num_steps),
       alpha_bars: alpha_bars,
       iteration: 0,
-      recent_noise: empty |> List.duplicate(4) |> List.to_tuple(),
+      recent_prediction: empty |> List.duplicate(4) |> List.to_tuple(),
       current_sample: empty,
-      noise_prime: empty
+      prediction_prime: empty
     }
 
     {state, timesteps}
@@ -191,14 +201,14 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     do_step(state, sample, prediction, scheduler: scheduler)
   end
 
-  defnp do_step(state, sample, noise, opts) do
+  defnp do_step(state, sample, prediction, opts) do
     scheduler = opts[:scheduler]
 
     {state, prev} =
       if scheduler.reduce_warmup do
-        step_just_plms(scheduler, state, sample, noise)
+        step_just_plms(scheduler, state, sample, prediction)
       else
-        step_prk_plms(scheduler, state, sample, noise)
+        step_prk_plms(scheduler, state, sample, prediction)
       end
 
     state = %{state | iteration: state.iteration + 1}
@@ -206,7 +216,7 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     {state, prev}
   end
 
-  defnp step_prk_plms(scheduler, state, sample, noise) do
+  defnp step_prk_plms(scheduler, state, sample, prediction) do
     # This is the version from the original paper [1], specifically F-PNDM.
     # It uses the Runge-Kutta method to compute the first 3 results (each
     # requiring 4 iterations).
@@ -214,13 +224,13 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     # [1]: https://arxiv.org/abs/2202.09778
 
     if state.iteration < 12 do
-      step_prk(scheduler, state, sample, noise)
+      step_prk(scheduler, state, sample, prediction)
     else
-      step_plms(scheduler, state, sample, noise)
+      step_plms(scheduler, state, sample, prediction)
     end
   end
 
-  defnp step_just_plms(scheduler, state, sample, noise) do
+  defnp step_just_plms(scheduler, state, sample, prediction) do
     # This alternative version is based on the paper, however instead of the
     # Runge-Kutta method, it uses lower-order linear multi-step for computing
     # the first 3 results (2, 1, 1 iterations respectively). For the original
@@ -229,65 +239,66 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
     # [1]: https://github.com/CompVis/latent-diffusion/pull/51
 
     if state.iteration < 4 do
-      step_warmup_plms(scheduler, state, sample, noise)
+      step_warmup_plms(scheduler, state, sample, prediction)
     else
-      step_plms(scheduler, state, sample, noise)
+      step_plms(scheduler, state, sample, prediction)
     end
   end
 
   # # Note on notation
   #
-  # The paper denotes sample as x_t, noise as e_t, model as eps, prev_sample
-  # function as phi. The superscript in case of x_t and e_t translates to
-  # consecutive iterations, since we have one iteration per model forward
-  # pass (the eps function). We keep track of x_t as current_sample, and
-  # noise_prime corresponds to e_t prime.
+  # The paper denotes sample as x_t, prediction as e_t, model as eps,
+  # prev_sample function as phi. The superscript in case of x_t and e_t
+  # translates to consecutive iterations, since we have one iteration
+  # per model forward pass (the eps function). We keep track of x_t as
+  # current_sample, and prediction_prime corresponds to e_t prime.
 
-  defnp step_prk(scheduler, state, sample, noise) do
+  defnp step_prk(scheduler, state, sample, prediction) do
     # See Equation (13)
 
-    %{noise_prime: noise_prime, current_sample: current_sample} = state
+    %{prediction_prime: prediction_prime, current_sample: current_sample} = state
 
     rk_step_number = rem(state.iteration, 4)
 
     state =
       if rk_step_number == 0 do
-        store_noise(state, noise)
+        store_prediction(state, prediction)
       else
         state
       end
 
-    {noise_prime, current_sample, noise} =
+    {prediction_prime, current_sample, prediction} =
       cond do
         rk_step_number == 0 ->
-          noise_prime = noise_prime + noise / 6
-          {noise_prime, sample, noise}
+          prediction_prime = prediction_prime + prediction / 6
+          {prediction_prime, sample, prediction}
 
         rk_step_number == 1 ->
-          noise_prime = noise_prime + noise / 3
-          {noise_prime, current_sample, noise}
+          prediction_prime = prediction_prime + prediction / 3
+          {prediction_prime, current_sample, prediction}
 
         rk_step_number == 2 ->
-          noise_prime = noise_prime + noise / 3
-          {noise_prime, current_sample, noise}
+          prediction_prime = prediction_prime + prediction / 3
+          {prediction_prime, current_sample, prediction}
 
         true ->
-          noise_prime = noise_prime + noise / 6
-          {Nx.broadcast(0.0, noise_prime), current_sample, noise_prime}
+          prediction_prime = prediction_prime + prediction / 6
+          {Nx.broadcast(0.0, prediction_prime), current_sample, prediction_prime}
       end
 
-    state = %{state | current_sample: current_sample, noise_prime: noise_prime}
+    state = %{state | current_sample: current_sample, prediction_prime: prediction_prime}
 
     timestep = state.timesteps[state.iteration - rk_step_number]
     diff = if(rk_step_number < 2, do: div(state.timestep_gap, 2), else: state.timestep_gap)
     prev_timestep = timestep - diff
 
-    prev_sample = prev_sample(scheduler, state, current_sample, noise, timestep, prev_timestep)
+    prev_sample =
+      prev_sample(scheduler, state, current_sample, prediction, timestep, prev_timestep)
 
     {state, prev_sample}
   end
 
-  defnp step_warmup_plms(scheduler, state, sample, noise) do
+  defnp step_warmup_plms(scheduler, state, sample, prediction) do
     # The first two iterations use Equation (22), third iteration uses
     # Equation (23), and fourth iteration uses third-order LMS in the
     # same spirit.
@@ -296,30 +307,32 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
     state =
       if state.iteration != 1 do
-        store_noise(state, noise)
+        store_prediction(state, prediction)
       else
         state
       end
 
-    {current_sample, noise} =
+    {current_sample, prediction} =
       cond do
         state.iteration == 0 ->
-          {sample, noise}
+          {sample, prediction}
 
         state.iteration == 1 ->
-          noise_prime = (noise + elem(state.recent_noise, 0)) / 2
-          {current_sample, noise_prime}
+          prediction_prime = (prediction + elem(state.recent_prediction, 0)) / 2
+          {current_sample, prediction_prime}
 
         state.iteration == 2 ->
-          noise_prime = (3 * elem(state.recent_noise, 0) - elem(state.recent_noise, 1)) / 2
-          {sample, noise_prime}
+          prediction_prime =
+            (3 * elem(state.recent_prediction, 0) - elem(state.recent_prediction, 1)) / 2
+
+          {sample, prediction_prime}
 
         true ->
-          noise_prime =
-            (23 * elem(state.recent_noise, 0) - 16 * elem(state.recent_noise, 1) +
-               5 * elem(state.recent_noise, 2)) / 12
+          prediction_prime =
+            (23 * elem(state.recent_prediction, 0) - 16 * elem(state.recent_prediction, 1) +
+               5 * elem(state.recent_prediction, 2)) / 12
 
-          {sample, noise_prime}
+          {sample, prediction_prime}
       end
 
     state = %{state | current_sample: current_sample}
@@ -333,29 +346,30 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
 
     prev_timestep = timestep - state.timestep_gap
 
-    prev_sample = prev_sample(scheduler, state, current_sample, noise, timestep, prev_timestep)
+    prev_sample =
+      prev_sample(scheduler, state, current_sample, prediction, timestep, prev_timestep)
 
     {state, prev_sample}
   end
 
-  defnp step_plms(scheduler, state, sample, noise) do
+  defnp step_plms(scheduler, state, sample, prediction) do
     # See Equation (12)
 
-    state = store_noise(state, noise)
+    state = store_prediction(state, prediction)
 
-    noise =
-      (55 * elem(state.recent_noise, 0) - 59 * elem(state.recent_noise, 1) +
-         37 * elem(state.recent_noise, 2) - 9 * elem(state.recent_noise, 3)) / 24
+    prediction =
+      (55 * elem(state.recent_prediction, 0) - 59 * elem(state.recent_prediction, 1) +
+         37 * elem(state.recent_prediction, 2) - 9 * elem(state.recent_prediction, 3)) / 24
 
     timestep = state.timesteps[state.iteration]
     prev_timestep = timestep - state.timestep_gap
 
-    prev_sample = prev_sample(scheduler, state, sample, noise, timestep, prev_timestep)
+    prev_sample = prev_sample(scheduler, state, sample, prediction, timestep, prev_timestep)
 
     {state, prev_sample}
   end
 
-  defnp prev_sample(scheduler, state, sample, noise, timestep, prev_timestep) do
+  defnp prev_sample(scheduler, state, sample, prediction, timestep, prev_timestep) do
     # See Equation (11)
 
     alpha_bar_t = state.alpha_bars[timestep]
@@ -378,16 +392,25 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
       alpha_bar_t * (1 - alpha_bar_t_prev) ** 0.5 +
         (alpha_bar_t * (1 - alpha_bar_t) * alpha_bar_t_prev) ** 0.5
 
+    noise =
+      case scheduler.prediction_type do
+        :noise ->
+          prediction
+
+        :angular_velocity ->
+          Nx.sqrt(alpha_bar_t) * prediction + Nx.sqrt(1 - alpha_bar_t) * sample
+      end
+
     sample_coeff * sample - noise_coeff * noise / noise_denom_coeff
   end
 
-  deftransformp store_noise(state, noise) do
-    recent_noise =
-      state.recent_noise
-      |> Tuple.delete_at(tuple_size(state.recent_noise) - 1)
-      |> Tuple.insert_at(0, noise)
+  deftransformp store_prediction(state, prediction) do
+    recent_prediction =
+      state.recent_prediction
+      |> Tuple.delete_at(tuple_size(state.recent_prediction) - 1)
+      |> Tuple.insert_at(0, prediction)
 
-    %{state | recent_noise: recent_noise}
+    %{state | recent_prediction: recent_prediction}
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
@@ -407,6 +430,9 @@ defmodule Bumblebee.Diffusion.PndmScheduler do
           },
           beta_start: {"beta_start", number()},
           beta_end: {"beta_end", number()},
+          prediction_type:
+            {"prediction_type",
+             mapping(%{"epsilon" => :noise, "v_prediction" => :angular_velocity})},
           alpha_clip_strategy: {
             "set_alpha_to_one",
             mapping(%{true => :one, false => :alpha_zero})

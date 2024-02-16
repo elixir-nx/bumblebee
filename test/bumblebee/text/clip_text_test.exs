@@ -28,14 +28,12 @@ defmodule Bumblebee.Text.ClipTextTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.1696, -0.2324, -0.1659], [-0.0525, -0.3103, 0.1557], [-0.2566, -0.4519, 0.6398]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
 
     assert_all_close(
       outputs.pooled_state[[.., 1..3]],
-      Nx.tensor([[-0.6903, -1.2524, 1.5328]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.6903, -1.2524, 1.5328]])
     )
   end
 
@@ -59,8 +57,7 @@ defmodule Bumblebee.Text.ClipTextTest do
 
     assert_all_close(
       outputs.embedding[[.., 1..3]],
-      Nx.tensor([[1.1069, -0.0839, -1.6185]]),
-      atol: 1.0e-4
+      Nx.tensor([[1.1069, -0.0839, -1.6185]])
     )
   end
 end

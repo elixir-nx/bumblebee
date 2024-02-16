@@ -46,6 +46,13 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
       whether to return token offsets for encoded sequence. This tensor includes a list of
       position pairs that map tokens to the input text
       """
+    ],
+    return_length: [
+      default: false,
+      doc: """
+      whether to return the sequence length. The length is the effective number of tokens,
+      so it is calculated after truncation, but does not include padding
+      """
     ]
   ]
 
@@ -260,14 +267,13 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
         add_special_tokens: tokenizer.add_special_tokens
       )
 
+    lengths = Enum.map(encodings, &Encoding.n_tokens/1)
+
     pad_length =
       if is_number(tokenizer.length) do
         tokenizer.length
       else
-        max_length =
-          encodings
-          |> Enum.map(&Encoding.n_tokens/1)
-          |> Enum.max()
+        max_length = Enum.max(lengths)
 
         case tokenizer.length do
           nil -> max_length
@@ -295,6 +301,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
     |> maybe_put_token_type_ids(encodings, tokenizer.return_token_type_ids)
     |> maybe_put_return_special_tokens_mask(encodings, tokenizer.return_special_tokens_mask)
     |> maybe_put_offsets(encodings, tokenizer.return_offsets)
+    |> maybe_put_lengths(lengths, tokenizer.return_length)
   end
 
   defp find_bounding_length(max_length, lengths) do
@@ -362,6 +369,14 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
       encoded
       |> Map.put("start_offsets", Nx.tensor(batch_start_offsets))
       |> Map.put("end_offsets", Nx.tensor(batch_end_offsets))
+    else
+      encoded
+    end
+  end
+
+  defp maybe_put_lengths(encoded, lengths, return_length) do
+    if return_length do
+      Map.put(encoded, "length", Nx.tensor(lengths))
     else
       encoded
     end

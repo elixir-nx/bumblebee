@@ -4,13 +4,13 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
   options = [
     resize: [
       default: true,
-      doc: "whether to resize (and optionally center crop) the input to the given `:size`"
+      doc: "whether to resize the input to the given `:size`"
     ],
     size: [
-      default: 256,
+      default: %{height: 256, width: 256},
       doc: """
-      the size to resize the input to. Either a single number or a `{height, width}` tuple.
-      Only has an effect if `:resize` is `true`
+      the size to resize the input to, given as `%{height: ..., width: ...}`. Only has
+      an effect if `:resize` is `true`
       """
     ],
     resize_method: [
@@ -26,8 +26,11 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
       """
     ],
     crop_size: [
-      default: 224,
-      doc: "the size to center crop the image to. Only has an effect if `:center_crop` is `true`"
+      default: %{height: 224, width: 224},
+      doc: """
+      the size to center crop the image to, given as `%{height: ..., width: ...}`. Only has an effect
+      if `:center_crop` is `true`
+      """
     ],
     normalize: [
       default: true,
@@ -76,8 +79,8 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
         |> Image.normalize_channels(length(featurizer.image_mean))
 
       if featurizer.resize do
-        size = Image.normalize_size(featurizer.size)
-        NxImage.resize(images, size, method: featurizer.resize_method)
+        %{height: height, width: width} = featurizer.size
+        NxImage.resize(images, {height, width}, method: featurizer.resize_method)
       else
         images
       end
@@ -87,7 +90,7 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
 
   @impl true
   def batch_template(featurizer, batch_size) do
-    {height, width} = Image.normalize_size(featurizer.size)
+    %{height: height, width: width} = featurizer.size
     num_channels = length(featurizer.image_mean)
     Nx.template({batch_size, height, width, num_channels}, :f32)
   end
@@ -96,7 +99,8 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
   def process_batch(featurizer, images) do
     images =
       if featurizer.center_crop do
-        NxImage.center_crop(images, {featurizer.crop_size, featurizer.crop_size})
+        %{height: height, width: width} = featurizer.crop_size
+        NxImage.center_crop(images, {height, width})
       else
         images
       end
@@ -124,10 +128,10 @@ defmodule Bumblebee.Vision.DeitFeaturizer do
       opts =
         convert!(data,
           resize: {"do_resize", boolean()},
-          size: {"size", one_of([number(), tuple([number(), number()])])},
+          size: {"size", image_size()},
           resize_method: {"resample", resize_method()},
           center_crop: {"do_center_crop", boolean()},
-          crop_size: {"crop_size", number()},
+          crop_size: {"crop_size", image_size()},
           normalize: {"do_normalize", boolean()},
           image_mean: {"image_mean", list(number())},
           image_std: {"image_std", list(number())}

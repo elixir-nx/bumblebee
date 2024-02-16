@@ -19,8 +19,7 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
 
     assert_all_close(
       embedding[1..3],
-      Nx.tensor([0.0420, -0.0188, 0.1115]),
-      atol: 1.0e-4
+      Nx.tensor([0.0420, -0.0188, 0.1115])
     )
   end
 
@@ -40,8 +39,7 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
 
     assert_all_close(
       embedding[1..3],
-      Nx.tensor([0.0433, -0.0194, 0.1151]),
-      atol: 1.0e-4
+      Nx.tensor([0.0433, -0.0194, 0.1151])
     )
 
     assert_all_close(Nx.sum(Nx.pow(embedding, 2)), Nx.tensor(1.0), atol: 1.0e-6)

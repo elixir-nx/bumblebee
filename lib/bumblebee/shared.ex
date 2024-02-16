@@ -459,4 +459,46 @@ defmodule Bumblebee.Shared do
       }
     }
   end
+
+  @type featurizer_image_size ::
+          %{height: non_neg_integer(), width: non_neg_integer()}
+          | %{shortest_edge: non_neg_integer()}
+
+  @doc """
+  Returns an exact `{height, width}` size to resize images into.
+
+  Accepts a featurizer size map.
+  """
+  @spec featurizer_resize_size(Nx.Tensor.t(), featurizer_image_size()) ::
+          {height :: non_neg_integer(), width :: non_neg_integer()}
+  def featurizer_resize_size(images, size)
+
+  def featurizer_resize_size(_images, %{height: height, width: width}), do: {height, width}
+
+  def featurizer_resize_size(images, %{shortest_edge: size}) do
+    {height, width} = images_spacial_sizes(images)
+
+    {short, long} = if height < width, do: {height, width}, else: {width, height}
+
+    out_short = size
+    out_long = floor(size * long / short)
+
+    if height < width, do: {out_short, out_long}, else: {out_long, out_short}
+  end
+
+  defp images_spacial_sizes(images) do
+    height = Nx.axis_size(images, -3)
+    width = Nx.axis_size(images, -2)
+    {height, width}
+  end
+
+  @doc """
+  Checks whether if the given featurizer image size is fixed or depends
+  on the input size.
+  """
+  @spec featurizer_size_fixed?(featurizer_image_size()) :: boolean()
+  def featurizer_size_fixed?(size)
+
+  def featurizer_size_fixed?(%{height: _, width: _}), do: true
+  def featurizer_size_fixed?(%{shortest_edge: _}), do: false
 end

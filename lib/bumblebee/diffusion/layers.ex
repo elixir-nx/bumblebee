@@ -21,7 +21,7 @@ defmodule Bumblebee.Diffusion.Layers do
       Historically, certain implementations of sinusoidal embedding
       used $s=0$, while other used $s=1$. Defaults to `0`
 
-    * `:max_period` - the base for the frequency exponentiation. Defaults
+    * `:base` - the base for the frequency exponentiation. Defaults
       to `10_000`.
 
     * `:scale` - a multiplier for the sin/cos arguments. Defaults to `1`
@@ -32,7 +32,7 @@ defmodule Bumblebee.Diffusion.Layers do
       Keyword.validate!(opts,
         flip_sin_to_cos: false,
         frequency_correction_term: 1,
-        max_period: 10_000,
+        base: 10_000,
         scale: 1
       )
 
@@ -42,7 +42,7 @@ defmodule Bumblebee.Diffusion.Layers do
       flip_sin_to_cos: opts[:flip_sin_to_cos],
       frequency_correction_term: opts[:frequency_correction_term],
       scale: opts[:scale],
-      max_period: opts[:max_period]
+      base: opts[:base]
     )
   end
 
@@ -53,12 +53,12 @@ defmodule Bumblebee.Diffusion.Layers do
         flip_sin_to_cos: false,
         frequency_correction_term: 1,
         scale: 1,
-        max_period: 10_000,
+        base: 10_000,
         mode: :train
       ])
 
     embedding_size = opts[:embedding_size]
-    max_period = opts[:max_period]
+    base = opts[:base]
     frequency_correction_term = opts[:frequency_correction_term]
 
     if rem(embedding_size, 2) != 0 do
@@ -69,7 +69,7 @@ defmodule Bumblebee.Diffusion.Layers do
     half_size = div(embedding_size, 2)
 
     frequency =
-      Nx.exp(-Nx.log(max_period) * Nx.iota({half_size}) / (half_size - frequency_correction_term))
+      Nx.exp(-Nx.log(base) * Nx.iota({half_size}) / (half_size - frequency_correction_term))
 
     angle = Nx.new_axis(timestep, -1) * Nx.new_axis(frequency, 0)
     angle = opts[:scale] * angle

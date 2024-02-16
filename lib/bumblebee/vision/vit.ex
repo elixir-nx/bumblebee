@@ -157,7 +157,7 @@ defmodule Bumblebee.Vision.Vit do
     inputs = inputs(spec)
     outputs = core(inputs, spec)
 
-    logits =
+    pixel_values =
       outputs.hidden_state
       |> Axon.nx(fn x ->
         x = x[[.., 1..-1//1]]
@@ -174,7 +174,7 @@ defmodule Bumblebee.Vision.Vit do
       |> Layers.pixel_shuffle(spec.patch_size)
 
     Layers.output(%{
-      logits: logits,
+      pixel_values: pixel_values,
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions
     })
