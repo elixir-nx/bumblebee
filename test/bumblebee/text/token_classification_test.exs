@@ -7,7 +7,7 @@ defmodule Bumblebee.Text.TokenClassificationTest do
 
   test "correctly extracts entities with :same aggregation" do
     assert {:ok, model_info} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 
     serving =
       Bumblebee.Text.TokenClassification.token_classification(model_info, tokenizer,
@@ -62,7 +62,7 @@ defmodule Bumblebee.Text.TokenClassificationTest do
   for aggregation <- [:word_first, :word_max, :word_average] do
     test "correctly extracts entities with :#{aggregation} aggregation" do
       assert {:ok, model_info} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
-      assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+      assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 
       serving =
         Bumblebee.Text.TokenClassification.token_classification(model_info, tokenizer,
@@ -109,7 +109,7 @@ defmodule Bumblebee.Text.TokenClassificationTest do
 
   test "correctly extracts entities with simple aggregation on batched input" do
     assert {:ok, model_info} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 
     serving =
       Bumblebee.Text.TokenClassification.token_classification(model_info, tokenizer,

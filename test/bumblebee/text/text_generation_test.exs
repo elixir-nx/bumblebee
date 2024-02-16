@@ -28,9 +28,9 @@ defmodule Bumblebee.Text.TextGenerationTest do
   end
 
   test "with :no_repeat_ngram_length" do
-    {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
 
     generation_config =
       Bumblebee.configure(generation_config, max_new_tokens: 12, no_repeat_ngram_length: 2)
@@ -45,9 +45,9 @@ defmodule Bumblebee.Text.TextGenerationTest do
   end
 
   test "sampling" do
-    {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
 
     generation_config =
       Bumblebee.configure(generation_config,
@@ -65,9 +65,9 @@ defmodule Bumblebee.Text.TextGenerationTest do
   end
 
   test "contrastive search" do
-    {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
 
     generation_config =
       Bumblebee.configure(generation_config,
@@ -111,9 +111,9 @@ defmodule Bumblebee.Text.TextGenerationTest do
   end
 
   test "token summary" do
-    {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
 
     generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
 

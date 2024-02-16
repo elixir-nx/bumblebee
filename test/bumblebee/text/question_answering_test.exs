@@ -7,7 +7,7 @@ defmodule Bumblebee.Text.QuestionAnsweringTest do
 
   test "returns the most probable answer" do
     {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "FacebookAI/roberta-base"})
 
     serving = Bumblebee.Text.question_answering(roberta, tokenizer)
 
@@ -29,7 +29,7 @@ defmodule Bumblebee.Text.QuestionAnsweringTest do
 
   test "supports multiple inputs" do
     {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "FacebookAI/roberta-base"})
 
     serving = Bumblebee.Text.question_answering(roberta, tokenizer)
 

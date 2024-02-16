@@ -102,7 +102,7 @@ defmodule Bumblebee.Text do
   ## Examples
 
       {:ok, bert} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 
       serving = Bumblebee.Text.token_classification(bert, tokenizer, aggregation: :same)
 
@@ -185,9 +185,9 @@ defmodule Bumblebee.Text do
 
   ## Examples
 
-      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+      {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
       generation_config = Bumblebee.configure(generation_config, max_new_tokens: 15)
 
       serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
@@ -203,9 +203,9 @@ defmodule Bumblebee.Text do
 
   We can stream the result by creating the serving with `stream: true`:
 
-      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+      {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
       generation_config = Bumblebee.configure(generation_config, max_new_tokens: 15)
 
       serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config, stream: true)
@@ -422,8 +422,8 @@ defmodule Bumblebee.Text do
 
   ## Examples
 
-      {:ok, bert} = Bumblebee.load_model({:hf, "bert-base-uncased"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+      {:ok, bert} = Bumblebee.load_model({:hf, "google-bert/bert-base-uncased"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
 
       serving = Bumblebee.Text.fill_mask(bert, tokenizer)
 
@@ -500,7 +500,7 @@ defmodule Bumblebee.Text do
   ## Examples
 
       {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "FacebookAI/roberta-base"})
 
       serving = Bumblebee.Text.question_answering(roberta, tokenizer)
 

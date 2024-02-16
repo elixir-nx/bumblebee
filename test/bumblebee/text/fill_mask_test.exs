@@ -6,8 +6,8 @@ defmodule Bumblebee.Text.FillMaskTest do
   @moduletag serving_test_tags()
 
   test "returns top scored tokens" do
-    {:ok, model_info} = Bumblebee.load_model({:hf, "bert-base-uncased"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+    {:ok, model_info} = Bumblebee.load_model({:hf, "google-bert/bert-base-uncased"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
 
     serving = Bumblebee.Text.FillMask.fill_mask(model_info, tokenizer)
 
@@ -25,8 +25,8 @@ defmodule Bumblebee.Text.FillMaskTest do
   end
 
   test "raises when there isn't exactly one mask token" do
-    {:ok, model_info} = Bumblebee.load_model({:hf, "bert-base-uncased"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+    {:ok, model_info} = Bumblebee.load_model({:hf, "google-bert/bert-base-uncased"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
 
     serving = Bumblebee.Text.FillMask.fill_mask(model_info, tokenizer)
 

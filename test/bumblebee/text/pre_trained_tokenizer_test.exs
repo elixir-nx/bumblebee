@@ -4,7 +4,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   import Bumblebee.TestHelpers
 
   test ":albert" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "albert-base-v2"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "albert/albert-base-v2"})
 
     assert %Bumblebee.Text.PreTrainedTokenizer{type: :albert} = tokenizer
 
@@ -76,7 +76,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test ":bert" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
 
     assert %Bumblebee.Text.PreTrainedTokenizer{type: :bert} = tokenizer
 
@@ -112,7 +112,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test ":camembert" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "camembert-base"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "almanach/camembert-base"})
 
     assert %Bumblebee.Text.PreTrainedTokenizer{type: :camembert} = tokenizer
 
@@ -165,7 +165,8 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test ":distilbert" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "distilbert-base-uncased"})
+    assert {:ok, tokenizer} =
+             Bumblebee.load_tokenizer({:hf, "distilbert/distilbert-base-uncased"})
 
     assert %Bumblebee.Text.PreTrainedTokenizer{type: :distilbert} = tokenizer
 
@@ -193,7 +194,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test ":gpt2" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
 
     assert %Bumblebee.Text.PreTrainedTokenizer{type: :gpt2} = tokenizer
 
@@ -285,7 +286,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test ":roberta" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "FacebookAI/roberta-base"})
 
     assert %Bumblebee.Text.PreTrainedTokenizer{type: :roberta} = tokenizer
 
@@ -321,7 +322,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test ":t5" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "t5-small"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-t5/t5-small"})
 
     assert %Bumblebee.Text.PreTrainedTokenizer{type: :t5} = tokenizer
 
@@ -351,7 +352,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test ":xlm_roberta" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "xlm-roberta-base"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "FacebookAI/xlm-roberta-base"})
 
     assert %Bumblebee.Text.PreTrainedTokenizer{type: :xlm_roberta} = tokenizer
 
@@ -378,7 +379,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test "pads and truncates to :length" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 
     tokenizer = Bumblebee.configure(tokenizer, length: 6)
 
@@ -400,7 +401,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test "encoding with special tokens mask" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 
     tokenizer = Bumblebee.configure(tokenizer, return_special_tokens_mask: true)
 
@@ -410,7 +411,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test "encoding with offsets" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 
     tokenizer = Bumblebee.configure(tokenizer, return_offsets: true)
 
@@ -421,7 +422,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test "encoding with multiple lengths" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 
     tokenizer = Bumblebee.configure(tokenizer, length: [8, 16])
 
@@ -436,7 +437,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
   end
 
   test "adds template tokens when the sequence is truncated" do
-    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 
     tokenizer = Bumblebee.configure(tokenizer, length: 5)
 

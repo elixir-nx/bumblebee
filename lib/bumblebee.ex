@@ -17,8 +17,8 @@ defmodule Bumblebee do
 
   You can load one of the supported models by specifying the model repository:
 
-      {:ok, model_info} = Bumblebee.load_model({:hf, "bert-base-uncased"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+      {:ok, model_info} = Bumblebee.load_model({:hf, "google-bert/bert-base-uncased"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
 
   Then you are ready to make predictions:
 
@@ -810,7 +810,7 @@ defmodule Bumblebee do
 
   ## Examples
 
-      tokenizer = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+      tokenizer = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
       inputs = Bumblebee.apply_tokenizer(tokenizer, ["The capital of France is [MASK]."])
 
   """
@@ -848,7 +848,7 @@ defmodule Bumblebee do
 
   ## Examples
 
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
 
   """
   @doc type: :tokenizer
@@ -964,7 +964,7 @@ defmodule Bumblebee do
 
   ## Examples
 
-      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
 
       generation_config = Bumblebee.configure(generation_config, max_new_tokens: 10)
 

@@ -59,8 +59,8 @@ Mix.install(
 To get a sense of what Bumblebee does, look at this example:
 
 ```elixir
-{:ok, model_info} = Bumblebee.load_model({:hf, "bert-base-uncased"})
-{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+{:ok, model_info} = Bumblebee.load_model({:hf, "google-bert/bert-base-uncased"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
 
 serving = Bumblebee.Text.fill_mask(model_info, tokenizer)
 Nx.Serving.run(serving, "The capital of [MASK] is Paris.")

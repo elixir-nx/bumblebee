@@ -84,8 +84,8 @@ You can try a number of other models, just replace the repository id with one of
 Now time for some text processing. Specifically, we want to fill in the missing word in a sentence. This time we load the [BERT](https://huggingface.co/bert-base-uncased) model together with a matching tokenizer. We will use the tokenizer to preprocess our text input.
 
 ```elixir
-{:ok, bert} = Bumblebee.load_model({:hf, "bert-base-uncased"})
-{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+{:ok, bert} = Bumblebee.load_model({:hf, "google-bert/bert-base-uncased"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
 
 serving = Bumblebee.Text.fill_mask(bert, tokenizer)
 
@@ -132,7 +132,7 @@ In this section we look at token classification, more specifically named-entity 
 
 ```elixir
 {:ok, bert} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
-{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-google-bert/bert-base-cased"})
 
 serving = Bumblebee.Text.token_classification(bert, tokenizer, aggregation: :same)
 
@@ -156,9 +156,9 @@ Generation is where things get even more exciting. In this section w will use th
 Generation generally is an iterative process, where the model predicts the sentence token by token, adhering to some constraints. Again, we will make use of a higher-level API based on `Nx.Serving`.
 
 ```elixir
-{:ok, gpt2} = Bumblebee.load_model({:hf, "gpt2"})
-{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-{:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+{:ok, gpt2} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+{:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
 
 serving = Bumblebee.Text.generation(gpt2, tokenizer, generation_config)
 
@@ -180,7 +180,7 @@ Another text-related task is question answering, where the objective is to retri
 
 ```elixir
 {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
-{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-FacebookAI/roberta-base"})
 
 serving = Bumblebee.Text.question_answering(roberta, tokenizer)
 

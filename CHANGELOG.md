@@ -107,9 +107,9 @@ This release changes the directory structure of the models cache, such that cach
 In this release we moved all generation options to a new `%Bumblebee.Text.GenerationConfig{}` struct, which needs to be explicitly loaded and configured. A number of generation options is model-specific and they used to be a part of model specification, but encapsulating everything in a single struct improves the transparency of options origin and reconfiguration. The text generation servings (generation, speech-to-text and conversation) need to be adjusted as follows:
 
 ```diff
-{:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-+{:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+{:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
++{:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
 
 +generation_config = Bumblebee.configure(generation_config, max_new_tokens: 100)
 +serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
