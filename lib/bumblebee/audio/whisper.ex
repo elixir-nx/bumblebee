@@ -265,7 +265,7 @@ defmodule Bumblebee.Audio.Whisper do
     hidden_shape = {nil, nil, spec.hidden_size}
 
     Bumblebee.Utils.Model.inputs_to_map([
-      Axon.input("input_features", shape: encoder_input_shape),
+      Axon.input("input_features", optional: true, shape: encoder_input_shape),
       Axon.input("attention_head_mask", optional: true, shape: encoder_attention_head_mask_shape),
       Axon.input("input_embeddings", optional: true, shape: hidden_shape),
       Axon.input("decoder_input_ids", optional: true, shape: decoder_input_shape),
