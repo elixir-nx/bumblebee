@@ -133,7 +133,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   alias Bumblebee.Diffusion
 
   @impl true
-  def architectures(), do: [:base]
+  def architectures(), do: [:base, :with_controlnet]
 
   @impl true
   def config(spec, opts) do
@@ -146,17 +146,41 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     timestep_shape = {}
     encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
+    mid_dim = List.last(spec.hidden_sizes)
+
+    mid_residual_shape = {1, 16, 16, mid_dim}
+
+    out_channels = [32, 32, 32, 32, 64, 64]
+    out_spatials = [32, 32, 32, 16, 16, 16]
+
+    down_zip = Enum.zip(out_channels, out_spatials)
+
+    down_residuals =
+      for {{out_channel, out_spatial}, i} <- Enum.with_index(down_zip), into: %{} do
+        shape = {1, out_spatial, out_spatial, out_channel}
+        {"controlnet_down_residual_#{i}", Nx.template(shape, :f32)}
+      end
+
     %{
       "sample" => Nx.template(sample_shape, :f32),
       "timestep" => Nx.template(timestep_shape, :u32),
-      "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)
+      "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32),
+      "controlnet_mid_residual" => Nx.template(mid_residual_shape, :f32)
     }
+    |> Map.merge(down_residuals)
   end
 
   @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
     inputs = inputs(spec)
     sample = core(inputs, spec)
+    Layers.output(%{sample: sample})
+  end
+
+  @impl true
+  def model(%__MODULE__{architecture: :with_controlnet} = spec) do
+    inputs = inputs_with_controlnet(spec)
+    sample = core_with_controlnet(inputs, spec)
     Layers.output(%{sample: sample})
   end
 
@@ -168,6 +192,27 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       Axon.input("timestep", shape: {}),
       Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size})
     ])
+  end
+
+  defp inputs_with_controlnet(spec) do
+    sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
+    mid_dim = List.last(spec.hidden_sizes)
+
+    num_down_residuals = length(spec.hidden_sizes) * (spec.depth + 1)
+
+    down_residuals =
+      for i <- 0..(num_down_residuals - 1) do
+        Axon.input("controlnet_down_residual_#{i}")
+      end
+
+    Bumblebee.Utils.Model.inputs_to_map(
+      [
+        Axon.input("sample", shape: sample_shape),
+        Axon.input("timestep", shape: {}),
+        Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size}),
+        Axon.input("controlnet_mid_residual", shape: {1, 16, 16, mid_dim})
+      ] ++ down_residuals
+    )
   end
 
   defp core(inputs, spec) do
@@ -213,6 +258,87 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
     sample
     |> mid_block(timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
+    |> up_blocks(timestep_embedding, down_block_residuals, encoder_hidden_state, spec,
+      name: "up_blocks"
+    )
+    |> Axon.group_norm(spec.group_norm_num_groups,
+      epsilon: spec.group_norm_epsilon,
+      name: "output_norm"
+    )
+    |> Axon.activation(:silu)
+    |> Axon.conv(spec.out_channels,
+      kernel_size: 3,
+      padding: [{1, 1}, {1, 1}],
+      name: "output_conv"
+    )
+  end
+
+  defp core_with_controlnet(inputs, spec) do
+    sample = inputs["sample"]
+    timestep = inputs["timestep"]
+    encoder_hidden_state = inputs["encoder_hidden_state"]
+    controlnet_mid_residual = inputs["controlnet_mid_residual"]
+
+    num_down_residuals = length(spec.hidden_sizes) * (spec.depth + 1)
+
+    controlnet_down_residuals =
+      for i <- 0..(num_down_residuals - 1) do
+        inputs["controlnet_down_residual_#{i}"]
+      end
+      |> dbg()
+
+    sample =
+      if spec.center_input_sample do
+        Axon.nx(sample, fn sample -> 2 * sample - 1.0 end, op_name: :center)
+      else
+        sample
+      end
+
+    timestep =
+      Axon.layer(
+        fn sample, timestep, _opts ->
+          Nx.broadcast(timestep, {Nx.axis_size(sample, 0)})
+        end,
+        [sample, timestep],
+        op_name: :broadcast
+      )
+
+    timestep_embedding =
+      timestep
+      |> Diffusion.Layers.timestep_sinusoidal_embedding(hd(spec.hidden_sizes),
+        flip_sin_to_cos: spec.embedding_flip_sin_to_cos,
+        frequency_correction_term: spec.embedding_frequency_correction_term
+      )
+      |> Diffusion.Layers.UNet.timestep_embedding_mlp(hd(spec.hidden_sizes) * 4,
+        name: "time_embedding"
+      )
+
+    sample =
+      Axon.conv(sample, hd(spec.hidden_sizes),
+        kernel_size: 3,
+        padding: [{1, 1}, {1, 1}],
+        name: "input_conv"
+      )
+
+    {sample, down_block_residuals} =
+      down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, name: "down_blocks")
+
+    down_residual_zip = Enum.zip(Tuple.to_list(down_block_residuals), controlnet_down_residuals)
+
+    down_block_residuals =
+      for {{{down_residual, out_channel}, controlnet_down_residual}, i} <-
+            Enum.with_index(down_residual_zip) do
+        {Axon.add(down_residual, controlnet_down_residual, name: "add_controlnet_down_#{i}"),
+         out_channel}
+      end
+      |> List.to_tuple()
+
+    mid_block_residual =
+      sample
+      |> mid_block(timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
+      |> Axon.add(controlnet_mid_residual, name: "add_controlnet_mid")
+
+    mid_block_residual
     |> up_blocks(timestep_embedding, down_block_residuals, encoder_hidden_state, spec,
       name: "up_blocks"
     )
