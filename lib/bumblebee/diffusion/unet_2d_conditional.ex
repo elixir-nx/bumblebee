@@ -146,24 +146,12 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     timestep_shape = {}
     encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
-    first = {1, spec.sample_size, spec.sample_size, hd(spec.hidden_sizes)}
+    {mid_spatial, out_shapes} = mid_spatial_and_residual_shapes(spec)
 
-    state = {spec.sample_size, [first]}
-
-    {mid_spatial, out_shapes} =
-      for block_out_channel <- spec.hidden_sizes, reduce: state do
-        {spatial_size, acc} ->
-          residuals =
-            for _ <- 1..spec.depth, do: {1, spatial_size, spatial_size, block_out_channel}
-
-          downsampled_spatial = div(spatial_size, 2)
-          downsample = {1, downsampled_spatial, downsampled_spatial, block_out_channel}
-
-          {div(spatial_size, 2), acc ++ residuals ++ [downsample]}
-      end
-
-    mid_spatial = 2 * mid_spatial
-    out_shapes = Enum.drop(out_shapes, -1)
+    out_shapes =
+      Enum.map(out_shapes, fn {_, spatial, spatial, channels} ->
+        {1, spatial, spatial, channels}
+      end)
 
     down_residuals =
       for {shape, i} <- Enum.with_index(out_shapes), into: %{} do
@@ -207,8 +195,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     ])
   end
 
-  defp inputs_with_controlnet(spec) do
-    sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
+  defp mid_spatial_and_residual_shapes(spec) do
     first = {nil, spec.sample_size, spec.sample_size, hd(spec.hidden_sizes)}
 
     state = {spec.sample_size, [first]}
@@ -227,6 +214,14 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
     mid_spatial = 2 * mid_spatial
     out_shapes = Enum.drop(out_shapes, -1)
+
+    {mid_spatial, out_shapes}
+  end
+
+  defp inputs_with_controlnet(spec) do
+    sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
+
+    {mid_spatial, out_shapes} = mid_spatial_and_residual_shapes(spec)
 
     down_residuals =
       for {shape, i} <- Enum.with_index(out_shapes) do
