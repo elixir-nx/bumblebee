@@ -5,7 +5,10 @@ defmodule Bumblebee.Vision.DinoV2 do
     [
       image_size: [
         default: 518,
-        doc: "the size of the input spatial dimensions"
+        doc: """
+        the size of the input spatial dimensions. The model is trained for this size, however
+        the model supports any other input size by interpolating position embeddings
+        """
       ],
       num_channels: [
         default: 3,
@@ -161,7 +164,8 @@ defmodule Bumblebee.Vision.DinoV2 do
   @impl true
   def input_template(spec) do
     %{
-      "pixel_values" => Nx.template({1, 224, 224, spec.num_channels}, :f32)
+      "pixel_values" =>
+        Nx.template({1, spec.image_size, spec.image_size, spec.num_channels}, :f32)
     }
   end
 
@@ -191,15 +195,12 @@ defmodule Bumblebee.Vision.DinoV2 do
       |> core(spec)
       |> base_output(spec)
 
-    class_token =
-      outputs.hidden_state
-      |> Layers.take_token(index: 0, axis: 1)
-      |> Axon.reshape({:batch, 1, :auto})
+    class_token = Layers.take_token(outputs.hidden_state, index: 0, axis: 1)
 
     patch_embeddings_mean =
       Axon.nx(outputs.hidden_state, fn hidden_state ->
         patch_embeddings = hidden_state[[.., 1..-1//1, ..]]
-        Nx.mean(patch_embeddings, axes: [1], keep_axes: true)
+        Nx.mean(patch_embeddings, axes: [1])
       end)
 
     logits =
@@ -217,7 +218,7 @@ defmodule Bumblebee.Vision.DinoV2 do
   end
 
   defp inputs(spec) do
-    shape = {nil, 224, 224, spec.num_channels}
+    shape = {nil, nil, nil, spec.num_channels}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("pixel_values", shape: shape),
@@ -304,31 +305,6 @@ defmodule Bumblebee.Vision.DinoV2 do
     }
   end
 
-  defp interpolate_position_encoding(
-         position_embeddings,
-         input_size,
-         spec
-       ) do
-    original_positions = div(spec.image_size, spec.patch_size)
-    resized_height = div(input_size.height, spec.patch_size)
-    resized_width = div(input_size.width, spec.patch_size)
-
-    class_position_embedding =
-      Layers.take_token(position_embeddings, index: 0, axis: 1)
-      |> Axon.reshape({1, 1, spec.hidden_size})
-
-    other_position_embeddings =
-      Axon.nx(position_embeddings, fn tensor -> tensor[[.., 1..-1//1, ..]] end)
-
-    interpolated_embeddings =
-      other_position_embeddings
-      |> Axon.reshape({:batch, original_positions, original_positions, spec.hidden_size})
-      |> Axon.resize({resized_height, resized_width}, method: :bicubic)
-      |> Axon.reshape({:batch, :auto, spec.hidden_size})
-
-    Layers.concatenate_embeddings([class_position_embedding, interpolated_embeddings])
-  end
-
   defp embedder(pixel_values, patch_mask, spec, opts) do
     name = opts[:name]
 
@@ -344,15 +320,12 @@ defmodule Bumblebee.Vision.DinoV2 do
 
     num_patches = div(spec.image_size, spec.patch_size) ** 2
 
-    {_, height, width, _} = Axon.get_inputs(pixel_values)["pixel_values"]
-    input_size = %{height: height, width: width}
-
     position_embeddings =
       Layers.learned_embeddings(num_patches + 1, spec.hidden_size,
         initializer: :zeros,
         name: join(name, "position_embedding")
       )
-      |> interpolate_position_encoding(input_size, spec)
+      |> interpolate_position_embeddings(pixel_values, spec)
 
     Axon.add(input_embeddings, position_embeddings)
     |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
@@ -381,6 +354,32 @@ defmodule Bumblebee.Vision.DinoV2 do
     |> Axon.dense(hidden_features, name: name |> join("mlp") |> join("fc1"))
     |> Bumblebee.Layers.activation(spec.activation)
     |> Axon.dense(out_features, name: name |> join("mlp") |> join("fc2"))
+  end
+
+  defp interpolate_position_embeddings(position_embeddings, pixel_values, spec) do
+    Axon.layer(
+      fn position_embeddings, pixel_values, _opts ->
+        original_positions = div(spec.image_size, spec.patch_size)
+        {batch_size, height, width, _channels} = Nx.shape(pixel_values)
+        resized_height = div(height, spec.patch_size)
+        resized_width = div(width, spec.patch_size)
+
+        class_position_embedding = position_embeddings[[.., 0..0//1, ..]]
+        input_position_embeddings = position_embeddings[[.., 1..-1//1, ..]]
+
+        interpolated_position_embeddings =
+          input_position_embeddings
+          |> Nx.reshape({batch_size, original_positions, original_positions, spec.hidden_size})
+          # TODO use Axon.Layer.resize once :antialias is supported
+          # |> Axon.Layers.resize(size: {resized_height, resized_width}, method: :bicubic)
+          |> NxImage.resize({resized_height, resized_width}, method: :bicubic, antialias: false)
+          |> Nx.reshape({batch_size, :auto, spec.hidden_size})
+
+        Nx.concatenate([class_position_embedding, interpolated_position_embeddings], axis: 1)
+      end,
+      [position_embeddings, pixel_values],
+      op_name: :interpolate_position_embeddings
+    )
   end
 
   defp swiglu(input, name, spec) do
