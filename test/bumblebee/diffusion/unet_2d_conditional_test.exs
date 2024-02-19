@@ -44,34 +44,53 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
     )
   end
 
+  @tag timeout: :infinity
   test ":with_controlnet" do
+    compvis = "CompVis/stable-diffusion-v1-4"
+    tiny = "bumblebee-testing/tiny-stable-diffusion"
+
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(
-               {:hf, "hf-internal-testing/tiny-stable-diffusion-torch", subdir: "unet"},
+               {:hf, tiny, subdir: "unet"},
                architecture: :with_controlnet
              )
 
     assert %Bumblebee.Diffusion.UNet2DConditional{architecture: :with_controlnet} = spec
 
-    num_down_residuals = (length(spec.hidden_sizes) * (spec.depth + 1)) |> dbg()
+    first = {1, spec.sample_size, spec.sample_size, hd(spec.hidden_sizes)}
 
-    out_channels = [32, 32, 32, 32, 64, 64]
-    out_spatials = [32, 32, 32, 16, 16, 16]
+    state = {spec.sample_size, [first]}
 
-    down_zip = Enum.zip(out_channels, out_spatials)
+    {mid_spatial, out_shapes} =
+      for block_out_channel <- spec.hidden_sizes, reduce: state do
+        {spatial_size, acc} ->
+          residuals =
+            for _ <- 1..spec.depth, do: {1, spatial_size, spatial_size, block_out_channel}
+
+          downsampled_spatial = div(spatial_size, 2)
+          downsample = {1, downsampled_spatial, downsampled_spatial, block_out_channel}
+
+          {div(spatial_size, 2), acc ++ residuals ++ [downsample]}
+      end
+
+    mid_spatial = 2 * mid_spatial
+    out_shapes = Enum.drop(out_shapes, -1) |> dbg()
 
     down_residuals =
-      for {{out_channel, out_spatial}, i} <- Enum.with_index(down_zip), into: %{} do
-        shape = {1, out_spatial, out_spatial, out_channel}
+      for {shape, i} <- Enum.with_index(out_shapes), into: %{} do
         {"controlnet_down_residual_#{i}", Nx.broadcast(0.5, shape)}
       end
 
+    mid_dim = List.last(spec.hidden_sizes)
+
+    mid_residual_shape = {1, mid_spatial, mid_spatial, mid_dim}
+
     inputs =
       %{
-        "sample" => Nx.broadcast(0.5, {1, 32, 32, 4}),
+        "sample" => Nx.broadcast(0.5, {1, spec.sample_size, spec.sample_size, 4}),
         "timestep" => Nx.tensor(1),
-        "encoder_hidden_state" => Nx.broadcast(0.5, {1, 1, 32}),
-        "controlnet_mid_residual" => Nx.broadcast(0.5, {1, 16, 16, 64})
+        "encoder_hidden_state" => Nx.broadcast(0.5, {1, 1, spec.cross_attention_size}),
+        "controlnet_mid_residual" => Nx.broadcast(0.5, mid_residual_shape)
       }
       |> Map.merge(down_residuals)
 
