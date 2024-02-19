@@ -171,34 +171,33 @@ defmodule Bumblebee.Vision.DinoV2 do
 
   @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
-    spec
-    |> inputs()
-    |> core(spec)
-    |> base_output(spec)
-    |> Layers.output()
-  end
+    inputs = inputs(spec)
+    outputs = core(inputs, spec)
 
-  @impl true
-  def model(%__MODULE__{architecture: :backbone} = spec) do
-    spec = Shared.put_config_attrs(spec, output_hidden_states: true)
+    hidden_state =
+      Axon.layer_norm(outputs.hidden_state, epsilon: spec.layer_norm_epsilon, name: "norm")
 
-    spec
-    |> inputs()
-    |> core(spec)
-    |> backbone_output(spec)
-    |> Layers.output()
+    pooled_state = Layers.take_token(hidden_state, index: 0, axis: 1)
+
+    Layers.output(%{
+      hidden_state: hidden_state,
+      pooled_state: pooled_state,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_image_classification} = spec) do
-    outputs =
-      inputs(spec)
-      |> core(spec)
-      |> base_output(spec)
+    inputs = inputs(spec)
+    outputs = core(inputs, spec)
 
-    class_token = Layers.take_token(outputs.hidden_state, index: 0, axis: 1)
+    hidden_state =
+      Axon.layer_norm(outputs.hidden_state, epsilon: spec.layer_norm_epsilon, name: "norm")
+
+    class_token = Layers.take_token(hidden_state, index: 0, axis: 1)
 
     patch_embeddings_mean =
-      Axon.nx(outputs.hidden_state, fn hidden_state ->
+      Axon.nx(hidden_state, fn hidden_state ->
         patch_embeddings = hidden_state[[.., 1..-1//1, ..]]
         Nx.mean(patch_embeddings, axes: [1])
       end)
@@ -217,6 +216,16 @@ defmodule Bumblebee.Vision.DinoV2 do
     })
   end
 
+  def model(%__MODULE__{architecture: :backbone} = spec) do
+    spec = Shared.put_config_attrs(spec, output_hidden_states: true)
+
+    spec
+    |> inputs()
+    |> core(spec)
+    |> backbone_output(spec)
+    |> Layers.output()
+  end
+
   defp inputs(spec) do
     shape = {nil, nil, nil, spec.num_channels}
 
@@ -232,23 +241,10 @@ defmodule Bumblebee.Vision.DinoV2 do
     embeddings =
       embedder(inputs["pixel_values"], inputs["patch_mask"], spec, name: join(name, "embedder"))
 
-    encoder(embeddings, spec, name: join(name, "encoder"))
-  end
-
-  defp base_output(encoder_outputs, spec, opts \\ []) do
-    name = opts[:name]
-
-    hidden_state =
-      Axon.layer_norm(encoder_outputs.hidden_state,
-        epsilon: spec.layer_norm_epsilon,
-        name: join(name, "norm")
-      )
-
-    pooled = Layers.take_token(hidden_state, index: 0, axis: 1)
+    encoder_outputs = encoder(embeddings, spec, name: join(name, "encoder"))
 
     %{
-      hidden_state: hidden_state,
-      pooled_state: pooled,
+      hidden_state: encoder_outputs.hidden_state,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions
     }
@@ -345,17 +341,6 @@ defmodule Bumblebee.Vision.DinoV2 do
     |> Axon.reshape({:batch, :auto, spec.hidden_size}, name: join(name, "reshape"))
   end
 
-  defp mlp(input, name, spec) do
-    hidden_features = spec.hidden_size * spec.mlp_ratio
-
-    out_features = spec.hidden_size
-
-    input
-    |> Axon.dense(hidden_features, name: name |> join("mlp") |> join("fc1"))
-    |> Bumblebee.Layers.activation(spec.activation)
-    |> Axon.dense(out_features, name: name |> join("mlp") |> join("fc2"))
-  end
-
   defp interpolate_position_embeddings(position_embeddings, pixel_values, spec) do
     Axon.layer(
       fn position_embeddings, pixel_values, _opts ->
@@ -382,23 +367,6 @@ defmodule Bumblebee.Vision.DinoV2 do
     )
   end
 
-  defp swiglu(input, name, spec) do
-    hidden_features =
-      div(floor(floor(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
-
-    output_features = spec.hidden_size
-
-    hidden_state =
-      input
-      |> Axon.dense(2 * hidden_features, name: name |> join("swiglu") |> join("weights_in"))
-
-    {x1, x2} = Axon.split(hidden_state, 2)
-
-    Axon.silu(x1)
-    |> Axon.multiply(x2)
-    |> Axon.dense(output_features, name: name |> join("swiglu") |> join("weights_out"))
-  end
-
   defp encoder(hidden_state, spec, opts) do
     name = opts[:name]
 
@@ -423,6 +391,34 @@ defmodule Bumblebee.Vision.DinoV2 do
       output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
+  end
+
+  defp mlp(input, name, spec) do
+    hidden_features = spec.hidden_size * spec.mlp_ratio
+
+    out_features = spec.hidden_size
+
+    input
+    |> Axon.dense(hidden_features, name: name |> join("mlp") |> join("fc1"))
+    |> Bumblebee.Layers.activation(spec.activation)
+    |> Axon.dense(out_features, name: name |> join("mlp") |> join("fc2"))
+  end
+
+  defp swiglu(input, name, spec) do
+    hidden_features =
+      div(floor(floor(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
+
+    output_features = spec.hidden_size
+
+    hidden_state =
+      input
+      |> Axon.dense(2 * hidden_features, name: name |> join("swiglu") |> join("weights_in"))
+
+    {x1, x2} = Axon.split(hidden_state, 2)
+
+    Axon.silu(x1)
+    |> Axon.multiply(x2)
+    |> Axon.dense(output_features, name: name |> join("swiglu") |> join("weights_out"))
   end
 
   defp kernel_initializer(spec) do

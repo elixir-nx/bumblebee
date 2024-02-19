@@ -68,6 +68,28 @@ defmodule Bumblebee.Vision.DinoV2Test do
     )
   end
 
+  test ":for_image_classification" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-Dinov2ForImageClassification"}
+             )
+
+    assert %Bumblebee.Vision.DinoV2{architecture: :for_image_classification} = spec
+
+    inputs = %{
+      "pixel_values" => Nx.broadcast(0.5, {1, 30, 30, 3})
+    }
+
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.logits) == {1, 2}
+
+    assert_all_close(
+      outputs.logits,
+      Nx.tensor([[0.1091, 0.0126]])
+    )
+  end
+
   test ":backbone" do
     {:ok, spec} = Bumblebee.load_spec({:hf, "facebook/dinov2-base"}, architecture: :backbone)
 
@@ -111,30 +133,6 @@ defmodule Bumblebee.Vision.DinoV2Test do
     assert_all_close(
       last_feature_map[[0, 1, 1, 1..3]],
       Nx.tensor([-3.0963878631591797, -1.9401777982711792, -1.4899224042892456])
-    )
-  end
-
-  test ":for_image_classification" do
-    assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "facebook/dinov2-small-imagenet1k-1-layer"})
-
-    assert %Bumblebee.Vision.DinoV2{architecture: :for_image_classification} = spec
-
-    inputs = %{
-      "pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})
-    }
-
-    outputs = Axon.predict(model, params, inputs, debug: true)
-
-    assert Nx.shape(outputs.logits) == {1, 1, 1000}
-
-    # prediction =
-    #   Nx.argmax(outputs.logits, axis: -1) |> Nx.squeeze() |> Nx.to_number()
-    # assert prediction == 281
-
-    assert_all_close(
-      Nx.squeeze(outputs.logits)[[0..2]],
-      Nx.tensor([-3.083641290664673, -1.8309074640274048, -0.28923606872558594])
     )
   end
 end
