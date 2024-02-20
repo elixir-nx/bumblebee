@@ -30,9 +30,12 @@ defmodule Bumblebee.Vision.DinoV2 do
         default: 12,
         doc: "the number of attention heads for each attention layer in the encoder"
       ],
-      mlp_ratio: [
+      intermediate_size_ratio: [
         default: 4,
-        docs: "Ratio of the hidden size of the MLPs relative to `:hidden_size`"
+        doc: """
+        the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder,
+        expressed as a multiplier of `:hidden_size`
+        """
       ],
       use_qkv_bias: [
         default: true,
@@ -41,6 +44,15 @@ defmodule Bumblebee.Vision.DinoV2 do
       activation: [
         default: :gelu,
         doc: "the activation function"
+      ],
+      ffn_swiglu_activation: [
+        default: false,
+        doc:
+          "whether to use the gated SwiGLU activation function in the feed-forward network (FFN)"
+      ],
+      scale_initial_value: [
+        default: 1.0,
+        doc: "the initial value for scaling layers"
       ],
       dropout_rate: [
         default: 0.0,
@@ -58,19 +70,6 @@ defmodule Bumblebee.Vision.DinoV2 do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
-      ],
-      layerscale_value: [
-        default: 1.0,
-        doc: "the initial value to use for layer scale"
-      ],
-      drop_path_rate: [
-        default: 0.0,
-        doc:
-          "the stochastic depth rate per sample (when applied in the main path of residual layers)"
-      ],
-      swiglu_ffn: [
-        default: false,
-        doc: "whether to use the SwiGLU feedforward neural network"
       ],
       stage_names: [
         default: [],
@@ -113,15 +112,16 @@ defmodule Bumblebee.Vision.DinoV2 do
       ])
 
   @moduledoc """
-  DinoV2 model.
+  DINOv2 model family.
 
   ## Architectures
 
-    * `:base` - plain DinoV2 without any head on top
+    * `:base` - plain DINOv2 without any head on top
 
-    * `:backbone` - outputs feature maps
+    * `:for_image_classification` - DINOv2 with head for image classification
 
-    * `:for_image_classification` - DinoV2 with head for image classification
+    * `:backbone` - DINOv2 with feature maps output
+
   ## Inputs
 
     * `"pixel_values"` - `{batch_size, image_size, image_size, num_channels}`
@@ -371,14 +371,16 @@ defmodule Bumblebee.Vision.DinoV2 do
     name = opts[:name]
 
     ffn =
-      if spec.swiglu_ffn do
+      if spec.ffn_swiglu_activation do
         intermediate_size =
-          div(floor(floor(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
+          div(floor(floor(spec.hidden_size * spec.intermediate_size_ratio) * 2 / 3 + 7), 8) * 8
 
         &ffn_swiglu(&1, intermediate_size, spec.hidden_size, name: &2)
       else
+        intermediate_size = floor(spec.hidden_size * spec.intermediate_size_ratio)
+
         [
-          intermediate_size: spec.hidden_size * spec.mlp_ratio,
+          intermediate_size: intermediate_size,
           activation: spec.activation
         ]
       end
@@ -397,7 +399,7 @@ defmodule Bumblebee.Vision.DinoV2 do
         epsilon: spec.layer_norm_epsilon
       ],
       ffn: ffn,
-      block_type: &block_impl/3,
+      block_type: &block_impl(&1, &2, &3, spec),
       output_hidden_states: spec.output_hidden_states,
       output_attentions: spec.output_attentions,
       name: join(name, "blocks")
@@ -421,7 +423,7 @@ defmodule Bumblebee.Vision.DinoV2 do
     |> Axon.dense(output_size, name: join(name, "output"))
   end
 
-  defp block_impl(hidden_state, steps, name) do
+  defp block_impl(hidden_state, steps, name, spec) do
     shortcut = hidden_state
 
     {hidden_state, attention_info} =
@@ -431,7 +433,10 @@ defmodule Bumblebee.Vision.DinoV2 do
 
     hidden_state =
       hidden_state
-      |> Bumblebee.Layers.scale(name: join(name, "self_attention_scale"))
+      |> Bumblebee.Layers.scale(
+        scale_initializer: Axon.Initializers.full(spec.scale_initial_value),
+        name: join(name, "self_attention_scale")
+      )
       |> Axon.add(shortcut)
 
     {_hidden_state, cross_attention_info} =
@@ -445,7 +450,10 @@ defmodule Bumblebee.Vision.DinoV2 do
       hidden_state
       |> steps.output_norm.()
       |> steps.ffn.()
-      |> Bumblebee.Layers.scale(name: join(name, "output_scale"))
+      |> Bumblebee.Layers.scale(
+        scale_initializer: Axon.Initializers.full(spec.scale_initial_value),
+        name: join(name, "output_scale")
+      )
       |> Axon.add(shortcut)
 
     {hidden_state, attention_info, cross_attention_info}
@@ -467,16 +475,15 @@ defmodule Bumblebee.Vision.DinoV2 do
           hidden_size: {"hidden_size", number()},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
-          mlp_ratio: {"mlp_ratio", number()},
+          intermediate_size_ratio: {"mlp_ratio", number()},
           activation: {"hidden_act", activation()},
           use_qkv_bias: {"qkv_bias", boolean()},
           dropout_rate: {"hidden_dropout_prob", number()},
           attention_dropout_rate: {"attention_probs_dropout_prob", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()},
           initializer_scale: {"initializer_range", number()},
-          layerscale_value: {"layerscale_value", number()},
-          drop_path_rate: {"drop_path_rate", number()},
-          swiglu_ffn: {"use_swiglu_ffn", boolean()},
+          scale_initial_value: {"layerscale_value", number()},
+          ffn_swiglu_activation: {"use_swiglu_ffn", boolean()},
           stage_names: {"stage_names", list(string())},
           output_features: {"_out_features", list(string())},
           apply_layernorm: {"apply_layernorm", boolean()}
@@ -518,12 +525,12 @@ defmodule Bumblebee.Vision.DinoV2 do
           }
         },
         "encoder.blocks.{n}.ffn.intermediate" =>
-          if(spec.swiglu_ffn,
+          if(spec.ffn_swiglu_activation,
             do: "dinov2.encoder.layer.{n}.mlp.weights_in",
             else: "dinov2.encoder.layer.{n}.mlp.fc1"
           ),
         "encoder.blocks.{n}.ffn.output" =>
-          if(spec.swiglu_ffn,
+          if(spec.ffn_swiglu_activation,
             do: "dinov2.encoder.layer.{n}.mlp.weights_out",
             else: "dinov2.encoder.layer.{n}.mlp.fc2"
           ),
