@@ -26,8 +26,7 @@ defmodule Bumblebee.Text.BlenderbotTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.6578, 1.9730, 0.6908], [-1.8067, 0.0553, -0.7491], [0.1820, -0.4390, -0.8273]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -54,8 +53,7 @@ defmodule Bumblebee.Text.BlenderbotTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.0440, -0.0115, -0.0004], [0.0772, 0.0327, -0.0667], [-0.0419, 0.1483, 0.0140]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -75,13 +73,13 @@ defmodule Bumblebee.Text.BlenderbotTest do
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
       "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
-      "seed" => Nx.tensor([[0]])
+      "seed" => Nx.tensor([0])
     }
 
     generation_config = Bumblebee.configure(generation_config, max_new_tokens: 3)
 
     generate = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
-    token_ids = generate.(params, inputs)
+    %{token_ids: token_ids} = generate.(params, inputs)
 
     assert_equal(token_ids, Nx.tensor([[382, 382, 382]]))
   end

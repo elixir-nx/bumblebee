@@ -24,8 +24,7 @@ defmodule Bumblebee.Text.GptBigCodeTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.8193, 0.5945, -0.2915], [0.0150, 0.4736, 0.5148], [-0.4247, -1.8000, -1.6479]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -53,8 +52,7 @@ defmodule Bumblebee.Text.GptBigCodeTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-1.3966, 0.6641, -1.3937], [-0.5489, 0.3397, 0.4567], [-0.6488, -1.6745, -1.1570]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -77,8 +75,7 @@ defmodule Bumblebee.Text.GptBigCodeTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.1509, -0.1751, 0.1848], [-0.0860, -0.2476, 0.3373], [-0.2671, -0.2028, -0.0896]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -101,8 +98,7 @@ defmodule Bumblebee.Text.GptBigCodeTest do
 
     assert_all_close(
       outputs.logits[[.., 1..3//1, ..]],
-      Nx.tensor([[[-0.0775, -0.0276], [0.0634, 0.0396], [-0.0695, 0.1575]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[-0.0775, -0.0276], [0.0634, 0.0396], [-0.0695, 0.1575]]])
     )
   end
 
@@ -125,8 +121,7 @@ defmodule Bumblebee.Text.GptBigCodeTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[0.1722, 0.1999]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.1722, 0.1999]])
     )
   end
 end

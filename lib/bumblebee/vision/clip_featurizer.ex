@@ -4,13 +4,13 @@ defmodule Bumblebee.Vision.ClipFeaturizer do
   options = [
     resize: [
       default: true,
-      doc: "whether to resize (and optionally center crop) the input to the given `:size`"
+      doc: "whether to resize the input to the given `:size`"
     ],
     size: [
-      default: 224,
+      default: %{shortest_edge: 224},
       doc: """
-      the size to resize the input to. The image is resized to (`:size`, `:size`). Only has
-      an effect if `:resize` is `true`
+      the size to resize the input to, either `%{height: ..., width: ...}` or `%{shortest_edge: ...}`.
+      Only has an effect if `:resize` is `true`
       """
     ],
     resize_method: [
@@ -26,8 +26,11 @@ defmodule Bumblebee.Vision.ClipFeaturizer do
       """
     ],
     crop_size: [
-      default: 224,
-      doc: "the size to center crop the image to. Only has an effect if `:center_crop` is `true`"
+      default: %{height: 224, width: 224},
+      doc: """
+      the size to center crop the image to, given as `%{height: ..., width: ...}`. Only has an effect
+      if `:center_crop` is `true`
+      """
     ],
     normalize: [
       default: true,
@@ -61,7 +64,16 @@ defmodule Bumblebee.Vision.ClipFeaturizer do
 
   @impl true
   def config(featurizer, opts) do
-    Shared.put_config_attrs(featurizer, opts)
+    featurizer = Shared.put_config_attrs(featurizer, opts)
+
+    if featurizer.resize and Shared.featurizer_size_fixed?(featurizer.size) and
+         not featurizer.center_crop do
+      raise ArgumentError,
+            "the resize shape depends on the input shape and cropping is disabled." <>
+              "You must either configure a fixed size or enable cropping"
+    end
+
+    featurizer
   end
 
   @impl true
@@ -77,13 +89,15 @@ defmodule Bumblebee.Vision.ClipFeaturizer do
 
       images =
         if featurizer.resize do
-          NxImage.resize_short(images, featurizer.size, method: featurizer.resize_method)
+          size = Shared.featurizer_resize_size(images, featurizer.size)
+          NxImage.resize(images, size, method: featurizer.resize_method)
         else
           images
         end
 
       if featurizer.center_crop do
-        NxImage.center_crop(images, {featurizer.crop_size, featurizer.crop_size})
+        %{height: height, width: width} = featurizer.crop_size
+        NxImage.center_crop(images, {height, width})
       else
         images
       end
@@ -94,7 +108,17 @@ defmodule Bumblebee.Vision.ClipFeaturizer do
   @impl true
   def batch_template(featurizer, batch_size) do
     num_channels = length(featurizer.image_mean)
-    Nx.template({batch_size, featurizer.size, featurizer.size, num_channels}, :f32)
+
+    {height, width} =
+      case featurizer do
+        %{center_crop: true, crop_size: %{height: height, width: width}} ->
+          {height, width}
+
+        %{resize: true, size: %{height: height, width: width}} ->
+          {height, width}
+      end
+
+    Nx.template({batch_size, height, width, num_channels}, :f32)
   end
 
   @impl true
@@ -122,10 +146,10 @@ defmodule Bumblebee.Vision.ClipFeaturizer do
       opts =
         convert!(data,
           resize: {"do_resize", boolean()},
-          size: {"size", number()},
+          size: {"size", image_size(single_as: :shortest_edge)},
           resize_method: {"resample", resize_method()},
           center_crop: {"do_center_crop", boolean()},
-          crop_size: {"crop_size", number()},
+          crop_size: {"crop_size", image_size()},
           normalize: {"do_normalize", boolean()},
           image_mean: {"image_mean", list(number())},
           image_std: {"image_std", list(number())}

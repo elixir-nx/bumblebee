@@ -28,8 +28,7 @@ defmodule Bumblebee.Text.BlipTextTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.9281, 1.2373, 0.4223], [-1.1549, 2.1187, -0.9194], [0.0237, -0.7517, 0.5720]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -56,8 +55,7 @@ defmodule Bumblebee.Text.BlipTextTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.0736, -0.0142, 0.2178], [0.0744, 0.0990, 0.1510], [-0.1186, -0.1449, -0.0643]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 end

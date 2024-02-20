@@ -38,7 +38,7 @@ defmodule Bumblebee.Text.ZeroShotClassification do
 
     entailment_id =
       Enum.find_value(spec.id_to_label, fn {id, label} ->
-        label == "entailment" && id
+        String.downcase(label) == "entailment" && id
       end)
 
     unless entailment_id do

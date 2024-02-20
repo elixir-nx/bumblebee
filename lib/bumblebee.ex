@@ -17,8 +17,8 @@ defmodule Bumblebee do
 
   You can load one of the supported models by specifying the model repository:
 
-      {:ok, model_info} = Bumblebee.load_model({:hf, "bert-base-uncased"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+      {:ok, model_info} = Bumblebee.load_model({:hf, "google-bert/bert-base-uncased"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
 
   Then you are ready to make predictions:
 
@@ -811,7 +811,7 @@ defmodule Bumblebee do
 
   ## Examples
 
-      tokenizer = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+      tokenizer = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
       inputs = Bumblebee.apply_tokenizer(tokenizer, ["The capital of France is [MASK]."])
 
   """
@@ -849,7 +849,7 @@ defmodule Bumblebee do
 
   ## Examples
 
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
 
   """
   @doc type: :tokenizer
@@ -965,7 +965,7 @@ defmodule Bumblebee do
 
   ## Examples
 
-      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
 
       generation_config = Bumblebee.configure(generation_config, max_new_tokens: 10)
 
@@ -1164,11 +1164,12 @@ defmodule Bumblebee do
   defp get_repo_files({:hf, repository_id, opts}) do
     subdir = opts[:subdir]
     url = HuggingFace.Hub.file_listing_url(repository_id, subdir, opts[:revision])
+    cache_scope = repository_id_to_cache_scope(repository_id)
 
     result =
       HuggingFace.Hub.cached_download(
         url,
-        Keyword.take(opts, [:cache_dir, :offline, :auth_token])
+        [cache_scope: cache_scope] ++ Keyword.take(opts, [:cache_dir, :offline, :auth_token])
       )
 
     with {:ok, path} <- result,
@@ -1212,11 +1213,19 @@ defmodule Bumblebee do
       end
 
     url = HuggingFace.Hub.file_url(repository_id, filename, opts[:revision])
+    cache_scope = repository_id_to_cache_scope(repository_id)
 
     HuggingFace.Hub.cached_download(
       url,
-      [etag: etag] ++ Keyword.take(opts, [:cache_dir, :offline, :auth_token])
+      [etag: etag, cache_scope: cache_scope] ++
+        Keyword.take(opts, [:cache_dir, :offline, :auth_token])
     )
+  end
+
+  defp repository_id_to_cache_scope(repository_id) do
+    repository_id
+    |> String.replace("/", "--")
+    |> String.replace(~r/[^\w-]/, "")
   end
 
   defp normalize_repository!({:hf, repository_id}) when is_binary(repository_id) do

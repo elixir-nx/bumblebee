@@ -24,14 +24,12 @@ defmodule Bumblebee.Vision.VitTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.2075, 2.7865, 0.2361], [-0.3014, 2.5312, -0.6127], [-0.3460, 2.8741, 0.1988]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
 
     assert_all_close(
       outputs.pooled_state[[.., 1..3]],
-      Nx.tensor([[-0.0244, -0.0515, -0.1584]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.0244, -0.0515, -0.1584]])
     )
   end
 
@@ -53,8 +51,7 @@ defmodule Bumblebee.Vision.VitTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.1596, 0.1818]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.1596, 0.1818]])
     )
   end
 
@@ -72,12 +69,11 @@ defmodule Bumblebee.Vision.VitTest do
 
     outputs = Axon.predict(model, params, inputs)
 
-    assert Nx.shape(outputs.logits) == {1, 30, 30, 3}
+    assert Nx.shape(outputs.pixel_values) == {1, 30, 30, 3}
 
     assert_all_close(
-      to_channels_first(outputs.logits)[[.., 1..2, 1..2, 1..2]],
-      Nx.tensor([[[[0.0752, -0.0192], [-0.0252, 0.0232]], [[0.0548, -0.0216], [0.0728, -0.1687]]]]),
-      atol: 1.0e-4
+      outputs.pixel_values[[.., 1..2, 1..2, 1..2]],
+      Nx.tensor([[[[0.0752, 0.0548], [-0.0192, -0.0216]], [[-0.0252, 0.0728], [0.0232, -0.1687]]]])
     )
   end
 end

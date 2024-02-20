@@ -28,9 +28,9 @@ defmodule Bumblebee.Text.TextGenerationTest do
   end
 
   test "with :no_repeat_ngram_length" do
-    {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
 
     generation_config =
       Bumblebee.configure(generation_config, max_new_tokens: 12, no_repeat_ngram_length: 2)
@@ -45,9 +45,9 @@ defmodule Bumblebee.Text.TextGenerationTest do
   end
 
   test "sampling" do
-    {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
 
     generation_config =
       Bumblebee.configure(generation_config,
@@ -65,9 +65,9 @@ defmodule Bumblebee.Text.TextGenerationTest do
   end
 
   test "contrastive search" do
-    {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
 
     generation_config =
       Bumblebee.configure(generation_config,
@@ -100,7 +100,7 @@ defmodule Bumblebee.Text.TextGenerationTest do
     serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config, stream: true)
 
     stream = Nx.Serving.run(serving, article)
-    assert Enum.to_list(stream) == ["PG&E", " plans", " blackouts", " to", " reduce"]
+    assert Enum.to_list(stream) == ["PG&E", " plans", " blackouts", " to reduce"]
 
     # Raises when a batch is given
     assert_raise ArgumentError,
@@ -108,5 +108,62 @@ defmodule Bumblebee.Text.TextGenerationTest do
                  fn ->
                    Nx.Serving.run(serving, [article])
                  end
+  end
+
+  test "token summary" do
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
+
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
+
+    serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
+
+    assert %{
+             results: [
+               %{
+                 text: ", I am a man of light.",
+                 token_summary: %{input: 2, output: 8, padding: 0}
+               }
+             ]
+           } = Nx.Serving.run(serving, "Hello darkness")
+
+    serving =
+      Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+        compile: [batch_size: 1, sequence_length: 10]
+      )
+
+    # With padding
+
+    assert %{
+             results: [
+               %{
+                 text: ", I am a man of light.",
+                 token_summary: %{input: 2, output: 8, padding: 8}
+               }
+             ]
+           } = Nx.Serving.run(serving, "Hello darkness")
+
+    # With streaming
+
+    serving =
+      Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+        compile: [batch_size: 1, sequence_length: 10],
+        stream: true,
+        stream_done: true
+      )
+
+    stream = Nx.Serving.run(serving, "Hello darkness")
+
+    assert Enum.to_list(stream) == [
+             ",",
+             " I",
+             " am",
+             " a",
+             " man",
+             " of",
+             " light.",
+             {:done, %{token_summary: %{input: 2, output: 8, padding: 8}}}
+           ]
   end
 end

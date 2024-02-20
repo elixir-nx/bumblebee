@@ -26,11 +26,10 @@ defmodule Bumblebee.Text.T5Test do
       outputs.hidden_state[[.., 1..3, 1..3]] |> Nx.multiply(100),
       Nx.tensor([
         [[-0.0353, -0.2614, -0.0219], [0.0829, 0.0845, -0.1971], [-0.0208, -0.0795, -0.0401]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
 
-    assert_all_close(Nx.sum(outputs.hidden_state), -0.0235, atol: 1.0e-4)
+    assert_all_close(Nx.sum(outputs.hidden_state), -0.0235)
   end
 
   test ":base with gated feed-forward activation" do
@@ -56,11 +55,10 @@ defmodule Bumblebee.Text.T5Test do
       outputs.hidden_state[[.., 1..3, 1..3]] |> Nx.multiply(100),
       Nx.tensor([
         [[-0.0353, -0.2614, -0.0219], [0.0829, 0.0845, -0.1971], [-0.0208, -0.0795, -0.0401]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
 
-    assert_all_close(Nx.sum(outputs.hidden_state), -0.0235, atol: 1.0e-4)
+    assert_all_close(Nx.sum(outputs.hidden_state), -0.0235)
   end
 
   test ":for_conditional_generation" do
@@ -84,8 +82,7 @@ defmodule Bumblebee.Text.T5Test do
 
     assert_all_close(
       outputs.logits[[.., 1..3, 1..3]] |> Nx.multiply(10_000),
-      Nx.tensor([[[-0.0158, 0.0067, 0.0636], [0.0128, 0.0742, -0.0398], [0.0050, 0.0554, 0.0083]]]),
-      atol: 1.0e-4
+      Nx.tensor([[[-0.0158, 0.0067, 0.0636], [0.0128, 0.0742, -0.0398], [0.0050, 0.0554, 0.0083]]])
     )
   end
 
@@ -113,8 +110,7 @@ defmodule Bumblebee.Text.T5Test do
       outputs.logits[[.., 1..3, 1..3]] |> Nx.multiply(10_000),
       Nx.tensor([
         [[0.0537, -0.0358, -0.2016], [0.0580, 0.2900, -0.0393], [0.0194, 0.0153, -0.0144]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -139,8 +135,7 @@ defmodule Bumblebee.Text.T5Test do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.0034, -0.0005, -0.0036], [-0.0002, 0.0029, 0.0021], [-0.0011, -0.0004, -0.0034]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -160,13 +155,13 @@ defmodule Bumblebee.Text.T5Test do
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
       "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
-      "seed" => Nx.tensor([[0]])
+      "seed" => Nx.tensor([0])
     }
 
     generation_config = Bumblebee.configure(generation_config, max_new_tokens: 3)
 
     generate = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
-    token_ids = generate.(params, inputs)
+    %{token_ids: token_ids} = generate.(params, inputs)
 
     assert_equal(token_ids, Nx.tensor([[0, 0, 0]]))
   end
@@ -189,13 +184,13 @@ defmodule Bumblebee.Text.T5Test do
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
       "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
-      "seed" => Nx.tensor([[0]])
+      "seed" => Nx.tensor([0])
     }
 
     generation_config = Bumblebee.configure(generation_config, max_new_tokens: 3)
 
     generate = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
-    token_ids = generate.(params, inputs)
+    %{token_ids: token_ids} = generate.(params, inputs)
 
     assert_equal(token_ids, Nx.tensor([[6161, 29516, 9788]]))
   end

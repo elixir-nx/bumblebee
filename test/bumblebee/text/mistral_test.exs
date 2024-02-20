@@ -24,8 +24,7 @@ defmodule Bumblebee.Text.MistralTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[0.9450, -1.3945, 0.7331], [-2.1118, -1.3091, -0.7834], [-1.7609, -1.3034, 1.0634]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 
@@ -48,8 +47,7 @@ defmodule Bumblebee.Text.MistralTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[0.0035, -0.0357]]),
-      atol: 1.0e-4
+      Nx.tensor([[0.0035, -0.0357]])
     )
   end
 
@@ -72,8 +70,7 @@ defmodule Bumblebee.Text.MistralTest do
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.1054, 0.0026, 0.0450], [0.1400, 0.1388, 0.0265], [0.0060, -0.1150, -0.1463]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 end

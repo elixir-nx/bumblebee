@@ -86,7 +86,7 @@ defmodule Bumblebee.Vision do
   defdelegate image_classification(model_info, featurizer, opts \\ []),
     to: Bumblebee.Vision.ImageClassification
 
-  @type image_to_text_input :: image() | %{:image => image(), optional(:seed) => integer()}
+  @type image_to_text_input :: image() | %{:image => image(), optional(:seed) => integer() | nil}
   @type image_to_text_output :: %{results: list(image_to_text_result())}
   @type image_to_text_result :: %{text: String.t()}
 

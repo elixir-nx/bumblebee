@@ -27,14 +27,12 @@ defmodule Bumblebee.Vision.BlipVisionTest do
       outputs.hidden_state[[.., 1..3, 1..3]] |> Nx.multiply(1_000_000),
       Nx.tensor([
         [[-0.0272, -0.0129, 0.0174], [0.0069, -0.0429, -0.0334], [0.0428, -0.0797, -0.0353]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
 
     assert_all_close(
       outputs.pooled_state[[.., 1..3]] |> Nx.multiply(10_000),
-      Nx.tensor([[-0.0128, -0.0792, -0.1011]]),
-      atol: 1.0e-4
+      Nx.tensor([[-0.0128, -0.0792, -0.1011]])
     )
   end
 end

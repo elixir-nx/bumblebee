@@ -47,6 +47,9 @@ defmodule Bumblebee.HuggingFace.Hub do
       ETag value, however if the value is already known, it can be
       passed as an option instead (to skip the extra request)
 
+    * `:cache_scope` - a namespace to put the cached files under in
+      the cache directory
+
   """
   @spec cached_download(String.t(), keyword()) :: {:ok, String.t()} | {:error, String.t()}
   def cached_download(url, opts \\ []) do
@@ -55,6 +58,13 @@ defmodule Bumblebee.HuggingFace.Hub do
     auth_token = opts[:auth_token]
 
     dir = Path.join(cache_dir, "huggingface")
+
+    dir =
+      if cache_scope = opts[:cache_scope] do
+        Path.join(dir, cache_scope)
+      else
+        dir
+      end
 
     File.mkdir_p!(dir)
 
@@ -119,7 +129,12 @@ defmodule Bumblebee.HuggingFace.Hub do
 
     case load_json(metadata_path) do
       {:ok, %{"etag" => ^etag}} ->
-        Path.join(dir, entry_filename(url, etag))
+        path = Path.join(dir, entry_filename(url, etag))
+
+        # Make sure the file exists, in case someone manually removed it
+        if File.exists?(path) do
+          path
+        end
 
       _ ->
         nil

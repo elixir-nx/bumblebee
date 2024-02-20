@@ -102,7 +102,7 @@ defmodule Bumblebee.Text do
   ## Examples
 
       {:ok, bert} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 
       serving = Bumblebee.Text.token_classification(bert, tokenizer, aggregation: :same)
 
@@ -127,9 +127,14 @@ defmodule Bumblebee.Text do
     to: Bumblebee.Text.TokenClassification
 
   @type generation_input ::
-          String.t() | %{:text => String.t(), optional(:seed) => integer()}
+          String.t() | %{:text => String.t(), optional(:seed) => integer() | nil}
   @type generation_output :: %{results: list(generation_result())}
-  @type generation_result :: %{text: String.t()}
+  @type generation_result :: %{text: String.t(), token_summary: token_summary()}
+  @type token_summary :: %{
+          input: pos_integer(),
+          outout: pos_integer(),
+          padding: non_neg_integer()
+        }
 
   @doc """
   Builds serving for prompt-driven text generation.
@@ -172,11 +177,17 @@ defmodule Bumblebee.Text do
       serving. To process a batch, call the serving with each input
       separately. Defaults to `false`
 
+    * `:stream_done` - when `:stream` is enabled, this enables a final
+      event, after all chunks have been emitted. The event has the
+      shape `{:done, result}`, where `result` includes the same fields
+      as `t:generation_result/0`, except for `:text`, which has been
+      already streamed. Defaults to `false`
+
   ## Examples
 
-      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+      {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
       generation_config = Bumblebee.configure(generation_config, max_new_tokens: 15)
 
       serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config)
@@ -192,9 +203,9 @@ defmodule Bumblebee.Text do
 
   We can stream the result by creating the serving with `stream: true`:
 
-      {:ok, model_info} = Bumblebee.load_model({:hf, "gpt2"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "gpt2"})
-      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "gpt2"})
+      {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
       generation_config = Bumblebee.configure(generation_config, max_new_tokens: 15)
 
       serving = Bumblebee.Text.generation(model_info, tokenizer, generation_config, stream: true)
@@ -411,8 +422,8 @@ defmodule Bumblebee.Text do
 
   ## Examples
 
-      {:ok, bert} = Bumblebee.load_model({:hf, "bert-base-uncased"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-uncased"})
+      {:ok, bert} = Bumblebee.load_model({:hf, "google-bert/bert-base-uncased"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-uncased"})
 
       serving = Bumblebee.Text.fill_mask(bert, tokenizer)
 
@@ -489,7 +500,7 @@ defmodule Bumblebee.Text do
   ## Examples
 
       {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "FacebookAI/roberta-base"})
 
       serving = Bumblebee.Text.question_answering(roberta, tokenizer)
 

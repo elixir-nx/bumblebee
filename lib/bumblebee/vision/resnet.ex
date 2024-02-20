@@ -95,9 +95,7 @@ defmodule Bumblebee.Vision.ResNet do
     outputs = core(spec)
 
     logits =
-      outputs.pooled_state
-      |> Axon.flatten()
-      |> Axon.dense(spec.num_labels, name: "image_classification_head.output")
+      Axon.dense(outputs.pooled_state, spec.num_labels, name: "image_classification_head.output")
 
     Layers.output(%{
       logits: logits,
@@ -116,10 +114,12 @@ defmodule Bumblebee.Vision.ResNet do
       |> encoder(spec, name: join(name, "encoder"))
 
     pooled_output =
-      Axon.adaptive_avg_pool(encoder_outputs.hidden_state,
+      encoder_outputs.hidden_state
+      |> Axon.adaptive_avg_pool(
         output_size: {1, 1},
         name: join(name, "pooler")
       )
+      |> Axon.flatten()
 
     %{
       hidden_state: encoder_outputs.hidden_state,

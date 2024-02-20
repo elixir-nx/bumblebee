@@ -7,7 +7,7 @@ defmodule Bumblebee.Text.TextClassificationTest do
 
   test "returns top scored labels" do
     {:ok, model_info} = Bumblebee.load_model({:hf, "cardiffnlp/twitter-roberta-base-emotion"})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-base"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "FacebookAI/roberta-base"})
 
     serving = Bumblebee.Text.TextClassification.text_classification(model_info, tokenizer)
 

@@ -43,7 +43,7 @@ defmodule Bumblebee.Audio do
   @type audio :: Nx.t() | {:file, String.t()}
 
   @type speech_to_text_whisper_input ::
-          audio() | %{:audio => audio(), optional(:seed) => integer()}
+          audio() | %{:audio => audio(), optional(:seed) => integer() | nil}
   @type speech_to_text_whisper_output :: %{
           chunks: list(speech_to_text_whisper_chunk())
         }

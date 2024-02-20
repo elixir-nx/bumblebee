@@ -34,14 +34,14 @@ The pre-trained model we'll be using is `bert-base-cased`; however, you can use 
 
 ```elixir
 {:ok, spec} =
-  Bumblebee.load_spec({:hf, "bert-base-cased"},
+  Bumblebee.load_spec({:hf, "bert-base-google-bert/bert-base-cased"},
     architecture: :for_sequence_classification
   )
 
 spec = Bumblebee.configure(spec, num_labels: 5)
 
-{:ok, model} = Bumblebee.load_model({:hf, "bert-base-cased"}, spec: spec)
-{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-cased"})
+{:ok, model} = Bumblebee.load_model({:hf, "bert-base-google-bert/bert-base-cased"}, spec: spec)
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-google-bert/bert-base-cased"})
 ```
 
 <!-- livebook:{"output":true} -->

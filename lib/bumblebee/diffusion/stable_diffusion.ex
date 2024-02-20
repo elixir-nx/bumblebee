@@ -12,8 +12,8 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
           String.t()
           | %{
               :prompt => String.t(),
-              optional(:negative_prompt) => String.t(),
-              optional(:seed) => integer()
+              optional(:negative_prompt) => String.t() | nil,
+              optional(:seed) => integer() | nil
             }
   @type text_to_image_output :: %{results: list(text_to_image_result())}
   @type text_to_image_result :: %{:image => Nx.Tensor.t(), optional(:is_safe) => boolean()}
@@ -196,7 +196,11 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     safety_checker_fun =
       if safety_checker do
         {_, predict_fun} = Axon.build(safety_checker.model)
-        predict_fun
+
+        fn params, input ->
+          input = Bumblebee.Featurizer.process_batch(safety_checker_featurizer, input)
+          predict_fun.(params, input)
+        end
       end
 
     # Note that all of these are copied when using serving as a process
@@ -205,7 +209,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
       encoder.params,
       unet.params,
       vae.params,
-      {safety_checker?, safety_checker[:spec], safety_checker[:params]},
+      {safety_checker?, safety_checker[:params]},
       safety_checker_featurizer,
       {compile != nil, batch_size, sequence_length},
       num_images_per_prompt,
@@ -226,7 +230,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
          encoder_params,
          unet_params,
          vae_params,
-         {safety_checker?, safety_checker_spec, safety_checker_params},
+         {safety_checker?, safety_checker_params},
          safety_checker_featurizer,
          {compile?, batch_size, sequence_length},
          num_images_per_prompt,
@@ -252,12 +256,11 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     safety_checker_fun =
       safety_checker_fun &&
         Shared.compile_or_jit(safety_checker_fun, defn_options, compile?, fn ->
-          inputs = %{
-            "pixel_values" =>
-              Shared.input_template(safety_checker_spec, "pixel_values", [
-                batch_size * num_images_per_prompt
-              ])
-          }
+          inputs =
+            Bumblebee.Featurizer.batch_template(
+              safety_checker_featurizer,
+              batch_size * num_images_per_prompt
+            )
 
           [safety_checker_params, inputs]
         end)
@@ -273,7 +276,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
       output =
         if safety_checker? do
-          inputs = Bumblebee.apply_featurizer(safety_checker_featurizer, image)
+          inputs = Bumblebee.Featurizer.process_input(safety_checker_featurizer, image)
           outputs = safety_checker_fun.(safety_checker_params, inputs)
           %{image: image, is_unsafe: outputs.is_unsafe}
         else

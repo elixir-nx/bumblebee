@@ -24,8 +24,7 @@ defmodule Bumblebee.Text.XlmRobertaTest do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.6455, -0.4189, 0.3424], [-0.4303, -0.6731, 0.2534], [-0.5240, 0.0864, -0.5632]]
-      ]),
-      atol: 1.0e-4
+      ])
     )
   end
 end
