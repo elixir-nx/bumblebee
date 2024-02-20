@@ -370,7 +370,19 @@ defmodule Bumblebee.Vision.DinoV2 do
   defp encoder(hidden_state, spec, opts) do
     name = opts[:name]
 
-    ffn = if spec.swiglu_ffn, do: &swiglu(&1, &2, spec), else: &mlp(&1, &2, spec)
+    ffn =
+      if spec.swiglu_ffn do
+        intermediate_size =
+          div(floor(floor(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
+
+        &ffn_swiglu(&1, intermediate_size, spec.hidden_size, name: &2)
+      else
+        [
+          # TODO import as intermediate size?
+          intermediate_size: spec.hidden_size * spec.mlp_ratio,
+          activation: spec.activation
+        ]
+      end
 
     Layers.Transformer.blocks(hidden_state,
       num_blocks: spec.num_blocks,
@@ -393,32 +405,21 @@ defmodule Bumblebee.Vision.DinoV2 do
     )
   end
 
-  defp mlp(input, name, spec) do
-    hidden_features = spec.hidden_size * spec.mlp_ratio
+  # A feed-forward network with SwiGLU nonlinearity as in https://arxiv.org/abs/2002.05202
+  defp ffn_swiglu(x, intermediate_size, output_size, opts) do
+    name = opts[:name]
+    dropout = opts[:dropout] || 0.0
 
-    out_features = spec.hidden_size
+    {gate, x} =
+      x
+      |> Axon.dense(intermediate_size * 2, name: join(name, "intermediate"))
+      |> Axon.split(2, axis: -1)
 
-    input
-    |> Axon.dense(hidden_features, name: name |> join("mlp") |> join("fc1"))
-    |> Bumblebee.Layers.activation(spec.activation)
-    |> Axon.dense(out_features, name: name |> join("mlp") |> join("fc2"))
-  end
+    x = Axon.multiply(x, Axon.silu(gate))
 
-  defp swiglu(input, name, spec) do
-    hidden_features =
-      div(floor(floor(spec.hidden_size * spec.mlp_ratio) * 2 / 3 + 7), 8) * 8
-
-    output_features = spec.hidden_size
-
-    hidden_state =
-      input
-      |> Axon.dense(2 * hidden_features, name: name |> join("swiglu") |> join("weights_in"))
-
-    {x1, x2} = Axon.split(hidden_state, 2)
-
-    Axon.silu(x1)
-    |> Axon.multiply(x2)
-    |> Axon.dense(output_features, name: name |> join("swiglu") |> join("weights_out"))
+    x
+    |> Axon.dropout(rate: dropout, name: join(name, "dropout"))
+    |> Axon.dense(output_size, name: join(name, "output"))
   end
 
   defp block_impl(hidden_state, steps, name) do
@@ -487,7 +488,7 @@ defmodule Bumblebee.Vision.DinoV2 do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(_spec) do
+    def params_mapping(spec) do
       %{
         "embedder.patch_embedding.projection" => "dinov2.embeddings.patch_embeddings.projection",
         "embedder.class_embedding" => %{
@@ -517,12 +518,16 @@ defmodule Bumblebee.Vision.DinoV2 do
             fn [lambda1] -> lambda1 end
           }
         },
-        "encoder.blocks.{n}.ffn.mlp.fc1" => "dinov2.encoder.layer.{n}.mlp.fc1",
-        "encoder.blocks.{n}.ffn.mlp.fc2" => "dinov2.encoder.layer.{n}.mlp.fc2",
-        "encoder.blocks.{n}.ffn.swiglu.weights_in" => "dinov2.encoder.layer.{n}.mlp.weights_in",
-        "encoder.blocks.{n}.ffn.swiglu.weights_out" => "dinov2.encoder.layer.{n}.mlp.weights_out",
-        "encoder.blocks.{n}.ffn.intermediate" => "dinov2.encoder.layer.{n}.intermediate.dense",
-        "encoder.blocks.{n}.ffn.output" => "dinov2.encoder.layer.{n}.output.dense",
+        "encoder.blocks.{n}.ffn.intermediate" =>
+          if(spec.swiglu_ffn,
+            do: "dinov2.encoder.layer.{n}.mlp.weights_in",
+            else: "dinov2.encoder.layer.{n}.mlp.fc1"
+          ),
+        "encoder.blocks.{n}.ffn.output" =>
+          if(spec.swiglu_ffn,
+            do: "dinov2.encoder.layer.{n}.mlp.weights_out",
+            else: "dinov2.encoder.layer.{n}.mlp.fc2"
+          ),
         "encoder.blocks.{n}.output_norm" => "dinov2.encoder.layer.{n}.norm2",
         "encoder.blocks.{n}.output_scale" => %{
           "scale" => {
