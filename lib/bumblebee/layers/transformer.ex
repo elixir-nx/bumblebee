@@ -265,6 +265,10 @@ defmodule Bumblebee.Layers.Transformer do
         * `:parallel` - block with attention and FFN independently (in parallel).
           This type doesn't support cross-attention
 
+      Alternatively a custom 3-arity function may be given. The function
+      receives the input hidden state, a map with block steps and a
+      name to prefix any additional layers.
+
     * `:scale_attention_weights` - whether to scale query in the traditional style of
       multi-headed attention. Defaults to `true`
 
@@ -469,9 +473,14 @@ defmodule Bumblebee.Layers.Transformer do
 
     ffn = &ffn_fun.(&1, join(name, "ffn"))
 
+    block_impl =
+      case block_type do
+        type when is_atom(type) -> &block_impl(type, &1, &2, &3)
+        fun when is_function(fun) -> fun
+      end
+
     {hidden_state, attention_info, cross_attention_info} =
-      block_impl(
-        block_type,
+      block_impl.(
         hidden_state,
         %{
           self_attention_norm: self_attention_norm,

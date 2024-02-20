@@ -372,7 +372,7 @@ defmodule Bumblebee.Vision.DinoV2 do
 
     ffn = if spec.swiglu_ffn, do: &swiglu(&1, &2, spec), else: &mlp(&1, &2, spec)
 
-    blocks(hidden_state,
+    Layers.Transformer.blocks(hidden_state,
       num_blocks: spec.num_blocks,
       num_attention_heads: spec.num_attention_heads,
       hidden_size: spec.hidden_size,
@@ -386,7 +386,7 @@ defmodule Bumblebee.Vision.DinoV2 do
         epsilon: spec.layer_norm_epsilon
       ],
       ffn: ffn,
-      block_type: :norm_first_with_scale,
+      block_type: &block_impl/3,
       output_hidden_states: spec.output_hidden_states,
       output_attentions: spec.output_attentions,
       name: join(name, "blocks")
@@ -419,6 +419,36 @@ defmodule Bumblebee.Vision.DinoV2 do
     Axon.silu(x1)
     |> Axon.multiply(x2)
     |> Axon.dense(output_features, name: name |> join("swiglu") |> join("weights_out"))
+  end
+
+  defp block_impl(hidden_state, steps, name) do
+    shortcut = hidden_state
+
+    {hidden_state, attention_info} =
+      hidden_state
+      |> steps.self_attention_norm.()
+      |> steps.self_attention.()
+
+    hidden_state =
+      hidden_state
+      |> Bumblebee.Layers.scale(name: join(name, "self_attention_scale"))
+      |> Axon.add(shortcut)
+
+    {_hidden_state, cross_attention_info} =
+      steps.cross_attention_maybe.(hidden_state, fn _hidden_state ->
+        raise "cross attention not supported"
+      end)
+
+    shortcut = hidden_state
+
+    hidden_state =
+      hidden_state
+      |> steps.output_norm.()
+      |> steps.ffn.()
+      |> Bumblebee.Layers.scale(name: join(name, "output_scale"))
+      |> Axon.add(shortcut)
+
+    {hidden_state, attention_info, cross_attention_info}
   end
 
   defp kernel_initializer(spec) do
@@ -481,432 +511,28 @@ defmodule Bumblebee.Vision.DinoV2 do
           "dinov2.encoder.layer.{n}.attention.attention.value",
         "encoder.blocks.{n}.self_attention.output" =>
           "dinov2.encoder.layer.{n}.attention.output.dense",
-        "encoder.blocks.{n}.ffn.mlp.fc1" => "dinov2.encoder.layer.{n}.mlp.fc1",
-        "encoder.blocks.{n}.ffn.mlp.fc2" => "dinov2.encoder.layer.{n}.mlp.fc2",
-        "encoder.blocks.{n}.ffn.swiglu.weights_in" => "dinov2.encoder.layer.{n}.mlp.weights_in",
-        "encoder.blocks.{n}.ffn.swiglu.weights_out" => "dinov2.encoder.layer.{n}.mlp.weights_out",
-        "encoder.blocks.{n}.layer_scale1" => %{
+        "encoder.blocks.{n}.self_attention_scale" => %{
           "scale" => {
             [{"dinov2.encoder.layer.{n}.layer_scale1", "lambda1"}],
             fn [lambda1] -> lambda1 end
           }
         },
-        "encoder.blocks.{n}.layer_scale2" => %{
+        "encoder.blocks.{n}.ffn.mlp.fc1" => "dinov2.encoder.layer.{n}.mlp.fc1",
+        "encoder.blocks.{n}.ffn.mlp.fc2" => "dinov2.encoder.layer.{n}.mlp.fc2",
+        "encoder.blocks.{n}.ffn.swiglu.weights_in" => "dinov2.encoder.layer.{n}.mlp.weights_in",
+        "encoder.blocks.{n}.ffn.swiglu.weights_out" => "dinov2.encoder.layer.{n}.mlp.weights_out",
+        "encoder.blocks.{n}.ffn.intermediate" => "dinov2.encoder.layer.{n}.intermediate.dense",
+        "encoder.blocks.{n}.ffn.output" => "dinov2.encoder.layer.{n}.output.dense",
+        "encoder.blocks.{n}.output_norm" => "dinov2.encoder.layer.{n}.norm2",
+        "encoder.blocks.{n}.output_scale" => %{
           "scale" => {
             [{"dinov2.encoder.layer.{n}.layer_scale2", "lambda1"}],
             fn [lambda1] -> lambda1 end
           }
         },
-        "encoder.blocks.{n}.ffn.intermediate" => "dinov2.encoder.layer.{n}.intermediate.dense",
-        "encoder.blocks.{n}.ffn.output" => "dinov2.encoder.layer.{n}.output.dense",
-        "encoder.blocks.{n}.output_norm" => "dinov2.encoder.layer.{n}.norm2",
         "norm" => "dinov2.layernorm",
         "image_classification_head.output" => "classifier"
       }
-    end
-  end
-
-  defp blocks(hidden_state, opts) do
-    validate_required_keys!(opts, [:num_blocks, :num_attention_heads, :hidden_size, :ffn])
-
-    block_opts_keys = [
-      :num_attention_heads,
-      :num_key_value_heads,
-      :causal,
-      :hidden_size,
-      :ffn,
-      :kernel_initializer,
-      :attention_head_size,
-      :dropout_rate,
-      :attention_dropout_rate,
-      :query_use_bias,
-      :key_use_bias,
-      :value_use_bias,
-      :output_use_bias,
-      :layer_norm,
-      :block_type,
-      :scale_attention_weights,
-      :rotary_embedding
-    ]
-
-    opts =
-      Keyword.validate!(
-        opts,
-        block_opts_keys ++
-          [
-            :name,
-            :num_blocks,
-            attention_mask: Layers.none(),
-            attention_head_mask: Layers.none(),
-            attention_relative_bias: nil,
-            share_attention_relative_bias: false,
-            cross_hidden_state: nil,
-            cross_attention_mask: Layers.none(),
-            cross_attention_head_mask: Layers.none(),
-            cache: Layers.none(),
-            output_hidden_states: false,
-            output_attentions: false
-          ]
-      )
-
-    name = opts[:name]
-    num_blocks = opts[:num_blocks]
-    output_hidden_states = opts[:output_hidden_states]
-    output_attentions = opts[:output_attentions]
-
-    attention_mask = opts[:attention_mask]
-    attention_head_mask = opts[:attention_head_mask]
-    cross_hidden_state = opts[:cross_hidden_state]
-    cross_attention_mask = opts[:cross_attention_mask]
-    cross_attention_head_mask = opts[:cross_attention_head_mask]
-    cache = opts[:cache]
-
-    block_opts = Keyword.take(opts, block_opts_keys)
-
-    {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
-    offset = Layers.Decoder.get_cache_offset(cache)
-
-    state = %{
-      hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, output_hidden_states),
-      attentions: Layers.maybe_container({}, output_attentions),
-      cross_attentions: Layers.maybe_container({}, output_attentions),
-      cache: cache,
-      attention_relative_bias: Layers.none()
-    }
-
-    outputs =
-      for idx <- 0..(num_blocks - 1), reduce: state do
-        state ->
-          block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
-          block_cross_attention_head_mask = Axon.nx(cross_attention_head_mask, & &1[idx])
-          block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
-
-          attention_relative_bias =
-            if opts[:share_attention_relative_bias] and idx > 0 do
-              state.attention_relative_bias
-            else
-              opts[:attention_relative_bias] || Layers.none()
-            end
-
-          {hidden_state, attention, cross_attention, block_cache, attention_relative_bias} =
-            block(
-              state.hidden_state,
-              [
-                attention_mask: attention_mask,
-                attention_head_mask: block_attention_head_mask,
-                attention_relative_bias: attention_relative_bias,
-                cross_hidden_state: cross_hidden_state,
-                cross_attention_mask: cross_attention_mask,
-                cross_attention_head_mask: block_cross_attention_head_mask,
-                block_cache: block_cache,
-                offset: offset,
-                name: join(name, idx)
-              ] ++ block_opts
-            )
-
-          cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
-
-          %{
-            hidden_state: hidden_state,
-            hidden_states: Layers.append(state.hidden_states, hidden_state),
-            attentions: Layers.append(state.attentions, attention),
-            cross_attentions: Layers.append(state.cross_attentions, cross_attention),
-            attention_relative_bias: attention_relative_bias,
-            cache: cache
-          }
-      end
-
-    update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, hidden_state))
-  end
-
-  defp block(hidden_state, opts) do
-    validate_required_keys!(opts, [:num_attention_heads, :hidden_size, :ffn])
-
-    opts =
-      Keyword.validate!(opts, [
-        :name,
-        :num_attention_heads,
-        :hidden_size,
-        :ffn,
-        :num_key_value_heads,
-        attention_mask: Layers.none(),
-        attention_head_mask: Layers.none(),
-        attention_relative_bias: Layers.none(),
-        cross_hidden_state: nil,
-        cross_attention_mask: Layers.none(),
-        cross_attention_head_mask: Layers.none(),
-        block_cache: Layers.none(),
-        offset: Layers.none(),
-        causal: false,
-        kernel_initializer: :glorot_uniform,
-        attention_head_size: nil,
-        dropout_rate: 0.0,
-        attention_dropout_rate: 0.0,
-        query_use_bias: true,
-        key_use_bias: true,
-        value_use_bias: true,
-        output_use_bias: true,
-        block_type: :standard,
-        layer_norm: [],
-        scale_attention_weights: true,
-        rotary_embedding: nil
-      ])
-
-    name = opts[:name]
-    num_attention_heads = opts[:num_attention_heads]
-    num_key_value_heads = opts[:num_key_value_heads] || num_attention_heads
-    hidden_size = opts[:hidden_size]
-    ffn = opts[:ffn]
-    causal = opts[:causal]
-    kernel_initializer = opts[:kernel_initializer]
-    attention_head_size = opts[:attention_head_size]
-    dropout_rate = opts[:dropout_rate]
-    attention_dropout_rate = opts[:attention_dropout_rate]
-    query_use_bias = opts[:query_use_bias]
-    key_use_bias = opts[:key_use_bias]
-    value_use_bias = opts[:value_use_bias]
-    output_use_bias = opts[:output_use_bias]
-    attention_mask = opts[:attention_mask]
-    attention_head_mask = opts[:attention_head_mask]
-    attention_relative_bias = opts[:attention_relative_bias]
-    cross_hidden_state = opts[:cross_hidden_state]
-    cross_attention_mask = opts[:cross_attention_mask]
-    cross_attention_head_mask = opts[:cross_attention_head_mask]
-    block_cache = opts[:block_cache]
-    offset = opts[:offset]
-    layer_norm = opts[:layer_norm]
-    block_type = opts[:block_type]
-    scale_attention_weights = opts[:scale_attention_weights]
-    rotary_embedding = opts[:rotary_embedding]
-
-    ffn_fun =
-      case ffn do
-        opts when is_list(opts) ->
-          validate_required_keys!(opts, [:intermediate_size])
-          opts = Keyword.validate!(opts, [:intermediate_size, activation: :gelu])
-
-          &basic_ffn(&1, opts[:intermediate_size], hidden_size,
-            activation: opts[:activation],
-            kernel_initializer: kernel_initializer,
-            dropout_rate: dropout_rate,
-            name: &2
-          )
-
-        fun when is_function(fun) ->
-          fun
-      end
-
-    layer_norm_fun =
-      case layer_norm do
-        opts when is_list(opts) ->
-          opts = Keyword.validate!(opts, epsilon: 1.0e-5)
-
-          &Axon.layer_norm(&1, epsilon: opts[:epsilon], name: &2)
-
-        fun when is_function(fun) ->
-          fun
-      end
-
-    {self_attention_cache, cross_attention_cache} =
-      Layers.Decoder.get_attention_caches(block_cache)
-
-    # Self-attention, shortcut connection, normalization and dropout
-
-    self_attention_norm = &layer_norm_fun.(&1, join(name, "self_attention_norm"))
-
-    self_attention = fn hidden_state ->
-      {hidden_state, attention, self_attention_cache, attention_relative_bias} =
-        Bumblebee.Layers.Transformer.multi_head_attention(
-          hidden_state,
-          hidden_state,
-          hidden_state,
-          attention_mask: attention_mask,
-          attention_head_mask: attention_head_mask,
-          attention_relative_bias: attention_relative_bias,
-          attention_cache: self_attention_cache,
-          offset: offset,
-          causal: causal,
-          num_heads: num_attention_heads,
-          num_key_value_heads: num_key_value_heads,
-          hidden_size: hidden_size,
-          kernel_initializer: kernel_initializer,
-          attention_head_size: attention_head_size,
-          dropout_rate: attention_dropout_rate,
-          query_use_bias: query_use_bias,
-          key_use_bias: key_use_bias,
-          value_use_bias: value_use_bias,
-          output_use_bias: output_use_bias,
-          scale_attention_weights: scale_attention_weights,
-          rotary_embedding: rotary_embedding,
-          name: join(name, "self_attention")
-        )
-
-      hidden_state =
-        Axon.dropout(hidden_state, rate: dropout_rate, name: join(name, "self_attention_dropout"))
-
-      {hidden_state, {attention, self_attention_cache, attention_relative_bias}}
-    end
-
-    # Cross-attention, shortcut connection, normalization and dropout
-
-    cross_attention_maybe = fn hidden_state, fun ->
-      if cross_hidden_state do
-        Layers.if_present cross_hidden_state do
-          fun.(hidden_state)
-        else
-          {hidden_state, {Layers.none(), cross_attention_cache}}
-        end
-      else
-        {hidden_state, {Layers.none(), cross_attention_cache}}
-      end
-    end
-
-    cross_attention_norm = &layer_norm_fun.(&1, join(name, "cross_attention_norm"))
-
-    cross_attention = fn hidden_state ->
-      {hidden_state, cross_attention, cross_attention_cache, _cross_attention_relative_bias} =
-        Bumblebee.Layers.Transformer.multi_head_attention(
-          hidden_state,
-          cross_hidden_state,
-          cross_hidden_state,
-          attention_mask: cross_attention_mask,
-          attention_head_mask: cross_attention_head_mask,
-          attention_cache: cross_attention_cache,
-          offset: offset,
-          num_heads: num_attention_heads,
-          num_key_value_heads: num_key_value_heads,
-          hidden_size: hidden_size,
-          kernel_initializer: kernel_initializer,
-          attention_head_size: attention_head_size,
-          dropout_rate: attention_dropout_rate,
-          query_use_bias: query_use_bias,
-          key_use_bias: key_use_bias,
-          value_use_bias: value_use_bias,
-          output_use_bias: output_use_bias,
-          scale_attention_weights: scale_attention_weights,
-          rotary_embedding: rotary_embedding,
-          name: join(name, "cross_attention")
-        )
-
-      hidden_state =
-        Axon.dropout(
-          hidden_state,
-          rate: dropout_rate,
-          name: join(name, "cross_attention_dropout")
-        )
-
-      {hidden_state, {cross_attention, cross_attention_cache}}
-    end
-
-    # Output feed-forward network, shortcut connection, normalization and dropout
-
-    output_norm = &layer_norm_fun.(&1, join(name, "output_norm"))
-
-    ffn =
-      &ffn_fun.(&1, join(name, "ffn"))
-
-    scale1 = &Bumblebee.Layers.scale(&1, name: join(name, "layer_scale1"))
-    scale2 = &Bumblebee.Layers.scale(&1, name: join(name, "layer_scale2"))
-
-    {hidden_state, attention_info, cross_attention_info} =
-      block_impl(
-        block_type,
-        hidden_state,
-        self_attention_norm,
-        self_attention,
-        scale1,
-        scale2,
-        cross_attention_maybe,
-        cross_attention_norm,
-        cross_attention,
-        output_norm,
-        ffn
-      )
-
-    {attention, self_attention_cache, attention_relative_bias} = attention_info
-    {cross_attention, cross_attention_cache} = cross_attention_info
-
-    block_cache =
-      Layers.Decoder.put_attention_caches(
-        block_cache,
-        self_attention_cache,
-        cross_attention_cache
-      )
-
-    {hidden_state, attention, cross_attention, block_cache, attention_relative_bias}
-  end
-
-  defp block_impl(
-         :norm_first_with_scale,
-         hidden_state,
-         self_attention_norm,
-         self_attention,
-         scale1,
-         scale2,
-         cross_attention_maybe,
-         cross_attention_norm,
-         cross_attention,
-         output_norm,
-         ffn
-       ) do
-    shortcut = hidden_state
-
-    {hidden_state, attention_info} =
-      hidden_state
-      |> self_attention_norm.()
-      |> self_attention.()
-
-    hidden_state =
-      scale1.(hidden_state)
-      |> Axon.add(shortcut)
-
-    {hidden_state, cross_attention_info} =
-      cross_attention_maybe.(hidden_state, fn hidden_state ->
-        shortcut = hidden_state
-
-        {hidden_state, cross_attention_info} =
-          hidden_state
-          |> cross_attention_norm.()
-          |> cross_attention.()
-
-        hidden_state = Axon.add(hidden_state, shortcut)
-
-        {hidden_state, cross_attention_info}
-      end)
-
-    shortcut = hidden_state
-
-    hidden_state =
-      hidden_state
-      |> output_norm.()
-      |> ffn.()
-      |> scale2.()
-      |> Axon.add(shortcut)
-
-    {hidden_state, attention_info, cross_attention_info}
-  end
-
-  defp basic_ffn(x, intermediate_size, output_size, opts) do
-    name = opts[:name]
-
-    x
-    |> Axon.dense(intermediate_size,
-      kernel_initializer: opts[:kernel_initializer],
-      name: join(name, "intermediate")
-    )
-    |> Layers.activation(opts[:activation])
-    |> Axon.dense(output_size,
-      kernel_initializer: opts[:kernel_initializer],
-      name: join(name, "output")
-    )
-    |> Axon.dropout(rate: opts[:dropout_rate])
-  end
-
-  defp validate_required_keys!(opts, keys) do
-    case keys -- Keyword.keys(opts) do
-      [] -> :ok
-      missing -> raise ArgumentError, "missing required options: #{inspect(missing)}"
     end
   end
 end
