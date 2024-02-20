@@ -378,7 +378,6 @@ defmodule Bumblebee.Vision.DinoV2 do
         &ffn_swiglu(&1, intermediate_size, spec.hidden_size, name: &2)
       else
         [
-          # TODO import as intermediate size?
           intermediate_size: spec.hidden_size * spec.mlp_ratio,
           activation: spec.activation
         ]
