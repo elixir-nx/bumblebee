@@ -143,14 +143,9 @@ defmodule Bumblebee.Vision.DinoV2Test do
   end
 
   test ":backbone with different feature map subset" do
-    assert {:ok, spec} =
-             Bumblebee.load_spec({:hf, "hf-internal-testing/tiny-random-Dinov2Backbone"})
-
-    spec = Bumblebee.configure(spec, backbone_output_indices: [0, 2])
-
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-Dinov2Backbone"},
-               spec: spec
+               spec_overrides: [backbone_output_indices: [0, 2]]
              )
 
     assert %Bumblebee.Vision.DinoV2{architecture: :backbone} = spec
