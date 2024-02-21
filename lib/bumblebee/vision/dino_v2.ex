@@ -324,9 +324,11 @@ defmodule Bumblebee.Vision.DinoV2 do
         interpolated_position_embeddings =
           input_position_embeddings
           |> Nx.reshape({batch_size, original_positions, original_positions, spec.hidden_size})
-          # TODO use Axon.Layer.resize once :antialias is supported
-          # |> Axon.Layers.resize(size: {resized_height, resized_width}, method: :bicubic)
-          |> NxImage.resize({resized_height, resized_width}, method: :bicubic, antialias: false)
+          |> Axon.Layers.resize(
+            size: {resized_height, resized_width},
+            method: :bicubic,
+            antialias: false
+          )
           |> Nx.reshape({batch_size, :auto, spec.hidden_size})
 
         Nx.concatenate([class_position_embedding, interpolated_position_embeddings], axis: 1)
