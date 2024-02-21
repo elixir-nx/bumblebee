@@ -121,48 +121,59 @@ defmodule Bumblebee.Vision.DinoV2Test do
   end
 
   test ":backbone" do
-    {:ok, spec} = Bumblebee.load_spec({:hf, "facebook/dinov2-base"}, architecture: :backbone)
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-Dinov2Backbone"})
 
-    spec =
-      Bumblebee.configure(spec,
-        stage_names: [
-          "stem",
-          "stage1",
-          "stage2",
-          "stage3",
-          "stage4",
-          "stage5",
-          "stage6",
-          "stage7",
-          "stage8",
-          "stage9",
-          "stage10",
-          "stage11",
-          "stage12"
-        ],
-        output_features: ["stage12"]
-      )
+    assert %Bumblebee.Vision.DinoV2{architecture: :backbone} = spec
+
+    inputs = %{
+      "pixel_values" => Nx.broadcast(0.5, {1, 30, 30, 3})
+    }
+
+    outputs = Axon.predict(model, params, inputs)
+
+    assert {feature_map} = outputs.feature_maps
+
+    assert Nx.shape(feature_map) == {1, 15, 15, 32}
+
+    assert_all_close(
+      feature_map[[.., 1..2, 1..2, 1..2]],
+      Nx.tensor([[[[1.3373, 0.6393], [0.5469, 1.4045]], [[1.1879, 0.7435], [1.1777, 0.6638]]]])
+    )
+  end
+
+  test ":backbone with different feature map subset" do
+    assert {:ok, spec} =
+             Bumblebee.load_spec({:hf, "hf-internal-testing/tiny-random-Dinov2Backbone"})
+
+    spec = Bumblebee.configure(spec, backbone_output_indices: [0, 2])
 
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "facebook/dinov2-base"},
-               architecture: :backbone,
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-Dinov2Backbone"},
                spec: spec
              )
 
     assert %Bumblebee.Vision.DinoV2{architecture: :backbone} = spec
 
     inputs = %{
-      "pixel_values" => Nx.broadcast(0.5, {1, 224, 224, 3})
+      "pixel_values" => Nx.broadcast(0.5, {1, 30, 30, 3})
     }
 
-    outputs = Axon.predict(model, params, inputs, debug: true)
+    outputs = Axon.predict(model, params, inputs)
 
-    last_feature_map = Map.get(outputs.feature_maps, "stage12")
-    assert Nx.shape(last_feature_map) == {1, 16, 16, 768}
+    assert {feature_map0, feature_map2} = outputs.feature_maps
+
+    assert Nx.shape(feature_map0) == {1, 15, 15, 32}
+    assert Nx.shape(feature_map2) == {1, 15, 15, 32}
 
     assert_all_close(
-      last_feature_map[[0, 1, 1, 1..3]],
-      Nx.tensor([-3.0963878631591797, -1.9401777982711792, -1.4899224042892456])
+      feature_map0[[.., 1..2, 1..2, 1..2]],
+      Nx.tensor([[[[0.8425, 0.5487], [0.2003, 1.2553]], [[0.6486, 0.4550], [1.3376, 0.7091]]]])
+    )
+
+    assert_all_close(
+      feature_map2[[.., 1..2, 1..2, 1..2]],
+      Nx.tensor([[[[1.3373, 0.6393], [0.5469, 1.4045]], [[1.1879, 0.7435], [1.1777, 0.6638]]]])
     )
   end
 end

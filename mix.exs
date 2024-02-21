@@ -99,12 +99,14 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Vision.ClipVision,
           Bumblebee.Vision.ConvNext,
           Bumblebee.Vision.Deit,
+          Bumblebee.Vision.DinoV2,
           Bumblebee.Vision.ResNet,
           Bumblebee.Vision.Vit
         ],
         Preprocessors: [
           Bumblebee.Audio.WhisperFeaturizer,
           Bumblebee.Text.PreTrainedTokenizer,
+          Bumblebee.Vision.BitFeaturizer,
           Bumblebee.Vision.BlipFeaturizer,
           Bumblebee.Vision.ClipFeaturizer,
           Bumblebee.Vision.ConvNextFeaturizer,

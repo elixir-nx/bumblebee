@@ -71,37 +71,17 @@ defmodule Bumblebee.Vision.DinoV2 do
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ],
-      stage_names: [
-        default: [],
-        doc: "the names of the stages of the model when used as backbone"
+      backbone_output_indices: [
+        default: nil,
+        doc: """
+        list of indices indicating which feature maps to include in the output. If not specified, only
+        the last feature map is included
+        """
       ],
-      output_features: [
-        default: [],
-        doc:
-          "If used as backbone, list of features to output. Can be any of `stem`, `stage1`, `stage2`,
-           etc. (depending on how many stages the model has). If unset and `out_indices` is set,
-           will default to the corresponding stages. If unset and `out_indices` is unset, will default to the last stage.
-           Must be in the same order as defined in the `stage_names` attribute."
-      ],
-      #       out_indices: [
-      #         default: nil,
-      #         doc:
-      #           "            If used as backbone, list of indices of features to output. Can be any of 0, 1, 2, etc. (depending on how
-      #             many stages the model has). If unset and `out_features` is set, will default to the corresponding stages.
-      #             If unset and `out_features` is unset, will default to the last stage. Must be in the
-      #             same order as defined in the `stage_names` attribute."
-      #       ],
-      apply_layernorm: [
+      backbone_use_norm: [
         default: true,
         doc:
-          "whether to apply layer normalization to the feature maps in case the model is used as backbone"
-      ],
-      reshape_hidden_states: [
-        default: true,
-        doc:
-          "Whether to reshape the feature maps to 4D tensors of shape `(batch_size, hidden_size, height, width)` in
-           case the model is used as backbone. If `False`, the feature maps will be 3D tensors of shape `(batch_size,
-           seq_len, hidden_size)`."
+          "whether to add layer normalization layer to each of the feature maps returned by the backbone"
       ]
     ] ++
       Shared.common_options([
@@ -217,13 +197,16 @@ defmodule Bumblebee.Vision.DinoV2 do
   end
 
   def model(%__MODULE__{architecture: :backbone} = spec) do
-    spec = Shared.put_config_attrs(spec, output_hidden_states: true)
+    inputs = inputs(spec)
+    outputs = core(inputs, %{spec | output_hidden_states: true})
+    feature_maps = feature_maps(outputs.hidden_states, inputs["pixel_values"], spec)
 
-    spec
-    |> inputs()
-    |> core(spec)
-    |> backbone_output(spec)
-    |> Layers.output()
+    Layers.output(%{
+      feature_maps: feature_maps,
+      hidden_states:
+        if(spec.output_hidden_states, do: outputs.hidden_states, else: Layers.none()),
+      attentions: outputs.attentions
+    })
   end
 
   defp inputs(spec) do
@@ -250,55 +233,41 @@ defmodule Bumblebee.Vision.DinoV2 do
     }
   end
 
-  defp feature_map(hidden_states, index, spec, opts) do
+  defp feature_maps(hidden_states, pixel_values, spec, opts \\ []) do
     name = opts[:name]
 
-    {_, input_size, _, _} = Axon.get_inputs(hidden_states)["pixel_values"]
-    num_patches = div(input_size, spec.patch_size)
+    num_feature_maps = spec.num_blocks + 1
+    output_indices = spec.backbone_output_indices || [num_feature_maps - 1]
 
-    hidden_state =
-      Axon.nx(hidden_states, fn states -> elem(states, index) end)
+    for index <- output_indices do
+      hidden_state = Axon.nx(hidden_states, &elem(&1, index))
 
-    hidden_state =
-      if spec.apply_layernorm do
-        Axon.layer_norm(hidden_state, epsilon: spec.layer_norm_epsilon, name: join(name, "norm"))
-      else
-        hidden_state
-      end
-
-    if spec.reshape_hidden_states do
-      Axon.nx(hidden_state, fn tensor -> tensor[[.., 1..-1//1, ..]] end)
-      |> Axon.reshape({:batch, num_patches, num_patches, :auto})
-    else
-      hidden_state
-    end
-  end
-
-  defp backbone_output(encoder_outputs, spec, opts \\ []) do
-    name = opts[:name]
-
-    hidden_states = encoder_outputs.hidden_states
-
-    stage_names = spec.stage_names
-    output_features = spec.output_features
-
-    feature_maps =
-      for {stage_name, index} <- Enum.with_index(stage_names),
-          stage_name in output_features,
-          reduce: %{} do
-        acc ->
-          Map.put(
-            acc,
-            stage_name,
-            feature_map(hidden_states, index, spec, name: join(name, "feature_map"))
+      hidden_state =
+        if spec.backbone_use_norm do
+          Axon.layer_norm(hidden_state,
+            epsilon: spec.layer_norm_epsilon,
+            name: join(name, "norm")
           )
-      end
+        else
+          hidden_state
+        end
 
-    %{
-      feature_maps: feature_maps,
-      hidden_states: encoder_outputs.hidden_states,
-      attentions: encoder_outputs.attentions
-    }
+      Axon.layer(
+        fn hidden_state, pixel_values, _opts ->
+          {batch_size, height, width, _channels} = Nx.shape(pixel_values)
+
+          hidden_state = hidden_state[[.., 1..-1//1, ..]]
+
+          Nx.reshape(
+            hidden_state,
+            {batch_size, div(height, spec.patch_size), div(width, spec.patch_size), :auto}
+          )
+        end,
+        [hidden_state, pixel_values]
+      )
+    end
+    |> List.to_tuple()
+    |> Axon.container()
   end
 
   defp embedder(pixel_values, patch_mask, spec, opts) do
@@ -423,6 +392,7 @@ defmodule Bumblebee.Vision.DinoV2 do
     |> Axon.dense(output_size, name: join(name, "output"))
   end
 
+  # :norm_first block with additional scaling layers
   defp block_impl(hidden_state, steps, name, spec) do
     shortcut = hidden_state
 
@@ -484,9 +454,8 @@ defmodule Bumblebee.Vision.DinoV2 do
           initializer_scale: {"initializer_range", number()},
           scale_initial_value: {"layerscale_value", number()},
           ffn_swiglu_activation: {"use_swiglu_ffn", boolean()},
-          stage_names: {"stage_names", list(string())},
-          output_features: {"_out_features", list(string())},
-          apply_layernorm: {"apply_layernorm", boolean()}
+          backbone_output_indices: {"out_indices", list(number())},
+          backbone_use_norm: {"use_backbone_norm", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
