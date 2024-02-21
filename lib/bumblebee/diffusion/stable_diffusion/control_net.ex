@@ -167,7 +167,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
   defp inputs(spec) do
     sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
 
-    cond_size = spec.sample_size * 2 ** 2
+    cond_size = spec.sample_size * 2 ** 3
     controlnet_conditioning_shape = {nil, cond_size, cond_size, 3}
 
     Bumblebee.Utils.Model.inputs_to_map([
