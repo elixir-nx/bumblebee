@@ -3,32 +3,6 @@ defmodule Bumblebee.Audio do
   High-level tasks related to audio processing.
   """
 
-  # TODO: remove in v0.5
-  @deprecated "Use Bumblebee.Audio.speech_to_text_whisper/5 instead."
-  def speech_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []) do
-    serving = speech_to_text_whisper(model_info, featurizer, tokenizer, generation_config, opts)
-    client_postprocessing = serving.client_postprocessing
-
-    Nx.Serving.client_postprocessing(serving, fn output_pair, info ->
-      output = client_postprocessing.(output_pair, info)
-
-      if is_list(output) do
-        Enum.map(output, &speech_to_text_convert_output/1)
-      else
-        speech_to_text_convert_output(output)
-      end
-    end)
-  end
-
-  defp speech_to_text_convert_output(%{chunks: chunks}) do
-    text =
-      chunks
-      |> Enum.map_join(& &1.text)
-      |> String.trim()
-
-    %{results: [%{text: text}]}
-  end
-
   @typedoc """
   A term representing audio.
 

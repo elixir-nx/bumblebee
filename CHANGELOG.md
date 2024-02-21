@@ -41,6 +41,7 @@ This release changes the directory structure of the models cache, such that cach
 * Removed the serving `:seed` option in favour of a runtime, per-input seed ([#303](https://github.com/elixir-nx/bumblebee/pull/303))
 * Conversational serving ([#308](https://github.com/elixir-nx/bumblebee/pull/308))
 * Specific tokenizer modules in favour of a single module ([#310](https://github.com/elixir-nx/bumblebee/pull/310))
+* Removed the deprecated `Bumblebee.Audio.speech_to_text/5` (in favour of the more specific `speech_to_text_whisper/5`)
 
 ### Fixed
 
