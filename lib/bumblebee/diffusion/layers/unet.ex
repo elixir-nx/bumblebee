@@ -323,7 +323,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
         epsilon: 1.0e-5
       ],
       dropout_rate: dropout,
-      ffn: &ffn_geglu(&1, hidden_size, dropout: dropout, name: &2),
+      ffn: &ffn_geglu(&1, 4 * hidden_size, hidden_size, dropout: dropout, name: &2),
       block_type: :norm_first,
       name: join(name, "blocks")
     )
@@ -347,11 +347,9 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
   end
 
   # A feed-forward network with GEGLU nonlinearity as in https://arxiv.org/abs/2002.05202
-  defp ffn_geglu(x, size, opts) do
+  defp ffn_geglu(x, intermediate_size, output_size, opts) do
     name = opts[:name]
     dropout = opts[:dropout] || 0.0
-
-    intermediate_size = 4 * size
 
     {x, gate} =
       x
@@ -362,6 +360,6 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
 
     x
     |> Axon.dropout(rate: dropout, name: join(name, "dropout"))
-    |> Axon.dense(size, name: join(name, "output"))
+    |> Axon.dense(output_size, name: join(name, "output"))
   end
 end

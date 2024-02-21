@@ -265,6 +265,10 @@ defmodule Bumblebee.Layers.Transformer do
         * `:parallel` - block with attention and FFN independently (in parallel).
           This type doesn't support cross-attention
 
+      Alternatively a custom 3-arity function may be given. The function
+      receives the input hidden state, a map with block steps and a
+      name to prefix any additional layers.
+
     * `:scale_attention_weights` - whether to scale query in the traditional style of
       multi-headed attention. Defaults to `true`
 
@@ -469,17 +473,25 @@ defmodule Bumblebee.Layers.Transformer do
 
     ffn = &ffn_fun.(&1, join(name, "ffn"))
 
+    block_impl =
+      case block_type do
+        type when is_atom(type) -> &block_impl(type, &1, &2, &3)
+        fun when is_function(fun) -> fun
+      end
+
     {hidden_state, attention_info, cross_attention_info} =
-      block_impl(
-        block_type,
+      block_impl.(
         hidden_state,
-        self_attention_norm,
-        self_attention,
-        cross_attention_maybe,
-        cross_attention_norm,
-        cross_attention,
-        output_norm,
-        ffn
+        %{
+          self_attention_norm: self_attention_norm,
+          self_attention: self_attention,
+          cross_attention_maybe: cross_attention_maybe,
+          cross_attention_norm: cross_attention_norm,
+          cross_attention: cross_attention,
+          output_norm: output_norm,
+          ffn: ffn
+        },
+        name
       )
 
     {attention, self_attention_cache, attention_relative_bias} = attention_info
@@ -495,36 +507,26 @@ defmodule Bumblebee.Layers.Transformer do
     {hidden_state, attention, cross_attention, block_cache, attention_relative_bias}
   end
 
-  defp block_impl(
-         :standard,
-         hidden_state,
-         self_attention_norm,
-         self_attention,
-         cross_attention_maybe,
-         cross_attention_norm,
-         cross_attention,
-         output_norm,
-         ffn
-       ) do
+  defp block_impl(:standard, hidden_state, steps, _name) do
     shortcut = hidden_state
 
-    {hidden_state, attention_info} = self_attention.(hidden_state)
+    {hidden_state, attention_info} = steps.self_attention.(hidden_state)
 
     hidden_state =
       hidden_state
       |> Axon.add(shortcut)
-      |> self_attention_norm.()
+      |> steps.self_attention_norm.()
 
     {hidden_state, cross_attention_info} =
-      cross_attention_maybe.(hidden_state, fn hidden_state ->
+      steps.cross_attention_maybe.(hidden_state, fn hidden_state ->
         shortcut = hidden_state
 
-        {hidden_state, cross_attention_info} = cross_attention.(hidden_state)
+        {hidden_state, cross_attention_info} = steps.cross_attention.(hidden_state)
 
         hidden_state =
           hidden_state
           |> Axon.add(shortcut)
-          |> cross_attention_norm.()
+          |> steps.cross_attention_norm.()
 
         {hidden_state, cross_attention_info}
       end)
@@ -533,41 +535,31 @@ defmodule Bumblebee.Layers.Transformer do
 
     hidden_state =
       hidden_state
-      |> ffn.()
+      |> steps.ffn.()
       |> Axon.add(shortcut)
-      |> output_norm.()
+      |> steps.output_norm.()
 
     {hidden_state, attention_info, cross_attention_info}
   end
 
-  defp block_impl(
-         :norm_first,
-         hidden_state,
-         self_attention_norm,
-         self_attention,
-         cross_attention_maybe,
-         cross_attention_norm,
-         cross_attention,
-         output_norm,
-         ffn
-       ) do
+  defp block_impl(:norm_first, hidden_state, steps, _name) do
     shortcut = hidden_state
 
     {hidden_state, attention_info} =
       hidden_state
-      |> self_attention_norm.()
-      |> self_attention.()
+      |> steps.self_attention_norm.()
+      |> steps.self_attention.()
 
     hidden_state = Axon.add(hidden_state, shortcut)
 
     {hidden_state, cross_attention_info} =
-      cross_attention_maybe.(hidden_state, fn hidden_state ->
+      steps.cross_attention_maybe.(hidden_state, fn hidden_state ->
         shortcut = hidden_state
 
         {hidden_state, cross_attention_info} =
           hidden_state
-          |> cross_attention_norm.()
-          |> cross_attention.()
+          |> steps.cross_attention_norm.()
+          |> steps.cross_attention.()
 
         hidden_state = Axon.add(hidden_state, shortcut)
 
@@ -578,40 +570,30 @@ defmodule Bumblebee.Layers.Transformer do
 
     hidden_state =
       hidden_state
-      |> output_norm.()
-      |> ffn.()
+      |> steps.output_norm.()
+      |> steps.ffn.()
       |> Axon.add(shortcut)
 
     {hidden_state, attention_info, cross_attention_info}
   end
 
-  defp block_impl(
-         :parallel,
-         hidden_state,
-         self_attention_norm,
-         self_attention,
-         cross_attention_maybe,
-         _cross_attention_norm,
-         _cross_attention,
-         output_norm,
-         ffn
-       ) do
+  defp block_impl(:parallel, hidden_state, steps, _name) do
     shortcut = hidden_state
 
     {attention_hidden_state, attention_info} =
       hidden_state
-      |> self_attention_norm.()
-      |> self_attention.()
+      |> steps.self_attention_norm.()
+      |> steps.self_attention.()
 
     {_hidden_state, cross_attention_info} =
-      cross_attention_maybe.(hidden_state, fn _hidden_state ->
+      steps.cross_attention_maybe.(hidden_state, fn _hidden_state ->
         raise "cross attention not supported"
       end)
 
     ffn_hidden_state =
       hidden_state
-      |> output_norm.()
-      |> ffn.()
+      |> steps.output_norm.()
+      |> steps.ffn.()
 
     hidden_state = Axon.add([shortcut, attention_hidden_state, ffn_hidden_state])
 

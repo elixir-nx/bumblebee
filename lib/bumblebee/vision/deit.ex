@@ -249,11 +249,11 @@ defmodule Bumblebee.Vision.Deit do
         name: join(name, "norm")
       )
 
-    pooled = pooler(hidden_state, spec, name: join(name, "pooler"))
+    pooled_state = pooler(hidden_state, spec, name: join(name, "pooler"))
 
     %{
       hidden_state: hidden_state,
-      pooled_state: pooled,
+      pooled_state: pooled_state,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions
     }
