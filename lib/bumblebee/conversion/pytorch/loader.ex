@@ -27,39 +27,44 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
 
   defp load_zip!(path) do
     zip_file = Unzip.LocalFile.open(path)
-    {:ok, unzip} = Unzip.new(zip_file)
 
-    contents =
-      unzip
-      |> Unzip.list_entries()
-      |> Map.new(fn %Unzip.Entry{file_name: file_name} ->
-        content =
-          unzip
-          |> Unzip.file_stream!(file_name)
-          |> Enum.to_list()
-          |> IO.iodata_to_binary()
+    try do
+      {:ok, unzip} = Unzip.new(zip_file)
 
-        # Strip the root dir from the file name
-        name =
-          file_name
-          |> Path.split()
-          |> Enum.drop(1)
-          |> Enum.join("/")
+      contents =
+        unzip
+        |> Unzip.list_entries()
+        |> Map.new(fn %Unzip.Entry{file_name: file_name} ->
+          content =
+            unzip
+            |> Unzip.file_stream!(file_name)
+            |> Enum.to_list()
+            |> IO.iodata_to_binary()
 
-        {name, content}
-      end)
+          # Strip the root dir from the file name
+          name =
+            file_name
+            |> Path.split()
+            |> Enum.drop(1)
+            |> Enum.join("/")
 
-    {term, ""} =
-      Unpickler.load!(Map.fetch!(contents, "data.pkl"),
-        object_resolver: &object_resolver/1,
-        persistent_id_resolver: fn
-          {"storage", storage_type, key, _location, _size} ->
-            binary = Map.fetch!(contents, "data/#{key}")
-            {:storage, storage_type, binary}
-        end
-      )
+          {name, content}
+        end)
 
-    term
+      {term, ""} =
+        Unpickler.load!(Map.fetch!(contents, "data.pkl"),
+          object_resolver: &object_resolver/1,
+          persistent_id_resolver: fn
+            {"storage", storage_type, key, _location, _size} ->
+              binary = Map.fetch!(contents, "data/#{key}")
+              {:storage, storage_type, binary}
+          end
+        )
+
+      term
+    after
+      Unzip.LocalFile.close(zip_file)
+    end
   end
 
   defp object_resolver(%{constructor: "collections.OrderedDict", set_items: items}) do
