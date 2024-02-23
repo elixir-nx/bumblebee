@@ -68,9 +68,10 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
     out_shapes = Enum.drop(out_shapes, -1)
 
     down_residuals =
-      for {shape, i} <- Enum.with_index(out_shapes), into: %{} do
-        {"controlnet_down_residual_#{i}", Nx.broadcast(0.5, shape)}
+      for {shape, i} <- Enum.with_index(out_shapes) do
+        Nx.broadcast(0.5, shape)
       end
+      |> List.to_tuple()
 
     mid_dim = List.last(spec.hidden_sizes)
 
@@ -81,31 +82,31 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
         "sample" => Nx.broadcast(0.5, {1, spec.sample_size, spec.sample_size, 4}),
         "timestep" => Nx.tensor(1),
         "encoder_hidden_state" => Nx.broadcast(0.5, {1, 1, spec.cross_attention_size}),
-        "controlnet_mid_residual" => Nx.broadcast(0.5, mid_residual_shape)
+        "controlnet_mid_residual" => Nx.broadcast(0.5, mid_residual_shape),
+        "controlnet_down_residuals" => down_residuals
       }
-      |> Map.merge(down_residuals)
 
     outputs = Axon.predict(model, params, inputs)
 
     assert Nx.shape(outputs.sample) == {1, spec.sample_size, spec.sample_size, spec.in_channels}
 
     assert_all_close(
-      to_channels_first(outputs.sample)[[.., 1..3, 1..3, 1..3]],
+      outputs.sample[[.., 1..3, 1..3, 1..3]],
       Nx.tensor([
         [
-          [-2.1599538326263428, -0.6707635521888733, 0.16482116281986237],
-          [-1.13632333278656, -1.7593439817428589, -0.9655789136886597],
-          [-1.3559075593948364, -2.5425026416778564, -1.8208105564117432]
+          [-2.1599538326263428, -0.06256292015314102, 1.7675844430923462],
+          [-0.6707635521888733, -0.6823181509971619, 1.0919926166534424],
+          [0.16482116281986237, -1.2743796110153198, -0.03096655011177063]
         ],
         [
-          [-0.06256292015314102, -0.6823181509971619, -1.2743796110153198],
-          [-1.3499518632888794, -1.599103569984436, 0.8080697655677795],
-          [-1.177065134048462, -1.2682275772094727, 0.9214832186698914]
+          [-1.13632333278656, -1.3499518632888794, 0.597271203994751],
+          [-1.7593439817428589, -1.599103569984436, -0.1870473176240921],
+          [-0.9655789136886597, 0.8080697655677795, 1.1974149942398071]
         ],
         [
-          [1.7675844430923462, 1.0919926166534424, -0.03096655011177063],
-          [0.597271203994751, -0.1870473176240921, 1.1974149942398071],
-          [-0.5016229152679443, -0.6805112957954407, 0.5924324989318848]
+          [-1.3559075593948364, -1.177065134048462, -0.5016229152679443],
+          [-2.5425026416778564, -1.2682275772094727, -0.6805112957954407],
+          [-1.8208105564117432, 0.9214832186698914, 0.5924324989318848]
         ]
       ]),
       atol: 1.0e-4

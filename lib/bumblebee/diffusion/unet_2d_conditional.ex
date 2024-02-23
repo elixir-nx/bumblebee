@@ -154,9 +154,10 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       end)
 
     down_residuals =
-      for {shape, i} <- Enum.with_index(out_shapes), into: %{} do
-        {"controlnet_down_residual_#{i}", Nx.template(shape, :f32)}
+      for {shape, i} <- Enum.with_index(out_shapes) do
+        Nx.template(shape, :f32)
       end
+      |> List.to_tuple()
 
     mid_dim = List.last(spec.hidden_sizes)
 
@@ -166,9 +167,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       "sample" => Nx.template(sample_shape, :f32),
       "timestep" => Nx.template(timestep_shape, :u32),
       "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32),
-      "controlnet_mid_residual" => Nx.template(mid_residual_shape, :f32)
+      "controlnet_mid_residual" => Nx.template(mid_residual_shape, :f32),
+      "controlnet_down_residuals" => down_residuals
     }
-    |> Map.merge(down_residuals)
   end
 
   @impl true
@@ -221,25 +222,19 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   defp inputs_with_controlnet(spec) do
     sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
 
-    {mid_spatial, out_shapes} = mid_spatial_and_residual_shapes(spec)
-
-    down_residuals =
-      for {shape, i} <- Enum.with_index(out_shapes) do
-        Axon.input("controlnet_down_residual_#{i}", shape: shape)
-      end
+    {mid_spatial, _} = mid_spatial_and_residual_shapes(spec)
 
     mid_dim = List.last(spec.hidden_sizes)
 
     mid_residual_shape = {nil, mid_spatial, mid_spatial, mid_dim}
 
-    Bumblebee.Utils.Model.inputs_to_map(
-      [
-        Axon.input("sample", shape: sample_shape),
-        Axon.input("timestep", shape: {}),
-        Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size}),
-        Axon.input("controlnet_mid_residual", shape: mid_residual_shape)
-      ] ++ down_residuals
-    )
+    Bumblebee.Utils.Model.inputs_to_map([
+      Axon.input("sample", shape: sample_shape),
+      Axon.input("timestep", shape: {}),
+      Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size}),
+      Axon.input("controlnet_mid_residual", shape: mid_residual_shape),
+      Axon.input("controlnet_down_residuals")
+    ])
   end
 
   defp core(inputs, spec) do
@@ -310,7 +305,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
     controlnet_down_residuals =
       for i <- 0..(num_down_residuals - 1) do
-        inputs["controlnet_down_residual_#{i}"]
+        Axon.nx(inputs["controlnet_down_residuals"], &elem(&1, i))
       end
 
     sample =
