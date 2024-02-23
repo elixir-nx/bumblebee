@@ -25,6 +25,9 @@ We also reduced memory usage during parameter loading (both when loading onto th
 * `:type` option to `Bumblebee.load_model/2` for loading model under a specific precision policy ([#311](https://github.com/elixir-nx/bumblebee/pull/311))
 * LCM scheduler ([#320](https://github.com/elixir-nx/bumblebee/pull/320))
 * Token summary to text generation output ([#336](https://github.com/elixir-nx/bumblebee/pull/336))
+* DINOv2 model ([#334](https://github.com/elixir-nx/bumblebee/pull/334))
+* `:spec_overrides` option to `Bumblebee.load_model/2` ([#340](https://github.com/elixir-nx/bumblebee/pull/340))
+* Support for attention sliding window in Mistral ([#341](https://github.com/elixir-nx/bumblebee/pull/341))
 
 ### Changed
 
@@ -37,6 +40,7 @@ We also reduced memory usage during parameter loading (both when loading onto th
 * **(Breaking)** Changed ResNet `:pooled_state` output to flatten the extra 1-sized axes
 * Cache directory structure to group files by repository ([#332](https://github.com/elixir-nx/bumblebee/pull/332))
 * **(Breaking)** Changed the output of `Bumblebee.Text.Generation.build_generate/4` to a map ([#336](https://github.com/elixir-nx/bumblebee/pull/336))
+* Reduced memory usage during parameter loading ([#344](https://github.com/elixir-nx/bumblebee/pull/344))
 
 ### Removed
 
