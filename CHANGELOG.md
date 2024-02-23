@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.5.1](https://github.com/elixir-nx/bumblebee/tree/v0.5.1) (2024-02-23)
+
+### Fixed
+
+* Fixed loading Mistral configuration with attention window disabled
+
 ## [v0.5.0](https://github.com/elixir-nx/bumblebee/tree/v0.5.0) (2024-02-23)
 
 This release changes the directory structure of the models cache, such that cached files from the same HuggingFace Hub repository are grouped in a separate subdirectory. This change is meant to simplify the process of manually removing specific models from the cache to free up space. As a result, the cache contents from prior versions are invalidated, so you most likely want to remove the current cache contents. To find the cache location run `elixir -e 'Mix.install([{:bumblebee, "0.4.2"}]); IO.puts(Bumblebee.cache_dir())'` (defaults to the standard cache location for the given operating system).
