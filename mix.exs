@@ -30,15 +30,15 @@ defmodule Bumblebee.MixProject do
 
   defp deps do
     [
-      # {:axon, "~> 0.6.0"},
-      {:axon, github: "elixir-nx/axon", override: true},
+      {:axon, "~> 0.6.1"},
+      # {:axon, github: "elixir-nx/axon", override: true},
       {:tokenizers, "~> 0.4"},
-      # {:nx, "~> 0.6.2"},
-      # {:exla, ">= 0.0.0", only: [:dev, :test]},
-      # {:torchx, ">= 0.0.0", only: [:dev, :test]},
-      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-      {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
-      {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
+      {:nx, "~> 0.7.0"},
+      {:exla, ">= 0.0.0", only: [:dev, :test]},
+      {:torchx, ">= 0.0.0", only: [:dev, :test]},
+      # {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
+      # {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
+      # {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
       {:nx_image, "~> 0.1.0"},
       {:unpickler, "~> 0.1.0"},
       {:safetensors, "~> 0.1.3"},
