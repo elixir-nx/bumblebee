@@ -58,6 +58,7 @@ We also reduced memory usage during parameter loading (both when loading onto th
 * Tokenizers truncation to account for trailing special tokens ([#307](https://github.com/elixir-nx/bumblebee/pull/307))
 * Loading models with auth token from within a HuggingFace Space ([#314](https://github.com/elixir-nx/bumblebee/pull/314))
 * Zero-shot classification serving to handle uppercased entailment token in model config ([#327](https://github.com/elixir-nx/bumblebee/pull/327))
+* Fixed text generation when using lower precision and encoder-decoder models (such as Whisper) ([#346](https://github.com/elixir-nx/bumblebee/pull/346))
 
 ## [v0.4.2](https://github.com/elixir-nx/bumblebee/tree/v0.4.2) (2023-09-28)
 
