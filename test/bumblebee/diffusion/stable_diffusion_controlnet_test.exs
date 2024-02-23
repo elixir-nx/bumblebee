@@ -51,7 +51,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
 
       prompt = "numbat in forest, detailed, digital art"
 
-      cond_size = unet.spec.sample_size * 2 ** 3
+      cond_size = unet.spec.sample_size * 2 ** (length(unet.spec.hidden_sizes) - 1)
 
       controlnet_conditioning = Nx.broadcast(0.5, {cond_size, cond_size, 3})
 
