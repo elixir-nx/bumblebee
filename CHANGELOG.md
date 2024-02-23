@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This release changes the directory structure of the models cache, such that cached files from the same HuggingFace Hub repository are grouped in a separate subdirectory. This change is meant to simplify the process of manually removing specific models from the cache to free up space. As a result, the cache contents from prior versions are invalidated, so you most likely want to remove the current cache contents. To find the cache location run `elixir -e 'Mix.install([{:bumblebee, "0.4.2"}]); IO.puts(Bumblebee.cache_dir())'` (defaults to the standard cache location for the given operating system).
 
+We also reduced memory usage during parameter loading (both when loading onto the CPU and GPU directly). Previously, larger models sometimes required loading parameters using CPU and only then transfering to the GPU, in order to avoid running out of GPU memory during parameter transformations. With this release this should no longer be the case. Loading parameters now has barely any memory footprint other than the parameters themselves.
+
 ### Added
 
 * Notebook on LLaMA 2 to the docs ([#259](https://github.com/elixir-nx/bumblebee/pull/259))
