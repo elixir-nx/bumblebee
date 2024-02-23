@@ -17,7 +17,7 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
       test "tensors" do
         path = Path.join(@dir, "tensors.#{@format}.pt")
 
-        assert Loader.load!(path) == [
+        assert path |> Loader.load!() |> Enum.map(&Nx.to_tensor/1) == [
                  Nx.tensor([-1.0, 1.0], type: :f64),
                  Nx.tensor([-1.0, 1.0], type: :f32),
                  Nx.tensor([-1.0, 1.0], type: :f16),
@@ -63,7 +63,7 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
       test "noncontiguous tensor" do
         path = Path.join(@dir, "noncontiguous_tensor.#{@format}.pt")
 
-        assert Loader.load!(path) ==
+        assert path |> Loader.load!() |> Nx.to_tensor() ==
                  Nx.tensor([[[1, 2, 3], [4, 5, 6]], [[1, 2, 3], [4, 5, 6]]], type: :s64)
       end
 
@@ -81,9 +81,16 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
     # this test is based on https://github.com/pytorch/pytorch/blob/v1.11.0/test/test_serialization.py#L554-L575
     path = Path.join(@dir, "storage_view.legacy.pt")
 
-    assert Loader.load!(path) ==
-             {{:storage, %Unpickler.Global{scope: "torch", name: "FloatStorage"}, <<0, 0, 0, 0>>},
-              {:storage, %Unpickler.Global{scope: "torch", name: "FloatStorage"}, <<0, 0, 0, 0>>}}
+    assert {
+             {:storage, %Unpickler.Global{scope: "torch", name: "FloatStorage"}, storage1},
+             {:storage, %Unpickler.Global{scope: "torch", name: "FloatStorage"}, storage2}
+           } = Loader.load!(path)
+
+    assert {:file, path, offset, size} = storage1
+    assert path |> File.read!() |> binary_part(offset, size) == <<0, 0, 0, 0>>
+
+    assert {:file, path, offset, size} = storage2
+    assert path |> File.read!() |> binary_part(offset, size) == <<0, 0, 0, 0>>
   end
 
   test "raises if the files does not exist" do
