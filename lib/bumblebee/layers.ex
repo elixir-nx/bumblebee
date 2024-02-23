@@ -216,6 +216,9 @@ defmodule Bumblebee.Layers do
       effectively makes each input token use information exclusively
       from prior tokens. Defaults to `false`
 
+    * `:window_size` - when set, enables sliding window attention.
+      Should be a `{left, right}` tuple with window size on each side
+
     * `:scale` - whether to scale attention weights by $\frac{1}{\sqrt{d}}$.
       Defaults to `true`
 
@@ -228,7 +231,7 @@ defmodule Bumblebee.Layers do
 
   """
   def attention(query, key, value, key_mask, head_mask, bias, offset, opts \\ []) do
-    opts = Keyword.validate!(opts, causal: false, scale: true, dropout_rate: 0.0)
+    opts = Keyword.validate!(opts, [:window_size, causal: false, scale: true, dropout_rate: 0.0])
 
     weights =
       Axon.layer(
@@ -242,6 +245,7 @@ defmodule Bumblebee.Layers do
           Axon.optional(offset)
         ],
         causal: opts[:causal],
+        window_size: opts[:window_size],
         scale: opts[:scale]
       )
       |> Axon.dropout(rate: opts[:dropout_rate])
@@ -252,7 +256,7 @@ defmodule Bumblebee.Layers do
   end
 
   defnp attention_weights_impl(query, key, key_mask, head_mask, bias, offset, opts \\ []) do
-    opts = keyword!(opts, mode: :inference, scale: true, causal: false)
+    opts = keyword!(opts, [:window_size, mode: :inference, scale: true, causal: false])
 
     query = Nx.transpose(query, axes: [0, 2, 1, 3])
     key = Nx.transpose(key, axes: [0, 2, 1, 3])
@@ -273,23 +277,28 @@ defmodule Bumblebee.Layers do
         key_mask -> key_mask |> Nx.new_axis(1) |> Nx.new_axis(1)
       end
 
-    causal_mask =
-      if opts[:causal] do
-        query_sequence_length = Nx.axis_size(query, 2)
-        key_sequence_length = Nx.axis_size(key, 2)
-        offset = ensure_offset(offset)
+    query_sequence_length = Nx.axis_size(query, 2)
+    key_sequence_length = Nx.axis_size(key, 2)
+    offset = ensure_offset(offset)
 
-        Nx.greater_equal(
-          Nx.iota({query_sequence_length, 1}) + offset,
-          Nx.iota({1, key_sequence_length})
-        )
-        |> Nx.new_axis(0)
-        |> Nx.new_axis(0)
-      else
-        Nx.broadcast(1, {1, 1, 1, 1})
+    causal_and_window_mask =
+      case {opts[:causal], opts[:window_size]} do
+        {false, nil} ->
+          Nx.broadcast(1, {1, 1})
+
+        {false, {left_size, right_size}} ->
+          window_mask(query_sequence_length, key_sequence_length, offset, left_size, right_size)
+
+        {true, nil} ->
+          causal_mask(query_sequence_length, key_sequence_length, offset)
+
+        {true, {left_size, _right_size}} ->
+          window_mask(query_sequence_length, key_sequence_length, offset, left_size, 0)
       end
+      |> Nx.new_axis(0)
+      |> Nx.new_axis(0)
 
-    mask = Nx.logical_and(key_mask, causal_mask)
+    mask = key_mask and causal_and_window_mask
 
     bias =
       case bias do
@@ -320,6 +329,23 @@ defmodule Bumblebee.Layers do
         head_mask = Nx.reshape(head_mask, {1, :auto, 1, 1})
         Nx.multiply(weights, head_mask)
     end
+  end
+
+  defnp causal_mask(query_sequence_length, key_sequence_length, offset) do
+    Nx.greater_equal(
+      Nx.iota({query_sequence_length, 1}) + offset,
+      Nx.iota({1, key_sequence_length})
+    )
+  end
+
+  defnp window_mask(query_sequence_length, key_sequence_length, offset, left_size, right_size) do
+    position_diff =
+      Nx.subtract(
+        Nx.iota({query_sequence_length, 1}) + offset,
+        Nx.iota({1, key_sequence_length})
+      )
+
+    left_size >= position_diff and position_diff >= -right_size
   end
 
   defnp attention_output_impl(weights, value, _opts \\ []) do

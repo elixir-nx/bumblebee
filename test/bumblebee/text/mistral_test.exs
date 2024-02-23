@@ -28,6 +28,36 @@ defmodule Bumblebee.Text.MistralTest do
     )
   end
 
+  test ":base with attention sliding window" do
+    assert {:ok, spec} =
+             Bumblebee.load_spec({:hf, "hf-internal-testing/tiny-random-MistralModel"})
+
+    spec = Bumblebee.configure(spec, attention_window_size: 2)
+
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-MistralModel"},
+               spec: spec
+             )
+
+    assert %Bumblebee.Text.Mistral{architecture: :base} = spec
+
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
+
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
+
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[0.9450, -1.3945, 0.7331], [-2.1118, -1.3091, -0.7834], [-1.3033, -1.3374, 0.8919]]
+      ])
+    )
+  end
+
   test ":for_sequence_classification" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(

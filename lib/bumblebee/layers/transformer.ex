@@ -56,6 +56,7 @@ defmodule Bumblebee.Layers.Transformer do
       :output_use_bias,
       :layer_norm,
       :block_type,
+      :attention_window_size,
       :scale_attention_weights,
       :rotary_embedding
     ]
@@ -269,6 +270,9 @@ defmodule Bumblebee.Layers.Transformer do
       receives the input hidden state, a map with block steps and a
       name to prefix any additional layers.
 
+    * `:attention_window_size` - when set, enables sliding window attention.
+      Should be a `{left, right}` tuple with window size on each side
+
     * `:scale_attention_weights` - whether to scale query in the traditional style of
       multi-headed attention. Defaults to `true`
 
@@ -323,6 +327,7 @@ defmodule Bumblebee.Layers.Transformer do
         output_use_bias: true,
         block_type: :standard,
         layer_norm: [],
+        attention_window_size: nil,
         scale_attention_weights: true,
         rotary_embedding: nil
       ])
@@ -351,6 +356,7 @@ defmodule Bumblebee.Layers.Transformer do
     offset = opts[:offset]
     layer_norm = opts[:layer_norm]
     block_type = opts[:block_type]
+    attention_window_size = opts[:attention_window_size]
     scale_attention_weights = opts[:scale_attention_weights]
     rotary_embedding = opts[:rotary_embedding]
 
@@ -408,6 +414,7 @@ defmodule Bumblebee.Layers.Transformer do
           key_use_bias: key_use_bias,
           value_use_bias: value_use_bias,
           output_use_bias: output_use_bias,
+          attention_window_size: attention_window_size,
           scale_attention_weights: scale_attention_weights,
           rotary_embedding: rotary_embedding,
           name: join(name, "self_attention")
@@ -452,6 +459,7 @@ defmodule Bumblebee.Layers.Transformer do
           key_use_bias: key_use_bias,
           value_use_bias: value_use_bias,
           output_use_bias: output_use_bias,
+          attention_window_size: attention_window_size,
           scale_attention_weights: scale_attention_weights,
           rotary_embedding: rotary_embedding,
           name: join(name, "cross_attention")
@@ -679,6 +687,12 @@ defmodule Bumblebee.Layers.Transformer do
     * `:output_use_bias` - whether to use bias in the output projection.
       Defaults to `true`
 
+    * `:attention_window_size` - when set, enables sliding window attention.
+      Should be a `{left, right}` tuple with window size on each side
+
+    * `:scale_attention_weights` - whether to scale query in the traditional style of
+      multi-headed attention. Defaults to `true`
+
     * `:rotary_embedding` - configuration of rotary embedding. If set,
       will apply rotary position embedding with the given options. Valid
       options are:
@@ -710,6 +724,7 @@ defmodule Bumblebee.Layers.Transformer do
         attention_cache: Layers.none(),
         offset: Layers.none(),
         causal: false,
+        attention_window_size: nil,
         scale_attention_weights: true,
         kernel_initializer: :glorot_uniform,
         dropout_rate: 0.0,
@@ -732,6 +747,7 @@ defmodule Bumblebee.Layers.Transformer do
     hidden_size = opts[:hidden_size]
     kernel_initializer = opts[:kernel_initializer]
     causal = opts[:causal]
+    attention_window_size = opts[:attention_window_size]
     scale_attention_weights = opts[:scale_attention_weights]
     dropout_rate = opts[:dropout_rate]
     rotary_embedding = opts[:rotary_embedding]
@@ -858,6 +874,7 @@ defmodule Bumblebee.Layers.Transformer do
         offset,
         scale: scale_attention_weights,
         causal: causal,
+        window_size: attention_window_size,
         dropout_rate: dropout_rate
       )
 
