@@ -32,9 +32,7 @@ defmodule Bumblebee.Text.MistralTest do
     assert {:ok, spec} =
              Bumblebee.load_spec({:hf, "hf-internal-testing/tiny-random-MistralModel"})
 
-    # TODO test once we know the expected behaviour
-    # spec = Bumblebee.configure(spec, attention_window_size: 2)
-    spec = Bumblebee.configure(spec, attention_window_size: 1)
+    spec = Bumblebee.configure(spec, attention_window_size: 2)
 
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-MistralModel"},
@@ -55,7 +53,7 @@ defmodule Bumblebee.Text.MistralTest do
     assert_all_close(
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
-        [[0.9450, -1.3945, 0.7331], [-1.4422, -1.4622, -0.9143], [-1.5628, -1.0444, 0.9262]]
+        [[0.9450, -1.3945, 0.7331], [-2.1118, -1.3091, -0.7834], [-1.3033, -1.3374, 0.8919]]
       ])
     )
   end
