@@ -12,7 +12,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
       # a tiny random checkpoint. This test is basically to verify
       # the whole generation computation end-to-end
 
-      repository_id = "CompVis/stable-diffusion-v1-4"
+      repository_id = "runwayml/stable-diffusion-v1-5"
       # repository_id = "bumblebee-testing/tiny-stable-diffusion"
 
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
@@ -45,12 +45,13 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
           num_steps: 3,
           safety_checker: safety_checker,
           safety_checker_featurizer: featurizer,
-          compile: [batch_size: 1, sequence_length: 60]
+          compile: [batch_size: 1, sequence_length: 60],
+          defn_options: [compiler: EXLA]
         )
 
       prompt = "numbat in forest, detailed, digital art"
 
-      cond_size = (unet.spec.sample_size * 2 ** 3) 
+      cond_size = unet.spec.sample_size * 2 ** 3
 
       controlnet_conditioning = Nx.broadcast(0.5, {cond_size, cond_size, 3})
 

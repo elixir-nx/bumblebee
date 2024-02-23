@@ -427,32 +427,13 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
         %{down_blocks_residuals: down_blocks_residuals, mid_block_residual: mid_block_residual} =
           controlnet_predict.(controlnet_params, controlnet_inputs)
 
-        # {down_residual_map, _} =
-        #   while {down_residual_map, down_blocks_residuals}, i <- 0..10 do
-        #     key = "down_block_residual_#{i}"
-        #     value = elem(down_blocks_residuals, i)
-
-        #     {Map.put(down_residual_map, key, value), down_blocks_residuals}
-        #   end
-
         unet_inputs =
           %{
             "sample" => Nx.concatenate([latents, latents]),
             "timestep" => timestep,
             "encoder_hidden_state" => text_embeddings,
             "controlnet_mid_residual" => mid_block_residual,
-            "controlnet_down_residual_0" => elem(down_blocks_residuals, 0),
-            "controlnet_down_residual_1" => elem(down_blocks_residuals, 1),
-            "controlnet_down_residual_2" => elem(down_blocks_residuals, 2),
-            "controlnet_down_residual_3" => elem(down_blocks_residuals, 3),
-            "controlnet_down_residual_4" => elem(down_blocks_residuals, 4),
-            "controlnet_down_residual_5" => elem(down_blocks_residuals, 5),
-            "controlnet_down_residual_6" => elem(down_blocks_residuals, 6),
-            "controlnet_down_residual_7" => elem(down_blocks_residuals, 7),
-            "controlnet_down_residual_8" => elem(down_blocks_residuals, 8),
-            "controlnet_down_residual_9" => elem(down_blocks_residuals, 9),
-            "controlnet_down_residual_10" => elem(down_blocks_residuals, 10),
-            "controlnet_down_residual_11" => elem(down_blocks_residuals, 11)
+            "controlnet_down_residuals" => down_blocks_residuals
           }
 
         %{sample: noise_pred} = unet_predict.(unet_params, unet_inputs)
