@@ -81,7 +81,9 @@ defmodule Bumblebee.Conversion.PyTorch do
   defp with_default_backend(backend, fun), do: Nx.with_default_backend(backend, fun)
 
   defp state_dict?(%{} = dict) when not is_struct(dict) do
-    Enum.all?(dict, fn {key, value} -> is_binary(key) and is_struct(value, Nx.Tensor) end)
+    Enum.all?(dict, fn {key, value} ->
+      is_binary(key) and Nx.LazyContainer.impl_for(value) != nil
+    end)
   end
 
   defp state_dict?(_other), do: false
@@ -141,6 +143,7 @@ defmodule Bumblebee.Conversion.PyTorch do
 
             {value, diff} =
               if all_sources_found? do
+                source_values = Enum.map(source_values, &Nx.to_tensor/1)
                 value = builder_fun.(Enum.reverse(source_values))
 
                 case verify_param_shape(param_expr, value) do

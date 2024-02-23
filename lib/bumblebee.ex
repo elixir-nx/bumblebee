@@ -704,7 +704,7 @@ defmodule Bumblebee do
     end
   end
 
-  defp params_file_loader_fun(".safetensors"), do: &Safetensors.read!/1
+  defp params_file_loader_fun(".safetensors"), do: &Safetensors.read!(&1, lazy: true)
   defp params_file_loader_fun(_), do: &Bumblebee.Conversion.PyTorch.Loader.load!/1
 
   @doc """
