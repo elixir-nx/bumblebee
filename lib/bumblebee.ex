@@ -595,7 +595,11 @@ defmodule Bumblebee do
     {filename, sharded?} =
       infer_params_filename(repo_files, opts[:params_filename], opts[:params_variant])
 
-    loader_fun = filename |> Path.extname() |> params_file_loader_fun()
+    loader_fun =
+      filename
+      |> String.replace_suffix(".index.json", "")
+      |> Path.extname()
+      |> params_file_loader_fun()
 
     with {:ok, paths} <- download_params_files(repository, repo_files, filename, sharded?) do
       opts =

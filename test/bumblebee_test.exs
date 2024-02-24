@@ -15,8 +15,19 @@ defmodule BumblebeeTest do
       assert {:ok, %{params: params}} =
                Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-GPT2Model"})
 
+      # PyTorch format
+
       assert {:ok, %{params: sharded_params}} =
                Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-GPT2Model-sharded"})
+
+      assert Enum.sort(Map.keys(params)) == Enum.sort(Map.keys(sharded_params))
+
+      # Safetensors
+
+      assert {:ok, %{params: sharded_params}} =
+               Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-GPT2Model-sharded"},
+                 params_filename: "model.safetensors"
+               )
 
       assert Enum.sort(Map.keys(params)) == Enum.sort(Map.keys(sharded_params))
     end
