@@ -1,0 +1,41 @@
+# examples
+
+```elixir
+Mix.install([
+  {:bumblebee, "~> 0.5.0"},
+  {:nx, "~> 0.7.0"},
+  {:exla, "~> 0.7.0"},
+  {:axon, "~> 0.6.1"},
+  {:kino, "~> 0.12.0"}
+])
+
+Nx.global_default_backend(EXLA.Backend)
+```
+
+## Introduction
+
+In this notebook we will use Nomic model for embededings.
+
+```elixir
+hf_token = "...."
+model_name = "nomic-ai/nomic-embed-text-v1.5"
+{:ok, model} = Bumblebee.load_model({:hf, model_name})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, model_name})
+
+sequence_length(2048)
+
+serving =
+  Bumblebee.Text.TextEmbedding.text_embedding(model, tokenizer,
+    compile: [batch_size: 64, sequence_length: sequence_length],
+    defn_options: [compiler: EXLA, preallocate_params: true, client: :host],
+    output_attribute: :hidden_state,
+    output_pool: :mean_pooling
+  )
+
+:ok
+```
+
+```elixir
+# Test it out.
+Nx.Serving.run(serving, "My awesome test that i need as embedding.")
+```
