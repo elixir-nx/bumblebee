@@ -101,6 +101,7 @@ defmodule Bumblebee do
     "BertForTokenClassification" => {Bumblebee.Text.Bert, :for_token_classification},
     "BertLMHeadModel" => {Bumblebee.Text.Bert, :for_causal_language_modeling},
     "BertModel" => {Bumblebee.Text.Bert, :base},
+    "NomicBertModel" => {Bumblebee.Text.Bert, :base},
     "BlenderbotForConditionalGeneration" =>
       {Bumblebee.Text.Blenderbot, :for_conditional_generation},
     "BlenderbotModel" => {Bumblebee.Text.Blenderbot, :base},
@@ -224,6 +225,7 @@ defmodule Bumblebee do
     "bert" => :bert,
     "blenderbot" => :blenderbot,
     "blip" => :bert,
+    "nomic_bert" => :bert,
     "distilbert" => :distilbert,
     "camembert" => :camembert,
     "clip" => :clip,
