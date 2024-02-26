@@ -1,11 +1,11 @@
-defmodule Bumblebee.Conversion.PyTorch.FileTensor do
+defmodule Bumblebee.Conversion.PyTorchLoader.FileTensor do
   @moduledoc false
 
   defstruct [:shape, :type, :offset, :strides, :storage]
 end
 
-defimpl Nx.LazyContainer, for: Bumblebee.Conversion.PyTorch.FileTensor do
-  alias Bumblebee.Conversion.PyTorch.Loader
+defimpl Nx.LazyContainer, for: Bumblebee.Conversion.PyTorchLoader.FileTensor do
+  alias Bumblebee.Conversion.PyTorchLoader
 
   def traverse(lazy_tensor, acc, fun) do
     template = Nx.template(lazy_tensor.shape, lazy_tensor.type)
@@ -14,8 +14,8 @@ defimpl Nx.LazyContainer, for: Bumblebee.Conversion.PyTorch.FileTensor do
       binary =
         case lazy_tensor.storage do
           {:zip, path, file_name} ->
-            Loader.open_zip!(path, fn unzip ->
-              Loader.read_zip_file(unzip, file_name)
+            PyTorchLoader.open_zip!(path, fn unzip ->
+              PyTorchLoader.read_zip_file(unzip, file_name)
             end)
 
           {:file, path, offset, size} ->

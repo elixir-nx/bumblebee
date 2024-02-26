@@ -1,4 +1,4 @@
-defmodule Bumblebee.Conversion.PyTorch.Loader do
+defmodule Bumblebee.Conversion.PyTorchLoader do
   @moduledoc false
 
   @doc """
@@ -84,7 +84,7 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
     {:storage, storage_type, storage} = storage
     type = storage_type_to_nx(storage_type)
 
-    lazy_tensor = %Bumblebee.Conversion.PyTorch.FileTensor{
+    lazy_tensor = %Bumblebee.Conversion.PyTorchLoader.FileTensor{
       shape: shape,
       type: type,
       offset: offset,

@@ -1,4 +1,4 @@
-defmodule Bumblebee.Conversion.PyTorch do
+defmodule Bumblebee.Conversion.PyTorchParams do
   @moduledoc false
 
   require Logger
@@ -26,7 +26,7 @@ defmodule Bumblebee.Conversion.PyTorch do
 
     * `:loader_fun` - a 1-arity function that takes a path argument
       and loads the params file. Defaults to
-      `Bumblebee.Conversion.PyTorch.Loader.load!/1`
+      `Bumblebee.Conversion.PyTorchLoader.load!/1`
 
   """
   @spec load_params!(Axon.t(), map(), Path.t() | list(Path.t()), keyword()) :: map()
@@ -37,7 +37,7 @@ defmodule Bumblebee.Conversion.PyTorch do
         :log_params_diff,
         :backend,
         params_mapping: %{},
-        loader_fun: &Bumblebee.Conversion.PyTorch.Loader.load!/1
+        loader_fun: &Bumblebee.Conversion.PyTorchLoader.load!/1
       ])
 
     with_default_backend(opts[:backend], fn ->

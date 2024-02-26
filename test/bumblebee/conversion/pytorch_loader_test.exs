@@ -1,14 +1,14 @@
-defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
+defmodule Bumblebee.Conversion.PyTorchLoaderTest do
   use ExUnit.Case, async: true
 
-  alias Bumblebee.Conversion.PyTorch.Loader
+  alias Bumblebee.Conversion.PyTorchLoader
 
   setup do
     Nx.default_backend(Nx.BinaryBackend)
     :ok
   end
 
-  @dir Path.expand("../../../fixtures/pytorch", __DIR__)
+  @dir Path.expand("../../fixtures/pytorch", __DIR__)
 
   for format <- ["zip", "legacy"] do
     @format format
@@ -17,7 +17,7 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
       test "tensors" do
         path = Path.join(@dir, "tensors.#{@format}.pt")
 
-        assert path |> Loader.load!() |> Enum.map(&Nx.to_tensor/1) == [
+        assert path |> PyTorchLoader.load!() |> Enum.map(&Nx.to_tensor/1) == [
                  Nx.tensor([-1.0, 1.0], type: :f64),
                  Nx.tensor([-1.0, 1.0], type: :f32),
                  Nx.tensor([-1.0, 1.0], type: :f16),
@@ -36,7 +36,7 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
       test "numpy arrays" do
         path = Path.join(@dir, "numpy_arrays.#{@format}.pt")
 
-        assert Loader.load!(path) == [
+        assert PyTorchLoader.load!(path) == [
                  Nx.tensor([-1.0, 1.0], type: :f64),
                  Nx.tensor([-1.0, 1.0], type: :f32),
                  Nx.tensor([-1.0, 1.0], type: :f16),
@@ -57,20 +57,20 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
       test "ordered dict" do
         path = Path.join(@dir, "ordered_dict.#{@format}.pt")
 
-        assert Loader.load!(path) == %{"x" => 1, "y" => 2}
+        assert PyTorchLoader.load!(path) == %{"x" => 1, "y" => 2}
       end
 
       test "noncontiguous tensor" do
         path = Path.join(@dir, "noncontiguous_tensor.#{@format}.pt")
 
-        assert path |> Loader.load!() |> Nx.to_tensor() ==
+        assert path |> PyTorchLoader.load!() |> Nx.to_tensor() ==
                  Nx.tensor([[[1, 2, 3], [4, 5, 6]], [[1, 2, 3], [4, 5, 6]]], type: :s64)
       end
 
       test "numpy array in Fortran order" do
         path = Path.join(@dir, "noncontiguous_numpy_array.#{@format}.pt")
 
-        assert Loader.load!(path) ==
+        assert PyTorchLoader.load!(path) ==
                  Nx.tensor([[1, 4], [2, 5], [3, 6]], type: :s64)
       end
     end
@@ -84,7 +84,7 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
     assert {
              {:storage, %Unpickler.Global{scope: "torch", name: "FloatStorage"}, storage1},
              {:storage, %Unpickler.Global{scope: "torch", name: "FloatStorage"}, storage2}
-           } = Loader.load!(path)
+           } = PyTorchLoader.load!(path)
 
     assert {:file, path, offset, size} = storage1
     assert path |> File.read!() |> binary_part(offset, size) == <<0, 0, 0, 0>>
@@ -95,7 +95,7 @@ defmodule Bumblebee.Conversion.PyTorch.LoaderTest do
 
   test "raises if the files does not exist" do
     assert_raise File.Error, ~r/no such file or directory/, fn ->
-      Loader.load!("nonexistent")
+      PyTorchLoader.load!("nonexistent")
     end
   end
 end

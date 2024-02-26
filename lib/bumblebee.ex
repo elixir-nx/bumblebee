@@ -608,7 +608,7 @@ defmodule Bumblebee do
           loader_fun: loader_fun
         ] ++ Keyword.take(opts, [:backend, :log_params_diff])
 
-      params = Bumblebee.Conversion.PyTorch.load_params!(model, input_template, paths, opts)
+      params = Bumblebee.Conversion.PyTorchParams.load_params!(model, input_template, paths, opts)
       {:ok, params}
     end
   end
@@ -709,7 +709,7 @@ defmodule Bumblebee do
   end
 
   defp params_file_loader_fun(".safetensors"), do: &Safetensors.read!(&1, lazy: true)
-  defp params_file_loader_fun(_), do: &Bumblebee.Conversion.PyTorch.Loader.load!/1
+  defp params_file_loader_fun(_), do: &Bumblebee.Conversion.PyTorchLoader.load!/1
 
   @doc """
   Featurizes `input` with the given featurizer.

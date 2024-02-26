@@ -1,9 +1,9 @@
-defmodule Bumblebee.Conversion.PyTorchTest do
+defmodule Bumblebee.Conversion.PyTorchParamsTest do
   use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
 
-  alias Bumblebee.Conversion.PyTorch
+  alias Bumblebee.Conversion.PyTorchParams
 
   @dir Path.expand("../../fixtures/pytorch", __DIR__)
 
@@ -40,7 +40,9 @@ defmodule Bumblebee.Conversion.PyTorchTest do
       log =
         ExUnit.CaptureLog.capture_log(fn ->
           params =
-            PyTorch.load_params!(model, input_template(), path, params_mapping: params_mapping())
+            PyTorchParams.load_params!(model, input_template(), path,
+              params_mapping: params_mapping()
+            )
 
           assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 2, 3, 2}))
           assert_equal(params["conv"]["bias"], Nx.broadcast(0.0, {2}))
@@ -55,7 +57,9 @@ defmodule Bumblebee.Conversion.PyTorchTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          PyTorch.load_params!(model, input_template(), path, params_mapping: params_mapping())
+          PyTorchParams.load_params!(model, input_template(), path,
+            params_mapping: params_mapping()
+          )
         end)
 
       assert log =~ """
@@ -86,7 +90,9 @@ defmodule Bumblebee.Conversion.PyTorchTest do
       log =
         ExUnit.CaptureLog.capture_log(fn ->
           params =
-            PyTorch.load_params!(model, input_template(), path, params_mapping: params_mapping())
+            PyTorchParams.load_params!(model, input_template(), path,
+              params_mapping: params_mapping()
+            )
 
           assert_equal(params["conv"]["kernel"], Nx.broadcast(1.0, {2, 2, 3, 2}))
           assert_equal(params["conv"]["bias"], Nx.broadcast(0.0, {2}))
@@ -102,7 +108,9 @@ defmodule Bumblebee.Conversion.PyTorchTest do
       log =
         ExUnit.CaptureLog.capture_log(fn ->
           params =
-            PyTorch.load_params!(model, input_template(), path, params_mapping: params_mapping())
+            PyTorchParams.load_params!(model, input_template(), path,
+              params_mapping: params_mapping()
+            )
 
           assert_equal(params["base.conv"]["kernel"], Nx.broadcast(1.0, {2, 2, 3, 2}))
           assert_equal(params["base.conv"]["bias"], Nx.broadcast(0.0, {2}))
