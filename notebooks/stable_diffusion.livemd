@@ -17,7 +17,7 @@ Stable Diffusion is a latent text-to-image diffusion model, primarily used to ge
 
 <!-- livebook:{"break_markdown":true} -->
 
-> **Note:** Stable Diffusion is a very involved model, so the generation can take a long time if you run it on a CPU. Also, running on the GPU currently requires at least 5GB of VRAM (or 3GB with lower speed, see below).
+> **Note:** Stable Diffusion is a very involved model, so the generation can take a long time if you run it on a CPU. Also, running on the GPU currently requires at least 5GiB of VRAM (or 3GiB with lower speed, see below).
 
 <!-- livebook:{"branch_parent_index":0} -->
 
@@ -27,7 +27,7 @@ Stable Diffusion is composed of several separate models and preprocessors, so we
 
 ```elixir
 repo_id = "CompVis/stable-diffusion-v1-4"
-opts = [params_variant: "fp16", type: :bf16]
+opts = [params_variant: "fp16", type: :bf16, backend: EXLA.Backend]
 
 {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
 {:ok, clip} = Bumblebee.load_model({:hf, repo_id, subdir: "text_encoder"}, opts)
@@ -55,9 +55,9 @@ serving =
     safety_checker_featurizer: featurizer,
     compile: [batch_size: 1, sequence_length: 60],
     # Option 1
-    preallocate_params: true,
     defn_options: [compiler: EXLA]
     # Option 2 (reduces GPU usage, but runs noticeably slower)
+    # Also remove `backend: EXLA.Backend` from the loading options above
     # defn_options: [compiler: EXLA, lazy_transfers: :always]
   )
 

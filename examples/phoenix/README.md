@@ -79,8 +79,6 @@ serving =
   )
 ```
 
-Also see the [Llama example](../../notebooks/llama.livemd) for more option combinations.
-
 ### User images
 
 When working with user-given images, the most trivial approach would be to just upload an image as is, in a format like PNG or JPEG. However, this approach has two downsides:
