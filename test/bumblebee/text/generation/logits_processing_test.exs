@@ -153,6 +153,15 @@ defmodule Bumblebee.Text.Generation.LogitsProcessingTest do
         logits
       )
     end
+
+    test "keeps input type" do
+      logits = Nx.tensor([1.0, 2.0, 3.0, 4.0], type: :f16)
+
+      context = context([2, 3, 2, 0])
+
+      result = LogitsProcessing.no_repeat_ngram_processor(logits, context, ngram_length: 2)
+      assert Nx.type(result) == {:f, 16}
+    end
   end
 
   describe "temperature_processor/3" do
