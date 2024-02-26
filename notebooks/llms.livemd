@@ -23,7 +23,7 @@ In this section we look at running [Meta's Llama](https://ai.meta.com/llama/) mo
 
 <!-- livebook:{"break_markdown":true} -->
 
-> **Note:** this is a very involved model, so the generation can take a long time if you run it on a CPU. Also, running on the GPU currently requires at least 16.3GiB of VRAM.
+> **Note:** this is a very involved model, so the generation can take a long time if you run it on a CPU. Also, running on the GPU currently requires at least 16GiB of VRAM.
 
 <!-- livebook:{"break_markdown":true} -->
 
