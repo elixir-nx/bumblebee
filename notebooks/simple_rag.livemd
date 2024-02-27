@@ -1,4 +1,4 @@
-# Simple Rag pipeline.
+# LLMs and RAG
 
 ```elixir
 Mix.install([
@@ -10,127 +10,93 @@ Mix.install([
   {:req, "~> 0.4.0"}
 ])
 
-Nx.global_default_backend({EXLA.Backend, client: :cuda})
+Nx.global_default_backend(EXLA.Backend)
 ```
 
 ## Introduction
 
-### This is an example notebook to demostrate how to you can have an end to end and in memory  retrieval augmented generation using only elixir and mostly bumblebee.
+In this notebook we go through an example of in-memory Retrieval Augmented Generation (RAG).
 
-<!-- livebook:{"break_markdown":true} -->
+On a high-level, we want to use a text document as the source of knowledge. When the user asks a question, we want to find relevant snippets from the essay and pass it alongside the question to the LLM. This way the LLM can provide a more accurate answer, based on the provided information.
 
-We will download the data and then split them into chunks to prepare the embeddings. (Keep in mind this is a simple example, in real world problems usually we are doing reranking or bm25 etc.) For generating the embeddings we will use [gte-small](https://huggingface.co/thenlper/gte-small) model.
+## Knowledge
+
+The first step is to download the text document, in this case we use an essay written by Paul Graham.
 
 ```elixir
-# Get paul graham's essay text
-resp =
+%{body: text} =
   Req.get!(
     "https://raw.githubusercontent.com/run-llama/llama_index/main/docs/examples/data/paul_graham/paul_graham_essay.txt"
   )
 
-IO.inspect(String.length(resp.body))
-
-# Our model has dim 384 and max seq length 512.
-# Ideally you will need to do some overlapping.
-chunks =
-  resp.body
-  |> String.codepoints()
-  |> Enum.chunk_every(512)
-  |> Enum.map(&Enum.join/1)
+IO.puts("Document length: #{String.length(text)}")
 ```
 
 <!-- livebook:{"output":true} -->
 
 ```
-75014
+Document length: 75014
 ```
 
 <!-- livebook:{"output":true} -->
 
 ```
-["\n\nWhat I Worked On\n\nFebruary 2021\n\nBefore college the two main things I worked on, outside of school, were writing and programming. I didn't write essays. I wrote what beginning writers were supposed to write then, and probably still are: short stories. My stories were awful. They had hardly any plot, just characters with strong feelings, which I imagined made them deep.\n\nThe first programs I tried writing were on the IBM 1401 that our school district used for what was then called \"data processing.\" This wa",
- "s in 9th grade, so I was 13 or 14. The school district's 1401 happened to be in the basement of our junior high school, and my friend Rich Draves and I got permission to use it. It was like a mini Bond villain's lair down there, with all these alien-looking machines — CPU, disk drives, printer, card reader — sitting up on a raised floor under bright fluorescent lights.\n\nThe language we used was an early version of Fortran. You had to type programs on punch cards, then stack them in the card reader and press",
- " a button to load the program into memory and run it. The result would ordinarily be to print something on the spectacularly loud printer.\n\nI was puzzled by the 1401. I couldn't figure out what to do with it. And in retrospect there's not much I could have done with it. The only form of input to programs was data stored on punched cards, and I didn't have any data stored on punched cards. The only other option was to do things that didn't rely on any input, like calculate approximations of pi, but I didn't ",
- "know enough math to do anything interesting of that type. So I'm not surprised I can't remember any programs I wrote, because they can't have done much. My clearest memory is of the moment I learned it was possible for programs not to terminate, when one of mine didn't. On a machine without time-sharing, this was a social as well as a technical error, as the data center manager's expression made clear.\n\nWith microcomputers, everything changed. Now you could have a computer sitting right in front of you, on ",
- "a desk, that could respond to your keystrokes as it was running instead of just churning through a stack of punch cards and then stopping. [1]\n\nThe first of my friends to get a microcomputer built it himself. It was sold as a kit by Heathkit. I remember vividly how impressed and envious I felt watching him sitting in front of it, typing programs right into the computer.\n\nComputers were expensive in those days and it took me years of nagging before I convinced my father to buy one, a TRS-80, in about 1980. T",
- "he gold standard then was the Apple II, but a TRS-80 was good enough. This was when I really started programming. I wrote simple games, a program to predict how high my model rockets would fly, and a word processor that my father used to write at least one book. There was only room in memory for about 2 pages of text, so he'd write 2 pages at a time and then print them out, but it was a lot better than a typewriter.\n\nThough I liked programming, I didn't plan to study it in college. In college I was going to",
- " study philosophy, which sounded much more powerful. It seemed, to my naive high school self, to be the study of the ultimate truths, compared to which the things studied in other fields would be mere domain knowledge. What I discovered when I got to college was that the other fields took up so much of the space of ideas that there wasn't much left for these supposed ultimate truths. All that seemed left for philosophy were edge cases that people in other fields felt could safely be ignored.\n\nI couldn't hav",
- "e put this into words when I was 18. All I knew at the time was that I kept taking philosophy courses and they kept being boring. So I decided to switch to AI.\n\nAI was in the air in the mid 1980s, but there were two things especially that made me want to work on it: a novel by Heinlein called The Moon is a Harsh Mistress, which featured an intelligent computer called Mike, and a PBS documentary that showed Terry Winograd using SHRDLU. I haven't tried rereading The Moon is a Harsh Mistress, so I don't know h",
- "ow well it has aged, but when I read it I was drawn entirely into its world. It seemed only a matter of time before we'd have Mike, and when I saw Winograd using SHRDLU, it seemed like that time would be a few years at most. All you had to do was teach SHRDLU more words.\n\nThere weren't any classes in AI at Cornell then, not even graduate classes, so I started trying to teach myself. Which meant learning Lisp, since in those days Lisp was regarded as the language of AI. The commonly used programming language",
- "s then were pretty primitive, and programmers' ideas correspondingly so. The default language at Cornell was a Pascal-like language called PL/I, and the situation was similar elsewhere. Learning Lisp expanded my concept of a program so fast that it was years before I started to have a sense of where the new limits were. This was more like it; this was what I had expected college to do. It wasn't happening in a class, like it was supposed to, but that was ok. For the next couple years I was on a roll. I knew",
- " what I was going to do.\n\nFor my undergraduate thesis, I reverse-engineered SHRDLU. My God did I love working on that program. It was a pleasing bit of code, but what made it even more exciting was my belief — hard to imagine now, but not unique in 1985 — that it was already climbing the lower slopes of intelligence.\n\nI had gotten into a program at Cornell that didn't make you choose a major. You could take whatever classes you liked, and choose whatever you liked to put on your degree. I of course chose \"A",
- "rtificial Intelligence.\" When I got the actual physical diploma, I was dismayed to find that the quotes had been included, which made them read as scare-quotes. At the time this bothered me, but now it seems amusingly accurate, for reasons I was about to discover.\n\nI applied to 3 grad schools: MIT and Yale, which were renowned for AI at the time, and Harvard, which I'd visited because Rich Draves went there, and was also home to Bill Woods, who'd invented the type of parser I used in my SHRDLU clone. Only H",
- "arvard accepted me, so that was where I went.\n\nI don't remember the moment it happened, or if there even was a specific moment, but during the first year of grad school I realized that AI, as practiced at the time, was a hoax. By which I mean the sort of AI in which a program that's told \"the dog is sitting on the chair\" translates this into some formal representation and adds it to the list of things it knows.\n\nWhat these programs really showed was that there's a subset of natural language that's a formal ",
- "language. But a very proper subset. It was clear that there was an unbridgeable gap between what they could do and actually understanding natural language. It was not, in fact, simply a matter of teaching SHRDLU more words. That whole way of doing AI, with explicit data structures representing concepts, was not going to work. Its brokenness did, as so often happens, generate a lot of opportunities to write papers about various band-aids that could be applied to it, but it was never going to get us Mike.\n\nSo",
- " I looked around to see what I could salvage from the wreckage of my plans, and there was Lisp. I knew from experience that Lisp was interesting for its own sake and not just for its association with AI, even though that was the main reason people cared about it at the time. So I decided to focus on Lisp. In fact, I decided to write a book about Lisp hacking. It's scary to think how little I knew about Lisp hacking when I started writing that book. But there's nothing like writing a book about something to ",
- "help you learn it. The book, On Lisp, wasn't published till 1993, but I wrote much of it in grad school.\n\nComputer Science is an uneasy alliance between two halves, theory and systems. The theory people prove things, and the systems people build things. I wanted to build things. I had plenty of respect for theory — indeed, a sneaking suspicion that it was the more admirable of the two halves — but building things seemed so much more exciting.\n\nThe problem with systems work, though, was that it didn't last. ",
- "Any program you wrote today, no matter how good, would be obsolete in a couple decades at best. People might mention your software in footnotes, but no one would actually use it. And indeed, it would seem very feeble work. Only people with a sense of the history of the field would even realize that, in its time, it had been good.\n\nThere were some surplus Xerox Dandelions floating around the computer lab at one point. Anyone who wanted one to play around with could have one. I was briefly tempted, but they w",
- "ere so slow by present standards; what was the point? No one else wanted one either, so off they went. That was what happened to systems work.\n\nI wanted not just to build things, but to build things that would last.\n\nIn this dissatisfied state I went in 1988 to visit Rich Draves at CMU, where he was in grad school. One day I went to visit the Carnegie Institute, where I'd spent a lot of time as a kid. While looking at a painting there I realized something that might seem obvious, but was a big surprise to m",
- "e. There, right on the wall, was something you could make that would last. Paintings didn't become obsolete. Some of the best ones were hundreds of years old.\n\nAnd moreover this was something you could make a living doing. Not as easily as you could by writing software, of course, but I thought if you were really industrious and lived really cheaply, it had to be possible to make enough to survive. And as an artist you could be truly independent. You wouldn't have a boss, or even need to get research fundin",
- "g.\n\nI had always liked looking at paintings. Could I make them? I had no idea. I'd never imagined it was even possible. I knew intellectually that people made art — that it didn't just appear spontaneously — but it was as if the people who made it were a different species. They either lived long ago or were mysterious geniuses doing strange things in profiles in Life magazine. The idea of actually being able to make art, to put that verb before that noun, seemed almost miraculous.\n\nThat fall I started takin",
- "g art classes at Harvard. Grad students could take classes in any department, and my advisor, Tom Cheatham, was very easy going. If he even knew about the strange classes I was taking, he never said anything.\n\nSo now I was in a PhD program in computer science, yet planning to be an artist, yet also genuinely in love with Lisp hacking and working away at On Lisp. In other words, like many a grad student, I was working energetically on multiple projects that were not my thesis.\n\nI didn't see a way out of this",
- " situation. I didn't want to drop out of grad school, but how else was I going to get out? I remember when my friend Robert Morris got kicked out of Cornell for writing the internet worm of 1988, I was envious that he'd found such a spectacular way to get out of grad school.\n\nThen one day in April 1990 a crack appeared in the wall. I ran into professor Cheatham and he asked if I was far enough along to graduate that June. I didn't have a word of my dissertation written, but in what must have been the quicke",
- "st bit of thinking in my life, I decided to take a shot at writing one in the 5 weeks or so that remained before the deadline, reusing parts of On Lisp where I could, and I was able to respond, with no perceptible delay \"Yes, I think so. I'll give you something to read in a few days.\"\n\nI picked applications of continuations as the topic. In retrospect I should have written about macros and embedded languages. There's a whole world there that's barely been explored. But all I wanted was to get out of grad sc",
- "hool, and my rapidly written dissertation sufficed, just barely.\n\nMeanwhile I was applying to art schools. I applied to two: RISD in the US, and the Accademia di Belli Arti in Florence, which, because it was the oldest art school, I imagined would be good. RISD accepted me, and I never heard back from the Accademia, so off to Providence I went.\n\nI'd applied for the BFA program at RISD, which meant in effect that I had to go to college again. This was not as strange as it sounds, because I was only 25, and a",
- "rt schools are full of people of different ages. RISD counted me as a transfer sophomore and said I had to do the foundation that summer. The foundation means the classes that everyone has to take in fundamental subjects like drawing, color, and design.\n\nToward the end of the summer I got a big surprise: a letter from the Accademia, which had been delayed because they'd sent it to Cambridge England instead of Cambridge Massachusetts, inviting me to take the entrance exam in Florence that fall. This was now ",
- "only weeks away. My nice landlady let me leave my stuff in her attic. I had some money saved from consulting work I'd done in grad school; there was probably enough to last a year if I lived cheaply. Now all I had to do was learn Italian.\n\nOnly stranieri (foreigners) had to take this entrance exam. In retrospect it may well have been a way of excluding them, because there were so many stranieri attracted by the idea of studying art in Florence that the Italian students would otherwise have been outnumbered.",
- " I was in decent shape at painting and drawing from the RISD foundation that summer, but I still don't know how I managed to pass the written exam. I remember that I answered the essay question by writing about Cezanne, and that I cranked up the intellectual level as high as I could to make the most of my limited vocabulary. [2]\n\nI'm only up to age 25 and already there are such conspicuous patterns. Here I was, yet again about to attend some august institution in the hopes of learning about some prestigious",
- " subject, and yet again about to be disappointed. The students and faculty in the painting department at the Accademia were the nicest people you could imagine, but they had long since arrived at an arrangement whereby the students wouldn't require the faculty to teach anything, and in return the faculty wouldn't require the students to learn anything. And at the same time all involved would adhere outwardly to the conventions of a 19th century atelier. We actually had one of those little stoves, fed with k",
- "indling, that you see in 19th century studio paintings, and a nude model sitting as close to it as possible without getting burned. Except hardly anyone else painted her besides me. The rest of the students spent their time chatting or occasionally trying to imitate things they'd seen in American art magazines.\n\nOur model turned out to live just down the street from me. She made a living from a combination of modelling and making fakes for a local antique dealer. She'd copy an obscure old painting out of a ",
- "book, and then he'd take the copy and maltreat it to make it look old. [3]\n\nWhile I was a student at the Accademia I started painting still lives in my bedroom at night. These paintings were tiny, because the room was, and because I painted them on leftover scraps of canvas, which was all I could afford at the time. Painting still lives is different from painting people, because the subject, as its name suggests, can't move. People can't sit for more than about 15 minutes at a time, and when they do they do",
- "n't sit very still. So the traditional m.o. for painting people is to know how to paint a generic person, which you then modify to match the specific person you're painting. Whereas a still life you can, if you want, copy pixel by pixel from what you're seeing. You don't want to stop there, of course, or you get merely photographic accuracy, and what makes a still life interesting is that it's been through a head. You want to emphasize the visual cues that tell you, for example, that the reason the color ch",
- "anges suddenly at a certain point is that it's the edge of an object. By subtly emphasizing such things you can make paintings that are more realistic than photographs not just in some metaphorical sense, but in the strict information-theoretic sense. [4]\n\nI liked painting still lives because I was curious about what I was seeing. In everyday life, we aren't consciously aware of much we're seeing. Most visual perception is handled by low-level processes that merely tell your brain \"that's a water droplet\" w",
- "ithout telling you details like where the lightest and darkest points are, or \"that's a bush\" without telling you the shape and position of every leaf. This is a feature of brains, not a bug. In everyday life it would be distracting to notice every leaf on every bush. But when you have to paint something, you have to look more closely, and when you do there's a lot to see. You can still be noticing new things after days of trying to paint something people usually take for granted, just as you can after days",
- " of trying to write an essay about something people usually take for granted.\n\nThis is not the only way to paint. I'm not 100% sure it's even a good way to paint. But it seemed a good enough bet to be worth trying.\n\nOur teacher, professor Ulivi, was a nice guy. He could see I worked hard, and gave me a good grade, which he wrote down in a sort of passport each student had. But the Accademia wasn't teaching me anything except Italian, and my money was running out, so at the end of the first year I went back ",
- "to the US.\n\nI wanted to go back to RISD, but I was now broke and RISD was very expensive, so I decided to get a job for a year and then return to RISD the next fall. I got one at a company called Interleaf, which made software for creating documents. You mean like Microsoft Word? Exactly. That was how I learned that low end software tends to eat high end software. But Interleaf still had a few years to live yet. [5]\n\nInterleaf had done something pretty bold. Inspired by Emacs, they'd added a scripting langu",
- "age, and even made the scripting language a dialect of Lisp. Now they wanted a Lisp hacker to write things in it. This was the closest thing I've had to a normal job, and I hereby apologize to my boss and coworkers, because I was a bad employee. Their Lisp was the thinnest icing on a giant C cake, and since I didn't know C and didn't want to learn it, I never understood most of the software. Plus I was terribly irresponsible. This was back when a programming job meant showing up every day during certain wor",
- "king hours. That seemed unnatural to me, and on this point the rest of the world is coming around to my way of thinking, but at the time it caused a lot of friction. Toward the end of the year I spent much of my time surreptitiously working on On Lisp, which I had by this time gotten a contract to publish.\n\nThe good part was that I got paid huge amounts of money, especially by art student standards. In Florence, after paying my part of the rent, my budget for everything else had been $7 a day. Now I was get",
- "ting paid more than 4 times that every hour, even when I was just sitting in a meeting. By living cheaply I not only managed to save enough to go back to RISD, but also paid off my college loans.\n\nI learned some useful things at Interleaf, though they were mostly about what not to do. I learned that it's better for technology companies to be run by product people than sales people (though sales is a real skill and people who are good at it are really good at it), that it leads to bugs when code is edited by",
- " too many people, that cheap office space is no bargain if it's depressing, that planned meetings are inferior to corridor conversations, that big, bureaucratic customers are a dangerous source of money, and that there's not much overlap between conventional office hours and the optimal time for hacking, or conventional offices and the optimal place for it.\n\nBut the most important thing I learned, and which I used in both Viaweb and Y Combinator, is that the low end eats the high end: that it's good to be t",
- "he \"entry level\" option, even though that will be less prestigious, because if you're not, someone else will be, and will squash you against the ceiling. Which in turn means that prestige is a danger sign.\n\nWhen I left to go back to RISD the next fall, I arranged to do freelance work for the group that did projects for customers, and this was how I survived for the next several years. When I came back to visit for a project later on, someone told me about a new thing called HTML, which was, as he described ",
- "it, a derivative of SGML. Markup language enthusiasts were an occupational hazard at Interleaf and I ignored him, but this HTML thing later became a big part of my life.\n\nIn the fall of 1992 I moved back to Providence to continue at RISD. The foundation had merely been intro stuff, and the Accademia had been a (very civilized) joke. Now I was going to see what real art school was like. But alas it was more like the Accademia than not. Better organized, certainly, and a lot more expensive, but it was now bec",
- "oming clear that art school did not bear the same relationship to art that medical school bore to medicine. At least not the painting department. The textile department, which my next door neighbor belonged to, seemed to be pretty rigorous. No doubt illustration and architecture were too. But painting was post-rigorous. Painting students were supposed to express themselves, which to the more worldly ones meant to try to cook up some sort of distinctive signature style.\n\nA signature style is the visual equiv",
- "alent of what in show business is known as a \"schtick\": something that immediately identifies the work as yours and no one else's. For example, when you see a painting that looks like a certain kind of cartoon, you know it's by Roy Lichtenstein. So if you see a big painting of this type hanging in the apartment of a hedge fund manager, you know he paid millions of dollars for it. That's not always why artists have a signature style, but it's usually why buyers pay a lot for such work. [6]\n\nThere were plenty",
- " of earnest students too: kids who \"could draw\" in high school, and now had come to what was supposed to be the best art school in the country, to learn to draw even better. They tended to be confused and demoralized by what they found at RISD, but they kept going, because painting was what they did. I was not one of the kids who could draw in high school, but at RISD I was definitely closer to their tribe than the tribe of signature style seekers.\n\nI learned a lot in the color class I took at RISD, but oth",
- "erwise I was basically teaching myself to paint, and I could do that for free. So in 1993 I dropped out. I hung around Providence for a bit, and then my college friend Nancy Parmet did me a big favor. A rent-controlled apartment in a building her mother owned in New York was becoming vacant. Did I want it? It wasn't much more than my current place, and New York was supposed to be where the artists were. So yes, I wanted it! [7]\n\nAsterix comics begin by zooming in on a tiny corner of Roman Gaul that turns ou",
- "t not to be controlled by the Romans. You can do something similar on a map of New York City: if you zoom in on the Upper East Side, there's a tiny corner that's not rich, or at least wasn't in 1993. It's called Yorkville, and that was my new home. Now I was a New York artist — in the strictly technical sense of making paintings and living in New York.\n\nI was nervous about money, because I could sense that Interleaf was on the way down. Freelance Lisp hacking work was very rare, and I didn't want to have to",
- " program in another language, which in those days would have meant C++ if I was lucky. So with my unerring nose for financial opportunity, I decided to write another book on Lisp. This would be a popular book, the sort of book that could be used as a textbook. I imagined myself living frugally off the royalties and spending all my time painting. (The painting on the cover of this book, ANSI Common Lisp, is one that I painted around this time.)\n\nThe best thing about New York for me was the presence of Idelle",
- " and Julian Weber. Idelle Weber was a painter, one of the early photorealists, and I'd taken her painting class at Harvard. I've never known a teacher more beloved by her students. Large numbers of former students kept in touch with her, including me. After I moved to New York I became her de facto studio assistant.\n\nShe liked to paint on big, square canvases, 4 to 5 feet on a side. One day in late 1994 as I was stretching one of these monsters there was something on the radio about a famous fund manager. H",
- "e wasn't that much older than me, and was super rich. The thought suddenly occurred to me: why don't I become rich? Then I'll be able to work on whatever I want.\n\nMeanwhile I'd been hearing more and more about this new thing called the World Wide Web. Robert Morris showed it to me when I visited him in Cambridge, where he was now in grad school at Harvard. It seemed to me that the web would be a big deal. I'd seen what graphical user interfaces had done for the popularity of microcomputers. It seemed like t",
- "he web would do the same for the internet.\n\nIf I wanted to get rich, here was the next train leaving the station. I was right about that part. What I got wrong was the idea. I decided we should start a company to put art galleries online. I can't honestly say, after reading so many Y Combinator applications, that this was the worst startup idea ever, but it was up there. Art galleries didn't want to be online, and still don't, not the fancy ones. That's not how they sell. I wrote some software to generate w",
- ...]
+:ok
 ```
+
+## Embeddings
+
+There are many ways we could partition and retrieve snippets from a large text document. In this example we will use embedding-based lookup. That is, we will split the text into smaller chunks, compute an embedding (the chunk meaning compressed into a vector) and create an in-memory index for efficient lookup. In real world problems, you may want to explore other retrieval methods, such as reranking or BM25.
+
+<!-- livebook:{"break_markdown":true} -->
+
+First, let's split the text into chunks, 1024 characters each.
 
 ```elixir
+chunks =
+  text
+  |> String.codepoints()
+  |> Enum.chunk_every(1024)
+  |> Enum.map(&Enum.join/1)
+
 length(chunks)
 ```
 
 <!-- livebook:{"output":true} -->
 
 ```
-147
+74
 ```
 
+To generate our embeddings we will use the [gte-small](https://huggingface.co/thenlper/gte-small) model. Let's download it and start a serving.
+
 ```elixir
-IO.puts(chunks |> Enum.at(0))
-IO.puts(chunks |> Enum.at(2))
+repo = {:hf, "thenlper/gte-small"}
+
+{:ok, model_info} = Bumblebee.load_model(repo)
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+
+:ok
 ```
 
 <!-- livebook:{"output":true} -->
 
 ```
 
+10:45:24.653 [info] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero. See more at https://github.com/torvalds/linux/blob/v6.0/Documentation/ABI/testing/sysfs-bus-pci#L344-L355
 
-What I Worked On
+10:45:24.653 [info] XLA service 0x7fe2640185e0 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
 
-February 2021
+10:45:24.653 [info]   StreamExecutor device (0): NVIDIA A100-PCIE-40GB, Compute Capability 8.0
 
-Before college the two main things I worked on, outside of school, were writing and programming. I didn't write essays. I wrote what beginning writers were supposed to write then, and probably still are: short stories. My stories were awful. They had hardly any plot, just characters with strong feelings, which I imagined made them deep.
+10:45:24.653 [info] Using BFC allocator.
 
-The first programs I tried writing were on the IBM 1401 that our school district used for what was then called "data processing." This wa
- a button to load the program into memory and run it. The result would ordinarily be to print something on the spectacularly loud printer.
+10:45:24.654 [info] XLA backend allocating 38068951449 bytes on device 0 for BFCAllocator.
 
-I was puzzled by the 1401. I couldn't figure out what to do with it. And in retrospect there's not much I could have done with it. The only form of input to programs was data stored on punched cards, and I didn't have any data stored on punched cards. The only other option was to do things that didn't rely on any input, like calculate approximations of pi, but I didn't 
+10:45:25.724 [info] Loaded cuDNN version 8900
+
+10:45:25.741 [info] Using nvlink for parallel linking
+
 ```
 
 <!-- livebook:{"output":true} -->
@@ -140,428 +106,93 @@ I was puzzled by the 1401. I couldn't figure out what to do with it. And in retr
 ```
 
 ```elixir
-gte_small = "thenlper/gte-small"
-{:ok, gte_small_model} = Bumblebee.load_model({:hf, gte_small})
-{:ok, gte_small_tokenizer} = Bumblebee.load_tokenizer({:hf, gte_small})
-
-gte_small_serving =
-  Bumblebee.Text.TextEmbedding.text_embedding(gte_small_model, gte_small_tokenizer,
+serving =
+  Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer,
     compile: [batch_size: 64, sequence_length: 512],
-    defn_options: [compiler: EXLA, client: :cuda],
+    defn_options: [compiler: EXLA],
     output_attribute: :hidden_state,
     output_pool: :mean_pooling
   )
+
+Kino.start_child({Nx.Serving, serving: serving, name: GteServing})
 ```
 
 <!-- livebook:{"output":true} -->
 
 ```
-%Nx.Serving{
-  module: Nx.Serving.Default,
-  arg: #Function<1.26226188/2 in Bumblebee.Text.TextEmbedding.text_embedding/3>,
-  client_preprocessing: #Function<2.26226188/1 in Bumblebee.Text.TextEmbedding.text_embedding/3>,
-  client_postprocessing: #Function<3.26226188/2 in Bumblebee.Text.TextEmbedding.text_embedding/3>,
-  streaming: nil,
-  batch_size: 64,
-  distributed_postprocessing: &Function.identity/1,
-  process_options: [batch_keys: [sequence_length: 512]],
-  defn_options: [compiler: EXLA, client: :cuda]
-}
+
+10:45:40.784 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_5', 416 bytes spill stores, 380 bytes spill loads
+
+
+10:45:40.941 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_4', 16 bytes spill stores, 8 bytes spill loads
+
+
+10:45:41.043 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_5', 216 bytes spill stores, 216 bytes spill loads
+
+
+10:45:41.911 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_4', 116 bytes spill stores, 116 bytes spill loads
+
+
+10:45:42.297 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot', 224 bytes spill stores, 224 bytes spill loads
+
+
+10:45:43.685 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot', 116 bytes spill stores, 116 bytes spill loads
+
+
 ```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok, #PID<0.337.0>}
+```
+
+We are ready to generate embeddings for the chunks. We can pass the whole list to `Nx.Serving.batched_run`, it is going to split them into batches for us automatically!
 
 ```elixir
-Kino.start_child(
-  {Nx.Serving, serving: gte_small_serving, name: GteSmall, batch_size: 64, batch_timeout: 50}
-)
+results = Nx.Serving.batched_run(GteServing, chunks)
+chunk_embeddings = for result <- results, do: result.embedding
+
+List.first(chunk_embeddings)
 ```
 
 <!-- livebook:{"output":true} -->
 
 ```
-
-00:43:24.065 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot', 80 bytes spill stores, 80 bytes spill loads
-
-
-00:43:24.147 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_4', 92 bytes spill stores, 92 bytes spill loads
-
-
-00:43:24.385 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot', 260 bytes spill stores, 260 bytes spill loads
-
-
-00:43:24.419 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_5', 176 bytes spill stores, 176 bytes spill loads
-
-
-00:43:24.551 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_5', 416 bytes spill stores, 380 bytes spill loads
-
-
+#Nx.Tensor<
+  f32[384]
+  [-0.5916804075241089, -0.13268965482711792, 0.36229825019836426, -0.556615948677063, 0.01819833740592003, -0.024938391521573067, 0.04474494233727455, 0.47490546107292175, -0.05340703949332237, -0.4221706986427307, 0.28060096502304077, 0.17608247697353363, 0.4058661460876465, -0.18497221171855927, -0.03590576723217964, 0.08227517455816269, 0.01424853503704071, 3.000508586410433e-4, -0.4355849027633667, -0.031500332057476044, 0.09329124540090561, -0.3475785255432129, -0.32122331857681274, -0.6944850087165833, 0.37913432717323303, 0.6656467318534851, -0.13363417983055115, -0.15357448160648346, -0.49233582615852356, -1.609808325767517, -0.1069299727678299, -0.6130001544952393, 0.5398191809654236, -0.1528831273317337, 0.2520260810852051, -0.23963800072669983, 0.11689342558383942, 0.2304331660270691, -0.33046290278434753, 0.19069115817546844, 0.18440452218055725, 0.004146122839301825, -0.2470259666442871, -0.4341312348842621, -0.10821156948804855, -0.494146466255188, -0.364268034696579, -0.3443082273006439, 0.5371165871620178, -0.3544468879699707, ...]
+>
 ```
 
-<!-- livebook:{"output":true} -->
+## Embeddings index and retrieval
 
-```
-{:ok, #PID<0.4142.0>}
-```
-
-```elixir
-# Prepare embeddings
-
-batches = chunks |> Enum.chunk_every(64)
-data = batches |> Enum.flat_map(fn batch -> Nx.Serving.batched_run(GteSmall, batch) end)
-```
-
-<!-- livebook:{"output":true} -->
-
-```
-[
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.5060185790061951, -0.11551843583583832, 0.4870251417160034, -0.5338457822799683, 0.18608792126178741, 0.06753205507993698, -0.019447695463895798, 0.5878230333328247, -0.09569207578897476, -0.4835662841796875, 0.2564793825149536, 0.11426602303981781, 0.5531373023986816, -0.08397350460290909, 0.019229304045438766, 0.20630532503128052, 0.11349958926439285, 0.04490182176232338, -0.5395249724388123, 0.08705472946166992, 0.16600443422794342, -0.37077686190605164, -0.18356825411319733, -0.6497248411178589, 0.35360294580459595, 0.5830326676368713, -0.09700088948011398, -0.1981554925441742, -0.40175384283065796, -1.5213117599487305, -0.14562787115573883, -0.49201542139053345, 0.5091878771781921, -0.1391681581735611, 0.20559082925319672, -0.1482456922531128, 0.1644565910100937, 0.25620999932289124, -0.42308610677719116, 0.23535941541194916, 0.1622277796268463, -0.01556632574647665, -0.199506938457489, -0.38791587948799133, -0.08856809139251709, -0.6532385349273682, -0.25013113021850586, -0.33552733063697815, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.4469389319419861, -0.15805946290493011, 0.1469576358795166, -0.6064202189445496, -0.3288232088088989, -0.11806286871433258, 0.11422690004110336, 0.4841296672821045, 0.08180975914001465, -0.04558297246694565, 0.2619279623031616, -0.10582462698221207, 0.46483710408210754, 0.0576927550137043, -0.20522019267082214, -0.2345087230205536, -0.011498902924358845, -0.14128518104553223, -0.33451807498931885, 0.3422686755657196, 0.2384081929922104, -0.1483687311410904, -0.3159591257572174, -0.7101508975028992, 0.46741968393325806, 0.7290358543395996, -0.24584408104419708, -0.3861245810985565, -0.5341888666152954, -1.6041463613510132, 0.18619833886623383, -0.4810338020324707, 0.6422061920166016, 0.020027298480272293, -0.02410239167511463, -0.3524848222732544, 0.06628227233886719, 0.23894928395748138, -0.09606093168258667, 0.26111388206481934, -0.028699424117803574, 0.06078178808093071, -0.18165309727191925, -0.42539170384407043, -0.4203300178050995, -0.4321126937866211, -0.23934656381607056, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.49548637866973877, 0.01675751432776451, 0.024649430066347122, -0.356758177280426, -0.3277597725391388, -0.10390440374612808, 0.271003395318985, 0.6529502272605896, -0.13633351027965546, 0.046497642993927, 0.08038433641195297, -0.290831595659256, 0.5483648777008057, 0.2726127803325653, 0.003043050179257989, -0.24206532537937164, -0.03912948817014694, -0.17673243582248688, -0.31051182746887207, 0.3427734076976776, 0.5342835783958435, -0.22327971458435059, -0.22555981576442719, -0.3840104937553406, 0.2502661943435669, 0.7846500277519226, -0.3909285068511963, -0.4011225700378418, -0.009273648262023926, -1.8126345872879028, 0.051813025027513504, -0.4009190797805786, 0.6066031455993652, 0.11755556613206863, 0.04697461798787117, -0.41621124744415283, 0.23651666939258575, 0.22487670183181763, -0.3209739327430725, 0.40376532077789307, 0.3627234995365143, 0.12660306692123413, -0.23622369766235352, -0.4966683089733124, -0.27227628231048584, -0.3740691542625427, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.45299068093299866, -0.02470392920076847, 0.22069630026817322, -0.3278999626636505, -0.008547008037567139, -0.001752951880916953, 0.4380647838115692, 0.49375084042549133, 0.31371188163757324, -0.3168717920780182, -0.03763458877801895, -0.1737709492444992, 0.5422407984733582, 0.1810278743505478, -0.11296891421079636, 0.0953572541475296, -0.3269795775413513, -9.124121279455721e-4, -0.2367805540561676, 0.1851310431957245, 0.3564866781234741, -0.7219977974891663, -0.6295580863952637, -0.3193548619747162, 0.19629675149917603, 0.29100650548934937, -0.7224665284156799, -0.25544190406799316, -0.4451180696487427, -1.4737781286239624, -0.18498091399669647, -0.29757294058799744, 0.5897995233535767, -0.1371128112077713, 0.12624147534370422, -0.19526036083698273, -0.11006031930446625, 0.2622518241405487, -0.5818975567817688, 0.08893545717000961, 0.12579035758972168, 0.34667637944221497, -0.027879275381565094, -0.28964763879776, -0.19723789393901825, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.3803759515285492, 0.478156715631485, 0.44265347719192505, 0.024738142266869545, -0.1617056280374527, 0.158956378698349, 0.5691656470298767, 0.6077234148979187, 0.08119617402553558, 0.08609995245933533, -0.11102975904941559, -0.4523330330848694, 0.4718100130558014, 0.034747540950775146, -0.11910484731197357, -0.0031948150135576725, -0.17776261270046234, -0.14157113432884216, -0.17047031223773956, 0.288463294506073, 0.13395190238952637, -0.2900732755661011, -0.37049442529678345, -0.6361963748931885, 0.04649442806839943, 0.23386728763580322, -0.6028455495834351, 0.07357805967330933, -0.22893980145454407, -1.2890938520431519, -0.14959490299224854, -0.5348525047302246, 0.7859885692596436, -0.27561864256858826, -0.011900454759597778, -0.269275039434433, 0.25514477491378784, -0.020522428676486015, -0.5266126990318298, 0.22071270644664764, -0.2563720941543579, 0.19688710570335388, -0.07918819785118103, -0.36337435245513916, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.28562524914741516, 0.040588073432445526, 0.18047143518924713, -0.3180390000343323, -0.06425819545984268, 0.004272688180208206, 0.12469547241926193, 0.74937903881073, -0.263936847448349, -0.16912420094013214, -0.18197943270206451, 0.1237097680568695, 0.46869054436683655, 0.33625683188438416, 0.04556963965296745, 0.033433910459280014, 0.18353496491909027, -0.08905153721570969, -0.6462173461914062, 0.38688603043556213, 0.39921706914901733, -0.3735838234424591, -0.19648976624011993, -0.5591354370117188, 0.14518970251083374, 0.6647306084632874, -0.7005335688591003, -0.01903580129146576, -0.07399271428585052, -1.597489833831787, -0.0606708824634552, -0.5853163599967957, 0.689662516117096, -0.18779082596302032, -0.2059580683708191, -0.35621169209480286, -0.09374077618122101, 0.06429576128721237, -0.2530231475830078, 0.16005513072013855, -0.14106257259845734, 0.16477635502815247, 0.08758782595396042, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [0.29890209436416626, 0.16524262726306915, 0.040757957845926285, -0.02284519374370575, 0.08578325808048248, 0.027703721076250076, 0.28540173172950745, 0.4882827401161194, 0.022514814510941505, -0.2785830497741699, -0.062393881380558014, -0.46246588230133057, 0.32926425337791443, 0.32013142108917236, 0.5612996220588684, 0.02464429847896099, 0.03882017731666565, 0.21123047173023224, -0.4949881136417389, 0.40561652183532715, 0.2863142788410187, -0.4854441285133362, -0.2381841540336609, 0.005621836055070162, 0.3139808177947998, 0.4566940665245056, -0.33687490224838257, -0.5023747086524963, -0.12085361778736115, -1.3479673862457275, -0.13277621567249298, -0.13010044395923615, 0.4437132179737091, -0.30088505148887634, -0.14588798582553864, -0.04066314548254013, -0.0665828138589859, 0.2637016475200653, -0.2699585556983948, 0.3465876579284668, 0.35057371854782104, 0.17329668998718262, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.3150899112224579, 0.3005734086036682, 0.46750718355178833, -0.1020803451538086, -0.11229021102190018, 0.28915902972221375, 0.3662511706352234, 0.3704756796360016, -0.02103453129529953, -0.38809436559677124, -0.11704205721616745, -0.02262643352150917, 0.2655054032802582, 0.2123183310031891, -0.3072090148925781, -0.02769291028380394, -0.04422634094953537, 0.34460556507110596, -0.27104616165161133, 0.27391567826271057, 0.47354358434677124, -0.19272436201572418, -0.16455800831317902, -0.5309813618659973, 0.019833123311400414, 0.5151373147964478, -0.3933526873588562, -0.19612586498260498, -0.48946982622146606, -1.284460425376892, -0.004803343676030636, -0.6063476204872131, 0.5350148677825928, -0.11851361393928528, 0.10576506704092026, -0.07219536602497101, -0.046578094363212585, 0.12887926399707794, -0.13370293378829956, 0.15314103662967682, -0.07238738983869553, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.5277695655822754, -1.5131052350625396e-4, 0.16524116694927216, -0.2743305563926697, -0.11722856014966965, 0.12890608608722687, 0.23932324349880219, 0.4516843259334564, -0.11504318565130234, -0.44835391640663147, -0.09828483313322067, 0.013752095401287079, 0.3458920121192932, 0.21798332035541534, -0.11569561809301376, 0.14279012382030487, -0.29399996995925903, 0.11592943221330643, -0.6452556848526001, -0.032982222735881805, 0.46303024888038635, -0.3080606460571289, -0.05330820381641388, -0.3991267681121826, -0.002368468791246414, 0.738012433052063, -0.21824610233306885, -0.6184340119361877, -0.2366066426038742, -1.479233980178833, 0.10156498849391937, -0.3157825767993927, 0.687170147895813, -0.15079104900360107, -0.30717840790748596, 0.06443635374307632, -0.3835664987564087, 0.2880101501941681, -0.3225279450416565, 0.4867696464061737, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.5722426176071167, -0.09656544774770737, 0.4448170065879822, -0.42536062002182007, -0.2648228704929352, 0.2147960513830185, 0.29766228795051575, 0.34476810693740845, 0.26064223051071167, -0.26392579078674316, 0.14512935280799866, 0.18304695188999176, 0.051693279296159744, 0.11751553416252136, 0.216139554977417, 0.16565777361392975, -0.0501827597618103, -0.06340458244085312, -0.5231989026069641, -0.1177261620759964, 0.5413272976875305, -0.454793244600296, -0.2565385103225708, -0.39751294255256653, 0.2369755208492279, 0.48898154497146606, -0.18566887080669403, -0.6508549451828003, -0.1405591070652008, -1.6768996715545654, 0.1788453757762909, -0.014539167284965515, 0.5994440317153931, -0.27678680419921875, -0.30948102474212646, -0.1941407322883606, -0.30772900581359863, 0.3919394314289093, -0.45864900946617126, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.5891633033752441, 0.30393409729003906, 0.3197025656700134, -0.4244002103805542, -0.05218498408794403, 0.20293933153152466, 0.3500978648662567, 0.7068139314651489, -0.305846631526947, -0.1025998592376709, 0.042203161865472794, 0.1278804987668991, 0.39812299609184265, 0.04392416775226593, -0.15173345804214478, 0.5207716822624207, -0.25200536847114563, 0.21353231370449066, -0.6114981770515442, 0.06998704373836517, 0.35677891969680786, -0.29422974586486816, -0.1768510788679123, -0.5109505653381348, 0.1829591542482376, 0.6129745841026306, -0.08527822047472, -0.1764005422592163, -0.33266201615333557, -1.627988338470459, 0.048832692205905914, -0.3467542827129364, 0.6404221653938293, -0.22025805711746216, -0.2674189507961273, 0.021124713122844696, -0.35242119431495667, 0.16188612580299377, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.36236000061035156, 0.06777645647525787, 0.11810095608234406, -0.5276819467544556, -0.13151971995830536, -0.21136924624443054, 0.5917841792106628, 0.2944413721561432, -0.06662049144506454, -0.332733690738678, -0.024444153532385826, -0.49709752202033997, 0.1808006912469864, 0.13743039965629578, 0.0643668994307518, 0.20625656843185425, -0.028781192377209663, 0.10949154943227768, -0.3900088965892792, 0.23192629218101501, 0.5631651878356934, 0.04806038737297058, -0.3425225019454956, -0.4022650122642517, 0.43753451108932495, 0.6655981540679932, -0.36817216873168945, -0.363251268863678, -0.2986513376235962, -1.4469293355941772, 0.21423041820526123, -0.8221670985221863, 0.10496693104505539, -0.04380766302347183, -0.1481471061706543, 0.06550521403551102, -0.10103601962327957, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.5216065645217896, 0.029678450897336006, 0.03648972138762474, -0.22697511315345764, 0.27457424998283386, -0.050038643181324005, 0.5519298911094666, 0.6176361441612244, 0.22020921111106873, -0.1371171474456787, 0.3115231394767761, -0.3897355794906616, 0.009592695161700249, 0.37172412872314453, 0.3561612665653229, 0.05119733512401581, -0.1820874959230423, 0.051289234310388565, -0.22980880737304688, 0.2764614522457123, 0.29286977648735046, 0.13080111145973206, -0.26667100191116333, -0.3634936213493347, 0.06027042493224144, 0.6741621494293213, -0.1982361227273941, -0.42960384488105774, -0.10352806746959686, -1.6432301998138428, -0.08407536894083023, -0.6996415853500366, 0.5210441946983337, -0.08368504047393799, -0.14104516804218292, 0.003274888265877962, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.20260246098041534, -0.05835384503006935, 0.07651343941688538, -0.19981294870376587, -0.15753836929798126, 0.24491561949253082, 0.1231999322772026, 0.3698383569717407, 0.05268298089504242, -0.3017978370189667, -0.07871989160776138, -0.15933144092559814, 0.35104337334632874, 0.34953418374061584, 0.31361520290374756, 0.08276766538619995, -0.015857430174946785, -0.11920693516731262, -0.661343514919281, 0.3430449366569519, 0.7956144213676453, -0.07675102353096008, 0.09403514117002487, -0.13748040795326233, -0.04716057330369949, 0.6969454884529114, -0.3997180759906769, -0.32205337285995483, -0.09523002058267593, -1.687747836112976, -0.26053258776664734, -0.1310230940580368, 0.6754110455513, -0.37509241700172424, -0.14595367014408112, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.5171542167663574, 0.18234679102897644, 0.23460465669631958, -0.27528610825538635, 0.009344358928501606, -0.0943964496254921, 0.6300150752067566, 0.38513439893722534, 0.15266872942447662, -0.17448748648166656, -0.04520322009921074, -0.20176544785499573, 0.3018161356449127, 0.1829930543899536, -0.03994667902588844, -0.23073552548885345, -0.4796726107597351, 0.08807184547185898, -0.9482196569442749, 0.25635772943496704, 0.05325055122375488, -0.3489757478237152, -0.004234866704791784, -0.5279357433319092, 0.13665077090263367, 0.8092682361602783, -0.3155018985271454, -0.5445867776870728, -0.4645771384239197, -1.5847606658935547, 0.03969142213463783, -0.2232915163040161, 0.6316881775856018, -0.132620707154274, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.4416978657245636, 0.1074005588889122, 0.08448407053947449, -0.4338662028312683, -0.0794898122549057, 0.05495471879839897, 0.32595914602279663, 0.3116787075996399, 0.11724113672971725, -0.2999207675457001, 0.15119384229183197, -0.42822369933128357, 0.24934101104736328, 0.29061082005500793, 0.4642781913280487, -0.07376958429813385, -0.2999476194381714, 0.24356035888195038, -0.3153655529022217, 0.10539814829826355, 0.44227170944213867, -0.13451018929481506, -0.31483885645866394, -0.8441717028617859, 0.20449413359165192, 0.5877802968025208, -0.13987143337726593, -0.6881961226463318, -0.317129522562027, -1.433471918106079, -0.22030043601989746, -0.12623201310634613, 0.5603809952735901, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.6535592079162598, 0.33152660727500916, 0.4780952036380768, -0.3345533013343811, 0.16810978949069977, 0.027738889679312706, -0.05769387632608414, 0.41518908739089966, -0.16920216381549835, -0.061724502593278885, 0.02364509552717209, -0.09198556840419769, 0.4025041162967682, 0.1579447239637375, -0.16874518990516663, -0.057420384138822556, -0.2906930446624756, -0.11834540218114853, -0.043399251997470856, 0.2936854958534241, 0.3328394293785095, -0.2982027530670166, -0.3638708293437958, -0.445097953081131, 0.14529365301132202, 0.6247680187225342, -0.4642627537250519, -0.37291833758354187, -0.32147592306137085, -1.2841756343841553, -0.33326002955436707, -0.16455821692943573, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.6406586170196533, 0.3956797122955322, 0.2741635739803314, -0.22266821563243866, -0.06517469137907028, 0.03013390302658081, 0.4048309624195099, 0.2519652843475342, -0.17008225619792938, 0.09528619796037674, 0.09552088379859924, -0.0902339294552803, 0.20953325927257538, 0.1358538120985031, 0.07533323019742966, 0.13646280765533447, -0.08733880519866943, 0.2877831757068634, -0.3071533739566803, 0.06337853521108627, 0.17309288680553436, -0.06483566761016846, -0.25750628113746643, -0.5475049614906311, 0.20207998156547546, 0.4777820408344269, -0.29980024695396423, -0.25026386976242065, -0.37508076429367065, -1.642765760421753, 0.11294426023960114, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.45665624737739563, 0.06302152574062347, 0.5135331749916077, -0.03026600554585457, 0.18518897891044617, 0.1027718186378479, 0.2687011957168579, 0.21111463010311127, -0.18349459767341614, 0.06949616223573685, 0.1165631115436554, -0.019892795011401176, 0.27137845754623413, 0.14424903690814972, -0.15993481874465942, 0.056610822677612305, -0.20583093166351318, 0.49339455366134644, -0.5997193455696106, 0.31438958644866943, 0.4053603708744049, -0.2877962291240692, -0.08083565533161163, -0.7014861106872559, 0.5329585075378418, 0.43329113721847534, -0.24047601222991943, -0.139989972114563, 0.040526676923036575, -1.2970997095108032, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.008111624978482723, 0.05615941435098648, 0.39211389422416687, 0.05046628415584564, -0.05176371708512306, 0.11627240478992462, 0.8160108327865601, 0.06251320242881775, -0.022616269066929817, -0.14627273380756378, -0.0963764414191246, -0.5974797606468201, 0.2861078977584839, 0.5464586019515991, -0.24291707575321198, 0.19275671243667603, -0.023103350773453712, 0.2207236886024475, -0.6732126474380493, -0.028794245794415474, 0.577924907207489, -0.2757216989994049, 0.05992155149579048, -0.6256099939346313, 0.5945110321044922, 0.5501927137374878, -0.23761135339736938, -0.05049336329102516, 0.08116497844457626, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [0.25234097242355347, -0.003688184544444084, 0.32042619585990906, -0.3284360468387604, -0.037462588399648666, -0.15931469202041626, 0.41478201746940613, 0.06426431238651276, -0.2722381353378296, -0.3587077856063843, -0.10841070115566254, 0.0050444696098566055, 0.08851034194231033, 0.1771949976682663, 0.06481534987688065, 0.09551467001438141, -0.12757058441638947, 0.2429136335849762, -0.42117801308631897, -0.06932858377695084, 0.21714361011981964, -0.24892558157444, 0.10704607516527176, -0.4944215416908264, 0.35260024666786194, 0.5413065552711487, -0.2298256754875183, -0.5576639771461487, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.5439206957817078, 0.2821996808052063, 0.4596490263938904, 0.054611239582300186, 0.23263312876224518, 0.010567986406385899, 0.47724267840385437, 0.3739897906780243, -0.16425982117652893, -0.09772048145532608, 0.20469887554645538, 0.03393210843205452, 0.4911944568157196, 0.22407886385917664, 0.014271438121795654, 0.31300580501556396, -0.31557002663612366, 0.19837790727615356, -0.13570748269557953, 0.37311482429504395, 0.22630567848682404, -0.10194987803697586, 0.12778930366039276, -0.5205545425415039, 0.12067195028066635, 0.7098070383071899, -0.30807095766067505, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.7623145580291748, 0.15910789370536804, 0.3762572407722473, -0.5590614080429077, -0.13844244182109833, 0.09056578576564789, 0.23930856585502625, 0.43792593479156494, 0.24890342354774475, -0.2429707944393158, -0.023119624704122543, -0.10258373618125916, 0.245492622256279, 0.08651190996170044, 0.10521921515464783, -0.1798083484172821, -0.37559589743614197, -0.29113197326660156, -0.5029164552688599, 0.11239419877529144, 0.22868221998214722, -0.26205337047576904, -0.2744600772857666, -0.4305581748485565, 0.2584184408187866, 0.4247477948665619, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.15845301747322083, 0.08317290246486664, 0.21112048625946045, -0.07489979267120361, 0.052113328129053116, 0.03298306092619896, 0.38542211055755615, 0.4208490550518036, -0.022957101464271545, -0.27299052476882935, -0.013718885369598866, -0.15824055671691895, 0.5293219089508057, 0.12924157083034515, 0.013760021887719631, 0.12514209747314453, -0.2386694848537445, 0.07738568633794785, -0.5297807455062866, 0.23231256008148193, 0.09272722154855728, -0.18379861116409302, -0.2325507551431656, -0.25859302282333374, 0.47720828652381897, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.09220466017723083, -0.03416288271546364, 0.29977890849113464, -0.018563296645879745, 0.11510410159826279, 0.2097863107919693, 0.5143243074417114, 0.4563472867012024, -0.07715070992708206, -0.05163129046559334, 0.20632782578468323, -0.5539463758468628, 0.23797735571861267, 0.15471939742565155, 0.055261801928281784, 0.06016993895173073, -0.2364158034324646, -0.1796979308128357, -0.32101932168006897, 0.20170500874519348, 0.3622020184993744, -0.03491602838039398, -0.19190089404582977, -0.41825228929519653, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.14300568401813507, 0.27983880043029785, 0.30147239565849304, -0.06812290847301483, 0.061750199645757675, -0.04646517336368561, 0.3625246584415436, 0.23177090287208557, -0.07269371300935745, -0.341425359249115, -0.020856456831097603, 0.011101672425866127, 0.42181164026260376, 0.4935532510280609, -0.04763052612543106, -0.45447424054145813, -0.4249280095100403, -0.018823685124516487, -0.4835588037967682, 0.19121578335762024, -0.10879632085561752, -0.07484058290719986, -0.2824125587940216, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.39270642399787903, 0.0906410962343216, 0.30321037769317627, -0.0070930104702711105, 0.24476495385169983, 0.3703584372997284, 0.3286784291267395, 0.5181986093521118, -0.23490096628665924, -0.2760283648967743, -0.038440100848674774, -0.16409264504909515, 0.7289730310440063, 0.09881656616926193, 0.13549792766571045, 0.3469177782535553, -0.13271069526672363, 0.192301407456398, -0.3649100661277771, 0.21480898559093475, -0.007657510228455067, 0.05333557352423668, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.012138755060732365, 0.13015426695346832, 0.3333891034126282, 0.22273217141628265, 0.3275159001350403, -0.2590496242046356, 0.2824515402317047, 0.1593027412891388, -0.30161595344543457, -0.14764004945755005, -0.06913209706544876, -0.4964796006679535, 0.11527176201343536, 0.14978787302970886, 0.09966889023780823, 0.11438408493995667, -0.22186705470085144, 0.20624975860118866, -0.5992031097412109, 0.35755565762519836, 0.2750261425971985, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [0.19286313652992249, -0.10881119966506958, 0.3099297881126404, 0.03388633951544762, 0.3446262776851654, 0.302015095949173, 0.6058067083358765, 0.2170785367488861, 0.1511133462190628, -0.08931463211774826, 0.33950406312942505, -0.7122695446014404, 0.2512240409851074, 0.19708459079265594, -0.14777544140815735, 0.10028307884931564, -0.004040439147502184, 0.516232967376709, -0.7274343371391296, 0.3139100670814514, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [0.055967509746551514, 0.008707585744559765, 0.24662497639656067, 0.19099238514900208, 0.2378825694322586, 0.20395343005657196, 0.34034988284111023, -0.11082333326339722, 0.24018198251724243, 0.01620975136756897, 0.10781383514404297, -0.12482818216085434, 0.07796582579612732, 0.35025933384895325, -0.3024563789367676, 0.24735336005687714, -0.052349191159009933, 0.4889887273311615, -0.7162660956382751, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.021435342729091644, 0.0685485452413559, 0.4340953826904297, 0.08175389468669891, 0.14017353951931, 0.18107646703720093, 0.7128864526748657, -0.20492896437644958, -0.2732020914554596, -0.12116526812314987, 0.11277328431606293, -0.2894524037837982, 0.22010813653469086, 0.18299496173858643, -0.24500778317451477, 0.3844657242298126, -0.02038881555199623, 0.6619081497192383, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [0.1317213773727417, -0.0044895559549331665, 0.42442837357521057, 0.16264913976192474, 0.4036122262477875, 0.12800657749176025, 0.8173044323921204, -0.00897990632802248, 0.47833189368247986, -0.07924693822860718, 0.1306440681219101, -0.5313686728477478, 0.20714083313941956, 0.5029692053794861, 0.049288250505924225, 0.19626614451408386, -0.12240713089704514, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [0.09471715986728668, -0.1650913506746292, 0.4423340857028961, 2.3863368551246822e-4, 0.46929728984832764, 0.2255498319864273, 0.9263197183609009, -0.10851287841796875, 0.22444090247154236, 0.21253925561904907, 0.37465599179267883, -0.19825132191181183, 0.25443267822265625, 0.8049489259719849, -0.263846755027771, 0.19406604766845703, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.5828003883361816, -0.15827728807926178, 0.10779138654470444, -0.10510316491127014, 0.02219385839998722, -0.01626008190214634, 0.5796473026275635, 0.3708738684654236, -0.14429767429828644, -0.3000021278858185, -0.05881263688206673, -0.10919518768787384, 0.18290437757968903, 0.49725979566574097, -0.10260137170553207, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.7070161700248718, -0.21245183050632477, 0.34727856516838074, -0.3934275209903717, -0.1811985820531845, 0.05722890421748161, 0.06329470127820969, 0.19634762406349182, -0.042232364416122437, 0.0059309727512300014, 0.06532487273216248, -0.1252875030040741, 0.34777215123176575, 0.012771998532116413, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.4992254376411438, 0.06350257247686386, 0.1824997216463089, -0.22226455807685852, -0.01640096865594387, -0.0011225976049900055, 0.5269520878791809, 0.22981582581996918, -0.13029062747955322, -0.2829909920692444, 0.05810113251209259, 0.020437831059098244, 0.42021214962005615, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.27106696367263794, 0.4010390043258667, 0.4558577537536621, 0.05715929716825485, 0.0905178114771843, -0.08284100145101547, 0.12059545516967773, 0.08400719612836838, 0.13322389125823975, 0.013626335188746452, -0.06709073483943939, 0.15076430141925812, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.05960638448596001, -0.2538803219795227, 0.3320748507976532, -0.23579725623130798, 0.4923270046710968, -0.28880244493484497, 0.5439785718917847, 0.5025039911270142, -0.010461075231432915, -0.4028146266937256, 0.22417044639587402, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.24157023429870605, -0.3072323501110077, 0.19988705217838287, -0.09716759622097015, 0.3609355390071869, -0.12289467453956604, 0.3825555741786957, 0.4481777846813202, 0.28716421127319336, -0.06701822578907013, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.07346810400485992, -0.07038954645395279, 0.08123075217008591, -0.31880438327789307, 0.07796124368906021, 0.275982141494751, 0.5687078237533569, 0.32197728753089905, 0.08732248097658157, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.20860633254051208, -0.4180067479610443, 0.17853523790836334, 0.01289625745266676, 0.4514371156692505, 0.008571751415729523, 0.1996385157108307, 0.4131041169166565, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.018975015729665756, -0.02526654489338398, 0.26979368925094604, 0.03375699371099472, 0.22318363189697266, 0.3874669075012207, 0.2961791455745697, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [0.08271864801645279, -0.11006924510002136, 0.014983950182795525, 0.024074416607618332, 0.2879605293273926, 0.4625479578971863, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.16145947575569153, -0.19888964295387268, 0.16256074607372284, -0.12441901117563248, 0.11418682336807251, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.438873827457428, -0.15501081943511963, 0.47927194833755493, 0.10148496925830841, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.11448843032121658, -0.1859028935432434, 0.42603129148483276, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.3728561997413635, -0.15903855860233307, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [-0.1493038386106491, ...]
-    >
-  },
-  %{
-    embedding: #Nx.Tensor<
-      f32[384]
-      [...]
-    >
-  },
-  %{...},
-  ...
-]
-```
-
-```elixir
-data |> List.first()
-```
-
-<!-- livebook:{"output":true} -->
-
-```
-%{
-  embedding: #Nx.Tensor<
-    f32[384]
-    [-0.5060185790061951, -0.11551843583583832, 0.4870251417160034, -0.5338457822799683, 0.18608792126178741, 0.06753205507993698, -0.019447695463895798, 0.5878230333328247, -0.09569207578897476, -0.4835662841796875, 0.2564793825149536, 0.11426602303981781, 0.5531373023986816, -0.08397350460290909, 0.019229304045438766, 0.20630532503128052, 0.11349958926439285, 0.04490182176232338, -0.5395249724388123, 0.08705472946166992, 0.16600443422794342, -0.37077686190605164, -0.18356825411319733, -0.6497248411178589, 0.35360294580459595, 0.5830326676368713, -0.09700088948011398, -0.1981554925441742, -0.40175384283065796, -1.5213117599487305, -0.14562787115573883, -0.49201542139053345, 0.5091878771781921, -0.1391681581735611, 0.20559082925319672, -0.1482456922531128, 0.1644565910100937, 0.25620999932289124, -0.42308610677719116, 0.23535941541194916, 0.1622277796268463, -0.01556632574647665, -0.199506938457489, -0.38791587948799133, -0.08856809139251709, -0.6532385349273682, -0.25013113021850586, -0.33552733063697815, 0.6160606741905212, ...]
-  >
-}
-```
-
-## Prepare data and embeds.
-
-## Build and test index
+Having all the embeddings at hand, we will now create an index using [hnswlib](https://github.com/elixir-nx/hnswlib). With the index, we will be able to quickly retrieve embeddings matching a query. The hnswlib library uses Approximate Nearest Neighbor (ANN) search underneath.
 
 ```elixir
 {:ok, index} = HNSWLib.Index.new(:cosine, 384, 1_000_000)
-```
 
-<!-- livebook:{"output":true} -->
+for embedding <- chunk_embeddings do
+  HNSWLib.Index.add_items(index, embedding)
+end
 
-```
-{:ok,
- %HNSWLib.Index{space: :cosine, dim: 384, reference: #Reference<0.1450052513.1521352705.178961>}}
-```
-
-```elixir
-data |> Enum.map(fn emb -> HNSWLib.Index.add_items(index, Nx.tensor(emb.embedding)) end)
 HNSWLib.Index.get_current_count(index)
 ```
 
 <!-- livebook:{"output":true} -->
 
 ```
-{:ok, 147}
+{:ok, 74}
 ```
 
+Now, given a textual query, we first need to compute its embedding using the same embedding model. Once we have the embedding, we do a similarity lookup and get top 4 matching results.
+
 ```elixir
-# Lets take it for a spin 
-# We will get the top 10 results (384 * 10 => ~4k extra context -- adjust base on your model)
-query = "What did the author do growing up?"
+query = "What were the two main things the author worked on before college?"
 
-q_emb =
-  Nx.Serving.batched_run(GteSmall, [query]) |> List.first() |> Map.get(:embedding) |> Nx.tensor()
+%{embedding: embedding} = Nx.Serving.batched_run(GteServing, query)
 
-{:ok, labels, dist} = HNSWLib.Index.knn_query(index, q_emb, k: 10)
+{:ok, labels, dist} = HNSWLib.Index.knn_query(index, embedding, k: 4)
 ```
 
 <!-- livebook:{"output":true} -->
@@ -569,46 +200,39 @@ q_emb =
 ```
 {:ok,
  #Nx.Tensor<
-   u64[1][10]
-   EXLA.Backend<cuda:0, 0.1450052513.1521090634.114887>
+   u64[1][4]
+   EXLA.Backend<cuda:0, 0.740345038.3226599448.172063>
    [
-     [90, 0, 26, 47, 33, 108, 87, 1, 46, 93]
+     [0, 10, 11, 54]
    ]
  >,
  #Nx.Tensor<
-   f32[1][10]
-   EXLA.Backend<cuda:0, 0.1450052513.1521090634.114889>
+   f32[1][4]
+   EXLA.Backend<cuda:0, 0.740345038.3226599448.172065>
    [
-     [0.1822376847267151, 0.1833900809288025, 0.18794900178909302, 0.18808048963546753, 0.19295358657836914, 0.1939256191253662, 0.19461607933044434, 0.1953921914100647, 0.1954479217529297, 0.19881653785705566]
+     [0.11476433277130127, 0.14768105745315552, 0.15568876266479492, 0.15724539756774902]
    ]
  >}
 ```
 
+The lookup conveniently returns indices, so we can get their corresponding chunks and join into a context text.
+
 ```elixir
 # We can see some overlapping in our chunks
-extra_context =
+context =
   labels
-  |> Nx.to_list()
-  |> List.first()
+  |> Nx.to_flat_list()
   |> Enum.sort()
-  |> Enum.map(fn idx -> Enum.at(chunks, idx) end)
-  |> Enum.join("\n")
+  |> Enum.map(fn idx -> "[...] " <> Enum.at(chunks, idx) <> " [...]" end)
+  |> Enum.join("\n\n")
+
+IO.puts(context)
 ```
 
 <!-- livebook:{"output":true} -->
 
 ```
-"\n\nWhat I Worked On\n\nFebruary 2021\n\nBefore college the two main things I worked on, outside of school, were writing and programming. I didn't write essays. I wrote what beginning writers were supposed to write then, and probably still are: short stories. My stories were awful. They had hardly any plot, just characters with strong feelings, which I imagined made them deep.\n\nThe first programs I tried writing were on the IBM 1401 that our school district used for what was then called \"data processing.\" This wa\ns in 9th grade, so I was 13 or 14. The school district's 1401 happened to be in the basement of our junior high school, and my friend Rich Draves and I got permission to use it. It was like a mini Bond villain's lair down there, with all these alien-looking machines — CPU, disk drives, printer, card reader — sitting up on a raised floor under bright fluorescent lights.\n\nThe language we used was an early version of Fortran. You had to type programs on punch cards, then stack them in the card reader and press\n I was in decent shape at painting and drawing from the RISD foundation that summer, but I still don't know how I managed to pass the written exam. I remember that I answered the essay question by writing about Cezanne, and that I cranked up the intellectual level as high as I could to make the most of my limited vocabulary. [2]\n\nI'm only up to age 25 and already there are such conspicuous patterns. Here I was, yet again about to attend some august institution in the hopes of learning about some prestigious\n of trying to write an essay about something people usually take for granted.\n\nThis is not the only way to paint. I'm not 100% sure it's even a good way to paint. But it seemed a good enough bet to be worth trying.\n\nOur teacher, professor Ulivi, was a nice guy. He could see I worked hard, and gave me a good grade, which he wrote down in a sort of passport each student had. But the Accademia wasn't teaching me anything except Italian, and my money was running out, so at the end of the first year I went back \n program in another language, which in those days would have meant C++ if I was lucky. So with my unerring nose for financial opportunity, I decided to write another book on Lisp. This would be a popular book, the sort of book that could be used as a textbook. I imagined myself living frugally off the royalties and spending all my time painting. (The painting on the cover of this book, ANSI Common Lisp, is one that I painted around this time.)\n\nThe best thing about New York for me was the presence of Idelle\n and Julian Weber. Idelle Weber was a painter, one of the early photorealists, and I'd taken her painting class at Harvard. I've never known a teacher more beloved by her students. Large numbers of former students kept in touch with her, including me. After I moved to New York I became her de facto studio assistant.\n\nShe liked to paint on big, square canvases, 4 to 5 feet on a side. One day in late 1994 as I was stretching one of these monsters there was something on the radio about a famous fund manager. H\nbe, and I was going to write them. [12]\n\nI've worked on several different things, but to the extent there was a turning point where I figured out what to work on, it was when I started publishing essays online. From then on I knew that whatever else I did, I'd always write essays too.\n\nI knew that online essays would be a marginal medium at first. Socially they'd seem more like rants posted by nutjobs on their GeoCities sites than the genteel and beautifully typeset compositions published in The New Yorker.\nking on things that aren't prestigious doesn't guarantee you're on the right track, it at least guarantees you're not on the most common type of wrong one.\n\nOver the next several years I wrote lots of essays about all kinds of different topics. O'Reilly reprinted a collection of them as a book, called Hackers & Painters after one of the essays in it. I also worked on spam filters, and did some more painting. I used to have dinners for a group of friends every thursday night, which taught me how to co" <> ...
-```
-
-```elixir
-extra_context |> IO.puts()
-```
-
-<!-- livebook:{"output":true} -->
-
-```
-
+[...] 
 
 What I Worked On
 
@@ -616,38 +240,31 @@ February 2021
 
 Before college the two main things I worked on, outside of school, were writing and programming. I didn't write essays. I wrote what beginning writers were supposed to write then, and probably still are: short stories. My stories were awful. They had hardly any plot, just characters with strong feelings, which I imagined made them deep.
 
-The first programs I tried writing were on the IBM 1401 that our school district used for what was then called "data processing." This wa
-s in 9th grade, so I was 13 or 14. The school district's 1401 happened to be in the basement of our junior high school, and my friend Rich Draves and I got permission to use it. It was like a mini Bond villain's lair down there, with all these alien-looking machines — CPU, disk drives, printer, card reader — sitting up on a raised floor under bright fluorescent lights.
+The first programs I tried writing were on the IBM 1401 that our school district used for what was then called "data processing." This was in 9th grade, so I was 13 or 14. The school district's 1401 happened to be in the basement of our junior high school, and my friend Rich Draves and I got permission to use it. It was like a mini Bond villain's lair down there, with all these alien-looking machines — CPU, disk drives, printer, card reader — sitting up on a raised floor under bright fluorescent lights.
 
-The language we used was an early version of Fortran. You had to type programs on punch cards, then stack them in the card reader and press
- I was in decent shape at painting and drawing from the RISD foundation that summer, but I still don't know how I managed to pass the written exam. I remember that I answered the essay question by writing about Cezanne, and that I cranked up the intellectual level as high as I could to make the most of my limited vocabulary. [2]
+The language we used was an early version of Fortran. You had to type programs on punch cards, then stack them in the card reader and press [...]
 
-I'm only up to age 25 and already there are such conspicuous patterns. Here I was, yet again about to attend some august institution in the hopes of learning about some prestigious
- of trying to write an essay about something people usually take for granted.
+[...] g art classes at Harvard. Grad students could take classes in any department, and my advisor, Tom Cheatham, was very easy going. If he even knew about the strange classes I was taking, he never said anything.
 
-This is not the only way to paint. I'm not 100% sure it's even a good way to paint. But it seemed a good enough bet to be worth trying.
+So now I was in a PhD program in computer science, yet planning to be an artist, yet also genuinely in love with Lisp hacking and working away at On Lisp. In other words, like many a grad student, I was working energetically on multiple projects that were not my thesis.
 
-Our teacher, professor Ulivi, was a nice guy. He could see I worked hard, and gave me a good grade, which he wrote down in a sort of passport each student had. But the Accademia wasn't teaching me anything except Italian, and my money was running out, so at the end of the first year I went back 
- program in another language, which in those days would have meant C++ if I was lucky. So with my unerring nose for financial opportunity, I decided to write another book on Lisp. This would be a popular book, the sort of book that could be used as a textbook. I imagined myself living frugally off the royalties and spending all my time painting. (The painting on the cover of this book, ANSI Common Lisp, is one that I painted around this time.)
+I didn't see a way out of this situation. I didn't want to drop out of grad school, but how else was I going to get out? I remember when my friend Robert Morris got kicked out of Cornell for writing the internet worm of 1988, I was envious that he'd found such a spectacular way to get out of grad school.
 
-The best thing about New York for me was the presence of Idelle
- and Julian Weber. Idelle Weber was a painter, one of the early photorealists, and I'd taken her painting class at Harvard. I've never known a teacher more beloved by her students. Large numbers of former students kept in touch with her, including me. After I moved to New York I became her de facto studio assistant.
+Then one day in April 1990 a crack appeared in the wall. I ran into professor Cheatham and he asked if I was far enough along to graduate that June. I didn't have a word of my dissertation written, but in what must have been the quicke [...]
 
-She liked to paint on big, square canvases, 4 to 5 feet on a side. One day in late 1994 as I was stretching one of these monsters there was something on the radio about a famous fund manager. H
-be, and I was going to write them. [12]
+[...] st bit of thinking in my life, I decided to take a shot at writing one in the 5 weeks or so that remained before the deadline, reusing parts of On Lisp where I could, and I was able to respond, with no perceptible delay "Yes, I think so. I'll give you something to read in a few days."
 
-I've worked on several different things, but to the extent there was a turning point where I figured out what to work on, it was when I started publishing essays online. From then on I knew that whatever else I did, I'd always write essays too.
+I picked applications of continuations as the topic. In retrospect I should have written about macros and embedded languages. There's a whole world there that's barely been explored. But all I wanted was to get out of grad school, and my rapidly written dissertation sufficed, just barely.
 
-I knew that online essays would be a marginal medium at first. Socially they'd seem more like rants posted by nutjobs on their GeoCities sites than the genteel and beautifully typeset compositions published in The New Yorker.
-king on things that aren't prestigious doesn't guarantee you're on the right track, it at least guarantees you're not on the most common type of wrong one.
+Meanwhile I was applying to art schools. I applied to two: RISD in the US, and the Accademia di Belli Arti in Florence, which, because it was the oldest art school, I imagined would be good. RISD accepted me, and I never heard back from the Accademia, so off to Providence I went.
 
-Over the next several years I wrote lots of essays about all kinds of different topics. O'Reilly reprinted a collection of them as a book, called Hackers & Painters after one of the essays in it. I also worked on spam filters, and did some more painting. I used to have dinners for a group of friends every thursday night, which taught me how to cook for 
- looking for a new job. In early 2005 she interviewed for a marketing job at a Boston VC firm. It took them weeks to make up their minds, and during this time I started telling her about all the things that needed to be fixed about venture capital. They should make a larger number of smaller investments instead of a handful of giant ones, they should be funding younger, more technical founders instead of MBAs, they should let the founders remain as CEO, and so on.
+I'd applied for the BFA program at RISD, which meant in effect that I had to go to college again. This was not as strange as it sounds, because I was only 25, and a [...]
 
-One of my tricks for writing essays had al
-b. I was going to do three things: hack, write essays, and work on YC. As YC grew, and I grew more excited about it, it started to take up a lot more than a third of my attention. But for the first few years I was still able to work on other things.
+[...] b. I was going to do three things: hack, write essays, and work on YC. As YC grew, and I grew more excited about it, it started to take up a lot more than a third of my attention. But for the first few years I was still able to work on other things.
 
-In the summer of 2006, Robert and I started working on a new version of Arc. This one was reasonably fast, because it was compiled into Scheme. To test this new Arc, I wrote Hacker News in it. It was originally meant to be a news aggregator for startup founders
+In the summer of 2006, Robert and I started working on a new version of Arc. This one was reasonably fast, because it was compiled into Scheme. To test this new Arc, I wrote Hacker News in it. It was originally meant to be a news aggregator for startup founders and was called Startup News, but after a few months I got tired of reading about nothing but startups. Plus it wasn't startup founders we wanted to reach. It was future startup founders. So I changed the name to Hacker News and the topic to whatever engaged one's intellectual curiosity.
+
+HN was no doubt good for YC, but it was also by far the biggest source of stress for me. If all I'd had to do was select and help founders, life would have been so easy. And that implies that HN was a mistake. Surely the b [...]
 ```
 
 <!-- livebook:{"output":true} -->
@@ -656,159 +273,71 @@ In the summer of 2006, Robert and I started working on a new version of Arc. Thi
 :ok
 ```
 
-## Run inference.
+## Generating an answer
+
+We have our context, the last thing left to do is have a LLM answer the question. In this example we will use the [Mistral](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2) model.
+
+For more details on running an LLM, see the [LLMs](./llms) notebook.
 
 ```elixir
-hf_token = "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"
-repo = {:hf, "mistralai/Mistral-7B-Instruct-v0.2", auth_token: hf_token}
+repo = {:hf, "mistralai/Mistral-7B-Instruct-v0.2"}
 
 {:ok, model_info} = Bumblebee.load_model(repo, type: :bf16)
 {:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+{:ok, generation_config} = Bumblebee.load_generation_config(repo)
 
-{:ok, generation_config} =
-  Bumblebee.load_generation_config(repo, spec_module: Bumblebee.Text.Mistral)
+generation_config = Bumblebee.configure(generation_config, max_new_tokens: 100)
+
+:ok
 ```
 
 <!-- livebook:{"output":true} -->
 
 ```
-{:ok,
- %Bumblebee.Text.GenerationConfig{
-   max_new_tokens: 20,
-   min_new_tokens: nil,
-   max_length: nil,
-   min_length: nil,
-   strategy: %{type: :greedy_search},
-   decoder_start_token_id: nil,
-   forced_bos_token_id: nil,
-   forced_eos_token_id: nil,
-   forced_token_ids: [],
-   suppressed_token_ids: [],
-   no_repeat_ngram_length: nil,
-   temperature: nil,
-   bos_token_id: 1,
-   eos_token_id: 2,
-   pad_token_id: nil,
-   extra_config: nil
- }}
+:ok
 ```
 
 ```elixir
 serving =
   Bumblebee.Text.generation(model_info, tokenizer, generation_config,
     compile: [batch_size: 1, sequence_length: 6000],
-    stream: false,
     defn_options: [compiler: EXLA]
   )
+
+Kino.start_child({Nx.Serving, name: MistralServing, serving: serving})
 ```
 
 <!-- livebook:{"output":true} -->
 
 ```
-%Nx.Serving{
-  module: Nx.Serving.Default,
-  arg: #Function<0.77086443/2 in Bumblebee.Text.TextGeneration.generation/4>,
-  client_preprocessing: #Function<1.77086443/1 in Bumblebee.Text.TextGeneration.generation/4>,
-  client_postprocessing: #Function<3.77086443/2 in Bumblebee.Text.TextGeneration.maybe_stream/4>,
-  streaming: nil,
-  batch_size: 1,
-  distributed_postprocessing: &Function.identity/1,
-  process_options: [batch_keys: [sequence_length: 6000]],
-  defn_options: [compiler: EXLA]
-}
+
+10:46:17.065 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_516', 4 bytes spill stores, 4 bytes spill loads
+
+
+10:46:17.681 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_516', 104 bytes spill stores, 152 bytes spill loads
+
+
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok, #PID<0.347.0>}
 ```
 
 ```elixir
-Kino.start_child({Nx.Serving, name: Mistral, serving: serving})
-```
+prompt =
+  """
+  Context information is below.
+  ---------------------
+  #{context}
+  ---------------------
+  Given the context information and not prior knowledge, answer the query.
+  Query: #{query}
+  Answer:
+  """
 
-<!-- livebook:{"output":true} -->
-
-```
-
-02:05:28.458 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_516', 140 bytes spill stores, 172 bytes spill loads
-
-
-```
-
-<!-- livebook:{"output":true} -->
-
-```
-{:ok, #PID<0.5203.0>}
-```
-
-```elixir
-# We preparing the prompt now. Again this is a basic template.
-
-prompt = """
-<s> [INST] You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Make sure that you return complete senteses [/INST] </s> 
-[INST] Question: #{query} 
-Context: #{extra_context} 
-Answer: [/INST]
-"""
-
-IO.puts(prompt)
-IO.inspect(String.length(prompt))
-```
-
-<!-- livebook:{"output":true} -->
-
-```
-<s> [INST] You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Make sure that you return complete senteses [/INST] </s> 
-[INST] Question: What did the author do growing up? 
-Context: 
-
-What I Worked On
-
-February 2021
-
-Before college the two main things I worked on, outside of school, were writing and programming. I didn't write essays. I wrote what beginning writers were supposed to write then, and probably still are: short stories. My stories were awful. They had hardly any plot, just characters with strong feelings, which I imagined made them deep.
-
-The first programs I tried writing were on the IBM 1401 that our school district used for what was then called "data processing." This wa
-s in 9th grade, so I was 13 or 14. The school district's 1401 happened to be in the basement of our junior high school, and my friend Rich Draves and I got permission to use it. It was like a mini Bond villain's lair down there, with all these alien-looking machines — CPU, disk drives, printer, card reader — sitting up on a raised floor under bright fluorescent lights.
-
-The language we used was an early version of Fortran. You had to type programs on punch cards, then stack them in the card reader and press
- I was in decent shape at painting and drawing from the RISD foundation that summer, but I still don't know how I managed to pass the written exam. I remember that I answered the essay question by writing about Cezanne, and that I cranked up the intellectual level as high as I could to make the most of my limited vocabulary. [2]
-
-I'm only up to age 25 and already there are such conspicuous patterns. Here I was, yet again about to attend some august institution in the hopes of learning about some prestigious
- of trying to write an essay about something people usually take for granted.
-
-This is not the only way to paint. I'm not 100% sure it's even a good way to paint. But it seemed a good enough bet to be worth trying.
-
-Our teacher, professor Ulivi, was a nice guy. He could see I worked hard, and gave me a good grade, which he wrote down in a sort of passport each student had. But the Accademia wasn't teaching me anything except Italian, and my money was running out, so at the end of the first year I went back 
- program in another language, which in those days would have meant C++ if I was lucky. So with my unerring nose for financial opportunity, I decided to write another book on Lisp. This would be a popular book, the sort of book that could be used as a textbook. I imagined myself living frugally off the royalties and spending all my time painting. (The painting on the cover of this book, ANSI Common Lisp, is one that I painted around this time.)
-
-The best thing about New York for me was the presence of Idelle
- and Julian Weber. Idelle Weber was a painter, one of the early photorealists, and I'd taken her painting class at Harvard. I've never known a teacher more beloved by her students. Large numbers of former students kept in touch with her, including me. After I moved to New York I became her de facto studio assistant.
-
-She liked to paint on big, square canvases, 4 to 5 feet on a side. One day in late 1994 as I was stretching one of these monsters there was something on the radio about a famous fund manager. H
-be, and I was going to write them. [12]
-
-I've worked on several different things, but to the extent there was a turning point where I figured out what to work on, it was when I started publishing essays online. From then on I knew that whatever else I did, I'd always write essays too.
-
-I knew that online essays would be a marginal medium at first. Socially they'd seem more like rants posted by nutjobs on their GeoCities sites than the genteel and beautifully typeset compositions published in The New Yorker.
-king on things that aren't prestigious doesn't guarantee you're on the right track, it at least guarantees you're not on the most common type of wrong one.
-
-Over the next several years I wrote lots of essays about all kinds of different topics. O'Reilly reprinted a collection of them as a book, called Hackers & Painters after one of the essays in it. I also worked on spam filters, and did some more painting. I used to have dinners for a group of friends every thursday night, which taught me how to cook for 
- looking for a new job. In early 2005 she interviewed for a marketing job at a Boston VC firm. It took them weeks to make up their minds, and during this time I started telling her about all the things that needed to be fixed about venture capital. They should make a larger number of smaller investments instead of a handful of giant ones, they should be funding younger, more technical founders instead of MBAs, they should let the founders remain as CEO, and so on.
-
-One of my tricks for writing essays had al
-b. I was going to do three things: hack, write essays, and work on YC. As YC grew, and I grew more excited about it, it started to take up a lot more than a third of my attention. But for the first few years I was still able to work on other things.
-
-In the summer of 2006, Robert and I started working on a new version of Arc. This one was reasonably fast, because it was compiled into Scheme. To test this new Arc, I wrote Hacker News in it. It was originally meant to be a news aggregator for startup founders 
-Answer: [/INST]
-
-5459
-```
-
-<!-- livebook:{"output":true} -->
-
-```
-5459
-```
-
-```elixir
-results = Nx.Serving.batched_run(Mistral, prompt)
+results = Nx.Serving.batched_run(MistralServing, prompt)
 ```
 
 <!-- livebook:{"output":true} -->
@@ -817,9 +346,15 @@ results = Nx.Serving.batched_run(Mistral, prompt)
 %{
   results: [
     %{
-      text: "The author grew up working on two main things outside of school: writing and programming. He wrote short",
-      token_summary: %{input: 1355, output: 20, padding: 4645}
+      text: "1. Writing: The author wrote short stories before college, which he describes as having hardly any plot and strong feelings.\n2. Programming: The author started programming on an IBM 1401 computer in 9th grade, using an early version of Fortran to write programs.",
+      token_summary: %{input: 1099, output: 61, padding: 4901}
     }
   ]
 }
 ```
+
+And here we have our answer!
+
+<!-- livebook:{"break_markdown":true} -->
+
+For additional context you can also visit the [Mistral docs](https://docs.mistral.ai/guides/basic-RAG) that go through a similar example.
