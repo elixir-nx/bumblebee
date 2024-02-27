@@ -1,0 +1,1036 @@
+# Simple Rag pipeline.
+
+```elixir
+Mix.install([
+  {:bumblebee, "~> 0.5.3"},
+  {:nx, "~> 0.7.0"},
+  {:exla, "~> 0.7.0"},
+  {:kino, "~> 0.11.0"},
+  {:hnswlib, github: "elixir-nx/hnswlib"},
+  {:req, "~> 0.4.0"}
+])
+
+Nx.global_default_backend({EXLA.Backend, client: :cuda})
+```
+
+## Introduction
+
+### This is an example notebook to demostrate how to you can have an end to end and in memory  retrieval augmented generation using only elixir and mostly bumblebee.
+
+<!-- livebook:{"break_markdown":true} -->
+
+We will download the data and then split them into chunks to prepare the embeddings. (Keep in mind this is a simple example, in real world problems usually we are doing reranking or bm25 etc.) For generating the embeddings we will use [gte-small](https://huggingface.co/thenlper/gte-small) model.
+I used a single gpu with 24G of ram and I managed to squeeze both models(embedding and inference)
+
+```elixir
+# Get the harry potter first book data. text =
+resp =
+  Req.get!(
+    "https://raw.githubusercontent.com/amephraim/nlp/master/texts/J.%20K.%20Rowling%20-%20Harry%20Potter%201%20-%20Sorcerer's%20Stone.txt"
+  )
+
+IO.inspect(String.length(resp.body))
+
+# Our model has dim 384 and max seq length 512.
+# Ideally you will need to do some overlapping.
+chunks =
+  resp.body
+  |> String.codepoints()
+  |> Enum.chunk_every(512)
+  |> Enum.map(&Enum.join/1)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+439742
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+["Harry Potter and the Sorcerer's Stone\n\n\nCHAPTER ONE\n\nTHE BOY WHO LIVED\n\nMr. and Mrs. Dursley, of number four, Privet Drive, were proud to say\nthat they were perfectly normal, thank you very much. They were the last\npeople you'd expect to be involved in anything strange or mysterious,\nbecause they just didn't hold with such nonsense.\n\nMr. Dursley was the director of a firm called Grunnings, which made\ndrills. He was a big, beefy man with hardly any neck, although he did\nhave a very large mustache. Mrs. Dursl",
+ "ey was thin and blonde and had\nnearly twice the usual amount of neck, which came in very useful as she\nspent so much of her time craning over garden fences, spying on the\nneighbors. The Dursleys had a small son called Dudley and in their\nopinion there was no finer boy anywhere.\n\nThe Dursleys had everything they wanted, but they also had a secret, and\ntheir greatest fear was that somebody would discover it. They didn't\nthink they could bear it if anyone found out about the Potters. Mrs.\nPotter was Mrs. Dursl",
+ "ey's sister, but they hadn't met for several years;\nin fact, Mrs. Dursley pretended she didn't have a sister, because her\nsister and her good-for-nothing husband were as unDursleyish as it was\npossible to be. The Dursleys shuddered to think what the neighbors would\nsay if the Potters arrived in the street. The Dursleys knew that the\nPotters had a small son, too, but they had never even seen him. This boy\nwas another good reason for keeping the Potters away; they didn't want\nDudley mixing with a child like t",
+ "hat.\n\nWhen Mr. and Mrs. Dursley woke up on the dull, gray Tuesday our story\nstarts, there was nothing about the cloudy sky outside to suggest that\nstrange and mysterious things would soon be happening all over the\ncountry. Mr. Dursley hummed as he picked out his most boring tie for\nwork, and Mrs. Dursley gossiped away happily as she wrestled a screaming\nDudley into his high chair.\n\nNone of them noticed a large, tawny owl flutter past the window.\n\nAt half past eight, Mr. Dursley picked up his briefcase, peck",
+ "ed Mrs.\nDursley on the cheek, and tried to kiss Dudley good-bye but missed,\nbecause Dudley was now having a tantrum and throwing his cereal at the\nwalls. \"Little tyke,\" chortled Mr. Dursley as he left the house. He got\ninto his car and backed out of number four's drive.\n\nIt was on the corner of the street that he noticed the first sign of\nsomething peculiar -- a cat reading a map. For a second, Mr. Dursley\ndidn't realize what he had seen -- then he jerked his head around to\nlook again. There was a tabby cat",
+ " standing on the corner of Privet\nDrive, but there wasn't a map in sight. What could he have been thinking\nof? It must have been a trick of the light. Mr. Dursley blinked and\nstared at the cat. It stared back. As Mr. Dursley drove around the\ncorner and up the road, he watched the cat in his mirror. It was now\nreading the sign that said Privet Drive -- no, looking at the sign; cats\ncouldn't read maps or signs. Mr. Dursley gave himself a little shake and\nput the cat out of his mind. As he drove toward town he",
+ " thought of\nnothing except a large order of drills he was hoping to get that day.\n\nBut on the edge of town, drills were driven out of his mind by something\nelse. As he sat in the usual morning traffic jam, he couldn't help\nnoticing that there seemed to be a lot of strangely dressed people\nabout. People in cloaks. Mr. Dursley couldn't bear people who dressed in\nfunny clothes -- the getups you saw on young people! He supposed this\nwas some stupid new fashion. He drummed his fingers on the steering\nwheel and h",
+ "is eyes fell on a huddle of these weirdos standing quite\nclose by. They were whispering excitedly together. Mr. Dursley was\nenraged to see that a couple of them weren't young at all; why, that man\nhad to be older than he was, and wearing an emerald-green cloak! The\nnerve of him! But then it struck Mr. Dursley that this was probably some\nsilly stunt -- these people were obviously collecting for something...\nyes, that would be it. The traffic moved on and a few minutes later, Mr.\nDursley arrived in the Grunni",
+ "ngs parking lot, his mind back on drills.\n\nMr. Dursley always sat with his back to the window in his office on the\nninth floor. If he hadn't, he might have found it harder to concentrate\non drills that morning. He didn't see the owls swoop ing past in broad\ndaylight, though people down in the street did; they pointed and gazed\nopen- mouthed as owl after owl sped overhead. Most of them had never\nseen an owl even at nighttime. Mr. Dursley, however, had a perfectly\nnormal, owl-free morning. He yelled at five d",
+ "ifferent people. He made\nseveral important telephone calls and shouted a bit more. He was in a\nvery good mood until lunchtime, when he thought he'd stretch his legs\nand walk across the road to buy himself a bun from the bakery.\n\nHe'd forgotten all about the people in cloaks until he passed a group of\nthem next to the baker's. He eyed them angrily as he passed. He didn't\nknow why, but they made him uneasy. This bunch were whispering\nexcitedly, too, and he couldn't see a single collecting tin. It was on\nhis w",
+ "ay back past them, clutching a large doughnut in a bag, that he\ncaught a few words of what they were saying.\n\n\"The Potters, that's right, that's what I heard yes, their son, Harry\"\n\nMr. Dursley stopped dead. Fear flooded him. He looked back at the\nwhisperers as if he wanted to say something to them, but thought better\nof it.\n\nHe dashed back across the road, hurried up to his office, snapped at his\nsecretary not to disturb him, seized his telephone, and had almost\nfinished dialing his home number when he cha",
+ "nged his mind. He put the\nreceiver back down and stroked his mustache, thinking... no, he was\nbeing stupid. Potter wasn't such an unusual name. He was sure there were\nlots of people called Potter who had a son called Harry. Come to think\nof it, he wasn't even sure his nephew was called Harry. He'd never even\nseen the boy. It might have been Harvey. Or Harold. There was no point\nin worrying Mrs. Dursley; she always got so upset at any mention of her\nsister. He didn't blame her -- if he'd had a sister like th",
+ "at... but all\nthe same, those people in cloaks...\n\nHe found it a lot harder to concentrate on drills that afternoon and\nwhen he left the building at five o'clock, he was still so worried that\nhe walked straight into someone just outside the door.\n\n\"Sorry,\" he grunted, as the tiny old man stumbled and almost fell. It\nwas a few seconds before Mr. Dursley realized that the man was wearing a\nviolet cloak. He didn't seem at all upset at being almost knocked to the\nground. On the contrary, his face split into a w",
+ "ide smile and he said in\na squeaky voice that made passersby stare, \"Don't be sorry, my dear sir,\nfor nothing could upset me today! Rejoice, for You-Know-Who has gone at\nlast! Even Muggles like yourself should be celebrating, this happy,\nhappy day!\"\n\nAnd the old man hugged Mr. Dursley around the middle and walked off.\n\nMr. Dursley stood rooted to the spot. He had been hugged by a complete\nstranger. He also thought he had been called a Muggle, whatever that\nwas. He was rattled. He hurried to his car and set ",
+ "off for home, hoping\nhe was imagining things, which he had never hoped before, because he\ndidn't approve of imagination.\n\nAs he pulled into the driveway of number four, the first thing he saw --\nand it didn't improve his mood -- was the tabby cat he'd spotted that\nmorning. It was now sitting on his garden wall. He was sure it was the\nsame one; it had the same markings around its eyes.\n\n\"Shoo!\" said Mr. Dursley loudly. The cat didn't move. It just gave him a\nstern look. Was this normal cat behavior? Mr. Durs",
+ "ley wondered. Trying\nto pull himself together, he let himself into the house. He was still\ndetermined not to mention anything to his wife.\n\nMrs. Dursley had had a nice, normal day. She told him over dinner all\nabout Mrs. Next Door's problems with her daughter and how Dudley had\nlearned a new word (\"Won't!\"). Mr. Dursley tried to act normally. When\nDudley had been put to bed, he went into the living room in time to\ncatch the last report on the evening news:\n\n\"And finally, bird-watchers everywhere have report",
+ "ed that the nation's\nowls have been behaving very unusually today. Although owls normally\nhunt at night and are hardly ever seen in daylight, there have been\nhundreds of sightings of these birds flying in every direction since\nsunrise. Experts are unable to explain why the owls have suddenly\nchanged their sleeping pattern.\" The newscaster allowed himself a grin.\n\"Most mysterious. And now, over to Jim McGuffin with the weather. Going\nto be any more showers of owls tonight, Jim?\"\n\n\"Well, Ted,\" said the weathe",
+ "rman, \"I don't know about that, but it's not\nonly the owls that have been acting oddly today. Viewers as far apart as\nKent, Yorkshire, and Dundee have been phoning in to tell me that instead\nof the rain I promised yesterday, they've had a downpour of shooting\nstars! Perhaps people have been celebrating Bonfire Night early -- it's\nnot until next week, folks! But I can promise a wet night tonight.\"\n\nMr. Dursley sat frozen in his armchair. Shooting stars all over Britain?\nOwls flying by daylight? Mysterious pe",
+ "ople in cloaks all over the place?\nAnd a whisper, a whisper about the Potters...\n\nMrs. Dursley came into the living room carrying two cups of tea. It was\nno good. He'd have to say something to her. He cleared his throat\nnervously. \"Er -- Petunia, dear -- you haven't heard from your sister\nlately, have you?\"\n\nAs he had expected, Mrs. Dursley looked shocked and angry. After all,\nthey normally pretended she didn't have a sister.\n\n\"No,\" she said sharply. \"Why?\"\n\n\"Funny stuff on the news,\" Mr. Dursley mumbled. \"",
+ "Owls... shooting\nstars... and there were a lot of funny-looking people in town today...\"\n\n\"So?\" snapped Mrs. Dursley.\n\n\"Well, I just thought... maybe... it was something to do with... you\nknow... her crowd.\"\n\nMrs. Dursley sipped her tea through pursed lips. Mr. Dursley wondered\nwhether he dared tell her he'd heard the name \"Potter.\" He decided he\ndidn't dare. Instead he said, as casually as he could, \"Their son --\nhe'd be about Dudley's age now, wouldn't he?\"\n\n\"I suppose so,\" said Mrs. Dursley stiffly.\n\n\"Wh",
+ "at's his name again? Howard, isn't it?\"\n\n\"Harry. Nasty, common name, if you ask me.\"\n\n\"Oh, yes,\" said Mr. Dursley, his heart sinking horribly. \"Yes, I quite\nagree.\"\n\nHe didn't say another word on the subject as they went upstairs to bed.\nWhile Mrs. Dursley was in the bathroom, Mr. Dursley crept to the bedroom\nwindow and peered down into the front garden. The cat was still there.\nIt was staring down Privet Drive as though it were waiting for\nsomething.\n\nWas he imagining things? Could all this have anything t",
+ "o do with the\nPotters? If it did... if it got out that they were related to a pair of\n-- well, he didn't think he could bear it.\n\nThe Dursleys got into bed. Mrs. Dursley fell asleep quickly but Mr.\nDursley lay awake, turning it all over in his mind. His last, comforting\nthought before he fell asleep was that even if the Potters were\ninvolved, there was no reason for them to come near him and Mrs.\nDursley. The Potters knew very well what he and Petunia thought about\nthem and their kind.... He couldn't see ho",
+ "w he and Petunia could get\nmixed up in anything that might be going on -- he yawned and turned over\n-- it couldn't affect them....\n\nHow very wrong he was.\n\nMr. Dursley might have been drifting into an uneasy sleep, but the cat\non the wall outside was showing no sign of sleepiness. It was sitting as\nstill as a statue, its eyes fixed unblinkingly on the far corner of\nPrivet Drive. It didn't so much as quiver when a car door slammed on the\nnext street, nor when two owls swooped overhead. In fact, it was nearly",
+ "\nmidnight before the cat moved at all.\n\nA man appeared on the corner the cat had been watching, appeared so\nsuddenly and silently you'd have thought he'd just popped out of the\nground. The cat's tail twitched and its eyes narrowed.\n\nNothing like this man had ever been seen on Privet Drive. He was tall,\nthin, and very old, judging by the silver of his hair and beard, which\nwere both long enough to tuck into his belt. He was wearing long robes,\na purple cloak that swept the ground, and high-heeled, buckled bo",
+ "ots.\nHis blue eyes were light, bright, and sparkling behind half-moon\nspectacles and his nose was very long and crooked, as though it had been\nbroken at least twice. This man's name was Albus Dumbledore.\n\nAlbus Dumbledore didn't seem to realize that he had just arrived in a\nstreet where everything from his name to his boots was unwelcome. He was\nbusy rummaging in his cloak, looking for something. But he did seem to\nrealize he was being watched, because he looked up suddenly at the cat,\nwhich was still stari",
+ "ng at him from the other end of the street. For\nsome reason, the sight of the cat seemed to amuse him. He chuckled and\nmuttered, \"I should have known.\"\n\nHe found what he was looking for in his inside pocket. It seemed to be a\nsilver cigarette lighter. He flicked it open, held it up in the air, and\nclicked it. The nearest street lamp went out with a little pop. He\nclicked it again -- the next lamp flickered into darkness. Twelve times\nhe clicked the Put-Outer, until the only lights left on the whole street\nw",
+ "ere two tiny pinpricks in the distance, which were the eyes of the cat\nwatching him. If anyone looked out of their window now, even beady-eyed\nMrs. Dursley, they wouldn't be able to see anything that was happening\ndown on the pavement. Dumbledore slipped the Put-Outer back inside his\ncloak and set off down the street toward number four, where he sat down\non the wall next to the cat. He didn't look at it, but after a moment he\nspoke to it.\n\n\"Fancy seeing you here, Professor McGonagall.\"\n\nHe turned to smile a",
+ "t the tabby, but it had gone. Instead he was smiling\nat a rather severe-looking woman who was wearing square glasses exactly\nthe shape of the markings the cat had had around its eyes. She, too, was\nwearing a cloak, an emerald one. Her black hair was drawn into a tight\nbun. She looked distinctly ruffled.\n\n\"How did you know it was me?\" she asked.\n\n\"My dear Professor, I 've never seen a cat sit so stiffly.\"\n\n\"You'd be stiff if you'd been sitting on a brick wall all day,\" said\nProfessor McGonagall.\n\n\"All day? W",
+ "hen you could have been celebrating? I must have passed a\ndozen feasts and parties on my way here.\"\n\nProfessor McGonagall sniffed angrily.\n\n\"Oh yes, everyone's celebrating, all right,\" she said impatiently.\n\"You'd think they'd be a bit more careful, but no -- even the Muggles\nhave noticed something's going on. It was on their news.\" She jerked her\nhead back at the Dursleys' dark living-room window. \"I heard it. Flocks\nof owls... shooting stars.... Well, they're not completely stupid. They\nwere bound to noti",
+ "ce something. Shooting stars down in Kent -- I'll bet\nthat was Dedalus Diggle. He never had much sense.\"\n\n\"You can't blame them,\" said Dumbledore gently. \"We've had precious\nlittle to celebrate for eleven years.\"\n\n\"I know that,\" said Professor McGonagall irritably. \"But that's no\nreason to lose our heads. People are being downright careless, out on\nthe streets in broad daylight, not even dressed in Muggle clothes,\nswapping rumors.\"\n\nShe threw a sharp, sideways glance at Dumbledore here, as though hoping\nhe ",
+ "was going to tell her something, but he didn't, so she went on. \"A\nfine thing it would be if, on the very day YouKnow-Who seems to have\ndisappeared at last, the Muggles found out about us all. I suppose he\nreally has gone, Dumbledore?\"\n\n\"It certainly seems so,\" said Dumbledore. \"We have much to be thankful\nfor. Would you care for a lemon drop?\"\n\n\"A what?\"\n\n\"A lemon drop. They're a kind of Muggle sweet I'm rather fond of\"\n\n\"No, thank you,\" said Professor McGonagall coldly, as though she didn't\nthink this was",
+ " the moment for lemon drops. \"As I say, even if\nYou-Know-Who has gone -\"\n\n\"My dear Professor, surely a sensible person like yourself can call him\nby his name? All this 'You- Know-Who' nonsense -- for eleven years I\nhave been trying to persuade people to call him by his proper name:\nVoldemort.\" Professor McGonagall flinched, but Dumbledore, who was\nunsticking two lemon drops, seemed not to notice. \"It all gets so\nconfusing if we keep saying 'You-Know-Who.' I have never seen any reason\nto be frightened of say",
+ "ing Voldemort's name.\n\n\"I know you haven 't, said Professor McGonagall, sounding half\nexasperated, half admiring. \"But you're different. Everyone knows you're\nthe only one You-Know- oh, all right, Voldemort, was frightened of.\"\n\n\"You flatter me,\" said Dumbledore calmly. \"Voldemort had powers I will\nnever have.\"\n\n\"Only because you're too -- well -- noble to use them.\"\n\n\"It's lucky it's dark. I haven't blushed so much since Madam Pomfrey\ntold me she liked my new earmuffs.\"\n\nProfessor McGonagall shot a sharp l",
+ "ook at Dumbledore and said, \"The owls\nare nothing next to the rumors that are flying around. You know what\neveryone's saying? About why he's disappeared? About what finally\nstopped him?\"\n\nIt seemed that Professor McGonagall had reached the point she was most\nanxious to discuss, the real reason she had been waiting on a cold, hard\nwall all day, for neither as a cat nor as a woman had she fixed\nDumbledore with such a piercing stare as she did now. It was plain that\nwhatever \"everyone\" was saying, she was not ",
+ "going to believe it until\nDumbledore told her it was true. Dumbledore, however, was choosing\nanother lemon drop and did not answer.\n\n\"What they're saying,\" she pressed on, \"is that last night Voldemort\nturned up in Godric's Hollow. He went to find the Potters. The rumor is\nthat Lily and James Potter are -- are -- that they're -- dead. \"\n\nDumbledore bowed his head. Professor McGonagall gasped.\n\n\"Lily and James... I can't believe it... I didn't want to believe it...\nOh, Albus...\"\n\nDumbledore reached out and p",
+ "atted her on the shoulder. \"I know... I\nknow...\" he said heavily.\n\nProfessor McGonagall's voice trembled as she went on. \"That's not all.\nThey're saying he tried to kill the Potter's son, Harry. But -- he\ncouldn't. He couldn't kill that little boy. No one knows why, or how,\nbut they're saying that when he couldn't kill Harry Potter, Voldemort's\npower somehow broke -- and that's why he's gone.\n\nDumbledore nodded glumly.\n\n\"It's -- it's true?\" faltered Professor McGonagall. \"After all he's\ndone... all the peop",
+ "le he's killed... he couldn't kill a little boy?\nIt's just astounding... of all the things to stop him... but how in the\nname of heaven did Harry survive?\"\n\n\"We can only guess,\" said Dumbledore. \"We may never know.\"\n\nProfessor McGonagall pulled out a lace handkerchief and dabbed at her\neyes beneath her spectacles. Dumbledore gave a great sniff as he took a\ngolden watch from his pocket and examined it. It was a very odd watch.\nIt had twelve hands but no numbers; instead, little planets were moving\naround the",
+ " edge. It must have made sense to Dumbledore, though, because\nhe put it back in his pocket and said, \"Hagrid's late. I suppose it was\nhe who told you I'd be here, by the way?\"\n\n\"Yes,\" said Professor McGonagall. \"And I don't suppose you're going to\ntell me why you're here, of all places?\"\n\n\"I've come to bring Harry to his aunt and uncle. They're the only family\nhe has left now.\"\n\n\"You don't mean -- you can't mean the people who live here?\" cried\nProfessor McGonagall, jumping to her feet and pointing at numbe",
+ "r four.\n\"Dumbledore -- you can't. I've been watching them all day. You couldn't\nfind two people who are less like us. And they've got this son -- I saw\nhim kicking his mother all the way up the street, screaming for sweets.\nHarry Potter come and live here!\"\n\n\"It's the best place for him,\" said Dumbledore firmly. \"His aunt and\nuncle will be able to explain everything to him when he's older. I've\nwritten them a letter.\"\n\n\"A letter?\" repeated Professor McGonagall faintly, sitting back down on\nthe wall. \"Really",
+ ", Dumbledore, you think you can explain all this in a\nletter? These people will never understand him! He'll be famous -- a\nlegend -- I wouldn't be surprised if today was known as Harry Potter day\nin the future -- there will be books written about Harry -- every child\nin our world will know his name!\"\n\n\"Exactly,\" said Dumbledore, looking very seriously over the top of his\nhalf-moon glasses. \"It would be enough to turn any boy's head. Famous\nbefore he can walk and talk! Famous for something he won't even\nreme",
+ "mber! CarA you see how much better off he'll be, growing up away\nfrom all that until he's ready to take it?\"\n\nProfessor McGonagall opened her mouth, changed her mind, swallowed, and\nthen said, \"Yes -- yes, you're right, of course. But how is the boy\ngetting here, Dumbledore?\" She eyed his cloak suddenly as though she\nthought he might be hiding Harry underneath it.\n\n\"Hagrid's bringing him.\"\n\n\"You think it -- wise -- to trust Hagrid with something as important as\nthis?\"\n\nI would trust Hagrid with my life,\" sa",
+ "id Dumbledore.\n\n\"I'm not saying his heart isn't in the right place,\" said Professor\nMcGonagall grudgingly, \"but you can't pretend he's not careless. He does\ntend to -- what was that?\"\n\nA low rumbling sound had broken the silence around them. It grew\nsteadily louder as they looked up and down the street for some sign of a\nheadlight; it swelled to a roar as they both looked up at the sky -- and\na huge motorcycle fell out of the air and landed on the road in front of\nthem.\n\nIf the motorcycle was huge, it was n",
+ "othing to the man sitting astride\nit. He was almost twice as tall as a normal man and at least five times\nas wide. He looked simply too big to be allowed, and so wild - long\ntangles of bushy black hair and beard hid most of his face, he had hands\nthe size of trash can lids, and his feet in their leather boots were\nlike baby dolphins. In his vast, muscular arms he was holding a bundle\nof blankets.\n\n\"Hagrid,\" said Dumbledore, sounding relieved. \"At last. And where did\nyou get that motorcycle?\"\n\n\"Borrowed it, ",
+ "Professor Dumbledore, sit,\" said the giant, climbing\ncarefully off the motorcycle as he spoke. \"Young Sirius Black lent it to\nme. I've got him, sir.\"\n\n\"No problems, were there?\"\n\n\"No, sir -- house was almost destroyed, but I got him out all right\nbefore the Muggles started swarmin' around. He fell asleep as we was\nflyin' over Bristol.\"\n\nDumbledore and Professor McGonagall bent forward over the bundle of\nblankets. Inside, just visible, was a baby boy, fast asleep. Under a\ntuft of jet-black hair over his fore",
+ "head they could see a curiously\nshaped cut, like a bolt of lightning.\n\n\"Is that where -?\" whispered Professor McGonagall.\n\n\"Yes,\" said Dumbledore. \"He'll have that scar forever.\"\n\n\"Couldn't you do something about it, Dumbledore?\"\n\n\"Even if I could, I wouldn't. Scars can come in handy. I have one myself\nabove my left knee that is a perfect map of the London Underground. Well\n-- give him here, Hagrid -- we'd better get this over with.\"\n\nDumbledore took Harry in his arms and turned toward the Dursleys' house.\n",
+ "\n\"Could I -- could I say good-bye to him, sir?\" asked Hagrid. He bent his\ngreat, shaggy head over Harry and gave him what must have been a very\nscratchy, whiskery kiss. Then, suddenly, Hagrid let out a howl like a\nwounded dog.\n\n\"Shhh!\" hissed Professor McGonagall, \"you'll wake the Muggles!\"\n\n\"S-s-sorry,\" sobbed Hagrid, taking out a large, spotted handkerchief and\nburying his face in it. \"But I c-c-can't stand it -- Lily an' James dead\n-- an' poor little Harry off ter live with Muggles -\"\n\n\"Yes, yes, it's al",
+ "l very sad, but get a grip on yourself, Hagrid, or\nwe'll be found,\" Professor McGonagall whispered, patting Hagrid gingerly\non the arm as Dumbledore stepped over the low garden wall and walked to\nthe front door. He laid Harry gently on the doorstep, took a letter out\nof his cloak, tucked it inside Harry's blankets, and then came back to\nthe other two. For a full minute the three of them stood and looked at\nthe little bundle; Hagrid's shoulders shook, Professor McGonagall\nblinked furiously, and the twinkling",
+ " light that usually shone from\nDumbledore's eyes seemed to have gone out.\n\n\"Well,\" said Dumbledore finally, \"that's that. We've no business staying\nhere. We may as well go and join the celebrations.\"\n\n\"Yeah,\" said Hagrid in a very muffled voice, \"I'll be takin' Sirius his\nbike back. G'night, Professor McGonagall -- Professor Dumbledore, sir.\"\n\nWiping his streaming eyes on his jacket sleeve, Hagrid swung himself\nonto the motorcycle and kicked the engine into life; with a roar it rose\ninto the air and off int",
+ "o the night.\n\n\"I shall see you soon, I expect, Professor McGonagall,\" said Dumbledore,\nnodding to her. Professor McGonagall blew her nose in reply.\n\nDumbledore turned and walked back down the street. On the corner he\nstopped and took out the silver Put-Outer. He clicked it once, and\ntwelve balls of light sped back to their street lamps so that Privet\nDrive glowed suddenly orange and he could make out a tabby cat slinking\naround the corner at the other end of the street. He could just see the\nbundle of blank",
+ "ets on the step of number four.\n\n\"Good luck, Harry,\" he murmured. He turned on his heel and with a swish\nof his cloak, he was gone.\n\nA breeze ruffled the neat hedges of Privet Drive, which lay silent and\ntidy under the inky sky, the very last place you would expect\nastonishing things to happen. Harry Potter rolled over inside his\nblankets without waking up. One small hand closed on the letter beside\nhim and he slept on, not knowing he was special, not knowing he was\nfamous, not knowing he would be woken in ",
+ ...]
+```
+
+```elixir
+length(chunks)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+859
+```
+
+```elixir
+IO.puts(chunks |> Enum.at(0))
+IO.puts(chunks |> Enum.at(2))
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+Harry Potter and the Sorcerer's Stone
+
+
+CHAPTER ONE
+
+THE BOY WHO LIVED
+
+Mr. and Mrs. Dursley, of number four, Privet Drive, were proud to say
+that they were perfectly normal, thank you very much. They were the last
+people you'd expect to be involved in anything strange or mysterious,
+because they just didn't hold with such nonsense.
+
+Mr. Dursley was the director of a firm called Grunnings, which made
+drills. He was a big, beefy man with hardly any neck, although he did
+have a very large mustache. Mrs. Dursl
+ey's sister, but they hadn't met for several years;
+in fact, Mrs. Dursley pretended she didn't have a sister, because her
+sister and her good-for-nothing husband were as unDursleyish as it was
+possible to be. The Dursleys shuddered to think what the neighbors would
+say if the Potters arrived in the street. The Dursleys knew that the
+Potters had a small son, too, but they had never even seen him. This boy
+was another good reason for keeping the Potters away; they didn't want
+Dudley mixing with a child like t
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
+```elixir
+gte_small = "thenlper/gte-small"
+{:ok, gte_small_model} = Bumblebee.load_model({:hf, gte_small})
+{:ok, gte_small_tokenizer} = Bumblebee.load_tokenizer({:hf, gte_small})
+
+gte_small_serving =
+  Bumblebee.Text.TextEmbedding.text_embedding(gte_small_model, gte_small_tokenizer,
+    compile: [batch_size: 64, sequence_length: 512],
+    defn_options: [compiler: EXLA, client: :cuda],
+    output_attribute: :hidden_state,
+    output_pool: :mean_pooling
+  )
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+%Nx.Serving{
+  module: Nx.Serving.Default,
+  arg: #Function<1.26226188/2 in Bumblebee.Text.TextEmbedding.text_embedding/3>,
+  client_preprocessing: #Function<2.26226188/1 in Bumblebee.Text.TextEmbedding.text_embedding/3>,
+  client_postprocessing: #Function<3.26226188/2 in Bumblebee.Text.TextEmbedding.text_embedding/3>,
+  streaming: nil,
+  batch_size: 64,
+  distributed_postprocessing: &Function.identity/1,
+  process_options: [batch_keys: [sequence_length: 512]],
+  defn_options: [compiler: EXLA, client: :cuda]
+}
+```
+
+```elixir
+Kino.start_child(
+  {Nx.Serving, serving: gte_small_serving, name: GteSmall, batch_size: 64, batch_timeout: 50}
+)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+
+00:43:24.065 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot', 80 bytes spill stores, 80 bytes spill loads
+
+
+00:43:24.147 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_4', 92 bytes spill stores, 92 bytes spill loads
+
+
+00:43:24.385 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot', 260 bytes spill stores, 260 bytes spill loads
+
+
+00:43:24.419 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_5', 176 bytes spill stores, 176 bytes spill loads
+
+
+00:43:24.551 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_5', 416 bytes spill stores, 380 bytes spill loads
+
+
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok, #PID<0.4142.0>}
+```
+
+```elixir
+# Prepare embeddings
+
+batches = chunks |> Enum.chunk_every(64)
+data = batches |> Enum.flat_map(fn batch -> Nx.Serving.batched_run(GteSmall, batch) end)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.3203723430633545, 0.20534354448318481, 0.3748559057712555, -0.182700514793396, -0.12868908047676086, -0.17810004949569702, 0.5590336918830872, 0.0836750864982605, -0.0256664976477623, -0.4436378479003906, -0.10723191499710083, -0.32990044355392456, 0.311384916305542, 0.3504824638366699, -0.12694978713989258, -0.3599276542663574, -0.1085481271147728, 0.15129800140857697, -0.7339369654655457, 0.3334740996360779, 0.14111536741256714, -0.4674743711948395, 0.0015392261557281017, -0.6994808316230774, 0.1759888380765915, -0.13282817602157593, -0.3124956488609314, -0.2532590329647064, -0.37043532729148865, -1.418649673461914, 0.1721782088279724, -0.5356618165969849, 0.4222268760204315, -0.5289990305900574, 0.292240172624588, -0.14913742244243622, -0.05410439521074295, 0.45437154173851013, -0.1978595107793808, 0.32922786474227905, 0.07593929022550583, 0.07970953732728958, -0.11810845136642456, -0.10782180726528168, -0.42396894097328186, 0.13102273643016815, -0.3993162512779236, -0.27377718687057495, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.21834984421730042, -0.14517173171043396, 0.40946465730667114, -0.08939635753631592, -0.2381162792444229, 0.33808329701423645, 0.7205029129981995, 0.3136165738105774, -0.027926485985517502, 0.1538107544183731, -0.10236471891403198, -0.4075319766998291, 0.3939380943775177, 0.31819847226142883, -0.0904243066906929, -0.05987352877855301, 8.643930777907372e-4, 0.5246858596801758, -0.9644773006439209, 0.35049688816070557, 0.09702271968126297, -0.36780619621276855, 0.007938708178699017, -0.288327157497406, 0.05463209003210068, 0.2769751250743866, -0.37030869722366333, -0.4096564054489136, -0.3509189188480377, -1.5753411054611206, 0.43914416432380676, -0.14376181364059448, 0.2138996571302414, -0.07102612406015396, 0.27046966552734375, -0.17578984797000885, 0.056865934282541275, 0.3649367094039917, -0.07545700669288635, 0.32844653725624084, 0.04792340099811554, 0.1464463323354721, -0.1514667570590973, -0.18313924968242645, -0.38236239552497864, -0.10427184402942657, -0.2586369216442108, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.29838141798973083, -0.020796101540327072, 0.282406747341156, -0.15585346519947052, 0.12060409784317017, 0.1442723125219345, 0.5672557353973389, 0.16111339628696442, -0.14666593074798584, 0.0724574401974678, 0.14168700575828552, 0.003912642598152161, 0.21083325147628784, 0.2595372200012207, -0.15816791355609894, -0.2078177034854889, -0.1674855649471283, 0.27223774790763855, -0.9572781324386597, 0.2784801125526428, 0.20711325109004974, -0.6001219749450684, -0.10024047642946243, -0.2929747998714447, 0.17857041954994202, 0.4225442707538605, -0.07579706609249115, -0.32748493552207947, -0.25594499707221985, -1.6477365493774414, 0.5136423110961914, -0.11240707337856293, 0.30571991205215454, 0.053380731493234634, 0.0836084857583046, -0.2751351594924927, 0.23103822767734528, 0.3054138123989105, -0.16202282905578613, 0.44073742628097534, 0.16405300796031952, 0.28955382108688354, -0.03268847614526749, -0.2950611710548401, -0.4364027678966522, -0.07175589352846146, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.341227263212204, -0.0464051254093647, 0.20624719560146332, -0.15719932317733765, 0.4755541980266571, 0.4407913386821747, 0.7403285503387451, 0.3655727803707123, 0.18466736376285553, -0.10576128214597702, 0.020570628345012665, -0.23909223079681396, 0.23380228877067566, 0.3196086585521698, 0.11731603741645813, -0.09838416427373886, -0.3743666112422943, -0.0014632940292358398, -0.6741547584533691, 0.22336162626743317, 0.17225688695907593, -0.12599195539951324, -0.25416311621665955, -0.5136985778808594, 0.23227038979530334, 0.41513940691947937, -0.49875032901763916, -0.18504731357097626, -0.2611071467399597, -1.6192376613616943, -0.21062637865543365, -0.48967593908309937, 0.39336538314819336, -0.13508914411067963, 0.2975243926048279, -0.4644743800163269, 0.2193731814622879, 0.4398403763771057, -0.1508135199546814, 0.263467013835907, -0.10841020196676254, 0.08373764902353287, -0.11676043272018433, -0.33118459582328796, -0.6226659417152405, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.19684414565563202, -0.2105567455291748, 0.007846156135201454, 0.08961155265569687, 0.013827980495989323, 0.36652204394340515, 0.9356974959373474, 0.5577910542488098, 0.13660258054733276, -0.027626650407910347, -0.009157015942037106, -0.2349613606929779, 0.3847934305667877, 0.22787849605083466, -0.018057551234960556, -0.26312628388404846, -0.3301851153373718, 0.00608661025762558, -0.5502585768699646, 0.22140198945999146, 0.3497886657714844, -0.18919727206230164, -0.37351542711257935, -0.43090423941612244, 0.3197638988494873, 0.3307174742221832, -0.19135123491287231, -0.09158489108085632, -0.44385993480682373, -1.7604496479034424, 0.17585262656211853, -0.32120612263679504, 0.29388830065727234, -0.3572804927825928, 0.4172268807888031, -0.45952755212783813, 0.03272010013461113, 0.5894386172294617, -0.2084646224975586, 0.23047026991844177, 0.15234629809856415, 0.07141877710819244, -0.011809035204350948, -0.2154083400964737, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.2786819636821747, -0.003494758391752839, 0.24396716058254242, 0.3442712724208832, 0.073859803378582, 0.32328927516937256, 0.9555315971374512, 0.6924973726272583, -0.007720866706222296, -0.1092161312699318, 0.163294717669487, -0.49202901124954224, 0.43353593349456787, 0.42956969141960144, 0.03292197734117508, -0.16364030539989471, -0.19570566713809967, -0.03678170591592789, -0.300841748714447, 0.24420037865638733, 0.17933596670627594, -0.2854808568954468, -0.45675626397132874, -0.4722064435482025, 0.2555796802043915, 0.3009166121482849, -0.38819992542266846, -0.04765143245458603, -0.5293099284172058, -1.7652572393417358, -0.05588385835289955, -0.7925329804420471, 0.4002758860588074, -0.3645569682121277, 0.20487883687019348, -0.13173602521419525, -0.21166162192821503, 0.3572846055030823, -0.16809695959091187, 0.29112356901168823, 0.3309975862503052, -0.19506008923053741, -0.3118155300617218, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.3494124412536621, 0.021317467093467712, 0.3300054371356964, 0.11076852679252625, 0.06918831914663315, 0.24124985933303833, 0.8373862504959106, 0.38791918754577637, -0.11169923841953278, -0.25869762897491455, 0.07720176875591278, -0.04914550483226776, 0.3118366599082947, 0.21877603232860565, -0.02427632547914982, -0.06129605695605278, -0.10656319558620453, -0.039031051099300385, -0.4597170054912567, 0.04363608732819557, 0.03716883808374405, -0.15940137207508087, -0.5531895160675049, -0.7077959179878235, -0.0782700628042221, 0.15837417542934418, -0.1761040985584259, -0.13482651114463806, -0.41870665550231934, -1.6107269525527954, 0.19524943828582764, -0.2984253466129303, 0.4756022095680237, -0.1725401133298874, 0.12626266479492188, -0.15457965433597565, 0.13568490743637085, 0.4687972068786621, -0.2754364013671875, 0.24332433938980103, 0.16681277751922607, 0.05326388031244278, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.3899818956851959, 0.0126882866024971, 0.059995539486408234, -0.10799602419137955, 0.19014374911785126, 0.10007286816835403, 1.0120452642440796, 0.34260302782058716, -0.18463386595249176, -0.34463146328926086, 0.22329027950763702, -0.1750631034374237, 0.1919202357530594, 0.17944706976413727, 0.04326426982879639, -0.32817012071609497, -0.14496316015720367, -0.2657167911529541, -0.629414439201355, 0.5335816144943237, 0.2618749737739563, -0.3631633222103119, -0.10585762560367584, -0.6468100547790527, 0.10341829806566238, 0.19352564215660095, -0.37937554717063904, -0.1236577033996582, -0.11234819889068604, -1.610470175743103, 0.3722076714038849, -0.3499118983745575, 0.6063801050186157, -0.38229504227638245, 0.10950934141874313, -0.1831197440624237, 0.1601531058549881, 0.22404371201992035, -0.22329701483249664, 0.46642616391181946, 0.13741829991340637, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.11527121812105179, 0.011648053303360939, 0.299317866563797, 0.06863043457269669, 0.10090137273073196, 0.5838192701339722, 0.6290754675865173, 0.15941110253334045, 0.1980268955230713, -0.45760372281074524, -0.17067691683769226, 0.11127457022666931, 0.2688613533973694, 0.7401769161224365, 0.12778563797473907, -0.3797352612018585, -0.04603093862533569, -0.2909451723098755, -0.45043396949768066, 0.09077762067317963, 0.13296334445476532, -0.3802640438079834, -0.2030654102563858, -0.72710782289505, 0.08940587937831879, 0.12499382346868515, -0.27988606691360474, 0.011615216732025146, -0.21526798605918884, -1.6083990335464478, -0.06300535053014755, -0.7215842604637146, 0.58030766248703, -0.040194008499383926, 0.33178436756134033, -0.24228283762931824, -0.1678130179643631, 0.4373043477535248, -0.09277107566595078, 0.35624879598617554, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.32775193452835083, 0.07141412794589996, 0.18748842179775238, 0.0611427016556263, -0.15757301449775696, -0.01884651370346546, 1.247439980506897, 0.43595007061958313, -0.40984007716178894, -0.1289598047733307, 0.18865540623664856, -0.36695596575737, 0.18851642310619354, 0.1484740525484085, 0.10772401839494705, 0.0978865846991539, 0.2626633644104004, -0.2271481156349182, -1.106687068939209, 0.33540260791778564, 0.19879625737667084, -0.4568977952003479, -0.06908383220434189, -0.5611853003501892, 0.2057274430990219, 0.042193274945020676, -0.14934472739696503, -0.11355527490377426, -0.11219873279333115, -1.5569127798080444, 0.38693663477897644, -0.25721269845962524, 0.596819281578064, -0.2115810215473175, 0.004945164080709219, -0.24761614203453064, 0.0941787138581276, 0.2991321384906769, -0.09192441403865814, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.5950506925582886, 0.03445916995406151, 0.08588394522666931, -0.2866118848323822, -0.3541630208492279, 0.04150201752781868, 0.9444111585617065, 0.37028414011001587, -0.26524868607521057, -0.5441370010375977, -0.16735276579856873, -0.0793415904045105, 0.360946923494339, 0.24524125456809998, 0.1470448076725006, -0.30484509468078613, -0.08440812677145004, -0.01626281440258026, -0.794234037399292, 0.27451011538505554, 0.25334668159484863, -0.2286209613084793, 0.16142912209033966, -0.6183925867080688, 0.07147445529699326, 0.06565821915864944, -0.10062794387340546, -0.3097657561302185, -0.4365371763706207, -1.6530135869979858, 0.26717472076416016, -0.40357333421707153, 0.5555134415626526, -0.4596932828426361, 0.40256065130233765, 0.21146167814731598, -0.05621311441063881, 0.2241707295179367, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.4235701858997345, 0.2851625978946686, 0.23651228845119476, 0.020411808043718338, -0.12240181118249893, 0.009279230609536171, 1.0433335304260254, 0.29939085245132446, -0.03976604342460632, -0.12975920736789703, 0.14473311603069305, -0.5096992254257202, 0.33467262983322144, 0.3936198651790619, -0.19692134857177734, -0.1931130737066269, -0.03251822665333748, 0.36752548813819885, -0.8464683294296265, 0.23354998230934143, 0.25914913415908813, -0.35860559344291687, -0.11856331676244736, -0.45875227451324463, 0.30160191655158997, 0.13879385590553284, -0.19151270389556885, -0.3342151641845703, -0.3626203238964081, -1.5743275880813599, 0.36418530344963074, -0.345382958650589, 0.19752246141433716, -0.2444329857826233, 0.1550847589969635, -0.09072760492563248, -0.015502228401601315, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.6075077056884766, -0.08239422738552094, 0.19528594613075256, 0.24568739533424377, 0.18687747418880463, 0.17660565674304962, 0.8508967161178589, 0.36775875091552734, -0.1467033326625824, -0.21306072175502777, 0.15152952075004578, -0.19213372468948364, 0.22026003897190094, 0.3947995603084564, 0.23873686790466309, 0.058439597487449646, -0.17362266778945923, 0.11895647644996643, -0.6546735167503357, 0.4761659801006317, 0.017649473622441292, -0.16977107524871826, -0.10587047785520554, -0.7261846661567688, -0.018449954688549042, 0.15659809112548828, -0.0357847698032856, -0.01381884329020977, -0.19314967095851898, -1.6201509237289429, -0.020941579714417458, -0.43163037300109863, 0.7714977860450745, -0.4181050658226013, 0.44286245107650757, -0.08548842370510101, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.5815017819404602, 0.508417546749115, 0.275523841381073, -0.08112100511789322, 0.07937679439783096, 0.19656039774417877, 0.9120195508003235, 0.34045693278312683, -0.11442544311285019, -0.5147808194160461, -0.04142635688185692, -0.27218180894851685, 0.062047623097896576, 0.3424350321292877, -0.41739600896835327, 0.22376735508441925, 0.038950566202402115, 0.02229784056544304, -0.9497492909431458, 0.567585825920105, -0.1667104959487915, -0.42200860381126404, -0.2916620969772339, -0.8164404034614563, -0.006662135478109121, 0.26132145524024963, -0.13976715505123138, -0.2535904347896576, -0.2739305794239044, -1.5709612369537354, 0.23137548565864563, -0.4344654679298401, 0.4038521945476532, -0.45393380522727966, 0.20081152021884918, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.12118317186832428, -0.04214891418814659, 0.17954643070697784, 0.3466859757900238, -0.1310005486011505, 0.3699744641780853, 1.0290311574935913, 0.6488986611366272, 0.023530496284365654, 0.07473287731409073, -0.08124543726444244, -0.26140502095222473, 0.5551780462265015, 0.6326206922531128, 0.3216065466403961, -0.08315465599298477, -0.28272274136543274, -0.05229067802429199, -0.511408805847168, 0.2525082230567932, 0.23080846667289734, -0.17162634432315826, -0.33903083205223083, -0.6341855525970459, 0.2185039222240448, 0.2507064640522003, -0.4055754840373993, -0.14211729168891907, -0.2730339467525482, -1.6536619663238525, 0.01719558797776699, -0.45970961451530457, 0.46225422620773315, -0.4863682687282562, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.11190161854028702, 0.06486209481954575, -0.06868180632591248, -0.043220970779657364, 0.3636193573474884, 0.33336231112480164, 0.8002104759216309, 0.2866315543651581, 0.05862428992986679, 0.03643271327018738, 0.0036787407007068396, -0.16312789916992188, -0.01888175681233406, 0.35668158531188965, 0.2130698412656784, 0.021985039114952087, -0.1661987602710724, 0.1057472974061966, -0.8085199594497681, 0.5161408185958862, 0.15049484372138977, -0.16476941108703613, -0.07435427606105804, -0.40775150060653687, 0.2256883680820465, 0.35661810636520386, -0.40072882175445557, -0.48096323013305664, -0.2314436435699463, -1.6677944660186768, -0.0323307029902935, -0.6232059001922607, 0.062059491872787476, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [0.22735585272312164, -0.26114481687545776, 0.18800845742225647, 0.11123573035001755, 0.6114004254341125, 0.4057176113128662, 0.33496469259262085, 0.2382078468799591, 0.3346582353115082, 0.051238760352134705, -0.17065034806728363, -0.22547249495983124, 0.16661442816257477, 0.41034847497940063, 0.25726035237312317, -0.18127328157424927, -0.027341529726982117, -0.2926754355430603, -0.3434760272502899, 0.35672029852867126, 0.6084879040718079, 0.22562946379184723, 0.24866832792758942, -0.11693083494901657, 0.5305806994438171, 0.20635886490345, -0.42870160937309265, 0.013489835895597935, -0.6355426907539368, -1.7127043008804321, -0.6147940158843994, -0.7384991645812988, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.2551037073135376, -0.2881881296634674, 0.25857821106910706, -0.27936798334121704, 0.6638955473899841, 0.0841493234038353, 0.544147789478302, 0.22005482017993927, 0.18599636852741241, -0.10567735880613327, -0.009449612349271774, -0.7318543195724487, 0.13289976119995117, 0.2548530697822571, 0.15754090249538422, -0.32114481925964355, -0.19282054901123047, -0.6300391554832458, -0.3109951615333557, 0.2820499837398529, 0.14707177877426147, -0.06658002734184265, 0.07763084769248962, -0.5175383687019348, 0.30793625116348267, 0.1832096129655838, 0.1574508249759674, -0.08012065291404724, -0.44692739844322205, -1.7103110551834106, -0.19168664515018463, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.32176074385643005, -0.012373436242341995, 0.42663145065307617, -0.11163350194692612, 0.058756131678819656, 0.10759533196687698, 0.9782902598381042, 0.4555839002132416, -0.048125527799129486, 0.03290834650397301, 0.30913516879081726, -0.47649112343788147, 0.21359224617481232, 0.23702096939086914, 0.4011646509170532, -0.06257781386375427, -0.13070781528949738, -0.028706107288599014, -0.9877150654792786, 0.4443121552467346, 0.32044610381126404, -0.4365176558494568, -0.1288696974515915, -0.46191322803497314, -0.027896692976355553, 0.1657489538192749, -0.232735738158226, -0.1727919727563858, -0.34095731377601624, -1.511955738067627, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.2956056296825409, -0.21394817531108856, -0.02077106013894081, -0.08548130095005035, -0.09366235136985779, 0.40985819697380066, 0.9024079442024231, 0.11540515720844269, -0.12864726781845093, -0.20971465110778809, 0.2469107210636139, -0.2578109800815582, 0.22712130844593048, 0.26661697030067444, 0.05453285202383995, -0.14228807389736176, 0.040705468505620956, -0.3014845848083496, -0.643036961555481, 0.32259806990623474, 0.03386864438652992, -0.2819029986858368, 0.16103892028331757, -0.3238945007324219, 0.337208092212677, 0.028808658942580223, -0.341011643409729, -0.22837615013122559, -0.4477548599243164, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.4506671130657196, -0.05689992010593414, -0.04172344133257866, 0.30478522181510925, 0.05695180222392082, 0.14208637177944183, 0.9417014718055725, 0.3164498209953308, 0.22389990091323853, -0.15636233985424042, 0.177733913064003, -0.49478113651275635, 0.4483913779258728, 0.1163845956325531, 0.401034951210022, -0.014626506716012955, -0.02266731858253479, 0.14584006369113922, -0.6779522895812988, 0.5425845384597778, 0.2910356819629669, -0.03270488232374191, -0.11848648637533188, -0.43294259905815125, -0.016263937577605247, -0.18992699682712555, -0.06768354028463364, -0.1838732212781906, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.4609556496143341, 0.2834275960922241, 0.14605988562107086, -0.03348906710743904, -0.1004873663187027, 0.23508864641189575, 0.8545868992805481, 0.3110877275466919, 0.28314539790153503, -0.09189338237047195, 0.03725319728255272, -0.3441733717918396, 0.28306344151496887, 0.42399540543556213, 0.038964301347732544, -0.3326995372772217, -0.32658499479293823, 0.2045811116695404, -0.9524673819541931, 0.3696872889995575, 0.2412634789943695, -0.4113779664039612, -0.1385335773229599, -0.2983574867248535, 0.001876017078757286, 0.1695135235786438, -0.038175567984580994, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.18349340558052063, 0.011159401386976242, 0.3094310462474823, 0.49342450499534607, 0.10727490484714508, 0.25523269176483154, 0.9194637537002563, 0.6813321709632874, 0.0673111230134964, 0.09735475480556488, -0.01978759840130806, -0.4158567488193512, 0.3355529308319092, 0.43896484375, 0.2453795224428177, -0.23590466380119324, -0.11168321967124939, -0.19360467791557312, -0.6289747953414917, 0.4249289333820343, 0.1352473646402359, -0.13802658021450043, 0.039195023477077484, -0.4294200539588928, 0.25936996936798096, 0.16432932019233704, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.20034067332744598, 0.2745318114757538, 0.12517431378364563, 0.15573447942733765, 0.10860323160886765, 0.17392362654209137, 0.7277963161468506, 0.610175371170044, 0.1325714886188507, -0.13985119760036469, 0.29949548840522766, -0.237676203250885, -0.015292669646441936, 0.4175989627838135, -0.06031306833028793, 0.09986438602209091, 0.035244543105363846, 0.004471402615308762, -0.6924329400062561, 0.6033923029899597, 0.2980141043663025, -0.18026383221149445, -0.5094162821769714, -0.4440227150917053, 0.2947242856025696, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.5680668354034424, 0.17937146127223969, 0.20814865827560425, 0.13684606552124023, -0.29350775480270386, 0.2434980869293213, 1.0732879638671875, 0.4271968901157379, 0.038655318319797516, -0.17053291201591492, 0.029833104461431503, -0.3841444253921509, 0.38866257667541504, 0.4416574537754059, 0.3224124610424042, -0.43862518668174744, 0.07856473326683044, 0.2389710545539856, -0.8619413375854492, 0.3068771958351135, 0.3186616897583008, 0.05837417393922806, -0.015064341947436333, -0.2930258512496948, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.3114779591560364, 0.2105880081653595, 0.19821862876415253, 0.017584336921572685, 0.055654555559158325, 0.2833870053291321, 0.9952369928359985, 0.5660628080368042, 0.1678975522518158, 0.09341402351856232, -0.08384047448635101, -0.367504745721817, 0.05106067284941673, 0.6597669124603271, 0.1554909348487854, -0.1839444935321808, -0.12412519752979279, -0.1682867705821991, -0.6306019425392151, 0.22272658348083496, 0.5251085162162781, -0.42925316095352173, -0.22601936757564545, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.5036506056785583, 0.10858174413442612, 0.3243425190448761, 0.016392748802900314, 0.017342882230877876, 0.12857386469841003, 0.710861086845398, 0.620208740234375, 0.16974519193172455, 0.2133575975894928, -0.27923229336738586, -0.551988422870636, 0.45615410804748535, 0.16421735286712646, 0.023690415546298027, -0.056162454187870026, -0.1370382159948349, 0.2334100902080536, -0.9496055841445923, 0.3091297447681427, 0.5419144630432129, -0.37975242733955383, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.3674011528491974, 0.12353986501693726, 0.38450193405151367, 0.5728280544281006, -0.06183711811900139, 0.3984404504299164, 1.0425312519073486, 0.7567176222801208, -0.193570077419281, 0.1563185751438141, 0.033140406012535095, -0.5351393222808838, 0.4227606952190399, 0.3190273940563202, 0.2942548096179962, 0.08366932719945908, -0.07006404548883438, -0.019103817641735077, -0.7505954504013062, 0.3498455584049225, 0.42093005776405334, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.4060038626194, 0.09504256397485733, 0.16211800277233124, -0.2201763391494751, 0.36115017533302307, 0.2598830759525299, 0.7043346762657166, 0.3966575264930725, 0.1692141890525818, -0.18917207419872284, 0.031761284917593, -0.4116591513156891, 0.12079902738332748, 0.11633845418691635, -0.17993170022964478, 0.09976989775896072, -0.33268898725509644, -0.2528931498527527, -0.8589281439781189, 0.2279319316148758, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.47751253843307495, 0.20953238010406494, 0.35415223240852356, -0.2642788887023926, 0.12520521879196167, 0.22253981232643127, 0.7287824749946594, 0.43525829911231995, -0.0968848243355751, -0.03562314808368683, 0.026327509433031082, -0.4876343011856079, 0.1448870748281479, 0.32941797375679016, -0.16100075840950012, -0.36143219470977783, 0.16625402867794037, -0.024376289919018745, -0.5909676551818848, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.6935849189758301, 0.47297653555870056, 0.4951271116733551, -0.1488671451807022, -0.043393950909376144, 0.07849637418985367, 0.7892168760299683, 0.5095933079719543, 0.16871975362300873, -0.17147192358970642, 0.18077105283737183, -0.4502367377281189, 0.0924946740269661, 0.13823693990707397, -0.018682101741433144, -0.1866254061460495, -0.07000266760587692, 0.084409698843956, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.547027587890625, 0.3452008366584778, 0.28053897619247437, -0.15572884678840637, -0.04282126948237419, -0.06861162930727005, 1.089224934577942, 0.35037627816200256, 0.32062411308288574, -0.19611665606498718, -0.008171327412128448, -0.35670116543769836, 0.08343543857336044, 0.3639177083969116, 0.09766745567321777, -0.19929960370063782, -0.14572294056415558, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.3741038739681244, 0.28380125761032104, 0.27157464623451233, 0.11581908166408539, -0.11022073030471802, 0.06850901991128922, 1.1585874557495117, 0.2671383023262024, 0.05226268619298935, -0.17759662866592407, 0.2785150408744812, -0.7726628184318542, 0.3940349519252777, 0.03925693780183792, 0.04155799001455307, -0.15301598608493805, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.215590700507164, 0.38092952966690063, 0.2762855291366577, 0.024720508605241776, -0.03607388585805893, 0.021888960152864456, 0.7388221025466919, 0.47335776686668396, 0.01635272242128849, -0.10342133790254593, 0.1612524539232254, -0.6100785136222839, 0.14775794744491577, 0.3690260350704193, -0.1347448229789734, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.5735269784927368, 0.20908194780349731, 0.42116230726242065, -0.09360779076814651, 0.03717591241002083, 0.3733959197998047, 0.7324243783950806, 0.3660433292388916, 0.24167929589748383, -0.0013075649039819837, 0.17011532187461853, -0.3619968891143799, -0.021999001502990723, 0.38496342301368713, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.6454753875732422, 0.3730486333370209, 0.24527744948863983, 0.005817714147269726, -0.3099229335784912, 0.19998539984226227, 0.7691370844841003, 0.4557420611381531, 0.15264391899108887, -0.12139634042978287, 0.019879750907421112, -0.6131916642189026, 0.3553233742713928, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.7296154499053955, 0.26890212297439575, 0.29779160022735596, -0.19195054471492767, 0.11159137636423111, -0.1851196140050888, 0.9452173113822937, 0.3551088273525238, 0.1275167167186737, 0.03447198122739792, 0.11410294473171234, -0.5404972434043884, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.661165714263916, 0.46635496616363525, 0.326614648103714, -0.15777751803398132, 0.04736296832561493, -0.11909963935613632, 0.9076226949691772, 0.6423764824867249, 0.09839794784784317, -0.4532391428947449, 0.3108430504798889, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.6479023098945618, 0.3512446880340576, 0.20017266273498535, 0.07241953909397125, -0.13230399787425995, 0.14673331379890442, 0.6323898434638977, 0.39185085892677307, 0.08311423659324646, -0.20857155323028564, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.5360760688781738, 0.29292184114456177, 0.3737120032310486, -0.06883503496646881, -0.4052256643772125, 0.12452234327793121, 1.0273773670196533, 0.06356058269739151, -0.10032634437084198, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.657310962677002, 0.3877498507499695, 0.04141766205430031, -0.06383193284273148, -0.1176246628165245, -0.08814225345849991, 0.8019639849662781, 0.246565580368042, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.5598287582397461, 0.4590005874633789, 0.1940278708934784, 8.749243570491672e-4, -0.11791746318340302, 0.057549525052309036, 0.5917091965675354, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.5335893630981445, 0.7521976232528687, 0.2591649293899536, -0.042000461369752884, -0.31257957220077515, 0.03863833472132683, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.24376824498176575, 0.38771697878837585, 0.20001253485679626, 0.008940696716308594, -0.18275336921215057, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.8875942826271057, 0.22041064500808716, 0.3889787495136261, 0.17519669234752655, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.837979257106781, 0.26114583015441895, 0.6112997531890869, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.8166832327842712, 0.4777902066707611, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [-0.6601163148880005, ...]
+    >
+  },
+  %{
+    embedding: #Nx.Tensor<
+      f32[384]
+      [...]
+    >
+  },
+  %{...},
+  ...
+]
+```
+
+```elixir
+data |> List.first()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+%{
+  embedding: #Nx.Tensor<
+    f32[384]
+    [-0.3203723430633545, 0.20534354448318481, 0.3748559057712555, -0.182700514793396, -0.12868908047676086, -0.17810004949569702, 0.5590336918830872, 0.0836750864982605, -0.0256664976477623, -0.4436378479003906, -0.10723191499710083, -0.32990044355392456, 0.311384916305542, 0.3504824638366699, -0.12694978713989258, -0.3599276542663574, -0.1085481271147728, 0.15129800140857697, -0.7339369654655457, 0.3334740996360779, 0.14111536741256714, -0.4674743711948395, 0.0015392261557281017, -0.6994808316230774, 0.1759888380765915, -0.13282817602157593, -0.3124956488609314, -0.2532590329647064, -0.37043532729148865, -1.418649673461914, 0.1721782088279724, -0.5356618165969849, 0.4222268760204315, -0.5289990305900574, 0.292240172624588, -0.14913742244243622, -0.05410439521074295, 0.45437154173851013, -0.1978595107793808, 0.32922786474227905, 0.07593929022550583, 0.07970953732728958, -0.11810845136642456, -0.10782180726528168, -0.42396894097328186, 0.13102273643016815, -0.3993162512779236, -0.27377718687057495, 0.5784401893615723, ...]
+  >
+}
+```
+
+## Prepare data and embeds.
+
+## Build and test index
+
+```elixir
+{:ok, index} = HNSWLib.Index.new(:cosine, 384, 1_000_000)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok,
+ %HNSWLib.Index{space: :cosine, dim: 384, reference: #Reference<0.1450052513.1521352705.176281>}}
+```
+
+```elixir
+data |> Enum.map(fn emb -> HNSWLib.Index.add_items(index, Nx.tensor(emb.embedding)) end)
+HNSWLib.Index.get_current_count(index)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok, 859}
+```
+
+```elixir
+# Lets take it for a spin 
+# We will get the top 10 results (384 * 10 => ~4k extra context -- adjust base on your model)
+query = "What Dursley job title and occupation?"
+
+q_emb =
+  Nx.Serving.batched_run(GteSmall, [query]) |> List.first() |> Map.get(:embedding) |> Nx.tensor()
+
+{:ok, labels, dist} = HNSWLib.Index.knn_query(index, q_emb, k: 10)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok,
+ #Nx.Tensor<
+   u64[1][10]
+   EXLA.Backend<cuda:0, 0.1450052513.1521090634.114786>
+   [
+     [64, 68, 0, 57, 250, 84, 86, 105, 1, 19]
+   ]
+ >,
+ #Nx.Tensor<
+   f32[1][10]
+   EXLA.Backend<cuda:0, 0.1450052513.1521090634.114788>
+   [
+     [0.13249695301055908, 0.13945817947387695, 0.14674919843673706, 0.1478041410446167, 0.14837133884429932, 0.14897674322128296, 0.14924705028533936, 0.1545032262802124, 0.15615200996398926, 0.15627628564834595]
+   ]
+ >}
+```
+
+```elixir
+# We can see some overlapping in our chunks
+extra_context =
+  labels
+  |> Nx.to_list()
+  |> List.first()
+  |> Enum.sort()
+  |> Enum.map(fn idx -> Enum.at(chunks, idx) end)
+  |> Enum.join("\n")
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+"Harry Potter and the Sorcerer's Stone\n\n\nCHAPTER ONE\n\nTHE BOY WHO LIVED\n\nMr. and Mrs. Dursley, of number four, Privet Drive, were proud to say\nthat they were perfectly normal, thank you very much. They were the last\npeople you'd expect to be involved in anything strange or mysterious,\nbecause they just didn't hold with such nonsense.\n\nMr. Dursley was the director of a firm called Grunnings, which made\ndrills. He was a big, beefy man with hardly any neck, although he did\nhave a very large mustache. Mrs. Dursl\ney was thin and blonde and had\nnearly twice the usual amount of neck, which came in very useful as she\nspent so much of her time craning over garden fences, spying on the\nneighbors. The Dursleys had a small son called Dudley and in their\nopinion there was no finer boy anywhere.\n\nThe Dursleys had everything they wanted, but they also had a secret, and\ntheir greatest fear was that somebody would discover it. They didn't\nthink they could bear it if anyone found out about the Potters. Mrs.\nPotter was Mrs. Dursl\nOwls... shooting\nstars... and there were a lot of funny-looking people in town today...\"\n\n\"So?\" snapped Mrs. Dursley.\n\n\"Well, I just thought... maybe... it was something to do with... you\nknow... her crowd.\"\n\nMrs. Dursley sipped her tea through pursed lips. Mr. Dursley wondered\nwhether he dared tell her he'd heard the name \"Potter.\" He decided he\ndidn't dare. Instead he said, as casually as he could, \"Their son --\nhe'd be about Dudley's age now, wouldn't he?\"\n\n\"I suppose so,\" said Mrs. Dursley stiffly.\n\n\"Wh\nis own appearance was a very thin scar on his forehead that\nwas shaped like a bolt of lightning. He had had it as long as he could\nremember, and the first question he could ever remember asking his Aunt\nPetunia was how he had gotten it.\n\n\"In the car crash when your parents died,\" she had said. \"And don't ask\nquestions.\"\n\nDon't ask questions -- that was the first rule for a quiet life with the\nDursleys.\n\nUncle Vernon entered the kitchen as Harry was turning over the bacon.\n\n\"Comb your hair!\" he barked, by wa\n't be silly, Vernon, she hates the boy.\"\n\nThe Dursleys often spoke about Harry like this, as though he wasn't\nthere -- or rather, as though he was something very nasty that couldn't\nunderstand them, like a slug.\n\n\"What about what's-her-name, your friend -- Yvonne?\"\n\n\"On vacation in Majorca,\" snapped Aunt Petunia.\n\n\"You could just leave me here,\" Harry put in hopefully (he'd be able to\nwatch what he wanted on television for a change and maybe even have a go\non Dudley's computer).\n\nAunt Petunia looked as thou\n said, putting his large purple face right up\nclose to Harry's, \"I'm warning you now, boy -- any funny business,\nanything at all -- and you'll be in that cupboard from now until\nChristmas.\"\n\n\"I'm not going to do anything,\" said Harry, \"honestly..\n\nBut Uncle Vernon didn't believe him. No one ever did.\n\nThe problem was, strange things often happened around Harry and it was\njust no good telling the Dursleys he didn't make them happen.\n\nOnce, Aunt Petunia, tired of Harry coming back from the barbers looking\nas \narting on Harry. He was so angry he could hardly speak. He managed to\nsay, \"Go -- cupboard -- stay -- no meals,\" before he collapsed into a\nchair, and Aunt Petunia had to run and get him a large brandy.\n\nHarry lay in his dark cupboard much later, wishing he had a watch. He\ndidn't know what time it was and he couldn't be sure the Dursleys were\nasleep yet. Until they were, he couldn't risk sneaking to the kitchen\nfor some food.\n\nHe'd lived with the Dursleys almost ten years, ten miserable years, as\nlong as he\n, and of course he was forbidden to ask\nquestions. There were no photographs of them in the house.\n\nWhen he had been younger, Harry had dreamed and dreamed of some unknown\nrelation coming to take him away, but it had never happened; the\nDursleys were his only family. Yet sometimes he thought (or maybe hoped)\nthat strangers in the street seemed to know him. Very strange strangers\nthey were, too. A tiny man in a violet top hat had bowed to him once\nwhile out shopping with Aunt Petunia and Dudley. After" <> ...
+```
+
+```elixir
+extra_context |> IO.puts()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+Harry Potter and the Sorcerer's Stone
+
+
+CHAPTER ONE
+
+THE BOY WHO LIVED
+
+Mr. and Mrs. Dursley, of number four, Privet Drive, were proud to say
+that they were perfectly normal, thank you very much. They were the last
+people you'd expect to be involved in anything strange or mysterious,
+because they just didn't hold with such nonsense.
+
+Mr. Dursley was the director of a firm called Grunnings, which made
+drills. He was a big, beefy man with hardly any neck, although he did
+have a very large mustache. Mrs. Dursl
+ey was thin and blonde and had
+nearly twice the usual amount of neck, which came in very useful as she
+spent so much of her time craning over garden fences, spying on the
+neighbors. The Dursleys had a small son called Dudley and in their
+opinion there was no finer boy anywhere.
+
+The Dursleys had everything they wanted, but they also had a secret, and
+their greatest fear was that somebody would discover it. They didn't
+think they could bear it if anyone found out about the Potters. Mrs.
+Potter was Mrs. Dursl
+Owls... shooting
+stars... and there were a lot of funny-looking people in town today..."
+
+"So?" snapped Mrs. Dursley.
+
+"Well, I just thought... maybe... it was something to do with... you
+know... her crowd."
+
+Mrs. Dursley sipped her tea through pursed lips. Mr. Dursley wondered
+whether he dared tell her he'd heard the name "Potter." He decided he
+didn't dare. Instead he said, as casually as he could, "Their son --
+he'd be about Dudley's age now, wouldn't he?"
+
+"I suppose so," said Mrs. Dursley stiffly.
+
+"Wh
+is own appearance was a very thin scar on his forehead that
+was shaped like a bolt of lightning. He had had it as long as he could
+remember, and the first question he could ever remember asking his Aunt
+Petunia was how he had gotten it.
+
+"In the car crash when your parents died," she had said. "And don't ask
+questions."
+
+Don't ask questions -- that was the first rule for a quiet life with the
+Dursleys.
+
+Uncle Vernon entered the kitchen as Harry was turning over the bacon.
+
+"Comb your hair!" he barked, by wa
+'t be silly, Vernon, she hates the boy."
+
+The Dursleys often spoke about Harry like this, as though he wasn't
+there -- or rather, as though he was something very nasty that couldn't
+understand them, like a slug.
+
+"What about what's-her-name, your friend -- Yvonne?"
+
+"On vacation in Majorca," snapped Aunt Petunia.
+
+"You could just leave me here," Harry put in hopefully (he'd be able to
+watch what he wanted on television for a change and maybe even have a go
+on Dudley's computer).
+
+Aunt Petunia looked as thou
+ said, putting his large purple face right up
+close to Harry's, "I'm warning you now, boy -- any funny business,
+anything at all -- and you'll be in that cupboard from now until
+Christmas."
+
+"I'm not going to do anything," said Harry, "honestly..
+
+But Uncle Vernon didn't believe him. No one ever did.
+
+The problem was, strange things often happened around Harry and it was
+just no good telling the Dursleys he didn't make them happen.
+
+Once, Aunt Petunia, tired of Harry coming back from the barbers looking
+as 
+arting on Harry. He was so angry he could hardly speak. He managed to
+say, "Go -- cupboard -- stay -- no meals," before he collapsed into a
+chair, and Aunt Petunia had to run and get him a large brandy.
+
+Harry lay in his dark cupboard much later, wishing he had a watch. He
+didn't know what time it was and he couldn't be sure the Dursleys were
+asleep yet. Until they were, he couldn't risk sneaking to the kitchen
+for some food.
+
+He'd lived with the Dursleys almost ten years, ten miserable years, as
+long as he
+, and of course he was forbidden to ask
+questions. There were no photographs of them in the house.
+
+When he had been younger, Harry had dreamed and dreamed of some unknown
+relation coming to take him away, but it had never happened; the
+Dursleys were his only family. Yet sometimes he thought (or maybe hoped)
+that strangers in the street seemed to know him. Very strange strangers
+they were, too. A tiny man in a violet top hat had bowed to him once
+while out shopping with Aunt Petunia and Dudley. After asking
+it... we think it might
+be nice if you moved into Dudley's second bedroom.
+
+"Why?" said Harry.
+
+"Don't ask questions!" snapped his uncle. "Take this stuff upstairs,
+now."
+
+The Dursleys' house had four bedrooms: one for Uncle Vernon and Aunt
+Petunia, one for visitors (usually Uncle Vernon's sister, Marge), one
+where Dudley slept, and one where Dudley kept all the toys and things
+that wouldn't fit into his first bedroom. It only took Harry one trip
+upstairs to move everything he owned from the cupboard to thi
+ the Dursleys to get up. Two
+hours later, Harry's huge, heavy trunk had been loaded into the
+Dursleys' car, Aunt Petunia had talked Dudley into sitting next to
+Harry, and they had set off.
+
+They reached King's Cross at half past ten. Uncle Vernon dumped Harry's
+trunk onto a cart and wheeled it into the station for him. Harry thought
+this was strangely kind until Uncle Vernon stopped dead, facing the
+platforms with a nasty grin on his face.
+
+"Well, there you are, boy. Platform nine -- platform ten. Your plat
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
+## Run inference.
+
+```elixir
+hf_token = "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"
+repo = {:hf, "mistralai/Mistral-7B-Instruct-v0.2", auth_token: hf_token}
+
+{:ok, model_info} = Bumblebee.load_model(repo, type: :bf16)
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+
+{:ok, generation_config} =
+  Bumblebee.load_generation_config(repo, spec_module: Bumblebee.Text.Mistral)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok,
+ %Bumblebee.Text.GenerationConfig{
+   max_new_tokens: 20,
+   min_new_tokens: nil,
+   max_length: nil,
+   min_length: nil,
+   strategy: %{type: :greedy_search},
+   decoder_start_token_id: nil,
+   forced_bos_token_id: nil,
+   forced_eos_token_id: nil,
+   forced_token_ids: [],
+   suppressed_token_ids: [],
+   no_repeat_ngram_length: nil,
+   temperature: nil,
+   bos_token_id: 1,
+   eos_token_id: 2,
+   pad_token_id: nil,
+   extra_config: nil
+ }}
+```
+
+```elixir
+serving =
+  Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+    compile: [batch_size: 1, sequence_length: 2048],
+    stream: false,
+    defn_options: [compiler: EXLA]
+  )
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+%Nx.Serving{
+  module: Nx.Serving.Default,
+  arg: #Function<0.77086443/2 in Bumblebee.Text.TextGeneration.generation/4>,
+  client_preprocessing: #Function<1.77086443/1 in Bumblebee.Text.TextGeneration.generation/4>,
+  client_postprocessing: #Function<3.77086443/2 in Bumblebee.Text.TextGeneration.maybe_stream/4>,
+  streaming: nil,
+  batch_size: 1,
+  distributed_postprocessing: &Function.identity/1,
+  process_options: [batch_keys: [sequence_length: 2048]],
+  defn_options: [compiler: EXLA]
+}
+```
+
+```elixir
+Kino.start_child({Nx.Serving, name: Mistral, serving: serving})
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+
+00:42:54.085 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_229', 8 bytes spill stores, 8 bytes spill loads
+
+
+00:42:54.198 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_516', 140 bytes spill stores, 136 bytes spill loads
+
+
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok, #PID<0.4137.0>}
+```
+
+```elixir
+# We preparing the prompt now. Again this is a basic template.
+
+prompt = """
+[INST] <<SYS>>
+You are a helpful, respectful and honest assistant.You will only answer base on the context bellow. If you dont find the answer in the context bellow respond with 'I cannot find any information'. Try to deduplicate the context bellow.
+Context: 
+#{extra_context}
+<</SYS>>
+#{query} [/INST] \
+"""
+
+IO.puts(prompt)
+IO.inspect(String.length(prompt))
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[INST] <<SYS>>
+You are a helpful, respectful and honest assistant.You will only answer base on the context bellow. If you dont find the answer in the context bellow respond with 'I cannot find any information'. Try to deduplicate the context bellow.
+Context: 
+Harry Potter and the Sorcerer's Stone
+
+
+CHAPTER ONE
+
+THE BOY WHO LIVED
+
+Mr. and Mrs. Dursley, of number four, Privet Drive, were proud to say
+that they were perfectly normal, thank you very much. They were the last
+people you'd expect to be involved in anything strange or mysterious,
+because they just didn't hold with such nonsense.
+
+Mr. Dursley was the director of a firm called Grunnings, which made
+drills. He was a big, beefy man with hardly any neck, although he did
+have a very large mustache. Mrs. Dursl
+ey was thin and blonde and had
+nearly twice the usual amount of neck, which came in very useful as she
+spent so much of her time craning over garden fences, spying on the
+neighbors. The Dursleys had a small son called Dudley and in their
+opinion there was no finer boy anywhere.
+
+The Dursleys had everything they wanted, but they also had a secret, and
+their greatest fear was that somebody would discover it. They didn't
+think they could bear it if anyone found out about the Potters. Mrs.
+Potter was Mrs. Dursl
+Owls... shooting
+stars... and there were a lot of funny-looking people in town today..."
+
+"So?" snapped Mrs. Dursley.
+
+"Well, I just thought... maybe... it was something to do with... you
+know... her crowd."
+
+Mrs. Dursley sipped her tea through pursed lips. Mr. Dursley wondered
+whether he dared tell her he'd heard the name "Potter." He decided he
+didn't dare. Instead he said, as casually as he could, "Their son --
+he'd be about Dudley's age now, wouldn't he?"
+
+"I suppose so," said Mrs. Dursley stiffly.
+
+"Wh
+is own appearance was a very thin scar on his forehead that
+was shaped like a bolt of lightning. He had had it as long as he could
+remember, and the first question he could ever remember asking his Aunt
+Petunia was how he had gotten it.
+
+"In the car crash when your parents died," she had said. "And don't ask
+questions."
+
+Don't ask questions -- that was the first rule for a quiet life with the
+Dursleys.
+
+Uncle Vernon entered the kitchen as Harry was turning over the bacon.
+
+"Comb your hair!" he barked, by wa
+'t be silly, Vernon, she hates the boy."
+
+The Dursleys often spoke about Harry like this, as though he wasn't
+there -- or rather, as though he was something very nasty that couldn't
+understand them, like a slug.
+
+"What about what's-her-name, your friend -- Yvonne?"
+
+"On vacation in Majorca," snapped Aunt Petunia.
+
+"You could just leave me here," Harry put in hopefully (he'd be able to
+watch what he wanted on television for a change and maybe even have a go
+on Dudley's computer).
+
+Aunt Petunia looked as thou
+ said, putting his large purple face right up
+close to Harry's, "I'm warning you now, boy -- any funny business,
+anything at all -- and you'll be in that cupboard from now until
+Christmas."
+
+"I'm not going to do anything," said Harry, "honestly..
+
+But Uncle Vernon didn't believe him. No one ever did.
+
+The problem was, strange things often happened around Harry and it was
+just no good telling the Dursleys he didn't make them happen.
+
+Once, Aunt Petunia, tired of Harry coming back from the barbers looking
+as 
+arting on Harry. He was so angry he could hardly speak. He managed to
+say, "Go -- cupboard -- stay -- no meals," before he collapsed into a
+chair, and Aunt Petunia had to run and get him a large brandy.
+
+Harry lay in his dark cupboard much later, wishing he had a watch. He
+didn't know what time it was and he couldn't be sure the Dursleys were
+asleep yet. Until they were, he couldn't risk sneaking to the kitchen
+for some food.
+
+He'd lived with the Dursleys almost ten years, ten miserable years, as
+long as he
+, and of course he was forbidden to ask
+questions. There were no photographs of them in the house.
+
+When he had been younger, Harry had dreamed and dreamed of some unknown
+relation coming to take him away, but it had never happened; the
+Dursleys were his only family. Yet sometimes he thought (or maybe hoped)
+that strangers in the street seemed to know him. Very strange strangers
+they were, too. A tiny man in a violet top hat had bowed to him once
+while out shopping with Aunt Petunia and Dudley. After asking
+it... we think it might
+be nice if you moved into Dudley's second bedroom.
+
+"Why?" said Harry.
+
+"Don't ask questions!" snapped his uncle. "Take this stuff upstairs,
+now."
+
+The Dursleys' house had four bedrooms: one for Uncle Vernon and Aunt
+Petunia, one for visitors (usually Uncle Vernon's sister, Marge), one
+where Dudley slept, and one where Dudley kept all the toys and things
+that wouldn't fit into his first bedroom. It only took Harry one trip
+upstairs to move everything he owned from the cupboard to thi
+ the Dursleys to get up. Two
+hours later, Harry's huge, heavy trunk had been loaded into the
+Dursleys' car, Aunt Petunia had talked Dudley into sitting next to
+Harry, and they had set off.
+
+They reached King's Cross at half past ten. Uncle Vernon dumped Harry's
+trunk onto a cart and wheeled it into the station for him. Harry thought
+this was strangely kind until Uncle Vernon stopped dead, facing the
+platforms with a nasty grin on his face.
+
+"Well, there you are, boy. Platform nine -- platform ten. Your plat
+<</SYS>>
+What Dursley job title and occupation and what is for Aunt Petunia? [/INST] 
+5475
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+5475
+```
+
+```elixir
+results = Nx.Serving.batched_run(Mistral, prompt)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+%{
+  results: [
+    %{
+      text: "Mr. Dursley is the director of a firm called Grunnings, which makes drills",
+      token_summary: %{input: 1552, output: 20, padding: 496}
+    }
+  ]
+}
+```
+
+```elixir
+txt = results.results |> List.first() |> Map.get(:text)
+IO.puts(txt)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+Mr. Dursley is the director of a firm called Grunnings, which makes drills
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
