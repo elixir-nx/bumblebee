@@ -44,7 +44,7 @@ Document length: 75014
 :ok
 ```
 
-## Embeddings
+## Generating embeddings
 
 There are many ways we could partition and retrieve snippets from a large text document. In this example we will use embedding-based lookup. That is, we will split the text into smaller chunks, compute an embedding (the chunk meaning compressed into a vector) and create an in-memory index for efficient lookup. In real world problems, you may want to explore other retrieval methods, such as reranking or BM25.
 
@@ -232,7 +232,7 @@ IO.puts(context)
 <!-- livebook:{"output":true} -->
 
 ```
-[...] 
+[...]
 
 What I Worked On
 
@@ -277,7 +277,7 @@ HN was no doubt good for YC, but it was also by far the biggest source of stress
 
 We have our context, the last thing left to do is have a LLM answer the question. In this example we will use the [Mistral](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2) model.
 
-For more details on running an LLM, see the [LLMs](./llms) notebook.
+For more details on running an LLM, see the [LLMs](./llms.livemd) notebook.
 
 ```elixir
 repo = {:hf, "mistralai/Mistral-7B-Instruct-v0.2"}
