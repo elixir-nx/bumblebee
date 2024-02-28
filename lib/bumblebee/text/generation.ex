@@ -361,6 +361,9 @@ defmodule Bumblebee.Text.Generation do
         end,
         if config.temperature && config.temperature != 1.0 do
           &temperature_processor(&1, &2, temperature: config.temperature)
+        end,
+        if config.grammar do
+          &grammar_constrained_processor(&1, &2, grammar: config.grammar)
         end
       ] ++
         if config.strategy.type == :multinomial_sampling do
