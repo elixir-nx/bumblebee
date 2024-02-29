@@ -132,7 +132,7 @@ In this section we look at token classification, more specifically named-entity 
 
 ```elixir
 {:ok, bert} = Bumblebee.load_model({:hf, "dslim/bert-base-NER"})
-{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-google-bert/bert-base-cased"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 
 serving = Bumblebee.Text.token_classification(bert, tokenizer, aggregation: :same)
 
