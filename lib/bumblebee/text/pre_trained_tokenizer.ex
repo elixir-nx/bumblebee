@@ -127,6 +127,16 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
     clip: %{
       special_tokens: %{unk: "<|endoftext|>", pad: "<|endoftext|>", eos: "<|endoftext|>"}
     },
+    code_gen: %{
+      special_tokens: %{
+        unk: "<|endoftext|>",
+        bos: "<|endoftext|>",
+        eos: "<|endoftext|>",
+        # CodeGen doesn't originally have a pad token, however when necessary
+        # we pad with the EOS token
+        pad: "<|endoftext|>"
+      }
+    },
     distilbert: %{
       special_tokens: %{unk: "[UNK]", sep: "[SEP]", pad: "[PAD]", cls: "[CLS]", mask: "[MASK]"}
     },

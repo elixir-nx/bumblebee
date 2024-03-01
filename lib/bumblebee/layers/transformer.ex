@@ -285,11 +285,11 @@ defmodule Bumblebee.Layers.Transformer do
 
         * `:max_positions` - the maximum number of distinct positions
 
-    * `:rotary_embedding_base` - base for computing rotary embedding frequency. Defaults
-      to `10_000`.
+        * `:base` - base for computing rotary embedding frequency. Defaults
+        to `10_000`.
 
-    * `:rotary_percentage` - percentage of hidden dimensions to allocate to rotary embeddings.
-      Defaults to `1.0`.
+        * `:percentage` - percentage of hidden dimensions to allocate to rotary embeddings.
+        Defaults to `1.0`.
 
     * `:name` - the prefix for layer names
 

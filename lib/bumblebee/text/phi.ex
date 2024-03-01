@@ -1,17 +1,17 @@
-defmodule Bumblebee.Text.Mistral do
+defmodule Bumblebee.Text.Phi do
   alias Bumblebee.Shared
 
   options =
     [
       vocab_size: [
-        default: 32000,
+        default: 51200,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
         """
       ],
       max_positions: [
-        default: 131_072,
+        default: 2048,
         doc: """
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
         length that this model can process. Typically this is set to a large value just in case,
@@ -19,15 +19,15 @@ defmodule Bumblebee.Text.Mistral do
         """
       ],
       hidden_size: [
-        default: 4096,
+        default: 2048,
         doc: "the dimensionality of hidden layers"
       ],
       intermediate_size: [
-        default: 14336,
+        default: 8192,
         doc: "the dimensionality of intermediate layers"
       ],
       num_blocks: [
-        default: 32,
+        default: 24,
         doc: "the number of Transformer blocks in the model"
       ],
       num_attention_heads: [
@@ -35,7 +35,7 @@ defmodule Bumblebee.Text.Mistral do
         doc: "the number of attention heads for each attention layer in the model"
       ],
       num_key_value_heads: [
-        default: 8,
+        default: nil,
         doc: """
         the number of key-value heads used to implement Grouped Query Attention. If
         this value is set to the same as the number of attention heads, it will use
@@ -43,13 +43,17 @@ defmodule Bumblebee.Text.Mistral do
         Attention
         """
       ],
-      attention_window_size: [
-        default: 4096,
-        doc: "window size for both sides of the sliding attention window"
-      ],
       activation: [
-        default: :silu,
+        default: :gelu_approx_tanh,
         doc: "the activation function"
+      ],
+      rotary_embedding_percentage: [
+        default: 0.5,
+        doc: "percentage of the query and keys that will have rotary embedding"
+      ],
+      rotary_embedding_base: [
+        default: 10_000,
+        doc: "base for computing rotary embedding frequency"
       ],
       layer_norm_epsilon: [
         default: 1.0e-12,
@@ -59,10 +63,6 @@ defmodule Bumblebee.Text.Mistral do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
-      ],
-      rotary_embedding_base: [
-        default: 10_000,
-        doc: "base for computing rotary embedding frequency"
       ]
     ] ++
       Shared.common_options([
@@ -73,19 +73,23 @@ defmodule Bumblebee.Text.Mistral do
       ]) ++ Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
-  Mistral model family.
+  Phi model family.
 
   ## Architectures
 
-    * `:base` - plain Mistral without any head on top
+    * `:base` - plain Phi without any head on top
 
-    * `:for_causal_language_modeling` - Mistral with a language modeling
+    * `:for_causal_language_modeling` - Phi with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - Mistral with a sequence
+    * `:for_sequence_classification` - Phi with a sequence
       classification head. The head returns logits corresponding to
       possible classes
+
+    * `:for_token_classification` - Phi with a token classification
+      head. The head returns logits for each token in the original
+      sequence
 
   ## Inputs
 
@@ -144,7 +148,8 @@ defmodule Bumblebee.Text.Mistral do
     do: [
       :base,
       :for_causal_language_modeling,
-      :for_sequence_classification
+      :for_sequence_classification,
+      :for_token_classification
     ]
 
   @impl true
@@ -237,6 +242,28 @@ defmodule Bumblebee.Text.Mistral do
     })
   end
 
+  def model(%__MODULE__{architecture: :for_token_classification} = spec) do
+    inputs = inputs(spec)
+    outputs = core(inputs, spec)
+
+    logits =
+      outputs.hidden_state
+      |> Axon.dropout(
+        rate: 0.1,
+        name: "token_classification_head.dropout"
+      )
+      |> Axon.dense(spec.num_labels,
+        kernel_initializer: kernel_initializer(spec),
+        name: "token_classification_head.output"
+      )
+
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
+  end
+
   defp inputs(spec) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, spec.hidden_size}
@@ -279,7 +306,7 @@ defmodule Bumblebee.Text.Mistral do
       )
 
     hidden_state =
-      Layers.rms_norm(decoder_outputs.hidden_state,
+      Axon.layer_norm(decoder_outputs.hidden_state,
         name: "output_norm",
         epsilon: spec.layer_norm_epsilon
       )
@@ -325,46 +352,49 @@ defmodule Bumblebee.Text.Mistral do
       num_key_value_heads: spec.num_key_value_heads,
       hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
-      layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
-      ffn:
-        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
-          name: &2,
-          activation: spec.activation
-        ),
-      block_type: :norm_first,
+      layer_norm: [
+        epsilon: spec.layer_norm_epsilon
+      ],
+      ffn: [
+        intermediate_size: spec.intermediate_size,
+        activation: spec.activation
+      ],
+      block_type: &block_impl/3,
       causal: true,
-      attention_window_size:
-        spec.attention_window_size && {spec.attention_window_size, spec.attention_window_size},
       rotary_embedding: [
         position_ids: position_ids,
         max_positions: spec.max_positions,
-        base: spec.rotary_embedding_base
+        base: spec.rotary_embedding_base,
+        percentage: spec.rotary_embedding_percentage
       ],
-      query_use_bias: false,
-      key_use_bias: false,
-      value_use_bias: false,
-      output_use_bias: false,
+      query_use_bias: true,
+      key_use_bias: true,
+      value_use_bias: true,
+      output_use_bias: true,
       output_hidden_states: spec.output_hidden_states,
       output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
   end
 
-  defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
-    name = opts[:name]
-    activation = opts[:activation]
+  # :parallel block with attention norm applied earlier and without ffn norm
+  defp block_impl(hidden_state, steps, _name) do
+    shortcut = hidden_state
 
-    intermediate =
-      Axon.dense(hidden_state, intermediate_size,
-        name: join(name, "intermediate"),
-        use_bias: false
-      )
+    hidden_state = steps.self_attention_norm.(hidden_state)
 
-    gate = Axon.dense(hidden_state, intermediate_size, name: join(name, "gate"), use_bias: false)
+    {attention_hidden_state, attention_info} = steps.self_attention.(hidden_state)
 
-    hidden_state = Axon.multiply(intermediate, Layers.activation(gate, activation))
+    {_hidden_state, cross_attention_info} =
+      steps.cross_attention_maybe.(hidden_state, fn _hidden_state ->
+        raise "cross attention not supported"
+      end)
 
-    Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
+    ffn_hidden_state = steps.ffn.(hidden_state)
+
+    hidden_state = Axon.add([shortcut, attention_hidden_state, ffn_hidden_state])
+
+    {hidden_state, attention_info, cross_attention_info}
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do
@@ -373,7 +403,8 @@ defmodule Bumblebee.Text.Mistral do
     # TODO: Tie lm-head to word embedding as a spec option
     Layers.dense_transposed(hidden_state, spec.vocab_size,
       kernel_initializer: kernel_initializer(spec),
-      name: join(name, "output")
+      name: join(name, "output"),
+      use_bias: true
     )
   end
 
@@ -393,12 +424,12 @@ defmodule Bumblebee.Text.Mistral do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
-          attention_window_size: {"sliding_window", optional(number())},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
           rotary_embedding_base: {"rope_theta", number()},
+          rotary_embedding_percentage: {"partial_rotary_factor", number()},
           initializer_scale: {"initializer_range", number()},
-          layer_norm_epsilon: {"rms_norm_eps", number()}
+          layer_norm_epsilon: {"layer_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -412,17 +443,16 @@ defmodule Bumblebee.Text.Mistral do
         "decoder.blocks.{n}.self_attention.query" => "model.layers.{n}.self_attn.q_proj",
         "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
         "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
-        "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.o_proj",
+        "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.dense",
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
         "decoder.blocks.{n}.self_attention.rotary_embedding" =>
           "model.layers.{n}.self_attn.rotary_emb",
-        "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
-        "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.up_proj",
-        "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",
-        "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
-        "output_norm" => "model.norm",
+        "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.fc1",
+        "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.fc2",
+        "output_norm" => "model.final_layernorm",
         "language_modeling_head.output" => "lm_head",
-        "sequence_classification_head.output" => "score"
+        "sequence_classification_head.output" => "score",
+        "token_classification_head.output" => "classifier"
       }
     end
   end
