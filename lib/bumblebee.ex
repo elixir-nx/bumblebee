@@ -167,6 +167,7 @@ defmodule Bumblebee do
     "PhiModel" => {Bumblebee.Text.Phi, :base},
     "PhiForCausalLM" => {Bumblebee.Text.Phi, :for_causal_language_modeling},
     "PhiForSequenceClassification" => {Bumblebee.Text.Phi, :for_sequence_classification},
+    "PhiForTokenClassification" => {Bumblebee.Text.Phi, :for_token_classification},
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
     "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
     "RobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},

@@ -47,6 +47,14 @@ defmodule Bumblebee.Text.Phi do
         default: :gelu_approx_tanh,
         doc: "the activation function"
       ],
+      rotary_embedding_percentage: [
+        default: 0.5,
+        doc: "percentage of the query and keys that will have rotary embedding"
+      ],
+      rotary_embedding_base: [
+        default: 10_000,
+        doc: "base for computing rotary embedding frequency"
+      ],
       layer_norm_epsilon: [
         default: 1.0e-12,
         doc: "the epsilon used by RMS normalization layers"
@@ -55,14 +63,6 @@ defmodule Bumblebee.Text.Phi do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
-      ],
-      rotary_embedding_base: [
-        default: 10_000,
-        doc: "base for computing rotary embedding frequency"
-      ],
-      rotary_embedding_percentage: [
-        default: 0.5,
-        doc: "percentage of the query and keys that will have rotary embedding"
       ]
     ] ++
       Shared.common_options([
@@ -86,6 +86,10 @@ defmodule Bumblebee.Text.Phi do
     * `:for_sequence_classification` - Phi with a sequence
       classification head. The head returns logits corresponding to
       possible classes
+
+    * `:for_token_classification` - Phi with a token classification
+      head. The head returns logits for each token in the original
+      sequence
 
   ## Inputs
 
@@ -144,7 +148,8 @@ defmodule Bumblebee.Text.Phi do
     do: [
       :base,
       :for_causal_language_modeling,
-      :for_sequence_classification
+      :for_sequence_classification,
+      :for_token_classification
     ]
 
   @impl true
@@ -234,6 +239,28 @@ defmodule Bumblebee.Text.Phi do
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions,
       cache: outputs.cache
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_token_classification} = spec) do
+    inputs = inputs(spec)
+    outputs = core(inputs, spec)
+
+    logits =
+      outputs.hidden_state
+      |> Axon.dropout(
+        rate: 0.1,
+        name: "token_classification_head.dropout"
+      )
+      |> Axon.dense(spec.num_labels,
+        kernel_initializer: kernel_initializer(spec),
+        name: "token_classification_head.output"
+      )
+
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
     })
   end
 
@@ -332,7 +359,7 @@ defmodule Bumblebee.Text.Phi do
         intermediate_size: spec.intermediate_size,
         activation: spec.activation
       ],
-      block_type: :parallel,
+      block_type: &block_impl/3,
       causal: true,
       rotary_embedding: [
         position_ids: position_ids,
@@ -350,13 +377,33 @@ defmodule Bumblebee.Text.Phi do
     )
   end
 
+  # :parallel block with attention norm applied earlier and without ffn norm
+  defp block_impl(hidden_state, steps, _name) do
+    shortcut = hidden_state
+
+    hidden_state = steps.self_attention_norm.(hidden_state)
+
+    {attention_hidden_state, attention_info} = steps.self_attention.(hidden_state)
+
+    {_hidden_state, cross_attention_info} =
+      steps.cross_attention_maybe.(hidden_state, fn _hidden_state ->
+        raise "cross attention not supported"
+      end)
+
+    ffn_hidden_state = steps.ffn.(hidden_state)
+
+    hidden_state = Axon.add([shortcut, attention_hidden_state, ffn_hidden_state])
+
+    {hidden_state, attention_info, cross_attention_info}
+  end
+
   defp language_modeling_head(hidden_state, spec, opts) do
     name = opts[:name]
 
-    # TODO: Tie to word embedding as spec option
-    Axon.dense(outputs.hidden_state, spec.vocab_size,
+    # TODO: Tie lm-head to word embedding as a spec option
+    Layers.dense_transposed(hidden_state, spec.vocab_size,
       kernel_initializer: kernel_initializer(spec),
-      name: "language_modeling_head.output",
+      name: join(name, "output"),
       use_bias: true
     )
   end
@@ -382,7 +429,7 @@ defmodule Bumblebee.Text.Phi do
           rotary_embedding_base: {"rope_theta", number()},
           rotary_embedding_percentage: {"partial_rotary_factor", number()},
           initializer_scale: {"initializer_range", number()},
-          layer_norm_epsilon: {"rms_norm_eps", number()}
+          layer_norm_epsilon: {"layer_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -402,13 +449,10 @@ defmodule Bumblebee.Text.Phi do
           "model.layers.{n}.self_attn.rotary_emb",
         "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.fc1",
         "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.fc2",
-        # TODO: This is a hack because their parallel layer norm implementation
-        # actually does no output norm, but instead uses the normalized hidden
-        # state. Though I thought it was overkill to add another block type?
-        "decoder.blocks.{n}.output_norm" => "model.layers.{n}.input_layernorm",
-        "output_norm" => "final_layernorm",
+        "output_norm" => "model.final_layernorm",
         "language_modeling_head.output" => "lm_head",
-        "sequence_classification_head.output" => "score"
+        "sequence_classification_head.output" => "score",
+        "token_classification_head.output" => "classifier"
       }
     end
   end

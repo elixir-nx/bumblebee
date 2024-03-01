@@ -382,9 +382,21 @@ defmodule Bumblebee.Layers do
     * `:kernel_initializer` - initializer for `kernel` weights.
       Defaults to `:glorot_uniform`
 
+    * `:bias_initializer` - initializer for `bias` weights. Defaults
+      to `:zeros`.
+
+    * `:use_bias` - whether the layer should add bias to the output.
+      Defaults to `false`
+
   """
   def dense_transposed(%Axon{} = x, units, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, kernel_initializer: :glorot_uniform])
+    opts =
+      Keyword.validate!(opts, [
+        :name,
+        kernel_initializer: :glorot_uniform,
+        bias_initializer: :zeros,
+        use_bias: false
+      ])
 
     kernel_shape = fn input_shape ->
       kernel_shape = Axon.Shape.dense_kernel(input_shape, units)
@@ -396,13 +408,24 @@ defmodule Bumblebee.Layers do
       |> List.to_tuple()
     end
 
+    bias_shape = &Axon.Shape.dense_bias(&1, units)
+
     kernel = Axon.param("kernel", kernel_shape, initializer: opts[:kernel_initializer])
 
-    op = fn x, kernel, _opts ->
-      Nx.dot(x, [-1], kernel, [1])
-    end
+    {inputs, op} =
+      if opts[:use_bias] do
+        bias = Axon.param("bias", bias_shape, initializer: opts[:bias_initializer])
+        {[x, kernel, bias], &dense_transposed_impl/4}
+      else
+        {[x, kernel], &dense_transposed_impl/3}
+      end
 
-    Axon.layer(op, [x, kernel], name: opts[:name], op_name: :dense_transposed)
+    Axon.layer(op, inputs, name: opts[:name], op_name: :dense_transposed)
+  end
+
+  deftransformp dense_transposed_impl(x, kernel, bias \\ 0, _opts) do
+    Nx.dot(x, [-1], kernel, [1])
+    |> Nx.add(bias)
   end
 
   @doc """
