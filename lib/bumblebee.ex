@@ -238,6 +238,7 @@ defmodule Bumblebee do
     "llama" => :llama,
     "mistral" => :llama,
     "mbart" => :mbart,
+    "phi" => :code_gen,
     "roberta" => :roberta,
     "t5" => :t5,
     "whisper" => :whisper,
