@@ -159,12 +159,13 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
     compile =
       if compile = opts[:compile] do
         compile
-        |> Keyword.validate!([:batch_size, :sequence_length])
-        |> Shared.require_options!([:batch_size, :sequence_length])
+        |> Keyword.validate!([:batch_size, :sequence_length, :controlnet_conditioning_size])
+        |> Shared.require_options!([:batch_size, :sequence_length, :controlnet_conditioning_size])
       end
 
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
+    controlnet_conditioning_size = compile[:controlnet_conditioning_size]
 
     tokenizer =
       Bumblebee.configure(tokenizer,
@@ -215,7 +216,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
       controlnet.params,
       {safety_checker?, safety_checker[:spec], safety_checker[:params]},
       safety_checker_featurizer,
-      {compile != nil, batch_size, sequence_length},
+      {compile != nil, batch_size, sequence_length, controlnet_conditioning_size},
       num_images_per_prompt,
       preallocate_params
     ]
@@ -237,7 +238,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
          controlnet_params,
          {safety_checker?, safety_checker_spec, safety_checker_params},
          safety_checker_featurizer,
-         {compile?, batch_size, sequence_length},
+         {compile?, batch_size, sequence_length, controlnet_conditioning_size},
          num_images_per_prompt,
          preallocate_params,
          defn_options
@@ -256,7 +257,11 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
             "input_ids" => Nx.template({batch_size, 2, sequence_length}, :u32)
           },
           "seed" => Nx.template({batch_size}, :s64),
-          "controlnet_conditioning" => Nx.template({batch_size, 512, 512, 3}, :f32)
+          "controlnet_conditioning" =>
+            Nx.template(
+              {batch_size, controlnet_conditioning_size, controlnet_conditioning_size, 3},
+              :f32
+            )
         }
 
         [encoder_params, unet_params, vae_params, controlnet_params, inputs]
