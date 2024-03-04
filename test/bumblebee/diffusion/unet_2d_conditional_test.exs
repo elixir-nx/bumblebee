@@ -35,7 +35,6 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
     )
   end
 
-  @tag timeout: :infinity
   test ":with_additional_residuals" do
     tiny = "bumblebee-testing/tiny-stable-diffusion"
 

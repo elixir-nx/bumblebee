@@ -23,7 +23,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNetTest do
       "encoder_hidden_state" => Nx.broadcast(0.8, {1, 1, 768})
     }
 
-    outputs = Axon.predict(model, params, inputs, debug: true)
+    outputs = Axon.predict(model, params, inputs)
 
     assert Nx.shape(outputs.mid_block_residual) == {1, 8, 8, 1280}
 
