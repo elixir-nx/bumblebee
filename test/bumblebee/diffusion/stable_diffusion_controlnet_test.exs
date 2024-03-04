@@ -55,7 +55,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
 
       prompt = "numbat in forest, detailed, digital art"
 
-      controlnet_conditioning = Nx.broadcast(0.5, {cond_size, cond_size, 3})
+      controlnet_conditioning = Nx.broadcast(Nx.tensor(50, type: :u8), {cond_size, cond_size, 3})
 
       assert %{
                results: [%{image: %Nx.Tensor{}, is_safe: _boolean}]

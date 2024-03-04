@@ -305,7 +305,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
   end
 
   defp preprocess_image(image) do
-    image
+    NxImage.to_continuous(image, 0, 1)
   end
 
   defp client_preprocessing(input, tokenizer) do
