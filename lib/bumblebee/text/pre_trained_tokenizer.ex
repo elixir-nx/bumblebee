@@ -140,6 +140,12 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
     distilbert: %{
       special_tokens: %{unk: "[UNK]", sep: "[SEP]", pad: "[PAD]", cls: "[CLS]", mask: "[MASK]"}
     },
+    gemma: %{
+      unk: "<unk>",
+      bos: "<bos>",
+      eos: "<eos>",
+      pad: "<pad>"
+    },
     gpt_neo_x: %{
       special_tokens: %{
         unk: "<|endoftext|>",

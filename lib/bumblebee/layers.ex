@@ -1091,7 +1091,13 @@ defmodule Bumblebee.Layers do
   # TODO: Add to Axon
   def rms_norm(input, opts \\ []) do
     opts =
-      Keyword.validate!(opts, [:name, channel_index: -1, epsilon: 1.0e-6, initializer: :ones])
+      Keyword.validate!(opts, [
+        :name,
+        shift: 0.0,
+        channel_index: -1,
+        epsilon: 1.0e-6,
+        initializer: :ones
+      ])
 
     weight =
       Axon.param("weight", &Axon.Shape.norm_param(&1, opts[:channel_index]),
@@ -1100,13 +1106,14 @@ defmodule Bumblebee.Layers do
 
     Axon.layer(&rms_norm_impl/3, [input, weight],
       name: opts[:name],
+      shift: opts[:shift],
       epsilon: opts[:epsilon],
       op_name: :rms_norm
     )
   end
 
   defnp rms_norm_impl(input, weight, opts \\ []) do
-    opts = keyword!(opts, epsilon: 1.0e-6, channel_index: -1, mode: :train)
+    opts = keyword!(opts, shift: 0.0, epsilon: 1.0e-6, channel_index: -1, mode: :train)
 
     variance =
       input
@@ -1117,7 +1124,7 @@ defmodule Bumblebee.Layers do
       input
       |> Nx.multiply(Nx.rsqrt(variance + opts[:epsilon]))
 
-    x * weight
+    x * (opts[:shift] + weight)
   end
 
   @doc """
