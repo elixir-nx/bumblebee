@@ -88,6 +88,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.BlipText,
           Bumblebee.Text.ClipText,
           Bumblebee.Text.Distilbert,
+          Bumblebee.Text.Gemma,
           Bumblebee.Text.Gpt2,
           Bumblebee.Text.GptBigCode,
           Bumblebee.Text.GptNeoX,
