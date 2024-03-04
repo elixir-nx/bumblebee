@@ -19,7 +19,9 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
       {:ok, clip} = Bumblebee.load_model({:hf, repository_id, subdir: "text_encoder"})
 
       {:ok, unet} =
-        Bumblebee.load_model({:hf, repository_id, subdir: "unet"}, architecture: :with_controlnet)
+        Bumblebee.load_model({:hf, repository_id, subdir: "unet"},
+          architecture: :with_additional_residuals
+        )
 
       {:ok, controlnet} = Bumblebee.load_model({:hf, "lllyasviel/sd-controlnet-scribble"})
       # {:ok, controlnet} = Bumblebee.load_model({:hf, "hf-internal-testing/tiny-controlnet"})

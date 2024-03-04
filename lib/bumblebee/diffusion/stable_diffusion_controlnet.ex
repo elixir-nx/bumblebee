@@ -12,7 +12,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
           String.t()
           | %{
               :prompt => String.t(),
-              :controlnet_conditioning => Nx.Tensor,
+              :controlnet_conditioning => Nx.Tensor.t(),
               optional(:negative_prompt) => String.t(),
               optional(:seed) => integer()
             }
@@ -82,13 +82,14 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
       {:ok, clip} = Bumblebee.load_model({:hf, repository_id, subdir: "text_encoder"})
       {:ok, unet} = Bumblebee.load_model({:hf, repository_id, subdir: "unet"})
+      {:ok, controlnet} = Bumblebee.load_model({:hf, "lllyasviel/sd-controlnet-scribble"})
       {:ok, vae} = Bumblebee.load_model({:hf, repository_id, subdir: "vae"}, architecture: :decoder)
       {:ok, scheduler} = Bumblebee.load_scheduler({:hf, repository_id, subdir: "scheduler"})
       {:ok, featurizer} = Bumblebee.load_featurizer({:hf, repository_id, subdir: "feature_extractor"})
       {:ok, safety_checker} = Bumblebee.load_model({:hf, repository_id, subdir: "safety_checker"})
 
       serving =
-        Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, unet, vae, tokenizer, scheduler,
+        Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, unet, vae, controlnet, tokenizer, scheduler,
           num_steps: 20,
           num_images_per_prompt: 2,
           safety_checker: safety_checker,
@@ -98,7 +99,8 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
         )
 
       prompt = "numbat in forest, detailed, digital art"
-      Nx.Serving.run(serving, prompt)
+      controlnet_conditioning = Nx.tensor()
+      Nx.Serving.run(serving, %{prompt: prompt, controlnet_conditioning: controlnet_conditioning})
       #=> %{
       #=>   results: [
       #=>     %{
@@ -432,8 +434,8 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
             "sample" => Nx.concatenate([latents, latents]),
             "timestep" => timestep,
             "encoder_hidden_state" => text_embeddings,
-            "controlnet_mid_residual" => mid_block_residual,
-            "controlnet_down_residuals" => down_blocks_residuals
+            "additional_mid_residual" => mid_block_residual,
+            "additional_down_residuals" => down_blocks_residuals
           }
 
         %{sample: noise_pred} = unet_predict.(unet_params, unet_inputs)
