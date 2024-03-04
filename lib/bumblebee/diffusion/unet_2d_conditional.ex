@@ -101,6 +101,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   ## Architectures
 
     * `:base` - the U-Net model
+    * `:with_additional_residuals` - with additional residuals
 
   ## Inputs
 
@@ -133,11 +134,37 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   alias Bumblebee.Diffusion
 
   @impl true
-  def architectures(), do: [:base, :with_controlnet]
+  def architectures(), do: [:base, :with_additional_residuals]
 
   @impl true
   def config(spec, opts) do
     Shared.put_config_attrs(spec, opts)
+  end
+
+  defp down_residuals_templates(spec) do
+    first = {1, spec.sample_size, spec.sample_size, hd(spec.hidden_sizes)}
+
+    state = {spec.sample_size, [first]}
+
+    {_, down_shapes} =
+      for block_out_channels <- spec.hidden_sizes, reduce: state do
+        {spatial_size, acc} ->
+          residuals =
+            for _ <- 1..spec.depth, do: {1, spatial_size, spatial_size, block_out_channels}
+
+          downsampled_spatial = div(spatial_size, 2)
+          downsample_shape = {1, downsampled_spatial, downsampled_spatial, block_out_channels}
+
+          {div(spatial_size, 2), acc ++ residuals ++ [downsample_shape]}
+      end
+
+    # no downsampling in last block
+    down_shapes = Enum.drop(down_shapes, -1)
+
+    for shape <- down_shapes do
+      Nx.template(shape, :f32)
+    end
+    |> List.to_tuple()
   end
 
   @impl true
@@ -146,29 +173,18 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     timestep_shape = {}
     encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
-    {mid_spatial, out_shapes} = mid_spatial_and_residual_shapes(spec)
+    mid_spatial = div(spec.sample_size, 2 ** (length(spec.hidden_sizes) - 1))
+    mid_channels = List.last(spec.hidden_sizes)
+    mid_residual_shape = {1, mid_spatial, mid_spatial, mid_channels}
 
-    out_shapes =
-      Enum.map(out_shapes, fn {_, spatial, spatial, channels} ->
-        {1, spatial, spatial, channels}
-      end)
-
-    down_residuals =
-      for {shape, i} <- Enum.with_index(out_shapes) do
-        Nx.template(shape, :f32)
-      end
-      |> List.to_tuple()
-
-    mid_dim = List.last(spec.hidden_sizes)
-
-    mid_residual_shape = {1, mid_spatial, mid_spatial, mid_dim}
+    down_residuals = down_residuals_templates(spec)
 
     %{
       "sample" => Nx.template(sample_shape, :f32),
       "timestep" => Nx.template(timestep_shape, :u32),
       "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32),
-      "controlnet_mid_residual" => Nx.template(mid_residual_shape, :f32),
-      "controlnet_down_residuals" => down_residuals
+      "additional_mid_residual" => Nx.template(mid_residual_shape, :f32),
+      "additional_down_residuals" => down_residuals
     }
   end
 
@@ -180,9 +196,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   end
 
   @impl true
-  def model(%__MODULE__{architecture: :with_controlnet} = spec) do
-    inputs = inputs_with_controlnet(spec)
-    sample = core_with_controlnet(inputs, spec)
+  def model(%__MODULE__{architecture: :with_additional_residuals} = spec) do
+    inputs = inputs_with_additional_residuals(spec)
+    sample = core_with_additional_residuals(inputs, spec)
     Layers.output(%{sample: sample})
   end
 
@@ -196,44 +212,19 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     ])
   end
 
-  defp mid_spatial_and_residual_shapes(spec) do
-    first = {nil, spec.sample_size, spec.sample_size, hd(spec.hidden_sizes)}
-
-    state = {spec.sample_size, [first]}
-
-    {mid_spatial, out_shapes} =
-      for block_out_channel <- spec.hidden_sizes, reduce: state do
-        {spatial_size, acc} ->
-          residuals =
-            for _ <- 1..spec.depth, do: {nil, spatial_size, spatial_size, block_out_channel}
-
-          downsampled_spatial = div(spatial_size, 2)
-          downsample = {nil, downsampled_spatial, downsampled_spatial, block_out_channel}
-
-          {div(spatial_size, 2), acc ++ residuals ++ [downsample]}
-      end
-
-    mid_spatial = 2 * mid_spatial
-    out_shapes = Enum.drop(out_shapes, -1)
-
-    {mid_spatial, out_shapes}
-  end
-
-  defp inputs_with_controlnet(spec) do
+  defp inputs_with_additional_residuals(spec) do
     sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
 
-    {mid_spatial, _} = mid_spatial_and_residual_shapes(spec)
-
-    mid_dim = List.last(spec.hidden_sizes)
-
-    mid_residual_shape = {nil, mid_spatial, mid_spatial, mid_dim}
+    mid_spatial = div(spec.sample_size, 2 ** (length(spec.hidden_sizes) - 1))
+    mid_channels = List.last(spec.hidden_sizes)
+    mid_residual_shape = {nil, mid_spatial, mid_spatial, mid_channels}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("sample", shape: sample_shape),
       Axon.input("timestep", shape: {}),
       Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size}),
-      Axon.input("controlnet_mid_residual", shape: mid_residual_shape),
-      Axon.input("controlnet_down_residuals")
+      Axon.input("additional_mid_residual", shape: mid_residual_shape),
+      Axon.input("additional_down_residuals")
     ])
   end
 
@@ -295,17 +286,17 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     )
   end
 
-  defp core_with_controlnet(inputs, spec) do
+  defp core_with_additional_residuals(inputs, spec) do
     sample = inputs["sample"]
     timestep = inputs["timestep"]
     encoder_hidden_state = inputs["encoder_hidden_state"]
-    controlnet_mid_residual = inputs["controlnet_mid_residual"]
+    additional_mid_residual = inputs["additional_mid_residual"]
 
     num_down_residuals = length(spec.hidden_sizes) * (spec.depth + 1)
 
-    controlnet_down_residuals =
+    additional_down_residuals =
       for i <- 0..(num_down_residuals - 1) do
-        Axon.nx(inputs["controlnet_down_residuals"], &elem(&1, i))
+        Axon.nx(inputs["additional_down_residuals"], &elem(&1, i))
       end
 
     sample =
@@ -344,20 +335,20 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     {sample, down_block_residuals} =
       down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, name: "down_blocks")
 
-    down_residual_zip = Enum.zip(Tuple.to_list(down_block_residuals), controlnet_down_residuals)
+    down_residual_zip = Enum.zip(Tuple.to_list(down_block_residuals), additional_down_residuals)
 
     down_block_residuals =
-      for {{{down_residual, out_channel}, controlnet_down_residual}, i} <-
+      for {{{down_residual, out_channels}, additional_down_residual}, i} <-
             Enum.with_index(down_residual_zip) do
-        {Axon.add(down_residual, controlnet_down_residual, name: "add_controlnet_down_#{i}"),
-         out_channel}
+        {Axon.add(down_residual, additional_down_residual, name: join("add_additional_down", i)),
+         out_channels}
       end
       |> List.to_tuple()
 
     mid_block_residual =
       sample
       |> mid_block(timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
-      |> Axon.add(controlnet_mid_residual, name: "add_controlnet_mid")
+      |> Axon.add(additional_mid_residual, name: "add_additional_mid")
 
     mid_block_residual
     |> up_blocks(timestep_embedding, down_block_residuals, encoder_hidden_state, spec,

@@ -36,23 +36,22 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
   end
 
   @tag timeout: :infinity
-  test ":with_controlnet" do
-    compvis = "CompVis/stable-diffusion-v1-4"
+  test ":with_additional_residuals" do
     tiny = "bumblebee-testing/tiny-stable-diffusion"
 
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(
                {:hf, tiny, subdir: "unet"},
-               architecture: :with_controlnet
+               architecture: :with_additional_residuals
              )
 
-    assert %Bumblebee.Diffusion.UNet2DConditional{architecture: :with_controlnet} = spec
+    assert %Bumblebee.Diffusion.UNet2DConditional{architecture: :with_additional_residuals} = spec
 
     first = {1, spec.sample_size, spec.sample_size, hd(spec.hidden_sizes)}
 
     state = {spec.sample_size, [first]}
 
-    {mid_spatial, out_shapes} =
+    {_, out_shapes} =
       for block_out_channel <- spec.hidden_sizes, reduce: state do
         {spatial_size, acc} ->
           residuals =
@@ -64,17 +63,16 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
           {div(spatial_size, 2), acc ++ residuals ++ [downsample]}
       end
 
-    mid_spatial = 2 * mid_spatial
     out_shapes = Enum.drop(out_shapes, -1)
 
     down_residuals =
-      for {shape, i} <- Enum.with_index(out_shapes) do
+      for shape <- out_shapes do
         Nx.broadcast(0.5, shape)
       end
       |> List.to_tuple()
 
+    mid_spatial = div(spec.sample_size, 2 ** (length(spec.hidden_sizes) - 1))
     mid_dim = List.last(spec.hidden_sizes)
-
     mid_residual_shape = {1, mid_spatial, mid_spatial, mid_dim}
 
     inputs =
@@ -82,8 +80,8 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
         "sample" => Nx.broadcast(0.5, {1, spec.sample_size, spec.sample_size, 4}),
         "timestep" => Nx.tensor(1),
         "encoder_hidden_state" => Nx.broadcast(0.5, {1, 1, spec.cross_attention_size}),
-        "controlnet_mid_residual" => Nx.broadcast(0.5, mid_residual_shape),
-        "controlnet_down_residuals" => down_residuals
+        "additional_mid_residual" => Nx.broadcast(0.5, mid_residual_shape),
+        "additional_down_residuals" => down_residuals
       }
 
     outputs = Axon.predict(model, params, inputs)
