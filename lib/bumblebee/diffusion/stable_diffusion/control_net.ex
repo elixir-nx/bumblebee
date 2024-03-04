@@ -117,6 +117,10 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
 
       The conditional state (context) to use with cross-attention.
 
+    * `"controlnet_conditioning"` - `{batch_size, conditioning_size, conditioning_size, 3}`
+
+      The conditional input
+
   ## Configuration
 
   #{Shared.options_doc(options)}
@@ -229,13 +233,13 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
 
     down_blocks_residuals =
       for residual <- Tuple.to_list(down_blocks_residuals) do
-        Axon.multiply(residual, conditioning_scale, name: "conditioning_scale")
+        Axon.multiply(residual, conditioning_scale, name: "down_conditioning_scale")
       end
       |> List.to_tuple()
 
     mid_block_residual =
       control_net_mid_block(sample, spec, name: "controlnet_mid_block")
-      |> Axon.multiply(conditioning_scale)
+      |> Axon.multiply(conditioning_scale, name: "mid_conditioning_scale")
 
     %{
       down_blocks_residuals: down_blocks_residuals,
