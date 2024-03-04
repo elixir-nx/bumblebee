@@ -32,7 +32,7 @@ defmodule Bumblebee.Vision.Vit do
         docs:
           "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
-      use_qkv_bias: [
+      use_attention_bias: [
         default: true,
         doc: "whether to use bias in query, key, and value projections"
       ],
@@ -262,9 +262,9 @@ defmodule Bumblebee.Vision.Vit do
       kernel_initializer: kernel_initializer(spec),
       dropout_rate: spec.dropout_rate,
       attention_dropout_rate: spec.attention_dropout_rate,
-      query_use_bias: spec.use_qkv_bias,
-      key_use_bias: spec.use_qkv_bias,
-      value_use_bias: spec.use_qkv_bias,
+      query_use_bias: spec.use_attention_bias,
+      key_use_bias: spec.use_attention_bias,
+      value_use_bias: spec.use_attention_bias,
       layer_norm: [
         epsilon: spec.layer_norm_epsilon
       ],
@@ -309,7 +309,7 @@ defmodule Bumblebee.Vision.Vit do
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
-          use_qkv_bias: {"qkv_bias", boolean()},
+          use_attention_bias: {"qkv_bias", boolean()},
           dropout_rate: {"hidden_dropout_prob", number()},
           attention_dropout_rate: {"attention_probs_dropout_prob", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()},
