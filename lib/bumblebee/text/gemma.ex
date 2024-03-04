@@ -443,7 +443,7 @@ defmodule Bumblebee.Text.Gemma do
         "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",
         "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
         "output_norm" => "model.norm",
-        "language_modeling_head.output" => "lm_head",
+        "language_modeling_head.output" => "model.embed_tokens",
         "sequence_classification_head.output" => "score"
       }
     end
