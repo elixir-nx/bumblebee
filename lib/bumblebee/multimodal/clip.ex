@@ -20,11 +20,7 @@ defmodule Bumblebee.Multimodal.Clip do
         default: 2.6592,
         doc: "the initial value for the scaling layer used to scale similarity logits"
       ]
-    ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions
-      ])
+    ]
 
   @moduledoc """
   The CLIP model for text-image similarity.
@@ -53,6 +49,10 @@ defmodule Bumblebee.Multimodal.Clip do
     * `"pixel_values"` - `{batch_size, image_size, image_size, num_channels}`
 
       Featurized image pixel values.
+
+  ## Global layer options
+
+    #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -108,10 +108,6 @@ defmodule Bumblebee.Multimodal.Clip do
 
     text_model =
       text_spec
-      |> Bumblebee.configure(
-        output_hidden_states: spec.output_hidden_states,
-        output_attentions: spec.output_hidden_states
-      )
       |> Bumblebee.build_model()
       |> Bumblebee.Utils.Axon.prefix_names("text_model.")
       |> Bumblebee.Utils.Axon.plug_inputs(%{
@@ -122,10 +118,6 @@ defmodule Bumblebee.Multimodal.Clip do
 
     vision_model =
       vision_spec
-      |> Bumblebee.configure(
-        output_hidden_states: spec.output_hidden_states,
-        output_attentions: spec.output_hidden_states
-      )
       |> Bumblebee.build_model()
       |> Bumblebee.Utils.Axon.prefix_names("vision_model.")
       |> Bumblebee.Utils.Axon.plug_inputs(%{

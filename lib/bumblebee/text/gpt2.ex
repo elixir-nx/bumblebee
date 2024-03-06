@@ -71,13 +71,8 @@ defmodule Bumblebee.Text.Gpt2 do
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
     ] ++
-      Shared.common_options([
-        :use_cross_attention,
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ]) ++ Shared.token_options(pad_token_id: 50256)
+      Shared.common_options([:use_cross_attention, :num_labels, :id_to_label]) ++
+      Shared.token_options(pad_token_id: 50256)
 
   @moduledoc """
   GPT-2 model family.
@@ -152,6 +147,10 @@ defmodule Bumblebee.Text.Gpt2 do
       taken from the cache, rather than recomputed on every decoding
       pass. The cache should be treated as opaque and initialized with
       `Bumblebee.Text.Generation.init_cache/4`.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -413,8 +412,6 @@ defmodule Bumblebee.Text.Gpt2 do
           activation: spec.activation
         ],
         block_type: :norm_first,
-        output_hidden_states: spec.output_hidden_states,
-        output_attentions: spec.output_attentions,
         scale_attention_weights: spec.scale_attention_weights,
         name: join(name, "blocks")
       ] ++

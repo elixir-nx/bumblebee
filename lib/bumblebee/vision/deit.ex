@@ -57,13 +57,7 @@ defmodule Bumblebee.Vision.Deit do
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
-    ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ])
+    ] ++ Shared.common_options([:num_labels, :id_to_label])
 
   @moduledoc """
   DeiT model family.
@@ -93,6 +87,10 @@ defmodule Bumblebee.Vision.Deit do
     * `"patch_mask"` - `{batch_size, num_patches}`
 
       Mask to nullify selected embedded patches.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -323,8 +321,6 @@ defmodule Bumblebee.Vision.Deit do
         activation: spec.activation
       ],
       block_type: :norm_first,
-      output_hidden_states: spec.output_hidden_states,
-      output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
   end

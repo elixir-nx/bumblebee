@@ -895,15 +895,22 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Returns a container layer if `condition` is truthy, otherwise returns
-  a none layer.
+  Adds a layer that passes the input through only if the given global
+  layer option is set.
   """
-  def maybe_container(container, condition) do
-    if condition do
-      Axon.container(container)
-    else
-      none()
-    end
+  def global_opt_in(%Axon{} = input, global_option_name) do
+    Axon.layer(
+      fn input, opts ->
+        if opts[global_option_name] do
+          input
+        else
+          %Axon.None{}
+        end
+      end,
+      [input],
+      op_name: :global_opt_in,
+      global_options: [global_option_name]
+    )
   end
 
   @doc """
@@ -933,15 +940,30 @@ defmodule Bumblebee.Layers do
 
   All values are wrapped with `Axon.optional/2`, so if any of them is
   missing, it gets returned as `%Axon.None{}`.
+
+  Also, guards known optional outputs behind a global layer option
+  using `global_opt_in/2`.
   """
   @spec output(map()) :: Axon.t()
   def output(outputs) do
     outputs
-    |> Map.new(fn
-      {key, %Axon{} = val} -> {key, Axon.optional(val)}
-      {key, val} -> {key, val}
+    |> Map.new(fn {key, %Axon{} = val} ->
+      {key, val |> maybe_opt_in_output(key) |> Axon.optional()}
     end)
     |> Axon.container()
+  end
+
+  @opt_in_outputs %{
+    :hidden_states => :output_hidden_states,
+    :attentions => :output_attentions
+  }
+
+  defp maybe_opt_in_output(%Axon{} = input, key) do
+    if option_name = @opt_in_outputs[key] do
+      global_opt_in(input, option_name)
+    else
+      input
+    end
   end
 
   @doc """

@@ -21,14 +21,6 @@ defmodule Bumblebee.Layers.Transformer do
       is configured, this option controls whether the bias from the
       first block is used for all other blocks. Defaults to `false`
 
-    * `:output_hidden_states` - when `true`, the output includes a
-      tuple with intermediate hidden states from each transformer
-      block. Defaults to `false`
-
-    * `:output_attentions` - when `true`, the output includes a tuple
-      with attention weights from each transformer block. Defaults
-      to `false`
-
     * `:name` - the prefix for layer names
 
   For all other options (including required options) see `block/2`.
@@ -75,16 +67,12 @@ defmodule Bumblebee.Layers.Transformer do
             cross_hidden_state: nil,
             cross_attention_mask: Layers.none(),
             cross_attention_head_mask: Layers.none(),
-            cache: Layers.none(),
-            output_hidden_states: false,
-            output_attentions: false
+            cache: Layers.none()
           ]
       )
 
     name = opts[:name]
     num_blocks = opts[:num_blocks]
-    output_hidden_states = opts[:output_hidden_states]
-    output_attentions = opts[:output_attentions]
 
     attention_mask = opts[:attention_mask]
     attention_head_mask = opts[:attention_head_mask]
@@ -100,9 +88,9 @@ defmodule Bumblebee.Layers.Transformer do
 
     state = %{
       hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, output_hidden_states),
-      attentions: Layers.maybe_container({}, output_attentions),
-      cross_attentions: Layers.maybe_container({}, output_attentions),
+      hidden_states: Axon.container({hidden_state}),
+      attentions: Axon.container({}),
+      cross_attentions: Axon.container({}),
       cache: cache,
       attention_relative_bias: Layers.none()
     }
