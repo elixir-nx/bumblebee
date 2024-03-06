@@ -78,12 +78,7 @@ defmodule Bumblebee.Text.Mbart do
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
     ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ]) ++
+      Shared.common_options([:num_labels, :id_to_label]) ++
       Shared.token_options(pad_token_id: 1, eos_token_id: 2)
 
   @moduledoc """
@@ -193,6 +188,10 @@ defmodule Bumblebee.Text.Mbart do
   accepts the following inputs instead: `"input_ids"`, `"attention_mask"`,
   `"position_ids"`, `"attention_head_mask"`, `"input_embeddings"`, `"encoder_hidden_state"`,
   `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache"`.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -533,8 +532,6 @@ defmodule Bumblebee.Text.Mbart do
           intermediate_size: spec.encoder_intermediate_size,
           activation: spec.activation
         ],
-        output_hidden_states: spec.output_hidden_states,
-        output_attentions: spec.output_attentions,
         name: join(name, "blocks")
       )
 
@@ -631,8 +628,6 @@ defmodule Bumblebee.Text.Mbart do
           intermediate_size: spec.decoder_intermediate_size,
           activation: spec.activation
         ],
-        output_hidden_states: spec.output_hidden_states,
-        output_attentions: spec.output_attentions,
         name: join(name, "blocks")
       )
 

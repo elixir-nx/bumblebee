@@ -83,13 +83,7 @@ defmodule Bumblebee.Vision.DinoV2 do
         doc:
           "whether to add layer normalization layer to each of the feature maps returned by the backbone"
       ]
-    ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ])
+    ] ++ Shared.common_options([:num_labels, :id_to_label])
 
   @moduledoc """
   DINOv2 model family.
@@ -111,6 +105,10 @@ defmodule Bumblebee.Vision.DinoV2 do
     * `"patch_mask"` - `{batch_size, num_patches}`
 
       Mask to nullify selected embedded patches.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -198,13 +196,13 @@ defmodule Bumblebee.Vision.DinoV2 do
 
   def model(%__MODULE__{architecture: :backbone} = spec) do
     inputs = inputs(spec)
-    outputs = core(inputs, %{spec | output_hidden_states: true})
+    outputs = core(inputs, spec)
+
     feature_maps = feature_maps(outputs.hidden_states, inputs["pixel_values"], spec)
 
     Layers.output(%{
       feature_maps: feature_maps,
-      hidden_states:
-        if(spec.output_hidden_states, do: outputs.hidden_states, else: Layers.none()),
+      hidden_states: outputs.hidden_states,
       attentions: outputs.attentions
     })
   end
@@ -371,8 +369,6 @@ defmodule Bumblebee.Vision.DinoV2 do
       ],
       ffn: ffn,
       block_type: &block_impl(&1, &2, &3, spec),
-      output_hidden_states: spec.output_hidden_states,
-      output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
   end

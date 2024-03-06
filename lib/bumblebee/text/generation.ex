@@ -149,16 +149,14 @@ defmodule Bumblebee.Text.Generation do
 
     traverse_cache_fun = &traverse_cache(spec, &1, &2)
 
-    model =
-      if not spec.output_hidden_states and config.strategy.type == :contrastive_search do
-        spec
-        |> Bumblebee.configure(output_hidden_states: true)
-        |> Bumblebee.build_model()
+    global_layer_options =
+      if config.strategy.type == :contrastive_search do
+        [output_hidden_states: true]
       else
-        model
+        []
       end
 
-    {_init_fun, predict_fun} = Axon.build(model)
+    {_init_fun, predict_fun} = Axon.build(model, global_layer_options: global_layer_options)
 
     logits_processor_fun = get_logits_processor(min_length_fun, config, opts[:logits_processors])
 

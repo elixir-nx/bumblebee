@@ -51,13 +51,7 @@ defmodule Bumblebee.Text.ClipText do
         default: 1.0e-5,
         doc: "the epsilon used by the layer normalization layers"
       ]
-    ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ])
+    ] ++ Shared.common_options([:num_labels, :id_to_label])
 
   @moduledoc """
   The CLIP model for text encoding.
@@ -87,6 +81,10 @@ defmodule Bumblebee.Text.ClipText do
 
       Indices of positions of each input sequence tokens in the position
       embeddings.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -227,8 +225,6 @@ defmodule Bumblebee.Text.ClipText do
         activation: spec.activation
       ],
       block_type: :norm_first,
-      output_hidden_states: spec.output_hidden_states,
-      output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
   end

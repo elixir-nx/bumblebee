@@ -76,12 +76,8 @@ defmodule Bumblebee.Text.T5 do
         doc: "the epsilon used by the layer normalization layers"
       ]
     ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ]) ++ Shared.token_options(decoder_start_token_id: 0)
+      Shared.common_options([:num_labels, :id_to_label]) ++
+      Shared.token_options(decoder_start_token_id: 0)
 
   @moduledoc """
   T5 model family.
@@ -164,6 +160,11 @@ defmodule Bumblebee.Text.T5 do
       taken from the cache, rather than recomputed on every decoding
       pass. The cache should be treated as opaque and initialized with
       `Bumblebee.Text.Generation.init_cache/4`.
+
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -403,8 +404,6 @@ defmodule Bumblebee.Text.T5 do
         ffn: &ffn(&1, spec, name: &2),
         block_type: :norm_first,
         attention_head_size: spec.attention_head_size,
-        output_hidden_states: spec.output_hidden_states,
-        output_attentions: spec.output_attentions,
         query_use_bias: false,
         key_use_bias: false,
         value_use_bias: false,
@@ -462,8 +461,6 @@ defmodule Bumblebee.Text.T5 do
         layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
         ffn: &ffn(&1, spec, name: &2),
         block_type: :norm_first,
-        output_hidden_states: spec.output_hidden_states,
-        output_attentions: spec.output_attentions,
         query_use_bias: false,
         key_use_bias: false,
         value_use_bias: false,

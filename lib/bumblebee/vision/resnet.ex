@@ -34,7 +34,7 @@ defmodule Bumblebee.Vision.ResNet do
         default: false,
         doc: "whether the first stage should downsample the inputs using a stride of 2"
       ]
-    ] ++ Shared.common_options([:output_hidden_states, :num_labels, :id_to_label])
+    ] ++ Shared.common_options([:num_labels, :id_to_label])
 
   @moduledoc """
   ResNet model family.
@@ -52,6 +52,10 @@ defmodule Bumblebee.Vision.ResNet do
     * `"pixel_values"` - {batch_size, height, width, num_channels}
 
       Featurized image pixel values (224x224).
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states])}
 
   ## Configuration
 
@@ -153,7 +157,7 @@ defmodule Bumblebee.Vision.ResNet do
 
     state = %{
       hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
+      hidden_states: Axon.container({hidden_state}),
       in_channels: spec.embedding_size
     }
 

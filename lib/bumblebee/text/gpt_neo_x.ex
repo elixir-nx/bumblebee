@@ -57,12 +57,8 @@ defmodule Bumblebee.Text.GptNeoX do
           "whether to use the parallel formulation of the Transformer block, where attention and FFN is computed independently"
       ]
     ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ]) ++ Shared.token_options(pad_token_id: nil)
+      Shared.common_options([:num_labels, :id_to_label]) ++
+      Shared.token_options(pad_token_id: nil)
 
   @moduledoc """
   GPT-NeoX model family.
@@ -119,6 +115,10 @@ defmodule Bumblebee.Text.GptNeoX do
       taken from the cache, rather than recomputed on every decoding
       pass. The cache should be treated as opaque and initialized with
       `Bumblebee.Text.Generation.init_cache/4`.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -359,8 +359,6 @@ defmodule Bumblebee.Text.GptNeoX do
       key_use_bias: true,
       value_use_bias: true,
       output_use_bias: true,
-      output_hidden_states: spec.output_hidden_states,
-      output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
   end

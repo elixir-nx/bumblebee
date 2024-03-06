@@ -48,11 +48,7 @@ defmodule Bumblebee.Vision.ClipVision do
         default: 1.0e-5,
         doc: "the epsilon used by the layer normalization layers"
       ]
-    ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions
-      ])
+    ]
 
   @moduledoc """
   The CLIP model for image encoding.
@@ -70,6 +66,10 @@ defmodule Bumblebee.Vision.ClipVision do
     * `"pixel_values"` - `{batch_size, image_size, image_size, num_channels}`
 
       Featurized image pixel values.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -221,8 +221,6 @@ defmodule Bumblebee.Vision.ClipVision do
         activation: spec.activation
       ],
       block_type: :norm_first,
-      output_hidden_states: spec.output_hidden_states,
-      output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
   end

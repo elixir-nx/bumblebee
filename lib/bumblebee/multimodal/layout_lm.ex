@@ -77,13 +77,7 @@ defmodule Bumblebee.Multimodal.LayoutLm do
         default: 1.0e-12,
         doc: "the epsilon used by the layer normalization layers"
       ]
-    ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ])
+    ] ++ Shared.common_options([:num_labels, :id_to_label])
 
   @moduledoc """
   LayoutLM Model family.
@@ -139,6 +133,10 @@ defmodule Bumblebee.Multimodal.LayoutLm do
     Bounding boxes of each input sequence token. Each bounding box is
     `{x0, y0, x1, y1}` where `{x0, y0}` is the upper left corner and
     `{x1, y1}` is the lower right corner.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -426,8 +424,6 @@ defmodule Bumblebee.Multimodal.LayoutLm do
         intermediate_size: spec.intermediate_size,
         activation: spec.activation
       ],
-      output_hidden_states: spec.output_hidden_states,
-      output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
   end

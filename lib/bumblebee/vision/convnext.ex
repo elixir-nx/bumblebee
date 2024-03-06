@@ -40,7 +40,7 @@ defmodule Bumblebee.Vision.ConvNext do
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
-    ] ++ Shared.common_options([:output_hidden_states, :num_labels, :id_to_label])
+    ] ++ Shared.common_options([:num_labels, :id_to_label])
 
   @moduledoc """
   ConvNeXT model family.
@@ -58,6 +58,10 @@ defmodule Bumblebee.Vision.ConvNext do
     * `"pixel_values"` - {batch_size, height, width, num_channels}
 
       Featurized image pixel values (224x224).
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states])}
 
   ## Configuration
 
@@ -171,7 +175,7 @@ defmodule Bumblebee.Vision.ConvNext do
 
     state = %{
       hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, spec.output_hidden_states),
+      hidden_states: Axon.container({hidden_state}),
       in_channels: hd(spec.hidden_sizes)
     }
 
