@@ -10,11 +10,14 @@ defmodule Bumblebee.Audio do
 
     * a 1-dimensional `Nx.Tensor` with audio samples
 
+    * an enumerable of 1-dimensional `Nx.Tensor`s, represending a
+      continuous stream of input
+
     * `{:file, path}` with path to an audio file (note that this
       requires `ffmpeg` installed)
 
   """
-  @type audio :: Nx.t() | {:file, String.t()}
+  @type audio :: Nx.t() | Enumerable.t(Nx.t()) | {:file, String.t()}
 
   @type speech_to_text_whisper_input ::
           audio() | %{:audio => audio(), optional(:seed) => integer() | nil}
@@ -31,7 +34,11 @@ defmodule Bumblebee.Audio do
   Builds serving for speech-to-text generation with Whisper models.
 
   The serving accepts `t:speech_to_text_whisper_input/0` and returns
-  `t:speech_to_text_whisper_output/0`. A list of inputs is also supported.
+  `t:speech_to_text_whisper_output/0`.
+
+  This serving always accepts a single input. A list of tensors is
+  interpreted as continuous chunks. To transcribe multiple inputs
+  concurrently use `Nx.Serving.batched_run/2`.
 
   ## Options
 
