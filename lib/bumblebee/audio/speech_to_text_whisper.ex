@@ -152,9 +152,9 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
 
           true ->
             stream =
-              Stream.each(other, fn
-                %Nx.Tensor{shape: {_}} ->
-                  :ok
+              Stream.map(other, fn
+                %Nx.Tensor{shape: {_}} = chunk ->
+                  Nx.backend_transfer(chunk, Nx.BinaryBackend)
 
                 item ->
                   raise ArgumentError,
