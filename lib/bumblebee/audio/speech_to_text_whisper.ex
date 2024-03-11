@@ -306,8 +306,10 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     for {token_id, idx} <- Enum.with_index(token_ids, 1), token_id, do: {idx, token_id}
   end
 
-  # Takes a stream of continous tensor chunks and produces a stream of
-  # overlapping chunks
+  # Takes a stream of continous tensor chunks and produces a stream
+  # of overlapping chunks. As a result we get somewhat overlapping
+  # transcriptions, which we merge at the edges to improve the final
+  # transcription quality.
   defp chunk_input(stream, sampling_rate, chunk_num_seconds, context_num_seconds) do
     chunk_length = floor(chunk_num_seconds * sampling_rate)
     context_left = floor(context_num_seconds * sampling_rate)
