@@ -289,7 +289,8 @@ defmodule Bumblebee.Text.Gemma do
       Layers.rms_norm(decoder_outputs.hidden_state,
         name: "output_norm",
         shift: 1.0,
-        epsilon: spec.layer_norm_epsilon
+        epsilon: spec.layer_norm_epsilon,
+        upcast: :all
       )
 
     %{
@@ -339,7 +340,8 @@ defmodule Bumblebee.Text.Gemma do
       num_key_value_heads: spec.num_key_value_heads,
       hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
-      layer_norm: &Layers.rms_norm(&1, shift: 1.0, name: &2, epsilon: spec.layer_norm_epsilon),
+      layer_norm:
+        &Layers.rms_norm(&1, shift: 1.0, name: &2, epsilon: spec.layer_norm_epsilon, upcast: :all),
       ffn:
         &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
           name: &2,

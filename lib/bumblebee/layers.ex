@@ -1109,6 +1109,31 @@ defmodule Bumblebee.Layers do
 
   @doc """
   Adds an RMS Normalization layer to the network.
+
+  ## Options
+
+    * `:name` - layer name
+
+    * `:initializer` - initializer for the standard deviation parameter.
+      Defaults to `:ones`
+
+    * `:channel_index` - input feature index used for calculating
+      variance. Defaults to `-1`
+
+    * `:epsilon` - numerical stability term
+
+    * `:shift` - numeric shift in the scaling expression. Defaults to
+      `0.0`
+
+    * `:upcast` - adds explicit type casting to make sure the norm
+      is computed in high numerical precision. Either of:
+
+      * `:normalization` (default) - upcasts only the input normalization
+        part
+
+      * `:all` - upcasts both input normalization and the scaling
+        expression
+
   """
   # TODO: Add to Axon
   def rms_norm(input, opts \\ []) do
@@ -1118,15 +1143,29 @@ defmodule Bumblebee.Layers do
         shift: 0.0,
         channel_index: -1,
         epsilon: 1.0e-6,
+        upcast: :normalization,
         initializer: :ones
       ])
+
+    impl =
+      case opts[:upcast] do
+        :normalization ->
+          &rms_norm_impl_upcast_normalization/3
+
+        :all ->
+          &rms_norm_impl_upcast_all/3
+
+        other ->
+          raise ArgumentError,
+                "expected :upcast to be either :all or :normalization, got: #{other}"
+      end
 
     weight =
       Axon.param("weight", &Axon.Shape.norm_param(&1, opts[:channel_index]),
         initializer: opts[:initializer]
       )
 
-    Axon.layer(&rms_norm_impl/3, [input, weight],
+    Axon.layer(impl, [input, weight],
       name: opts[:name],
       shift: opts[:shift],
       epsilon: opts[:epsilon],
@@ -1134,17 +1173,36 @@ defmodule Bumblebee.Layers do
     )
   end
 
-  defnp rms_norm_impl(input, weight, opts \\ []) do
+  defnp rms_norm_impl_upcast_normalization(input, weight, opts \\ []) do
     opts = keyword!(opts, shift: 0.0, epsilon: 1.0e-6, channel_index: -1, mode: :train)
 
+    normalized_input =
+      input
+      |> Nx.as_type(:f32)
+      |> rms_normalize(opts)
+      |> Nx.as_type(Nx.type(input))
+
+    normalized_input * (opts[:shift] + weight)
+  end
+
+  defnp rms_norm_impl_upcast_all(input, weight, opts \\ []) do
+    opts = keyword!(opts, shift: 0.0, epsilon: 1.0e-6, channel_index: -1, mode: :train)
+
+    input = Nx.as_type(input, :f32)
+    weight = Nx.as_type(weight, :f32)
+
+    normalized_input = rms_normalize(input, opts)
+
+    normalized_input * (opts[:shift] + weight)
+  end
+
+  defnp rms_normalize(input, opts) do
     variance =
       input
       |> Nx.pow(2)
       |> Nx.mean(axes: [opts[:channel_index]], keep_axes: true)
 
-    x = input * Nx.rsqrt(variance + opts[:epsilon])
-
-    x * (opts[:shift] + weight)
+    input * Nx.rsqrt(variance + opts[:epsilon])
   end
 
   @doc """
