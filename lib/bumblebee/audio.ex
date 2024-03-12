@@ -59,6 +59,15 @@ defmodule Bumblebee.Audio do
       in the total `:chunk_num_seconds`. Defaults to 1/6 of
       `:chunk_num_seconds`
 
+    * `:client_batch_size` - the number of input chunks the client
+      should gather and run at once. When streaming an input that is
+      already available (such as a file), you can use any value without
+      introducing a delay. A good default is to use the same value as
+      `opts[:compile][:batch_size]`. When streaming an input that is
+      being produced live, you may want to process chunks as soon as
+      they are available, in which case set this option to `1`. Defaults
+      to `opts[:compile][:batch_size]` if present, otherwise to `1`
+
     * `:language` - the language of the speech, when known upfront.
       Should be given as ISO alpha-2 code as string. By default no
       language is assumed and it is inferred from the input

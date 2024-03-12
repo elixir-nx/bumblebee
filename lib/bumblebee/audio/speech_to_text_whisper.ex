@@ -46,6 +46,8 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
 
     batch_size = compile[:batch_size]
 
+    client_batch_size = opts[:client_batch_size] || batch_size || 1
+
     sampling_rate = featurizer.sampling_rate
     timestamps? = opts[:timestamps] != nil
 
@@ -101,12 +103,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
 
       stream =
         chunks
-        # Unless batch_size is specified, we process chunks individually.
-        # When the whole audio chunk is given at once, this is all we
-        # need. When an enumerable is given, it can have an arbitarary
-        # number of elements, so processing them one by one makes for a
-        # reasonable default.
-        |> Stream.chunk_every(batch_size || 1)
+        |> Stream.chunk_every(client_batch_size)
         |> Stream.map(fn chunks ->
           seed =
             seed
