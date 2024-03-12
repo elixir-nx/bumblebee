@@ -16,6 +16,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
       Keyword.validate!(opts, [
         :chunk_num_seconds,
         :context_num_seconds,
+        :client_batch_size,
         :language,
         :compile,
         :timestamps,
