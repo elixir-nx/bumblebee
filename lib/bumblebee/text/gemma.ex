@@ -39,7 +39,7 @@ defmodule Bumblebee.Text.Gemma do
         doc: "the number of key value heads for each attention layer in the model"
       ],
       activation: [
-        default: :gelu,
+        default: :gelu_approx_tanh,
         doc: "the activation function"
       ],
       rotary_embedding_base: [
@@ -309,7 +309,14 @@ defmodule Bumblebee.Text.Gemma do
         name: join(name, "token_embedding")
       )
     end
-    |> Axon.nx(fn x -> Nx.multiply(x, Nx.sqrt(spec.hidden_size)) end)
+    |> Axon.nx(fn x ->
+      normalization_factor =
+        spec.hidden_size
+        |> Nx.tensor(type: Nx.type(x))
+        |> Nx.sqrt()
+
+      Nx.multiply(x, normalization_factor)
+    end)
   end
 
   defp decoder(

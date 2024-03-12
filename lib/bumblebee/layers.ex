@@ -1142,9 +1142,7 @@ defmodule Bumblebee.Layers do
       |> Nx.pow(2)
       |> Nx.mean(axes: [opts[:channel_index]], keep_axes: true)
 
-    x =
-      input
-      |> Nx.multiply(Nx.rsqrt(variance + opts[:epsilon]))
+    x = input * Nx.rsqrt(variance + opts[:epsilon])
 
     x * (opts[:shift] + weight)
   end
