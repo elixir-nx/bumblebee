@@ -191,24 +191,10 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         stream =
           Stream.iterate(0, fn offset -> offset + chunk_size end)
           |> Stream.transform({}, fn offset, acc ->
-            System.cmd("ffmpeg", [
-              "-ss",
-              Integer.to_string(offset),
-              "-t",
-              Integer.to_string(chunk_size),
-              "-i",
-              path,
-              "-ac",
-              Integer.to_string(channels),
-              "-ar",
-              Integer.to_string(sampling_rate),
-              "-f",
-              format,
-              "-hide_banner",
-              "-loglevel",
-              "quiet",
-              "pipe:1"
-            ])
+            System.cmd(
+              "ffmpeg",
+              ~w[-ss #{offset} -t #{chunk_size} -i #{path} -ac #{channels} -ar #{sampling_rate} -f #{format} -hide_banner -loglevel quiet pipe:1]
+            )
             |> case do
               {<<>>, 0} ->
                 {:halt, acc}

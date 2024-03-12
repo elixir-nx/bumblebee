@@ -11,7 +11,11 @@ defmodule Bumblebee.Audio do
     * a 1-dimensional `Nx.Tensor` with audio samples
 
     * an enumerable of 1-dimensional `Nx.Tensor`s, represending a
-      continuous stream of input
+      continuous stream of input. The tensors are not required to
+      have the same number of samples, the serving takes care of
+      accumulating and chunking the input as needed. This input is
+      only supported when chunking is enabled with the `:chunk_num_seconds`
+      option
 
     * `{:file, path}` with path to an audio file (note that this
       requires `ffmpeg` installed)
