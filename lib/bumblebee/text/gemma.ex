@@ -39,7 +39,7 @@ defmodule Bumblebee.Text.Gemma do
         doc: "the number of key value heads for each attention layer in the model"
       ],
       activation: [
-        default: :gelu,
+        default: :gelu_approx_tanh,
         doc: "the activation function"
       ],
       rotary_embedding_base: [
@@ -289,7 +289,8 @@ defmodule Bumblebee.Text.Gemma do
       Layers.rms_norm(decoder_outputs.hidden_state,
         name: "output_norm",
         shift: 1.0,
-        epsilon: spec.layer_norm_epsilon
+        epsilon: spec.layer_norm_epsilon,
+        upcast: :all
       )
 
     %{
@@ -309,7 +310,14 @@ defmodule Bumblebee.Text.Gemma do
         name: join(name, "token_embedding")
       )
     end
-    |> Axon.nx(fn x -> Nx.multiply(x, Nx.sqrt(spec.hidden_size)) end)
+    |> Axon.nx(fn x ->
+      normalization_factor =
+        spec.hidden_size
+        |> Nx.tensor(type: Nx.type(x))
+        |> Nx.sqrt()
+
+      Nx.multiply(x, normalization_factor)
+    end)
   end
 
   defp decoder(
@@ -332,7 +340,8 @@ defmodule Bumblebee.Text.Gemma do
       num_key_value_heads: spec.num_key_value_heads,
       hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
-      layer_norm: &Layers.rms_norm(&1, shift: 1.0, name: &2, epsilon: spec.layer_norm_epsilon),
+      layer_norm:
+        &Layers.rms_norm(&1, shift: 1.0, name: &2, epsilon: spec.layer_norm_epsilon, upcast: :all),
       ffn:
         &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
           name: &2,
