@@ -217,7 +217,7 @@ defmodule Bumblebee.Shared do
   def validate_input_for_stream!(input) do
     if is_list(input) do
       raise ArgumentError,
-            "serving only accepts singular input when stream is enabled," <>
+            "this serving only accepts singular input when stream is enabled," <>
               " call the serving with each input in the batch separately"
     end
 
