@@ -13,6 +13,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
           | %{
               :prompt => String.t(),
               :controlnet_conditioning => Nx.Tensor.t(),
+              optional(:conditioning_scale) => integer(),
               optional(:negative_prompt) => String.t(),
               optional(:seed) => integer()
             }
@@ -261,7 +262,8 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
             Nx.template(
               {batch_size, controlnet_conditioning_size, controlnet_conditioning_size, 3},
               :f32
-            )
+            ),
+          "conditioning_scale" => Nx.template({batch_size}, :f32)
         }
 
         [encoder_params, unet_params, vae_params, controlnet_params, inputs]
@@ -328,10 +330,15 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
       |> Nx.stack()
       |> preprocess_image()
 
+    conditioning_scale =
+      Enum.map(inputs, & &1.conditioning_scale)
+      |> Nx.tensor(type: :f32, backend: Nx.BinaryBackend)
+
     inputs = %{
       "conditional_and_unconditional" => prompt_pairs,
       "seed" => seed,
-      "controlnet_conditioning" => controlnet_conditioning
+      "controlnet_conditioning" => controlnet_conditioning,
+      "conditioning_scale" => conditioning_scale
     }
 
     {Nx.Batch.concatenate([inputs]), multi?}
@@ -384,6 +391,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
 
     seed = inputs["seed"]
     controlnet_conditioning = inputs["controlnet_conditioning"]
+    conditioning_scale = inputs["conditioning_scale"]
 
     inputs =
       inputs["conditional_and_unconditional"]
@@ -422,10 +430,11 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
     {latents, _} =
       while {latents,
              {scheduler_state, text_embeddings, unet_params, controlnet_conditioning,
-              controlnet_params}},
+              conditioning_scale, controlnet_params}},
             timestep <- timesteps do
         controlnet_inputs = %{
           "controlnet_conditioning" => controlnet_conditioning,
+          "conditioning_scale" => conditioning_scale,
           "sample" => Nx.concatenate([latents, latents]),
           "timestep" => timestep,
           "encoder_hidden_state" => text_embeddings
@@ -463,7 +472,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
 
         {latents,
          {scheduler_state, text_embeddings, unet_params, controlnet_conditioning,
-          controlnet_params}}
+          conditioning_scale, controlnet_params}}
       end
 
     latents = latents * (1 / 0.18215)
@@ -493,6 +502,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
      %{
        prompt: prompt,
        controlnet_conditioning: controlnet_conditioning,
+       conditioning_scale: input[:conditioning_scale] || 1.0,
        negative_prompt: input[:negative_prompt] || "",
        seed: input[:seed] || :erlang.system_time()
      }}

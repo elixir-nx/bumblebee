@@ -157,6 +157,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
       "sample" => Nx.template(sample_shape, :f32),
       "timestep" => Nx.template(timestep_shape, :u32),
       "controlnet_conditioning" => Nx.template(controlnet_conditioning_shape, :f32),
+      "conditioning_scale" => Nx.template({}, :f32),
       "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)
     }
   end
@@ -178,6 +179,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
       Axon.input("sample", shape: sample_shape),
       Axon.input("timestep", shape: {}),
       Axon.input("controlnet_conditioning", shape: controlnet_conditioning_shape),
+      Axon.input("conditioning_scale", optional: true),
       Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size})
     ])
   end
@@ -186,6 +188,12 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
     sample = inputs["sample"]
     timestep = inputs["timestep"]
     controlnet_conditioning = inputs["controlnet_conditioning"]
+
+    conditioning_scale =
+      Bumblebee.Layers.default inputs["conditioning_scale"] do
+        Axon.constant(1)
+      end
+
     encoder_hidden_state = inputs["encoder_hidden_state"]
 
     timestep =
@@ -225,8 +233,6 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
 
     sample =
       mid_block(sample, timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
-
-    conditioning_scale = Axon.constant(1)
 
     down_blocks_residuals =
       control_net_down_blocks(down_blocks_residuals, name: "controlnet_down_blocks")
