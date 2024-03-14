@@ -188,7 +188,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   end
 
   @impl true
-  def model(%__MODULE__{} = spec) do
+  def model(%__MODULE__{architecture: :base} = spec) do
     inputs = inputs(spec)
     sample = core(inputs, spec)
     Layers.output(%{sample: sample})
