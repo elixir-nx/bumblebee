@@ -3,17 +3,15 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
 
   import Bumblebee.TestHelpers
 
-  # @moduletag serving_test_tags()
+  @moduletag serving_test_tags()
 
-  @tag timeout: :infinity
   describe "text_to_image/6" do
     test "generates image for a text prompt with controlnet" do
       # Since we don't assert on the result in this case, we use
       # a tiny random checkpoint. This test is basically to verify
       # the whole generation computation end-to-end
 
-      repository_id = "runwayml/stable-diffusion-v1-5"
-      # repository_id = "bumblebee-testing/tiny-stable-diffusion"
+      repository_id = "bumblebee-testing/tiny-stable-diffusion"
 
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
       {:ok, clip} = Bumblebee.load_model({:hf, repository_id, subdir: "text_encoder"})
@@ -23,8 +21,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
           architecture: :with_additional_residuals
         )
 
-      {:ok, controlnet} = Bumblebee.load_model({:hf, "lllyasviel/sd-controlnet-scribble"})
-      # {:ok, controlnet} = Bumblebee.load_model({:hf, "hf-internal-testing/tiny-controlnet"})
+      {:ok, controlnet} = Bumblebee.load_model({:hf, "hf-internal-testing/tiny-controlnet"})
 
       {:ok, vae} =
         Bumblebee.load_model({:hf, repository_id, subdir: "vae"}, architecture: :decoder)
