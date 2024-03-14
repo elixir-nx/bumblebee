@@ -19,7 +19,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
       "encoder_hidden_state" => Nx.broadcast(0.5, {1, 1, 32})
     }
 
-    outputs = Axon.predict(model, params, inputs)
+    outputs = Axon.predict(model, params, inputs, debug: true)
 
     assert Nx.shape(outputs.sample) == {1, 32, 32, 4}
 
@@ -35,16 +35,13 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
     )
   end
 
-  test ":with_additional_residuals" do
+  test ":base with additional residuals" do
     tiny = "bumblebee-testing/tiny-stable-diffusion"
 
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model(
-               {:hf, tiny, subdir: "unet"},
-               architecture: :with_additional_residuals
-             )
+             Bumblebee.load_model({:hf, tiny, subdir: "unet"})
 
-    assert %Bumblebee.Diffusion.UNet2DConditional{architecture: :with_additional_residuals} = spec
+    assert %Bumblebee.Diffusion.UNet2DConditional{architecture: :base} = spec
 
     first = {1, spec.sample_size, spec.sample_size, hd(spec.hidden_sizes)}
 

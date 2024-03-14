@@ -16,10 +16,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/clip-vit-large-patch14"})
       {:ok, clip} = Bumblebee.load_model({:hf, repository_id, subdir: "text_encoder"})
 
-      {:ok, unet} =
-        Bumblebee.load_model({:hf, repository_id, subdir: "unet"},
-          architecture: :with_additional_residuals
-        )
+      {:ok, unet} = Bumblebee.load_model({:hf, repository_id, subdir: "unet"})
 
       {:ok, controlnet} = Bumblebee.load_model({:hf, "hf-internal-testing/tiny-controlnet"})
 

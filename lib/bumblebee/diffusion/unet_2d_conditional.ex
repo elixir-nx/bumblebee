@@ -101,7 +101,6 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   ## Architectures
 
     * `:base` - the U-Net model
-    * `:with_additional_residuals` - with additional residuals
 
   ## Inputs
 
@@ -134,7 +133,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   alias Bumblebee.Diffusion
 
   @impl true
-  def architectures(), do: [:base, :with_additional_residuals]
+  def architectures(), do: [:base]
 
   @impl true
   def config(spec, opts) do
@@ -189,30 +188,13 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   end
 
   @impl true
-  def model(%__MODULE__{architecture: :base} = spec) do
+  def model(%__MODULE__{} = spec) do
     inputs = inputs(spec)
     sample = core(inputs, spec)
     Layers.output(%{sample: sample})
   end
 
-  @impl true
-  def model(%__MODULE__{architecture: :with_additional_residuals} = spec) do
-    inputs = inputs_with_additional_residuals(spec)
-    sample = core_with_additional_residuals(inputs, spec)
-    Layers.output(%{sample: sample})
-  end
-
   defp inputs(spec) do
-    sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
-
-    Bumblebee.Utils.Model.inputs_to_map([
-      Axon.input("sample", shape: sample_shape),
-      Axon.input("timestep", shape: {}),
-      Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size})
-    ])
-  end
-
-  defp inputs_with_additional_residuals(spec) do
     sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
 
     mid_spatial = div(spec.sample_size, 2 ** (length(spec.hidden_sizes) - 1))
@@ -223,8 +205,8 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       Axon.input("sample", shape: sample_shape),
       Axon.input("timestep", shape: {}),
       Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size}),
-      Axon.input("additional_mid_residual", shape: mid_residual_shape),
-      Axon.input("additional_down_residuals")
+      Axon.input("additional_mid_residual", shape: mid_residual_shape, optional: true),
+      Axon.input("additional_down_residuals", optional: true)
     ])
   end
 
@@ -269,86 +251,16 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     {sample, down_block_residuals} =
       down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, name: "down_blocks")
 
-    sample
-    |> mid_block(timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
-    |> up_blocks(timestep_embedding, down_block_residuals, encoder_hidden_state, spec,
-      name: "up_blocks"
-    )
-    |> Axon.group_norm(spec.group_norm_num_groups,
-      epsilon: spec.group_norm_epsilon,
-      name: "output_norm"
-    )
-    |> Axon.activation(:silu)
-    |> Axon.conv(spec.out_channels,
-      kernel_size: 3,
-      padding: [{1, 1}, {1, 1}],
-      name: "output_conv"
-    )
-  end
-
-  defp core_with_additional_residuals(inputs, spec) do
-    sample = inputs["sample"]
-    timestep = inputs["timestep"]
-    encoder_hidden_state = inputs["encoder_hidden_state"]
-    additional_mid_residual = inputs["additional_mid_residual"]
-
-    num_down_residuals = length(spec.hidden_sizes) * (spec.depth + 1)
-
-    additional_down_residuals =
-      for i <- 0..(num_down_residuals - 1) do
-        Axon.nx(inputs["additional_down_residuals"], &elem(&1, i))
-      end
-
-    sample =
-      if spec.center_input_sample do
-        Axon.nx(sample, fn sample -> 2 * sample - 1.0 end, op_name: :center)
-      else
-        sample
-      end
-
-    timestep =
-      Axon.layer(
-        fn sample, timestep, _opts ->
-          Nx.broadcast(timestep, {Nx.axis_size(sample, 0)})
-        end,
-        [sample, timestep],
-        op_name: :broadcast
-      )
-
-    timestep_embedding =
-      timestep
-      |> Diffusion.Layers.timestep_sinusoidal_embedding(hd(spec.hidden_sizes),
-        flip_sin_to_cos: spec.embedding_flip_sin_to_cos,
-        frequency_correction_term: spec.embedding_frequency_correction_term
-      )
-      |> Diffusion.Layers.UNet.timestep_embedding_mlp(hd(spec.hidden_sizes) * 4,
-        name: "time_embedding"
-      )
-
-    sample =
-      Axon.conv(sample, hd(spec.hidden_sizes),
-        kernel_size: 3,
-        padding: [{1, 1}, {1, 1}],
-        name: "input_conv"
-      )
-
-    {sample, down_block_residuals} =
-      down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, name: "down_blocks")
-
-    down_residual_zip = Enum.zip(Tuple.to_list(down_block_residuals), additional_down_residuals)
-
     down_block_residuals =
-      for {{{down_residual, out_channels}, additional_down_residual}, i} <-
-            Enum.with_index(down_residual_zip) do
-        {Axon.add(down_residual, additional_down_residual, name: join("add_additional_down", i)),
-         out_channels}
-      end
-      |> List.to_tuple()
+      add_optional_additional_down_residuals(
+        down_block_residuals,
+        inputs["additional_down_residuals"]
+      )
 
     mid_block_residual =
       sample
       |> mid_block(timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
-      |> Axon.add(additional_mid_residual, name: "add_additional_mid")
+      |> add_optional_additional_mid_residual(inputs["additional_mid_residual"])
 
     mid_block_residual
     |> up_blocks(timestep_embedding, down_block_residuals, encoder_hidden_state, spec,
@@ -487,6 +399,49 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       end
 
     sample
+  end
+
+  def add_optional_additional_mid_residual(
+        %Axon{} = mid_block_residual,
+        %Axon{} = additional_mid_block_residual
+      ) do
+    Axon.layer(
+      fn mid_block_residual, additional_mid_block_residual, _opts ->
+        case additional_mid_block_residual do
+          %Axon.None{} ->
+            mid_block_residual
+
+          additional_mid_block_residual ->
+            Nx.add(mid_block_residual, additional_mid_block_residual)
+        end
+      end,
+      [mid_block_residual, Axon.optional(additional_mid_block_residual)],
+      name: "add_additional_mid"
+    )
+  end
+
+  def add_optional_additional_down_residuals(
+        down_block_residuals,
+        %Axon{} = additional_down_residuals
+      ) do
+    down_residuals = Tuple.to_list(down_block_residuals)
+
+    for {{down_residual, out_channels}, i} <- Enum.with_index(down_residuals) do
+      {Axon.layer(
+         fn down_residual, additional_down_residuals, _opts ->
+           case additional_down_residuals do
+             %Axon.None{} ->
+               down_residual
+
+             additional_down_residuals ->
+               Nx.add(down_residual, elem(additional_down_residuals, i))
+           end
+         end,
+         [down_residual, Axon.optional(additional_down_residuals)],
+         name: join("add_additional_down", i)
+       ), out_channels}
+    end
+    |> List.to_tuple()
   end
 
   defp num_attention_heads_per_block(spec) when is_list(spec.num_attention_heads) do
