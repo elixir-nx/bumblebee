@@ -19,7 +19,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
       "encoder_hidden_state" => Nx.broadcast(0.5, {1, 1, 32})
     }
 
-    outputs = Axon.predict(model, params, inputs, debug: true)
+    outputs = Axon.predict(model, params, inputs)
 
     assert Nx.shape(outputs.sample) == {1, 32, 32, 4}
 
