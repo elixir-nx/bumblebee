@@ -116,6 +116,7 @@ defmodule Bumblebee do
     "CLIPModel" => {Bumblebee.Multimodal.Clip, :base},
     "CLIPTextModel" => {Bumblebee.Text.ClipText, :base},
     "CLIPVisionModel" => {Bumblebee.Vision.ClipVision, :base},
+    "ControlNetModel" => {Bumblebee.Diffusion.StableDiffusion.ControlNet, :base},
     "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification},
     "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
     "DeiTForImageClassification" => {Bumblebee.Vision.Deit, :for_image_classification},
