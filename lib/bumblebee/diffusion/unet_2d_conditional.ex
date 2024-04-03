@@ -219,12 +219,12 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
         inputs["additional_down_residuals"]
       )
 
-    mid_block_residual =
+    sample =
       sample
       |> mid_block(timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
       |> add_optional_additional_mid_residual(inputs["additional_mid_residual"])
 
-    mid_block_residual
+    sample
     |> up_blocks(timestep_embedding, down_block_residuals, encoder_hidden_state, spec,
       name: "up_blocks"
     )
