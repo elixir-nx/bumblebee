@@ -42,9 +42,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
           scheduler,
           num_steps: 3,
           safety_checker: safety_checker,
-          safety_checker_featurizer: featurizer,
-          compile: [batch_size: 1, sequence_length: 60, controlnet_conditioning_size: cond_size],
-          defn_options: [compiler: EXLA]
+          safety_checker_featurizer: featurizer
         )
 
       prompt = "numbat in forest, detailed, digital art"
@@ -61,35 +59,51 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
 
       # Without safety checker
 
-      # serving =
-      #   Bumblebee.Diffusion.StableDiffusionControlNet.text_to_image(
-      #     clip,
-      #     unet,
-      #     vae,
-      #     tokenizer,
-      #     scheduler,
-      #     num_steps: 3
-      #   )
+      serving =
+        Bumblebee.Diffusion.StableDiffusionControlNet.text_to_image(
+          clip,
+          unet,
+          vae,
+          controlnet,
+          tokenizer,
+          scheduler,
+          num_steps: 3
+        )
 
-      # prompt = "numbat in forest, detailed, digital art"
+      prompt = "numbat in forest, detailed, digital art"
 
-      # assert %{results: [%{image: %Nx.Tensor{}}]} = Nx.Serving.run(serving, prompt)
+      assert %{results: [%{image: %Nx.Tensor{}}]} =
+               Nx.Serving.run(serving, %{
+                 prompt: prompt,
+                 controlnet_conditioning: controlnet_conditioning
+               })
 
       # With compilation
 
-      # serving =
-      #   Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, unet, vae, tokenizer, scheduler,
-      #     num_steps: 3,
-      #     safety_checker: safety_checker,
-      #     safety_checker_featurizer: featurizer,
-      #     defn_options: [compiler: EXLA]
-      #   )
+      serving =
+        Bumblebee.Diffusion.StableDiffusionControlNet.text_to_image(
+          clip,
+          unet,
+          vae,
+          controlnet,
+          tokenizer,
+          scheduler,
+          num_steps: 3,
+          safety_checker: safety_checker,
+          safety_checker_featurizer: featurizer,
+          compile: [batch_size: 1, sequence_length: 60, controlnet_conditioning_size: cond_size],
+          defn_options: [compiler: EXLA]
+        )
 
-      # prompt = "numbat in forest, detailed, digital art"
+      prompt = "numbat in forest, detailed, digital art"
 
-      # assert %{
-      #          results: [%{image: %Nx.Tensor{}, is_safe: _boolean}]
-      #        } = Nx.Serving.run(serving, prompt)
+      assert %{
+               results: [%{image: %Nx.Tensor{}, is_safe: _boolean}]
+             } =
+               Nx.Serving.run(serving, %{
+                 prompt: prompt,
+                 controlnet_conditioning: controlnet_conditioning
+               })
     end
   end
 end
