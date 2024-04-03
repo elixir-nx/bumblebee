@@ -140,50 +140,16 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     Shared.put_config_attrs(spec, opts)
   end
 
-  defp down_residuals_templates(spec) do
-    first = {1, spec.sample_size, spec.sample_size, hd(spec.hidden_sizes)}
-
-    state = {spec.sample_size, [first]}
-
-    {_, down_shapes} =
-      for block_out_channels <- spec.hidden_sizes, reduce: state do
-        {spatial_size, acc} ->
-          residuals =
-            for _ <- 1..spec.depth, do: {1, spatial_size, spatial_size, block_out_channels}
-
-          downsampled_spatial = div(spatial_size, 2)
-          downsample_shape = {1, downsampled_spatial, downsampled_spatial, block_out_channels}
-
-          {div(spatial_size, 2), acc ++ residuals ++ [downsample_shape]}
-      end
-
-    # no downsampling in last block
-    down_shapes = Enum.drop(down_shapes, -1)
-
-    for shape <- down_shapes do
-      Nx.template(shape, :f32)
-    end
-    |> List.to_tuple()
-  end
-
   @impl true
   def input_template(spec) do
     sample_shape = {1, spec.sample_size, spec.sample_size, spec.in_channels}
     timestep_shape = {}
     encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
-    mid_spatial = div(spec.sample_size, 2 ** (length(spec.hidden_sizes) - 1))
-    mid_channels = List.last(spec.hidden_sizes)
-    mid_residual_shape = {1, mid_spatial, mid_spatial, mid_channels}
-
-    down_residuals = down_residuals_templates(spec)
-
     %{
       "sample" => Nx.template(sample_shape, :f32),
       "timestep" => Nx.template(timestep_shape, :u32),
-      "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32),
-      "additional_mid_residual" => Nx.template(mid_residual_shape, :f32),
-      "additional_down_residuals" => down_residuals
+      "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)
     }
   end
 
@@ -197,15 +163,11 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   defp inputs(spec) do
     sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
 
-    mid_spatial = div(spec.sample_size, 2 ** (length(spec.hidden_sizes) - 1))
-    mid_channels = List.last(spec.hidden_sizes)
-    mid_residual_shape = {nil, mid_spatial, mid_spatial, mid_channels}
-
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("sample", shape: sample_shape),
       Axon.input("timestep", shape: {}),
       Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size}),
-      Axon.input("additional_mid_residual", shape: mid_residual_shape, optional: true),
+      Axon.input("additional_mid_residual", optional: true),
       Axon.input("additional_down_residuals", optional: true)
     ])
   end
