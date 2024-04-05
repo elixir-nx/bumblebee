@@ -1,6 +1,6 @@
 defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
   @moduledoc """
-  High-level tasks based on Stable Diffusion.
+  High-level tasks based on Stable Diffusion with ControlNet.
   """
 
   import Nx.Defn
@@ -90,17 +90,32 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
       {:ok, safety_checker} = Bumblebee.load_model({:hf, repository_id, subdir: "safety_checker"})
 
       serving =
-        Bumblebee.Diffusion.StableDiffusion.text_to_image(clip, unet, vae, controlnet, tokenizer, scheduler,
+        Bumblebee.Diffusion.StableDiffusionControlNet.text_to_image(
+          clip,
+          unet,
+          vae,
+          controlnet,
+          tokenizer,
+          scheduler,
           num_steps: 20,
           num_images_per_prompt: 2,
           safety_checker: safety_checker,
           safety_checker_featurizer: featurizer,
-          compile: [batch_size: 1, sequence_length: 60],
+          compile: [batch_size: 1, sequence_length: 60, conditioning_size: 512],
           defn_options: [compiler: EXLA]
         )
 
       prompt = "numbat in forest, detailed, digital art"
-      controlnet_conditioning = Nx.tensor()
+
+      controlnet_conditioning =
+        Nx.tensor(
+          [for(_ <- 1..8, do: [255]) ++ for(_ <- 1..24, do: [0])],
+          type: :u8
+        )
+        |> Nx.tile([256, 8, 3])
+        |> Nx.pad(0, [{192, 64, 0}, {192, 64, 0}, {0, 0, 0}])
+        |> Nx.transpose(axes: [1, 0, 2])
+
       Nx.Serving.run(serving, %{prompt: prompt, controlnet_conditioning: controlnet_conditioning})
       #=> %{
       #=>   results: [
