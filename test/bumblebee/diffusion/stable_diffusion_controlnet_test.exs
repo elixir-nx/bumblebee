@@ -47,14 +47,14 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
 
       prompt = "numbat in forest, detailed, digital art"
 
-      controlnet_conditioning = Nx.broadcast(Nx.tensor(50, type: :u8), {cond_size, cond_size, 3})
+      conditioning = Nx.broadcast(Nx.tensor(50, type: :u8), {cond_size, cond_size, 3})
 
       assert %{
                results: [%{image: %Nx.Tensor{}, is_safe: _boolean}]
              } =
                Nx.Serving.run(serving, %{
                  prompt: prompt,
-                 controlnet_conditioning: controlnet_conditioning
+                 conditioning: conditioning
                })
 
       # Without safety checker
@@ -75,7 +75,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
       assert %{results: [%{image: %Nx.Tensor{}}]} =
                Nx.Serving.run(serving, %{
                  prompt: prompt,
-                 controlnet_conditioning: controlnet_conditioning
+                 conditioning: conditioning
                })
 
       # With compilation
@@ -91,7 +91,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
           num_steps: 3,
           safety_checker: safety_checker,
           safety_checker_featurizer: featurizer,
-          compile: [batch_size: 1, sequence_length: 60, controlnet_conditioning_size: cond_size],
+          compile: [batch_size: 1, sequence_length: 60, conditioning_size: cond_size],
           defn_options: [compiler: EXLA]
         )
 
@@ -102,7 +102,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
              } =
                Nx.Serving.run(serving, %{
                  prompt: prompt,
-                 controlnet_conditioning: controlnet_conditioning
+                 conditioning: conditioning
                })
     end
   end

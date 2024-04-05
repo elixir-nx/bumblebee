@@ -18,7 +18,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNetTest do
 
     inputs = %{
       "sample" => Nx.broadcast(0.5, {1, 64, 64, 4}),
-      "controlnet_conditioning" => Nx.broadcast(0.8, {1, 512, 512, 3}),
+      "conditioning" => Nx.broadcast(0.8, {1, 512, 512, 3}),
       "timestep" => Nx.tensor(0),
       "encoder_hidden_state" => Nx.broadcast(0.8, {1, 1, 768})
     }

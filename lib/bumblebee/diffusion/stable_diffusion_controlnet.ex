@@ -12,7 +12,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
           String.t()
           | %{
               :prompt => String.t(),
-              :controlnet_conditioning => Nx.Tensor.t(),
+              :conditioning => Nx.Tensor.t(),
               optional(:conditioning_scale) => integer(),
               optional(:negative_prompt) => String.t(),
               optional(:seed) => integer()
@@ -107,7 +107,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
 
       prompt = "numbat in forest, detailed, digital art"
 
-      controlnet_conditioning =
+      conditioning =
         Nx.tensor(
           [for(_ <- 1..8, do: [255]) ++ for(_ <- 1..24, do: [0])],
           type: :u8
@@ -116,7 +116,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
         |> Nx.pad(0, [{192, 64, 0}, {192, 64, 0}, {0, 0, 0}])
         |> Nx.transpose(axes: [1, 0, 2])
 
-      Nx.Serving.run(serving, %{prompt: prompt, controlnet_conditioning: controlnet_conditioning})
+      Nx.Serving.run(serving, %{prompt: prompt, conditioning: conditioning})
       #=> %{
       #=>   results: [
       #=>     %{
@@ -175,13 +175,13 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
     compile =
       if compile = opts[:compile] do
         compile
-        |> Keyword.validate!([:batch_size, :sequence_length, :controlnet_conditioning_size])
-        |> Shared.require_options!([:batch_size, :sequence_length, :controlnet_conditioning_size])
+        |> Keyword.validate!([:batch_size, :sequence_length, :conditioning_size])
+        |> Shared.require_options!([:batch_size, :sequence_length, :conditioning_size])
       end
 
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
-    controlnet_conditioning_size = compile[:controlnet_conditioning_size]
+    conditioning_size = compile[:conditioning_size]
 
     tokenizer =
       Bumblebee.configure(tokenizer,
@@ -232,7 +232,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
       controlnet.params,
       {safety_checker?, safety_checker[:spec], safety_checker[:params]},
       safety_checker_featurizer,
-      {compile != nil, batch_size, sequence_length, controlnet_conditioning_size},
+      {compile != nil, batch_size, sequence_length, conditioning_size},
       num_images_per_prompt,
       preallocate_params
     ]
@@ -254,7 +254,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
          controlnet_params,
          {safety_checker?, safety_checker_spec, safety_checker_params},
          safety_checker_featurizer,
-         {compile?, batch_size, sequence_length, controlnet_conditioning_size},
+         {compile?, batch_size, sequence_length, conditioning_size},
          num_images_per_prompt,
          preallocate_params,
          defn_options
@@ -273,9 +273,9 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
             "input_ids" => Nx.template({batch_size, 2, sequence_length}, :u32)
           },
           "seed" => Nx.template({batch_size}, :s64),
-          "controlnet_conditioning" =>
+          "conditioning" =>
             Nx.template(
-              {batch_size, controlnet_conditioning_size, controlnet_conditioning_size, 3},
+              {batch_size, conditioning_size, conditioning_size, 3},
               :f32
             ),
           "conditioning_scale" => Nx.template({batch_size}, :f32)
@@ -340,8 +340,8 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
         Utils.Nx.composite_unflatten_batch(inputs, Nx.axis_size(seed, 0))
       end)
 
-    controlnet_conditioning =
-      Enum.map(inputs, & &1.controlnet_conditioning)
+    conditioning =
+      Enum.map(inputs, & &1.conditioning)
       |> Nx.stack()
       |> preprocess_image()
 
@@ -352,7 +352,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
     inputs = %{
       "conditional_and_unconditional" => prompt_pairs,
       "seed" => seed,
-      "controlnet_conditioning" => controlnet_conditioning,
+      "conditioning" => conditioning,
       "conditioning_scale" => conditioning_scale
     }
 
@@ -405,7 +405,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
     guidance_scale = opts[:guidance_scale]
 
     seed = inputs["seed"]
-    controlnet_conditioning = inputs["controlnet_conditioning"]
+    conditioning = inputs["conditioning"]
     conditioning_scale = inputs["conditioning_scale"]
 
     inputs =
@@ -444,11 +444,11 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
 
     {latents, _} =
       while {latents,
-             {scheduler_state, text_embeddings, unet_params, controlnet_conditioning,
-              conditioning_scale, controlnet_params}},
+             {scheduler_state, text_embeddings, unet_params, conditioning, conditioning_scale,
+              controlnet_params}},
             timestep <- timesteps do
         controlnet_inputs = %{
-          "controlnet_conditioning" => controlnet_conditioning,
+          "conditioning" => conditioning,
           "conditioning_scale" => conditioning_scale,
           "sample" => Nx.concatenate([latents, latents]),
           "timestep" => timestep,
@@ -486,8 +486,8 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
         latents = Nx.devectorize(latents)
 
         {latents,
-         {scheduler_state, text_embeddings, unet_params, controlnet_conditioning,
-          conditioning_scale, controlnet_params}}
+         {scheduler_state, text_embeddings, unet_params, conditioning, conditioning_scale,
+          controlnet_params}}
       end
 
     latents = latents * (1 / 0.18215)
@@ -512,11 +512,11 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
 
   defp validate_input(prompt) when is_binary(prompt), do: validate_input(%{prompt: prompt})
 
-  defp validate_input(%{prompt: prompt, controlnet_conditioning: controlnet_conditioning} = input) do
+  defp validate_input(%{prompt: prompt, conditioning: conditioning} = input) do
     {:ok,
      %{
        prompt: prompt,
-       controlnet_conditioning: controlnet_conditioning,
+       conditioning: conditioning,
        conditioning_scale: input[:conditioning_scale] || 1.0,
        negative_prompt: input[:negative_prompt] || "",
        seed: input[:seed] || :erlang.system_time()
@@ -525,7 +525,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
 
   defp validate_input(%{} = input) do
     {:error,
-     "expected the input map to have :prompt and :controlnet_conditioning key, got: #{inspect(input)}"}
+     "expected the input map to have :prompt and :conditioning key, got: #{inspect(input)}"}
   end
 
   defp validate_input(input) do

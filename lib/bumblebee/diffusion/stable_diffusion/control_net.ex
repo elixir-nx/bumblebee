@@ -117,7 +117,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
 
       The conditional state (context) to use with cross-attention.
 
-    * `"controlnet_conditioning"` - `{batch_size, conditioning_size, conditioning_size, 3}`
+    * `"conditioning"` - `{batch_size, conditioning_size, conditioning_size, 3}`
 
       The conditional input
 
@@ -150,13 +150,13 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
     timestep_shape = {}
 
     cond_size = spec.sample_size * 2 ** (length(spec.hidden_sizes) - 1)
-    controlnet_conditioning_shape = {1, cond_size, cond_size, 3}
+    conditioning_shape = {1, cond_size, cond_size, 3}
     encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
     %{
       "sample" => Nx.template(sample_shape, :f32),
       "timestep" => Nx.template(timestep_shape, :u32),
-      "controlnet_conditioning" => Nx.template(controlnet_conditioning_shape, :f32),
+      "conditioning" => Nx.template(conditioning_shape, :f32),
       "conditioning_scale" => Nx.template({}, :f32),
       "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)
     }
@@ -173,12 +173,12 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
     sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
 
     cond_size = spec.sample_size * 2 ** (length(spec.hidden_sizes) - 1)
-    controlnet_conditioning_shape = {nil, cond_size, cond_size, 3}
+    conditioning_shape = {nil, cond_size, cond_size, 3}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("sample", shape: sample_shape),
       Axon.input("timestep", shape: {}),
-      Axon.input("controlnet_conditioning", shape: controlnet_conditioning_shape),
+      Axon.input("conditioning", shape: conditioning_shape),
       Axon.input("conditioning_scale", optional: true),
       Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size})
     ])
@@ -187,7 +187,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
   defp core(inputs, spec) do
     sample = inputs["sample"]
     timestep = inputs["timestep"]
-    controlnet_conditioning = inputs["controlnet_conditioning"]
+    conditioning = inputs["conditioning"]
 
     conditioning_scale =
       Bumblebee.Layers.default inputs["conditioning_scale"] do
@@ -223,7 +223,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
       )
 
     control_net_cond_embeddings =
-      control_net_embeddings(controlnet_conditioning, spec, name: "controlnet_cond_embedding")
+      control_net_embeddings(conditioning, spec, name: "controlnet_cond_embedding")
 
     sample =
       Axon.add(sample, control_net_cond_embeddings, name: "add_sample_control_net_embeddings")
