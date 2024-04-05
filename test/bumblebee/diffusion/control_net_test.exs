@@ -1,4 +1,4 @@
-defmodule Bumblebee.Diffusion.StableDiffusion.ControlNetTest do
+defmodule Bumblebee.Diffusion.ControlNetTest do
   use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
@@ -8,11 +8,11 @@ defmodule Bumblebee.Diffusion.StableDiffusion.ControlNetTest do
   test ":base" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model({:hf, "lllyasviel/sd-controlnet-scribble"},
-               module: Bumblebee.Diffusion.StableDiffusion.ControlNet,
+               module: Bumblebee.Diffusion.ControlNet,
                architecture: :base
              )
 
-    assert %Bumblebee.Diffusion.StableDiffusion.ControlNet{
+    assert %Bumblebee.Diffusion.ControlNet{
              architecture: :base
            } = spec
 

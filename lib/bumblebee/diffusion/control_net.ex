@@ -1,4 +1,4 @@
-defmodule Bumblebee.Diffusion.StableDiffusion.ControlNet do
+defmodule Bumblebee.Diffusion.ControlNet do
   alias Bumblebee.Shared
 
   options = [
