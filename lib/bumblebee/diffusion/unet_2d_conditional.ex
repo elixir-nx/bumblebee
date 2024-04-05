@@ -363,47 +363,30 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     sample
   end
 
-  def add_optional_additional_mid_residual(
-        %Axon{} = mid_block_residual,
-        %Axon{} = additional_mid_block_residual
-      ) do
-    Axon.layer(
-      fn mid_block_residual, additional_mid_block_residual, _opts ->
-        case additional_mid_block_residual do
-          %Axon.None{} ->
-            mid_block_residual
-
-          additional_mid_block_residual ->
-            Nx.add(mid_block_residual, additional_mid_block_residual)
-        end
-      end,
-      [mid_block_residual, Axon.optional(additional_mid_block_residual)],
-      name: "add_additional_mid"
-    )
+  defp add_optional_additional_mid_residual(mid_block_residual, additional_mid_block_residual) do
+    maybe_add(mid_block_residual, additional_mid_block_residual)
   end
 
-  def add_optional_additional_down_residuals(
-        down_block_residuals,
-        %Axon{} = additional_down_residuals
-      ) do
+  defp add_optional_additional_down_residuals(down_block_residuals, additional_down_residuals) do
     down_residuals = Tuple.to_list(down_block_residuals)
 
     for {{down_residual, out_channels}, i} <- Enum.with_index(down_residuals) do
-      {Axon.layer(
-         fn down_residual, additional_down_residuals, _opts ->
-           case additional_down_residuals do
-             %Axon.None{} ->
-               down_residual
-
-             additional_down_residuals ->
-               Nx.add(down_residual, elem(additional_down_residuals, i))
-           end
-         end,
-         [down_residual, Axon.optional(additional_down_residuals)],
-         name: join("add_additional_down", i)
-       ), out_channels}
+      additional_down_residual = Axon.nx(additional_down_residuals, &elem(&1, i))
+      {maybe_add(down_residual, additional_down_residual), out_channels}
     end
     |> List.to_tuple()
+  end
+
+  defp maybe_add(left, maybe_right) do
+    Axon.layer(
+      fn left, maybe_right, _opts ->
+        case maybe_right do
+          %Axon.None{} -> left
+          right -> Nx.add(left, right)
+        end
+      end,
+      [left, Axon.optional(maybe_right)]
+    )
   end
 
   defp num_attention_heads_per_block(spec) when is_list(spec.num_attention_heads) do
