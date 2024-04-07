@@ -5,9 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/elixir-nx/bumblebee)
+## [v0.5.3](https://github.com/elixir-nx/bumblebee/tree/v0.5.3) (2024-02-26)
+
+### Fixed
+
+* Loading generation config with nil attributes
+* Generating with `:no_repeat_ngram_length` when using lower precision
+
+## [v0.5.2](https://github.com/elixir-nx/bumblebee/tree/v0.5.2) (2024-02-24)
+
+### Fixed
+
+* Fixed loading sharded parameters in the safetensors format
+
+## [v0.5.1](https://github.com/elixir-nx/bumblebee/tree/v0.5.1) (2024-02-23)
+
+### Fixed
+
+* Fixed loading Mistral configuration with attention window disabled
+
+## [v0.5.0](https://github.com/elixir-nx/bumblebee/tree/v0.5.0) (2024-02-23)
 
 This release changes the directory structure of the models cache, such that cached files from the same HuggingFace Hub repository are grouped in a separate subdirectory. This change is meant to simplify the process of manually removing specific models from the cache to free up space. As a result, the cache contents from prior versions are invalidated, so you most likely want to remove the current cache contents. To find the cache location run `elixir -e 'Mix.install([{:bumblebee, "0.4.2"}]); IO.puts(Bumblebee.cache_dir())'` (defaults to the standard cache location for the given operating system).
+
+We also reduced memory usage during parameter loading (both when loading onto the CPU and GPU directly). Previously, larger models sometimes required loading parameters using CPU and only then transfering to the GPU, in order to avoid running out of GPU memory during parameter transformations. With this release this should no longer be the case. Loading parameters now has barely any memory footprint other than the parameters themselves.
 
 ### Added
 
@@ -23,6 +44,9 @@ This release changes the directory structure of the models cache, such that cach
 * `:type` option to `Bumblebee.load_model/2` for loading model under a specific precision policy ([#311](https://github.com/elixir-nx/bumblebee/pull/311))
 * LCM scheduler ([#320](https://github.com/elixir-nx/bumblebee/pull/320))
 * Token summary to text generation output ([#336](https://github.com/elixir-nx/bumblebee/pull/336))
+* DINOv2 model ([#334](https://github.com/elixir-nx/bumblebee/pull/334))
+* `:spec_overrides` option to `Bumblebee.load_model/2` ([#340](https://github.com/elixir-nx/bumblebee/pull/340))
+* Support for attention sliding window in Mistral ([#341](https://github.com/elixir-nx/bumblebee/pull/341))
 
 ### Changed
 
@@ -35,12 +59,14 @@ This release changes the directory structure of the models cache, such that cach
 * **(Breaking)** Changed ResNet `:pooled_state` output to flatten the extra 1-sized axes
 * Cache directory structure to group files by repository ([#332](https://github.com/elixir-nx/bumblebee/pull/332))
 * **(Breaking)** Changed the output of `Bumblebee.Text.Generation.build_generate/4` to a map ([#336](https://github.com/elixir-nx/bumblebee/pull/336))
+* Reduced memory usage during parameter loading ([#344](https://github.com/elixir-nx/bumblebee/pull/344))
 
 ### Removed
 
 * Removed the serving `:seed` option in favour of a runtime, per-input seed ([#303](https://github.com/elixir-nx/bumblebee/pull/303))
 * Conversational serving ([#308](https://github.com/elixir-nx/bumblebee/pull/308))
 * Specific tokenizer modules in favour of a single module ([#310](https://github.com/elixir-nx/bumblebee/pull/310))
+* Removed the deprecated `Bumblebee.Audio.speech_to_text/5` (in favour of the more specific `speech_to_text_whisper/5`)
 
 ### Fixed
 
@@ -51,6 +77,7 @@ This release changes the directory structure of the models cache, such that cach
 * Tokenizers truncation to account for trailing special tokens ([#307](https://github.com/elixir-nx/bumblebee/pull/307))
 * Loading models with auth token from within a HuggingFace Space ([#314](https://github.com/elixir-nx/bumblebee/pull/314))
 * Zero-shot classification serving to handle uppercased entailment token in model config ([#327](https://github.com/elixir-nx/bumblebee/pull/327))
+* Fixed text generation when using lower precision and encoder-decoder models (such as Whisper) ([#346](https://github.com/elixir-nx/bumblebee/pull/346))
 
 ## [v0.4.2](https://github.com/elixir-nx/bumblebee/tree/v0.4.2) (2023-09-28)
 

@@ -60,11 +60,7 @@ defmodule Bumblebee.Text.BlipText do
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
-    ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions
-      ])
+    ]
 
   @moduledoc """
   The BLIP model for text encoding.
@@ -127,6 +123,10 @@ defmodule Bumblebee.Text.BlipText do
       taken from the cache, rather than recomputed on every decoding
       pass. The cache should be treated as opaque and initialized with
       `Bumblebee.Text.Generation.init_cache/4`.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -334,8 +334,6 @@ defmodule Bumblebee.Text.BlipText do
           intermediate_size: spec.intermediate_size,
           activation: spec.activation
         ],
-        output_hidden_states: spec.output_hidden_states,
-        output_attentions: spec.output_attentions,
         name: join(name, "blocks")
       ] ++
         if(cross_attention?,

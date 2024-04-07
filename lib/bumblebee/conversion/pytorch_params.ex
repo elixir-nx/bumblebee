@@ -1,4 +1,4 @@
-defmodule Bumblebee.Conversion.PyTorch do
+defmodule Bumblebee.Conversion.PyTorchParams do
   @moduledoc false
 
   require Logger
@@ -26,7 +26,7 @@ defmodule Bumblebee.Conversion.PyTorch do
 
     * `:loader_fun` - a 1-arity function that takes a path argument
       and loads the params file. Defaults to
-      `Bumblebee.Conversion.PyTorch.Loader.load!/1`
+      `Bumblebee.Conversion.PyTorchLoader.load!/1`
 
   """
   @spec load_params!(Axon.t(), map(), Path.t() | list(Path.t()), keyword()) :: map()
@@ -37,7 +37,7 @@ defmodule Bumblebee.Conversion.PyTorch do
         :log_params_diff,
         :backend,
         params_mapping: %{},
-        loader_fun: &Bumblebee.Conversion.PyTorch.Loader.load!/1
+        loader_fun: &Bumblebee.Conversion.PyTorchLoader.load!/1
       ])
 
     with_default_backend(opts[:backend], fn ->
@@ -81,7 +81,9 @@ defmodule Bumblebee.Conversion.PyTorch do
   defp with_default_backend(backend, fun), do: Nx.with_default_backend(backend, fun)
 
   defp state_dict?(%{} = dict) when not is_struct(dict) do
-    Enum.all?(dict, fn {key, value} -> is_binary(key) and is_struct(value, Nx.Tensor) end)
+    Enum.all?(dict, fn {key, value} ->
+      is_binary(key) and Nx.LazyContainer.impl_for(value) != nil
+    end)
   end
 
   defp state_dict?(_other), do: false
@@ -141,6 +143,7 @@ defmodule Bumblebee.Conversion.PyTorch do
 
             {value, diff} =
               if all_sources_found? do
+                source_values = Enum.map(source_values, &Nx.to_tensor/1)
                 value = builder_fun.(Enum.reverse(source_values))
 
                 case verify_param_shape(param_expr, value) do

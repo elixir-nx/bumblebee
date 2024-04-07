@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.MistralTest do
+defmodule Bumblebee.Text.PhiTest do
   use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
@@ -7,39 +7,9 @@ defmodule Bumblebee.Text.MistralTest do
 
   test ":base" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-MistralModel"})
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-PhiModel"})
 
-    assert %Bumblebee.Text.Mistral{architecture: :base} = spec
-
-    inputs = %{
-      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
-      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
-    }
-
-    outputs = Axon.predict(model, params, inputs)
-
-    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
-
-    assert_all_close(
-      outputs.hidden_state[[.., 1..3, 1..3]],
-      Nx.tensor([
-        [[0.9450, -1.3945, 0.7331], [-2.1118, -1.3091, -0.7834], [-1.7609, -1.3034, 1.0634]]
-      ])
-    )
-  end
-
-  test ":base with attention sliding window" do
-    assert {:ok, spec} =
-             Bumblebee.load_spec({:hf, "hf-internal-testing/tiny-random-MistralModel"})
-
-    spec = Bumblebee.configure(spec, attention_window_size: 2)
-
-    assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-MistralModel"},
-               spec: spec
-             )
-
-    assert %Bumblebee.Text.Mistral{architecture: :base} = spec
+    assert %Bumblebee.Text.Phi{architecture: :base} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -52,19 +22,17 @@ defmodule Bumblebee.Text.MistralTest do
 
     assert_all_close(
       outputs.hidden_state[[.., 1..3, 1..3]],
-      Nx.tensor([
-        [[0.9450, -1.3945, 0.7331], [-2.1118, -1.3091, -0.7834], [-1.3033, -1.3374, 0.8919]]
-      ])
+      Nx.tensor([[[-0.3275, 0.5231, 0.5690], [0.2239, 0.5028, 0.4599], [-0.0979, 1.0183, 0.3350]]])
     )
   end
 
   test ":for_sequence_classification" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(
-               {:hf, "hf-internal-testing/tiny-random-MistralForSequenceClassification"}
+               {:hf, "bumblebee-testing/tiny-random-PhiForSequenceClassification"}
              )
 
-    assert %Bumblebee.Text.Mistral{architecture: :for_sequence_classification} = spec
+    assert %Bumblebee.Text.Phi{architecture: :for_sequence_classification} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -77,15 +45,17 @@ defmodule Bumblebee.Text.MistralTest do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[0.0035, -0.0357]])
+      Nx.tensor([[0.1403, -0.1382]])
     )
   end
 
-  test ":for_causal_language_modeling" do
+  test ":for_token_classification" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-MistralForCausalLM"})
+             Bumblebee.load_model(
+               {:hf, "bumblebee-testing/tiny-random-PhiForTokenClassification"}
+             )
 
-    assert %Bumblebee.Text.Mistral{architecture: :for_causal_language_modeling} = spec
+    assert %Bumblebee.Text.Phi{architecture: :for_token_classification} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -94,13 +64,32 @@ defmodule Bumblebee.Text.MistralTest do
 
     outputs = Axon.predict(model, params, inputs)
 
-    assert Nx.shape(outputs.logits) == {1, 10, 32000}
+    assert Nx.shape(outputs.logits) == {1, 10, 2}
+
+    assert_all_close(
+      outputs.logits[[.., 1..3//1, ..]],
+      Nx.tensor([[[-0.0364, -0.1207], [0.2520, 0.0755], [0.0243, 0.0269]]])
+    )
+  end
+
+  test ":for_causal_language_modeling" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-PhiForCausalLM"})
+
+    assert %Bumblebee.Text.Phi{architecture: :for_causal_language_modeling} = spec
+
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
+
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.logits) == {1, 10, 1024}
 
     assert_all_close(
       outputs.logits[[.., 1..3, 1..3]],
-      Nx.tensor([
-        [[-0.1054, 0.0026, 0.0450], [0.1400, 0.1388, 0.0265], [0.0060, -0.1150, -0.1463]]
-      ])
+      Nx.tensor([[[0.2541, 0.0827, 0.0526], [0.1901, 0.1289, 0.0758], [0.1051, 0.0658, -0.1167]]])
     )
   end
 end

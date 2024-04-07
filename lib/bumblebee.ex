@@ -124,6 +124,9 @@ defmodule Bumblebee do
       {Bumblebee.Vision.Deit, :for_image_classification_with_teacher},
     "DeiTForMaskedImageModeling" => {Bumblebee.Vision.Deit, :for_masked_image_modeling},
     "DeiTModel" => {Bumblebee.Vision.Deit, :base},
+    "Dinov2Model" => {Bumblebee.Vision.DinoV2, :base},
+    "Dinov2Backbone" => {Bumblebee.Vision.DinoV2, :backbone},
+    "Dinov2ForImageClassification" => {Bumblebee.Vision.DinoV2, :for_image_classification},
     "DistilBertModel" => {Bumblebee.Text.Distilbert, :base},
     "DistilBertForMaskedLM" => {Bumblebee.Text.Distilbert, :for_masked_language_modeling},
     "DistilBertForSequenceClassification" =>
@@ -131,6 +134,9 @@ defmodule Bumblebee do
     "DistilBertForQuestionAnswering" => {Bumblebee.Text.Distilbert, :for_question_answering},
     "DistilBertForTokenClassification" => {Bumblebee.Text.Distilbert, :for_token_classification},
     "DistilBertForMultipleChoice" => {Bumblebee.Text.Distilbert, :for_multiple_choice},
+    "GemmaModel" => {Bumblebee.Text.Gemma, :base},
+    "GemmaForCausalLM" => {Bumblebee.Text.Gemma, :for_causal_language_modeling},
+    "GemmaForSequenceClassification" => {Bumblebee.Text.Gemma, :for_sequence_classification},
     "GPT2ForSequenceClassification" => {Bumblebee.Text.Gpt2, :for_sequence_classification},
     "GPT2ForTokenClassification" => {Bumblebee.Text.Gpt2, :for_token_classification},
     "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling},
@@ -162,6 +168,10 @@ defmodule Bumblebee do
     "MistralModel" => {Bumblebee.Text.Mistral, :base},
     "MistralForCausalLM" => {Bumblebee.Text.Mistral, :for_causal_language_modeling},
     "MistralForSequenceClassification" => {Bumblebee.Text.Mistral, :for_sequence_classification},
+    "PhiModel" => {Bumblebee.Text.Phi, :base},
+    "PhiForCausalLM" => {Bumblebee.Text.Phi, :for_causal_language_modeling},
+    "PhiForSequenceClassification" => {Bumblebee.Text.Phi, :for_sequence_classification},
+    "PhiForTokenClassification" => {Bumblebee.Text.Phi, :for_token_classification},
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
     "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
     "RobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
@@ -204,7 +214,8 @@ defmodule Bumblebee do
   }
 
   @transformers_image_processor_type_to_featurizer %{
-    "BlipImageProcessor" => Bumblebee.Vision.BlipFeaturizer
+    "BlipImageProcessor" => Bumblebee.Vision.BlipFeaturizer,
+    "BitImageProcessor" => Bumblebee.Vision.BitFeaturizer
   }
 
   @model_type_to_featurizer %{
@@ -224,6 +235,7 @@ defmodule Bumblebee do
     "distilbert" => :distilbert,
     "camembert" => :camembert,
     "clip" => :clip,
+    "gemma" => :gemma,
     "gpt_neox" => :gpt_neo_x,
     "gpt2" => :gpt2,
     "gpt_bigcode" => :gpt2,
@@ -231,6 +243,7 @@ defmodule Bumblebee do
     "llama" => :llama,
     "mistral" => :llama,
     "mbart" => :mbart,
+    "phi" => :code_gen,
     "roberta" => :roberta,
     "t5" => :t5,
     "whisper" => :whisper,
@@ -489,6 +502,10 @@ defmodule Bumblebee do
     * `:spec` - the model specification to use when building the model.
       By default the specification is loaded using `load_spec/2`
 
+    * `:spec_overrides` - additional options to configure the model
+      specification with. This is a shorthand for using `load_spec/2`,
+      `configure/2` and passing as `:spec`
+
     * `:module` - the model specification module. By default it is
       inferred from the configuration file, if that is not possible,
       it must be specified explicitly
@@ -531,6 +548,11 @@ defmodule Bumblebee do
       spec = Bumblebee.configure(spec, num_labels: 10)
       {:ok, resnet} = Bumblebee.load_model({:hf, "microsoft/resnet-50"}, spec: spec)
 
+  Or as a shorthand, you can pass just the options to override:
+
+      {:ok, resnet} =
+        Bumblebee.load_model({:hf, "microsoft/resnet-50"}, spec_overrides: [num_labels: 10])
+
   """
   @doc type: :model
   @spec load_model(repository(), keyword()) :: {:ok, model_info()} | {:error, String.t()}
@@ -540,6 +562,7 @@ defmodule Bumblebee do
     opts =
       Keyword.validate!(opts, [
         :spec,
+        :spec_overrides,
         :module,
         :architecture,
         :params_variant,
@@ -558,10 +581,19 @@ defmodule Bumblebee do
   end
 
   defp maybe_load_model_spec(opts, repository, repo_files) do
-    if spec = opts[:spec] do
-      {:ok, spec}
-    else
-      do_load_spec(repository, repo_files, opts[:module], opts[:architecture])
+    spec_result =
+      if spec = opts[:spec] do
+        {:ok, spec}
+      else
+        do_load_spec(repository, repo_files, opts[:module], opts[:architecture])
+      end
+
+    with {:ok, spec} <- spec_result do
+      if options = opts[:spec_overrides] do
+        {:ok, configure(spec, options)}
+      else
+        {:ok, spec}
+      end
     end
   end
 
@@ -573,7 +605,11 @@ defmodule Bumblebee do
     {filename, sharded?} =
       infer_params_filename(repo_files, opts[:params_filename], opts[:params_variant])
 
-    loader_fun = filename |> Path.extname() |> params_file_loader_fun()
+    loader_fun =
+      filename
+      |> String.replace_suffix(".index.json", "")
+      |> Path.extname()
+      |> params_file_loader_fun()
 
     with {:ok, paths} <- download_params_files(repository, repo_files, filename, sharded?) do
       opts =
@@ -582,7 +618,7 @@ defmodule Bumblebee do
           loader_fun: loader_fun
         ] ++ Keyword.take(opts, [:backend, :log_params_diff])
 
-      params = Bumblebee.Conversion.PyTorch.load_params!(model, input_template, paths, opts)
+      params = Bumblebee.Conversion.PyTorchParams.load_params!(model, input_template, paths, opts)
       {:ok, params}
     end
   end
@@ -682,8 +718,8 @@ defmodule Bumblebee do
     end
   end
 
-  defp params_file_loader_fun(".safetensors"), do: &Safetensors.read!/1
-  defp params_file_loader_fun(_), do: &Bumblebee.Conversion.PyTorch.Loader.load!/1
+  defp params_file_loader_fun(".safetensors"), do: &Safetensors.read!(&1, lazy: true)
+  defp params_file_loader_fun(_), do: &Bumblebee.Conversion.PyTorchLoader.load!/1
 
   @doc """
   Featurizes `input` with the given featurizer.

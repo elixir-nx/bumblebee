@@ -4,10 +4,10 @@
 
 ```elixir
 Mix.install([
-  {:bumblebee, "~> 0.4.2"},
-  {:axon, "~> 0.6.0"},
-  {:nx, "~> 0.6.1"},
-  {:exla, "~> 0.6.1"},
+  {:bumblebee, "~> 0.5.0"},
+  {:nx, "~> 0.7.0"},
+  {:exla, "~> 0.7.0"},
+  {:axon, "~> 0.6.1"},
   {:explorer, "~> 0.7.0"}
 ])
 
@@ -34,14 +34,14 @@ The pre-trained model we'll be using is `bert-base-cased`; however, you can use 
 
 ```elixir
 {:ok, spec} =
-  Bumblebee.load_spec({:hf, "bert-base-google-bert/bert-base-cased"},
+  Bumblebee.load_spec({:hf, "google-bert/bert-base-cased"},
     architecture: :for_sequence_classification
   )
 
 spec = Bumblebee.configure(spec, num_labels: 5)
 
-{:ok, model} = Bumblebee.load_model({:hf, "bert-base-google-bert/bert-base-cased"}, spec: spec)
-{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "bert-base-google-bert/bert-base-cased"})
+{:ok, model} = Bumblebee.load_model({:hf, "google-bert/bert-base-cased"}, spec: spec)
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-bert/bert-base-cased"})
 ```
 
 <!-- livebook:{"output":true} -->

@@ -1,46 +1,59 @@
-defmodule Bumblebee.Text.GptNeoX do
+defmodule Bumblebee.Text.Phi do
   alias Bumblebee.Shared
 
   options =
     [
       vocab_size: [
-        default: 32000,
+        default: 51200,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
         """
       ],
+      max_positions: [
+        default: 2048,
+        doc: """
+        the vocabulary size of the position embedding. This corresponds to the maximum sequence
+        length that this model can process. Typically this is set to a large value just in case,
+        such as 512, 1024 or 2048
+        """
+      ],
       hidden_size: [
-        default: 4096,
+        default: 2048,
         doc: "the dimensionality of hidden layers"
       ],
       intermediate_size: [
-        default: 11008,
+        default: 8192,
         doc: "the dimensionality of intermediate layers"
       ],
       num_blocks: [
-        default: 32,
+        default: 24,
         doc: "the number of Transformer blocks in the model"
       ],
       num_attention_heads: [
         default: 32,
         doc: "the number of attention heads for each attention layer in the model"
       ],
+      num_key_value_heads: [
+        default: nil,
+        doc: """
+        the number of key-value heads used to implement Grouped Query Attention. If
+        this value is set to the same as the number of attention heads, it will use
+        regular MHA. If it's set to 1, it will use MQA, otherwise it uses Grouped Query
+        Attention
+        """
+      ],
       activation: [
-        default: :silu,
+        default: :gelu_approx_tanh,
         doc: "the activation function"
       ],
       rotary_embedding_percentage: [
-        default: 0.25,
-        doc: "percentage of hidden dimensions to allocate to rotary embeddings"
+        default: 0.5,
+        doc: "percentage of the query and keys that will have rotary embedding"
       ],
       rotary_embedding_base: [
         default: 10_000,
         doc: "base for computing rotary embedding frequency"
-      ],
-      classifier_dropout_rate: [
-        default: 0.1,
-        doc: "the dropout rate for the classification head"
       ],
       layer_norm_epsilon: [
         default: 1.0e-12,
@@ -50,32 +63,26 @@ defmodule Bumblebee.Text.GptNeoX do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
-      ],
-      use_parallel_transformer_block: [
-        default: true,
-        doc:
-          "whether to use the parallel formulation of the Transformer block, where attention and FFN is computed independently"
       ]
     ] ++
-      Shared.common_options([:num_labels, :id_to_label]) ++
-      Shared.token_options(pad_token_id: nil)
+      Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
-  GPT-NeoX model family.
+  Phi model family.
 
   ## Architectures
 
-    * `:base` - plain GPT-NeoX without any head on top
+    * `:base` - plain Phi without any head on top
 
-    * `:for_causal_language_modeling` - GPT-NeoX with a language modeling
+    * `:for_causal_language_modeling` - Phi with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - GPT-NeoX with a sequence
+    * `:for_sequence_classification` - Phi with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
-    * `:for_token_classification` - GPT-NeoX with a token classification
+    * `:for_token_classification` - Phi with a token classification
       head. The head returns logits for each token in the original
       sequence
 
@@ -203,7 +210,8 @@ defmodule Bumblebee.Text.GptNeoX do
     logits =
       Axon.dense(outputs.hidden_state, spec.num_labels,
         kernel_initializer: kernel_initializer(spec),
-        name: "sequence_classification_head.output"
+        name: "sequence_classification_head.output",
+        use_bias: false
       )
 
     pooled_logits =
@@ -235,13 +243,12 @@ defmodule Bumblebee.Text.GptNeoX do
 
   def model(%__MODULE__{architecture: :for_token_classification} = spec) do
     inputs = inputs(spec)
-
     outputs = core(inputs, spec)
 
     logits =
       outputs.hidden_state
       |> Axon.dropout(
-        rate: spec.classifier_dropout_rate,
+        rate: 0.1,
         name: "token_classification_head.dropout"
       )
       |> Axon.dense(spec.num_labels,
@@ -252,8 +259,7 @@ defmodule Bumblebee.Text.GptNeoX do
     Layers.output(%{
       logits: logits,
       hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions,
-      cache: outputs.cache
+      attentions: outputs.attentions
     })
   end
 
@@ -315,6 +321,8 @@ defmodule Bumblebee.Text.GptNeoX do
   defp embedder(input_ids, input_embeddings, spec, opts) do
     name = opts[:name]
 
+    # TODO: Axon needs a way to specify ignoring pad tokens
+    # in gradient
     Layers.default input_embeddings do
       Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
@@ -340,20 +348,23 @@ defmodule Bumblebee.Text.GptNeoX do
       cache: cache,
       num_blocks: spec.num_blocks,
       num_attention_heads: spec.num_attention_heads,
+      num_key_value_heads: spec.num_key_value_heads,
       hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
       layer_norm: [
         epsilon: spec.layer_norm_epsilon
       ],
       ffn: [
-        intermediate_size: spec.intermediate_size
+        intermediate_size: spec.intermediate_size,
+        activation: spec.activation
       ],
-      block_type: if(spec.use_parallel_transformer_block, do: :parallel, else: :norm_first),
+      block_type: &block_impl/3,
       causal: true,
       rotary_embedding: [
         position_ids: position_ids,
-        percentage: spec.rotary_embedding_percentage,
-        base: spec.rotary_embedding_base
+        max_positions: spec.max_positions,
+        base: spec.rotary_embedding_base,
+        percentage: spec.rotary_embedding_percentage
       ],
       query_use_bias: true,
       key_use_bias: true,
@@ -363,13 +374,34 @@ defmodule Bumblebee.Text.GptNeoX do
     )
   end
 
+  # :parallel block with attention norm applied earlier and without ffn norm
+  defp block_impl(hidden_state, steps, _name) do
+    shortcut = hidden_state
+
+    hidden_state = steps.self_attention_norm.(hidden_state)
+
+    {attention_hidden_state, attention_info} = steps.self_attention.(hidden_state)
+
+    {_hidden_state, cross_attention_info} =
+      steps.cross_attention_maybe.(hidden_state, fn _hidden_state ->
+        raise "cross attention not supported"
+      end)
+
+    ffn_hidden_state = steps.ffn.(hidden_state)
+
+    hidden_state = Axon.add([shortcut, attention_hidden_state, ffn_hidden_state])
+
+    {hidden_state, attention_info, cross_attention_info}
+  end
+
   defp language_modeling_head(hidden_state, spec, opts) do
     name = opts[:name]
 
     # TODO: Tie lm-head to word embedding as a spec option
     Layers.dense_transposed(hidden_state, spec.vocab_size,
       kernel_initializer: kernel_initializer(spec),
-      name: join(name, "output")
+      name: join(name, "output"),
+      use_bias: true
     )
   end
 
@@ -384,18 +416,17 @@ defmodule Bumblebee.Text.GptNeoX do
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
-          max_positions: {"max_positions", number()},
+          max_positions: {"max_position_embeddings", number()},
           hidden_size: {"hidden_size", number()},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
+          num_key_value_heads: {"num_key_value_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
-          rotary_embedding_percentage: {"rotary_pct", number()},
-          rotary_embedding_base: {"rotary_emb_base", number()},
-          classifier_dropout_rate: {"classifier_dropout", number()},
-          layer_norm_epsilon: {"layer_norm_eps", number()},
-          initializer_scale: {"init_std", number()},
-          use_parallel_transformer_block: {"use_parallel_residual", boolean()}
+          rotary_embedding_base: {"rope_theta", number()},
+          rotary_embedding_percentage: {"partial_rotary_factor", number()},
+          initializer_scale: {"initializer_range", number()},
+          layer_norm_epsilon: {"layer_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -403,36 +434,20 @@ defmodule Bumblebee.Text.GptNeoX do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(spec) do
+    def params_mapping(_spec) do
       %{
-        "embedder.token_embedding" => "gpt_neox.embed_in",
-        "decoder.blocks.{n}.self_attention.query" =>
-          Shared.sliced_dense_params_source(
-            "gpt_neox.layers.{n}.attention.query_key_value",
-            {spec.num_attention_heads, [1, 1, 1], :auto},
-            0
-          ),
-        "decoder.blocks.{n}.self_attention.key" =>
-          Shared.sliced_dense_params_source(
-            "gpt_neox.layers.{n}.attention.query_key_value",
-            {spec.num_attention_heads, [1, 1, 1], :auto},
-            1
-          ),
-        "decoder.blocks.{n}.self_attention.value" =>
-          Shared.sliced_dense_params_source(
-            "gpt_neox.layers.{n}.attention.query_key_value",
-            {spec.num_attention_heads, [1, 1, 1], :auto},
-            2
-          ),
-        "decoder.blocks.{n}.self_attention.output" => "gpt_neox.layers.{n}.attention.dense",
-        "decoder.blocks.{n}.self_attention_norm" => "gpt_neox.layers.{n}.input_layernorm",
+        "embedder.token_embedding" => "model.embed_tokens",
+        "decoder.blocks.{n}.self_attention.query" => "model.layers.{n}.self_attn.q_proj",
+        "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
+        "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
+        "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.dense",
+        "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
         "decoder.blocks.{n}.self_attention.rotary_embedding" =>
-          "gpt_neox.layers.{n}.self_attn.rotary_emb",
-        "decoder.blocks.{n}.ffn.intermediate" => "gpt_neox.layers.{n}.mlp.dense_h_to_4h",
-        "decoder.blocks.{n}.ffn.output" => "gpt_neox.layers.{n}.mlp.dense_4h_to_h",
-        "decoder.blocks.{n}.output_norm" => "gpt_neox.layers.{n}.post_attention_layernorm",
-        "output_norm" => "gpt_neox.final_layer_norm",
-        "language_modeling_head.output" => "embed_out",
+          "model.layers.{n}.self_attn.rotary_emb",
+        "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.fc1",
+        "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.fc2",
+        "output_norm" => "model.final_layernorm",
+        "language_modeling_head.output" => "lm_head",
         "sequence_classification_head.output" => "score",
         "token_classification_head.output" => "classifier"
       }

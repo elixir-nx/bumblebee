@@ -21,14 +21,6 @@ defmodule Bumblebee.Layers.Transformer do
       is configured, this option controls whether the bias from the
       first block is used for all other blocks. Defaults to `false`
 
-    * `:output_hidden_states` - when `true`, the output includes a
-      tuple with intermediate hidden states from each transformer
-      block. Defaults to `false`
-
-    * `:output_attentions` - when `true`, the output includes a tuple
-      with attention weights from each transformer block. Defaults
-      to `false`
-
     * `:name` - the prefix for layer names
 
   For all other options (including required options) see `block/2`.
@@ -56,6 +48,7 @@ defmodule Bumblebee.Layers.Transformer do
       :output_use_bias,
       :layer_norm,
       :block_type,
+      :attention_window_size,
       :scale_attention_weights,
       :rotary_embedding
     ]
@@ -74,16 +67,12 @@ defmodule Bumblebee.Layers.Transformer do
             cross_hidden_state: nil,
             cross_attention_mask: Layers.none(),
             cross_attention_head_mask: Layers.none(),
-            cache: Layers.none(),
-            output_hidden_states: false,
-            output_attentions: false
+            cache: Layers.none()
           ]
       )
 
     name = opts[:name]
     num_blocks = opts[:num_blocks]
-    output_hidden_states = opts[:output_hidden_states]
-    output_attentions = opts[:output_attentions]
 
     attention_mask = opts[:attention_mask]
     attention_head_mask = opts[:attention_head_mask]
@@ -99,9 +88,9 @@ defmodule Bumblebee.Layers.Transformer do
 
     state = %{
       hidden_state: hidden_state,
-      hidden_states: Layers.maybe_container({hidden_state}, output_hidden_states),
-      attentions: Layers.maybe_container({}, output_attentions),
-      cross_attentions: Layers.maybe_container({}, output_attentions),
+      hidden_states: Axon.container({hidden_state}),
+      attentions: Axon.container({}),
+      cross_attentions: Axon.container({}),
       cache: cache,
       attention_relative_bias: Layers.none()
     }
@@ -265,6 +254,13 @@ defmodule Bumblebee.Layers.Transformer do
         * `:parallel` - block with attention and FFN independently (in parallel).
           This type doesn't support cross-attention
 
+      Alternatively a custom 3-arity function may be given. The function
+      receives the input hidden state, a map with block steps and a
+      name to prefix any additional layers.
+
+    * `:attention_window_size` - when set, enables sliding window attention.
+      Should be a `{left, right}` tuple with window size on each side
+
     * `:scale_attention_weights` - whether to scale query in the traditional style of
       multi-headed attention. Defaults to `true`
 
@@ -277,11 +273,11 @@ defmodule Bumblebee.Layers.Transformer do
 
         * `:max_positions` - the maximum number of distinct positions
 
-    * `:rotary_embedding_base` - base for computing rotary embedding frequency. Defaults
-      to `10_000`.
+        * `:base` - base for computing rotary embedding frequency. Defaults
+        to `10_000`.
 
-    * `:rotary_percentage` - percentage of hidden dimensions to allocate to rotary embeddings.
-      Defaults to `1.0`.
+        * `:percentage` - percentage of hidden dimensions to allocate to rotary embeddings.
+        Defaults to `1.0`.
 
     * `:name` - the prefix for layer names
 
@@ -319,6 +315,7 @@ defmodule Bumblebee.Layers.Transformer do
         output_use_bias: true,
         block_type: :standard,
         layer_norm: [],
+        attention_window_size: nil,
         scale_attention_weights: true,
         rotary_embedding: nil
       ])
@@ -347,6 +344,7 @@ defmodule Bumblebee.Layers.Transformer do
     offset = opts[:offset]
     layer_norm = opts[:layer_norm]
     block_type = opts[:block_type]
+    attention_window_size = opts[:attention_window_size]
     scale_attention_weights = opts[:scale_attention_weights]
     rotary_embedding = opts[:rotary_embedding]
 
@@ -404,6 +402,7 @@ defmodule Bumblebee.Layers.Transformer do
           key_use_bias: key_use_bias,
           value_use_bias: value_use_bias,
           output_use_bias: output_use_bias,
+          attention_window_size: attention_window_size,
           scale_attention_weights: scale_attention_weights,
           rotary_embedding: rotary_embedding,
           name: join(name, "self_attention")
@@ -448,6 +447,7 @@ defmodule Bumblebee.Layers.Transformer do
           key_use_bias: key_use_bias,
           value_use_bias: value_use_bias,
           output_use_bias: output_use_bias,
+          attention_window_size: attention_window_size,
           scale_attention_weights: scale_attention_weights,
           rotary_embedding: rotary_embedding,
           name: join(name, "cross_attention")
@@ -469,17 +469,25 @@ defmodule Bumblebee.Layers.Transformer do
 
     ffn = &ffn_fun.(&1, join(name, "ffn"))
 
+    block_impl =
+      case block_type do
+        type when is_atom(type) -> &block_impl(type, &1, &2, &3)
+        fun when is_function(fun) -> fun
+      end
+
     {hidden_state, attention_info, cross_attention_info} =
-      block_impl(
-        block_type,
+      block_impl.(
         hidden_state,
-        self_attention_norm,
-        self_attention,
-        cross_attention_maybe,
-        cross_attention_norm,
-        cross_attention,
-        output_norm,
-        ffn
+        %{
+          self_attention_norm: self_attention_norm,
+          self_attention: self_attention,
+          cross_attention_maybe: cross_attention_maybe,
+          cross_attention_norm: cross_attention_norm,
+          cross_attention: cross_attention,
+          output_norm: output_norm,
+          ffn: ffn
+        },
+        name
       )
 
     {attention, self_attention_cache, attention_relative_bias} = attention_info
@@ -495,36 +503,26 @@ defmodule Bumblebee.Layers.Transformer do
     {hidden_state, attention, cross_attention, block_cache, attention_relative_bias}
   end
 
-  defp block_impl(
-         :standard,
-         hidden_state,
-         self_attention_norm,
-         self_attention,
-         cross_attention_maybe,
-         cross_attention_norm,
-         cross_attention,
-         output_norm,
-         ffn
-       ) do
+  defp block_impl(:standard, hidden_state, steps, _name) do
     shortcut = hidden_state
 
-    {hidden_state, attention_info} = self_attention.(hidden_state)
+    {hidden_state, attention_info} = steps.self_attention.(hidden_state)
 
     hidden_state =
       hidden_state
       |> Axon.add(shortcut)
-      |> self_attention_norm.()
+      |> steps.self_attention_norm.()
 
     {hidden_state, cross_attention_info} =
-      cross_attention_maybe.(hidden_state, fn hidden_state ->
+      steps.cross_attention_maybe.(hidden_state, fn hidden_state ->
         shortcut = hidden_state
 
-        {hidden_state, cross_attention_info} = cross_attention.(hidden_state)
+        {hidden_state, cross_attention_info} = steps.cross_attention.(hidden_state)
 
         hidden_state =
           hidden_state
           |> Axon.add(shortcut)
-          |> cross_attention_norm.()
+          |> steps.cross_attention_norm.()
 
         {hidden_state, cross_attention_info}
       end)
@@ -533,41 +531,31 @@ defmodule Bumblebee.Layers.Transformer do
 
     hidden_state =
       hidden_state
-      |> ffn.()
+      |> steps.ffn.()
       |> Axon.add(shortcut)
-      |> output_norm.()
+      |> steps.output_norm.()
 
     {hidden_state, attention_info, cross_attention_info}
   end
 
-  defp block_impl(
-         :norm_first,
-         hidden_state,
-         self_attention_norm,
-         self_attention,
-         cross_attention_maybe,
-         cross_attention_norm,
-         cross_attention,
-         output_norm,
-         ffn
-       ) do
+  defp block_impl(:norm_first, hidden_state, steps, _name) do
     shortcut = hidden_state
 
     {hidden_state, attention_info} =
       hidden_state
-      |> self_attention_norm.()
-      |> self_attention.()
+      |> steps.self_attention_norm.()
+      |> steps.self_attention.()
 
     hidden_state = Axon.add(hidden_state, shortcut)
 
     {hidden_state, cross_attention_info} =
-      cross_attention_maybe.(hidden_state, fn hidden_state ->
+      steps.cross_attention_maybe.(hidden_state, fn hidden_state ->
         shortcut = hidden_state
 
         {hidden_state, cross_attention_info} =
           hidden_state
-          |> cross_attention_norm.()
-          |> cross_attention.()
+          |> steps.cross_attention_norm.()
+          |> steps.cross_attention.()
 
         hidden_state = Axon.add(hidden_state, shortcut)
 
@@ -578,40 +566,30 @@ defmodule Bumblebee.Layers.Transformer do
 
     hidden_state =
       hidden_state
-      |> output_norm.()
-      |> ffn.()
+      |> steps.output_norm.()
+      |> steps.ffn.()
       |> Axon.add(shortcut)
 
     {hidden_state, attention_info, cross_attention_info}
   end
 
-  defp block_impl(
-         :parallel,
-         hidden_state,
-         self_attention_norm,
-         self_attention,
-         cross_attention_maybe,
-         _cross_attention_norm,
-         _cross_attention,
-         output_norm,
-         ffn
-       ) do
+  defp block_impl(:parallel, hidden_state, steps, _name) do
     shortcut = hidden_state
 
     {attention_hidden_state, attention_info} =
       hidden_state
-      |> self_attention_norm.()
-      |> self_attention.()
+      |> steps.self_attention_norm.()
+      |> steps.self_attention.()
 
     {_hidden_state, cross_attention_info} =
-      cross_attention_maybe.(hidden_state, fn _hidden_state ->
+      steps.cross_attention_maybe.(hidden_state, fn _hidden_state ->
         raise "cross attention not supported"
       end)
 
     ffn_hidden_state =
       hidden_state
-      |> output_norm.()
-      |> ffn.()
+      |> steps.output_norm.()
+      |> steps.ffn.()
 
     hidden_state = Axon.add([shortcut, attention_hidden_state, ffn_hidden_state])
 
@@ -697,6 +675,12 @@ defmodule Bumblebee.Layers.Transformer do
     * `:output_use_bias` - whether to use bias in the output projection.
       Defaults to `true`
 
+    * `:attention_window_size` - when set, enables sliding window attention.
+      Should be a `{left, right}` tuple with window size on each side
+
+    * `:scale_attention_weights` - whether to scale query in the traditional style of
+      multi-headed attention. Defaults to `true`
+
     * `:rotary_embedding` - configuration of rotary embedding. If set,
       will apply rotary position embedding with the given options. Valid
       options are:
@@ -728,6 +712,7 @@ defmodule Bumblebee.Layers.Transformer do
         attention_cache: Layers.none(),
         offset: Layers.none(),
         causal: false,
+        attention_window_size: nil,
         scale_attention_weights: true,
         kernel_initializer: :glorot_uniform,
         dropout_rate: 0.0,
@@ -750,6 +735,7 @@ defmodule Bumblebee.Layers.Transformer do
     hidden_size = opts[:hidden_size]
     kernel_initializer = opts[:kernel_initializer]
     causal = opts[:causal]
+    attention_window_size = opts[:attention_window_size]
     scale_attention_weights = opts[:scale_attention_weights]
     dropout_rate = opts[:dropout_rate]
     rotary_embedding = opts[:rotary_embedding]
@@ -876,6 +862,7 @@ defmodule Bumblebee.Layers.Transformer do
         offset,
         scale: scale_attention_weights,
         causal: causal,
+        window_size: attention_window_size,
         dropout_rate: dropout_rate
       )
 

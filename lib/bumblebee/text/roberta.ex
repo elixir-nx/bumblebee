@@ -69,13 +69,8 @@ defmodule Bumblebee.Text.Roberta do
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
     ] ++
-      Shared.common_options([
-        :use_cross_attention,
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ]) ++ Shared.token_options(pad_token_id: 1)
+      Shared.common_options([:use_cross_attention, :num_labels, :id_to_label]) ++
+      Shared.token_options(pad_token_id: 1)
 
   @moduledoc """
   RoBERTa model family.
@@ -143,6 +138,10 @@ defmodule Bumblebee.Text.Roberta do
   The `:for_causal_language_modeling` model is a decoder and accepts
   the following additional inputs: `"encoder_hidden_state"`,
   `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache"`.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -492,8 +491,6 @@ defmodule Bumblebee.Text.Roberta do
           intermediate_size: spec.intermediate_size,
           activation: spec.activation
         ],
-        output_hidden_states: spec.output_hidden_states,
-        output_attentions: spec.output_attentions,
         name: join(name, "blocks")
       ] ++
         if(cross_attention?,

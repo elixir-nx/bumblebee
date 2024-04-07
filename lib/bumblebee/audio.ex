@@ -3,32 +3,6 @@ defmodule Bumblebee.Audio do
   High-level tasks related to audio processing.
   """
 
-  # TODO: remove in v0.5
-  @deprecated "Use Bumblebee.Audio.speech_to_text_whisper/5 instead."
-  def speech_to_text(model_info, featurizer, tokenizer, generation_config, opts \\ []) do
-    serving = speech_to_text_whisper(model_info, featurizer, tokenizer, generation_config, opts)
-    client_postprocessing = serving.client_postprocessing
-
-    Nx.Serving.client_postprocessing(serving, fn output_pair, info ->
-      output = client_postprocessing.(output_pair, info)
-
-      if is_list(output) do
-        Enum.map(output, &speech_to_text_convert_output/1)
-      else
-        speech_to_text_convert_output(output)
-      end
-    end)
-  end
-
-  defp speech_to_text_convert_output(%{chunks: chunks}) do
-    text =
-      chunks
-      |> Enum.map_join(& &1.text)
-      |> String.trim()
-
-    %{results: [%{text: text}]}
-  end
-
   @typedoc """
   A term representing audio.
 
@@ -36,11 +10,18 @@ defmodule Bumblebee.Audio do
 
     * a 1-dimensional `Nx.Tensor` with audio samples
 
+    * an enumerable of 1-dimensional `Nx.Tensor`s, represending a
+      continuous stream of input. The tensors are not required to
+      have the same number of samples, the serving takes care of
+      accumulating and chunking the input as needed. This input is
+      only supported when chunking is enabled with the `:chunk_num_seconds`
+      option
+
     * `{:file, path}` with path to an audio file (note that this
       requires `ffmpeg` installed)
 
   """
-  @type audio :: Nx.t() | {:file, String.t()}
+  @type audio :: Nx.t() | Enumerable.t(Nx.t()) | {:file, String.t()}
 
   @type speech_to_text_whisper_input ::
           audio() | %{:audio => audio(), optional(:seed) => integer() | nil}
@@ -57,7 +38,11 @@ defmodule Bumblebee.Audio do
   Builds serving for speech-to-text generation with Whisper models.
 
   The serving accepts `t:speech_to_text_whisper_input/0` and returns
-  `t:speech_to_text_whisper_output/0`. A list of inputs is also supported.
+  `t:speech_to_text_whisper_output/0`.
+
+  This serving always accepts a single input. A list of tensors is
+  interpreted as continuous chunks. To transcribe multiple inputs
+  concurrently use `Nx.Serving.batched_run/2`.
 
   ## Options
 
@@ -73,6 +58,15 @@ defmodule Bumblebee.Audio do
       the results at the chunk edges. Note that the context is included
       in the total `:chunk_num_seconds`. Defaults to 1/6 of
       `:chunk_num_seconds`
+
+    * `:client_batch_size` - the number of input chunks the client
+      should gather and run at once. When streaming an input that is
+      already available (such as a file), you can use any value without
+      introducing a delay. A good default is to use the same value as
+      `opts[:compile][:batch_size]`. When streaming an input that is
+      being produced live, you may want to process chunks as soon as
+      they are available, in which case set this option to `1`. Defaults
+      to `opts[:compile][:batch_size]` if present, otherwise to `1`
 
     * `:language` - the language of the speech, when known upfront.
       Should be given as ISO alpha-2 code as string. By default no

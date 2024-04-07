@@ -125,31 +125,4 @@ defmodule Bumblebee.Text.MbartTest do
       ])
     )
   end
-
-  test "generation with :for_conditional_generation" do
-    assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model(
-               {:hf, "hf-internal-testing/tiny-random-MBartForConditionalGeneration"}
-             )
-
-    {:ok, generation_config} =
-      Bumblebee.load_generation_config(
-        {:hf, "hf-internal-testing/tiny-random-MBartForConditionalGeneration"}
-      )
-
-    assert %Bumblebee.Text.Mbart{architecture: :for_conditional_generation} = spec
-
-    inputs = %{
-      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
-      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]]),
-      "seed" => Nx.tensor([0])
-    }
-
-    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 3)
-
-    generate = Bumblebee.Text.Generation.build_generate(model, spec, generation_config)
-    %{token_ids: token_ids} = generate.(params, inputs)
-
-    assert_equal(token_ids, Nx.tensor([[230_521, 20386, 20386]]))
-  end
 end

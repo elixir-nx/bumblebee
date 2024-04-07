@@ -1,7 +1,7 @@
 defmodule Bumblebee.MixProject do
   use Mix.Project
 
-  @version "0.4.2"
+  @version "0.5.3"
   @description "Pre-trained and transformer Neural Network models in Axon"
 
   def project do
@@ -30,18 +30,18 @@ defmodule Bumblebee.MixProject do
 
   defp deps do
     [
-      # {:axon, "~> 0.6.0"},
+      # {:axon, "~> 0.6.1"},
       {:axon, github: "elixir-nx/axon", override: true},
       {:tokenizers, "~> 0.4"},
-      # {:nx, "~> 0.6.2"},
-      # {:exla, ">= 0.0.0", only: [:dev, :test]},
-      # {:torchx, ">= 0.0.0", only: [:dev, :test]},
-      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-      {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
-      {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
+      {:nx, "~> 0.7.0"},
+      {:exla, ">= 0.0.0", only: [:dev, :test]},
+      {:torchx, ">= 0.0.0", only: [:dev, :test]},
+      # {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
+      # {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
+      # {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
       {:nx_image, "~> 0.1.0"},
       {:unpickler, "~> 0.1.0"},
-      {:safetensors, "~> 0.1.2"},
+      {:safetensors, "~> 0.1.3"},
       {:castore, "~> 0.1 or ~> 1.0"},
       {:jason, "~> 1.4.0"},
       {:unzip, "~> 0.10.0"},
@@ -61,7 +61,8 @@ defmodule Bumblebee.MixProject do
       extras: [
         "notebooks/examples.livemd",
         "notebooks/stable_diffusion.livemd",
-        "notebooks/llama.livemd",
+        "notebooks/llms.livemd",
+        "notebooks/llms_rag.livemd",
         "notebooks/fine_tuning.livemd"
       ],
       extra_section: "GUIDES",
@@ -87,24 +88,28 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.BlipText,
           Bumblebee.Text.ClipText,
           Bumblebee.Text.Distilbert,
+          Bumblebee.Text.Gemma,
           Bumblebee.Text.Gpt2,
           Bumblebee.Text.GptBigCode,
           Bumblebee.Text.GptNeoX,
           Bumblebee.Text.Llama,
           Bumblebee.Text.Mbart,
           Bumblebee.Text.Mistral,
+          Bumblebee.Text.Phi,
           Bumblebee.Text.Roberta,
           Bumblebee.Text.T5,
           Bumblebee.Vision.BlipVision,
           Bumblebee.Vision.ClipVision,
           Bumblebee.Vision.ConvNext,
           Bumblebee.Vision.Deit,
+          Bumblebee.Vision.DinoV2,
           Bumblebee.Vision.ResNet,
           Bumblebee.Vision.Vit
         ],
         Preprocessors: [
           Bumblebee.Audio.WhisperFeaturizer,
           Bumblebee.Text.PreTrainedTokenizer,
+          Bumblebee.Vision.BitFeaturizer,
           Bumblebee.Vision.BlipFeaturizer,
           Bumblebee.Vision.ClipFeaturizer,
           Bumblebee.Vision.ConvNextFeaturizer,

@@ -43,6 +43,10 @@ defmodule Bumblebee.Text.Mistral do
         Attention
         """
       ],
+      attention_window_size: [
+        default: 4096,
+        doc: "window size for both sides of the sliding attention window"
+      ],
       activation: [
         default: :silu,
         doc: "the activation function"
@@ -61,12 +65,7 @@ defmodule Bumblebee.Text.Mistral do
         doc: "base for computing rotary embedding frequency"
       ]
     ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ]) ++ Shared.token_options(pad_token_id: 0)
+      Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
   Mistral model family.
@@ -119,6 +118,10 @@ defmodule Bumblebee.Text.Mistral do
       taken from the cache, rather than recomputed on every decoding
       pass. The cache should be treated as opaque and initialized with
       `Bumblebee.Text.Generation.init_cache/4`.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -329,6 +332,8 @@ defmodule Bumblebee.Text.Mistral do
         ),
       block_type: :norm_first,
       causal: true,
+      attention_window_size:
+        spec.attention_window_size && {spec.attention_window_size, spec.attention_window_size},
       rotary_embedding: [
         position_ids: position_ids,
         max_positions: spec.max_positions,
@@ -338,8 +343,6 @@ defmodule Bumblebee.Text.Mistral do
       key_use_bias: false,
       value_use_bias: false,
       output_use_bias: false,
-      output_hidden_states: spec.output_hidden_states,
-      output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
   end
@@ -356,7 +359,7 @@ defmodule Bumblebee.Text.Mistral do
 
     gate = Axon.dense(hidden_state, intermediate_size, name: join(name, "gate"), use_bias: false)
 
-    hidden_state = Axon.multiply(intermediate, Axon.activation(gate, activation))
+    hidden_state = Axon.multiply(intermediate, Layers.activation(gate, activation))
 
     Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
   end
@@ -387,6 +390,7 @@ defmodule Bumblebee.Text.Mistral do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
+          attention_window_size: {"sliding_window", optional(number())},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
           rotary_embedding_base: {"rope_theta", number()},

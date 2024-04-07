@@ -7,7 +7,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
     opts = Keyword.validate!(opts, [:suppressed_token_ids])
 
     indices = opts[:suppressed_token_ids] |> Nx.tensor() |> Nx.new_axis(-1)
-    values = Nx.broadcast(Nx.Constants.neg_infinity(), {Nx.size(indices)})
+    values = Nx.broadcast(Nx.Constants.neg_infinity(Nx.type(logits)), {Nx.size(indices)})
     Nx.indexed_put(logits, indices, values)
   end
 
@@ -97,7 +97,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
           indices = Nx.new_axis(token_id, -1)
 
           match? = Nx.all(ngram_but_one == last_ngram_but_one)
-          updates = Nx.select(match?, Nx.Constants.neg_infinity(), 0)
+          updates = Nx.select(match?, Nx.Constants.neg_infinity(Nx.type(logits)), 0)
           logits = Nx.indexed_add(logits, indices, updates)
 
           {i + 1, last_ngram_but_one, sequence, length, logits}
@@ -108,13 +108,17 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
   end
 
   deftransformp force_token_id(logits, token_id) do
-    Nx.Constants.neg_infinity()
-    |> Nx.broadcast(logits)
-    |> Nx.put_slice([token_id], Nx.tensor([0]))
+    logits
+    |> Nx.fill(Nx.Constants.neg_infinity(), type: Nx.type(logits))
+    |> Nx.put_slice([token_id], Nx.tensor([0], type: Nx.type(logits)))
   end
 
   deftransformp ignore_token_id(logits, token_id) do
-    Nx.put_slice(logits, [token_id], Nx.broadcast(Nx.Constants.neg_infinity(), {1}))
+    Nx.put_slice(
+      logits,
+      [token_id],
+      Nx.broadcast(Nx.Constants.neg_infinity(Nx.type(logits)), {1})
+    )
   end
 
   defn temperature_processor(logits, _context, opts \\ []) do
@@ -132,7 +136,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
 
     {top_k_logits, _} = Nx.top_k(logits, k: top_k)
     kth_logit = top_k_logits[-1]
-    Nx.select(logits < kth_logit, Nx.Constants.neg_infinity(), logits)
+    Nx.select(logits < kth_logit, Nx.Constants.neg_infinity(Nx.type(logits)), logits)
   end
 
   defn top_p_processor(logits, _context, opts \\ []) do
@@ -152,12 +156,12 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
     # Arrange the mask back into the original logits order
     ignore_mask =
       Nx.indexed_put(
-        Nx.broadcast(0.0, Nx.shape(sorted_idx)),
+        Nx.fill(ordered_ignore_mask, 0),
         Nx.new_axis(sorted_idx, -1),
         Nx.flatten(ordered_ignore_mask)
       )
 
-    Nx.select(ignore_mask, Nx.Constants.neg_infinity(), logits)
+    Nx.select(ignore_mask, Nx.Constants.neg_infinity(Nx.type(logits)), logits)
   end
 
   defn whisper_timestamp_processor(logits, context, opts \\ []) do
@@ -224,7 +228,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
         )
       )
 
-    Nx.select(ignore_mask, Nx.Constants.neg_infinity(), logits)
+    Nx.select(ignore_mask, Nx.Constants.neg_infinity(Nx.type(logits)), logits)
   end
 
   defnp maybe_force_timestamp(logits, timestamp_begin_id) do
@@ -242,7 +246,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
     force_timestamp_mask = timestamp_log_probability > max_token_log_probability
     tokens_mask = Nx.iota(Nx.shape(logits)) < timestamp_begin_id
     ignore_mask = force_timestamp_mask and tokens_mask
-    Nx.select(ignore_mask, Nx.Constants.neg_infinity(), logits)
+    Nx.select(ignore_mask, Nx.Constants.neg_infinity(Nx.type(logits)), logits)
   end
 
   deftransformp begin_idx(forced_token_ids) do

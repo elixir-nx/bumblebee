@@ -65,6 +65,22 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Generates documentation string for the given global layer options.
+  """
+  @spec global_layer_options_doc(list(atom())) :: String.t()
+  def global_layer_options_doc(names) do
+    docs = [
+      output_hidden_states: "when `true`, the model output includes all hidden states",
+      output_attentions: "when `true`, the model output includes all attention weights"
+    ]
+
+    Enum.map_join(names, "\n\n", fn name ->
+      doc = Keyword.fetch!(docs, name)
+      "  * `#{inspect(name)}` - #{doc}"
+    end)
+  end
+
+  @doc """
   Returns option defaults form the options specification.
 
   This function is useful in combination with `defstruct`.
@@ -201,7 +217,7 @@ defmodule Bumblebee.Shared do
   def validate_input_for_stream!(input) do
     if is_list(input) do
       raise ArgumentError,
-            "serving only accepts singular input when stream is enabled," <>
+            "this serving only accepts singular input when stream is enabled," <>
               " call the serving with each input in the batch separately"
     end
 

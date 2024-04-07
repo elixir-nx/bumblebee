@@ -57,14 +57,7 @@ defmodule Bumblebee.Text.Distilbert do
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
-    ] ++
-      Shared.common_options([
-        :use_cross_attention,
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ])
+    ] ++ Shared.common_options([:use_cross_attention, :num_labels, :id_to_label])
 
   @moduledoc """
   DistilBERT model family.
@@ -122,6 +115,10 @@ defmodule Bumblebee.Text.Distilbert do
 
   The `:for_multiple_choice` model accepts groups of sequences, so the
   expected sequence shape is `{batch_size, num_choices, sequence_length}`.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -387,8 +384,6 @@ defmodule Bumblebee.Text.Distilbert do
         intermediate_size: spec.intermediate_size,
         activation: spec.activation
       ],
-      output_hidden_states: spec.output_hidden_states,
-      output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
   end

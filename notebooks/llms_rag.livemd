@@ -1,0 +1,360 @@
+# LLMs and RAG
+
+```elixir
+Mix.install([
+  {:bumblebee, "~> 0.5.3"},
+  {:nx, "~> 0.7.0"},
+  {:exla, "~> 0.7.0"},
+  {:kino, "~> 0.11.0"},
+  {:hnswlib, "~> 0.1.5"},
+  {:req, "~> 0.4.0"}
+])
+
+Nx.global_default_backend(EXLA.Backend)
+```
+
+## Introduction
+
+In this notebook we go through an example of in-memory Retrieval Augmented Generation (RAG).
+
+On a high-level, we want to use a text document as the source of knowledge. When the user asks a question, we want to find relevant snippets from the essay and pass it alongside the question to the LLM. This way the LLM can provide a more accurate answer, based on the provided information.
+
+## Knowledge
+
+The first step is to download the text document, in this case we use an essay written by Paul Graham.
+
+```elixir
+%{body: text} =
+  Req.get!(
+    "https://raw.githubusercontent.com/run-llama/llama_index/main/docs/examples/data/paul_graham/paul_graham_essay.txt"
+  )
+
+IO.puts("Document length: #{String.length(text)}")
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+Document length: 75014
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
+## Generating embeddings
+
+There are many ways we could partition and retrieve snippets from a large text document. In this example we will use embedding-based lookup. That is, we will split the text into smaller chunks, compute an embedding (the chunk meaning compressed into a vector) and create an in-memory index for efficient lookup. In real world problems, you may want to explore other retrieval methods, such as reranking or BM25.
+
+<!-- livebook:{"break_markdown":true} -->
+
+First, let's split the text into chunks, 1024 characters each.
+
+```elixir
+chunks =
+  text
+  |> String.codepoints()
+  |> Enum.chunk_every(1024)
+  |> Enum.map(&Enum.join/1)
+
+length(chunks)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+74
+```
+
+To generate our embeddings we will use the [gte-small](https://huggingface.co/thenlper/gte-small) model. Let's download it and start a serving.
+
+```elixir
+repo = {:hf, "thenlper/gte-small"}
+
+{:ok, model_info} = Bumblebee.load_model(repo)
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+
+:ok
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+
+10:45:24.653 [info] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero. See more at https://github.com/torvalds/linux/blob/v6.0/Documentation/ABI/testing/sysfs-bus-pci#L344-L355
+
+10:45:24.653 [info] XLA service 0x7fe2640185e0 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+
+10:45:24.653 [info]   StreamExecutor device (0): NVIDIA A100-PCIE-40GB, Compute Capability 8.0
+
+10:45:24.653 [info] Using BFC allocator.
+
+10:45:24.654 [info] XLA backend allocating 38068951449 bytes on device 0 for BFCAllocator.
+
+10:45:25.724 [info] Loaded cuDNN version 8900
+
+10:45:25.741 [info] Using nvlink for parallel linking
+
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
+```elixir
+serving =
+  Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer,
+    compile: [batch_size: 64, sequence_length: 512],
+    defn_options: [compiler: EXLA],
+    output_attribute: :hidden_state,
+    output_pool: :mean_pooling
+  )
+
+Kino.start_child({Nx.Serving, serving: serving, name: GteServing})
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+
+10:45:40.784 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_5', 416 bytes spill stores, 380 bytes spill loads
+
+
+10:45:40.941 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_4', 16 bytes spill stores, 8 bytes spill loads
+
+
+10:45:41.043 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_5', 216 bytes spill stores, 216 bytes spill loads
+
+
+10:45:41.911 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_4', 116 bytes spill stores, 116 bytes spill loads
+
+
+10:45:42.297 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot', 224 bytes spill stores, 224 bytes spill loads
+
+
+10:45:43.685 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot', 116 bytes spill stores, 116 bytes spill loads
+
+
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok, #PID<0.337.0>}
+```
+
+We are ready to generate embeddings for the chunks. We can pass the whole list to `Nx.Serving.batched_run`, it is going to split them into batches for us automatically!
+
+```elixir
+results = Nx.Serving.batched_run(GteServing, chunks)
+chunk_embeddings = for result <- results, do: result.embedding
+
+List.first(chunk_embeddings)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+#Nx.Tensor<
+  f32[384]
+  [-0.5916804075241089, -0.13268965482711792, 0.36229825019836426, -0.556615948677063, 0.01819833740592003, -0.024938391521573067, 0.04474494233727455, 0.47490546107292175, -0.05340703949332237, -0.4221706986427307, 0.28060096502304077, 0.17608247697353363, 0.4058661460876465, -0.18497221171855927, -0.03590576723217964, 0.08227517455816269, 0.01424853503704071, 3.000508586410433e-4, -0.4355849027633667, -0.031500332057476044, 0.09329124540090561, -0.3475785255432129, -0.32122331857681274, -0.6944850087165833, 0.37913432717323303, 0.6656467318534851, -0.13363417983055115, -0.15357448160648346, -0.49233582615852356, -1.609808325767517, -0.1069299727678299, -0.6130001544952393, 0.5398191809654236, -0.1528831273317337, 0.2520260810852051, -0.23963800072669983, 0.11689342558383942, 0.2304331660270691, -0.33046290278434753, 0.19069115817546844, 0.18440452218055725, 0.004146122839301825, -0.2470259666442871, -0.4341312348842621, -0.10821156948804855, -0.494146466255188, -0.364268034696579, -0.3443082273006439, 0.5371165871620178, -0.3544468879699707, ...]
+>
+```
+
+## Embeddings index and retrieval
+
+Having all the embeddings at hand, we will now create an index using [hnswlib](https://github.com/elixir-nx/hnswlib). With the index, we will be able to quickly retrieve embeddings matching a query. The hnswlib library uses Approximate Nearest Neighbor (ANN) search underneath.
+
+```elixir
+{:ok, index} = HNSWLib.Index.new(:cosine, 384, 1_000_000)
+
+for embedding <- chunk_embeddings do
+  HNSWLib.Index.add_items(index, embedding)
+end
+
+HNSWLib.Index.get_current_count(index)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok, 74}
+```
+
+Now, given a textual query, we first need to compute its embedding using the same embedding model. Once we have the embedding, we do a similarity lookup and get top 4 matching results.
+
+```elixir
+query = "What were the two main things the author worked on before college?"
+
+%{embedding: embedding} = Nx.Serving.batched_run(GteServing, query)
+
+{:ok, labels, dist} = HNSWLib.Index.knn_query(index, embedding, k: 4)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok,
+ #Nx.Tensor<
+   u64[1][4]
+   EXLA.Backend<cuda:0, 0.740345038.3226599448.172063>
+   [
+     [0, 10, 11, 54]
+   ]
+ >,
+ #Nx.Tensor<
+   f32[1][4]
+   EXLA.Backend<cuda:0, 0.740345038.3226599448.172065>
+   [
+     [0.11476433277130127, 0.14768105745315552, 0.15568876266479492, 0.15724539756774902]
+   ]
+ >}
+```
+
+The lookup conveniently returns indices, so we can get their corresponding chunks and join into a context text.
+
+```elixir
+# We can see some overlapping in our chunks
+context =
+  labels
+  |> Nx.to_flat_list()
+  |> Enum.sort()
+  |> Enum.map(fn idx -> "[...] " <> Enum.at(chunks, idx) <> " [...]" end)
+  |> Enum.join("\n\n")
+
+IO.puts(context)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[...]
+
+What I Worked On
+
+February 2021
+
+Before college the two main things I worked on, outside of school, were writing and programming. I didn't write essays. I wrote what beginning writers were supposed to write then, and probably still are: short stories. My stories were awful. They had hardly any plot, just characters with strong feelings, which I imagined made them deep.
+
+The first programs I tried writing were on the IBM 1401 that our school district used for what was then called "data processing." This was in 9th grade, so I was 13 or 14. The school district's 1401 happened to be in the basement of our junior high school, and my friend Rich Draves and I got permission to use it. It was like a mini Bond villain's lair down there, with all these alien-looking machines — CPU, disk drives, printer, card reader — sitting up on a raised floor under bright fluorescent lights.
+
+The language we used was an early version of Fortran. You had to type programs on punch cards, then stack them in the card reader and press [...]
+
+[...] g art classes at Harvard. Grad students could take classes in any department, and my advisor, Tom Cheatham, was very easy going. If he even knew about the strange classes I was taking, he never said anything.
+
+So now I was in a PhD program in computer science, yet planning to be an artist, yet also genuinely in love with Lisp hacking and working away at On Lisp. In other words, like many a grad student, I was working energetically on multiple projects that were not my thesis.
+
+I didn't see a way out of this situation. I didn't want to drop out of grad school, but how else was I going to get out? I remember when my friend Robert Morris got kicked out of Cornell for writing the internet worm of 1988, I was envious that he'd found such a spectacular way to get out of grad school.
+
+Then one day in April 1990 a crack appeared in the wall. I ran into professor Cheatham and he asked if I was far enough along to graduate that June. I didn't have a word of my dissertation written, but in what must have been the quicke [...]
+
+[...] st bit of thinking in my life, I decided to take a shot at writing one in the 5 weeks or so that remained before the deadline, reusing parts of On Lisp where I could, and I was able to respond, with no perceptible delay "Yes, I think so. I'll give you something to read in a few days."
+
+I picked applications of continuations as the topic. In retrospect I should have written about macros and embedded languages. There's a whole world there that's barely been explored. But all I wanted was to get out of grad school, and my rapidly written dissertation sufficed, just barely.
+
+Meanwhile I was applying to art schools. I applied to two: RISD in the US, and the Accademia di Belli Arti in Florence, which, because it was the oldest art school, I imagined would be good. RISD accepted me, and I never heard back from the Accademia, so off to Providence I went.
+
+I'd applied for the BFA program at RISD, which meant in effect that I had to go to college again. This was not as strange as it sounds, because I was only 25, and a [...]
+
+[...] b. I was going to do three things: hack, write essays, and work on YC. As YC grew, and I grew more excited about it, it started to take up a lot more than a third of my attention. But for the first few years I was still able to work on other things.
+
+In the summer of 2006, Robert and I started working on a new version of Arc. This one was reasonably fast, because it was compiled into Scheme. To test this new Arc, I wrote Hacker News in it. It was originally meant to be a news aggregator for startup founders and was called Startup News, but after a few months I got tired of reading about nothing but startups. Plus it wasn't startup founders we wanted to reach. It was future startup founders. So I changed the name to Hacker News and the topic to whatever engaged one's intellectual curiosity.
+
+HN was no doubt good for YC, but it was also by far the biggest source of stress for me. If all I'd had to do was select and help founders, life would have been so easy. And that implies that HN was a mistake. Surely the b [...]
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
+## Generating an answer
+
+We have our context, the last thing left to do is have a LLM answer the question. In this example we will use the [Mistral](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2) model.
+
+For more details on running an LLM, see the [LLMs](./llms.livemd) notebook.
+
+```elixir
+repo = {:hf, "mistralai/Mistral-7B-Instruct-v0.2"}
+
+{:ok, model_info} = Bumblebee.load_model(repo, type: :bf16)
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+{:ok, generation_config} = Bumblebee.load_generation_config(repo)
+
+generation_config = Bumblebee.configure(generation_config, max_new_tokens: 100)
+
+:ok
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
+```elixir
+serving =
+  Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+    compile: [batch_size: 1, sequence_length: 6000],
+    defn_options: [compiler: EXLA]
+  )
+
+Kino.start_child({Nx.Serving, name: MistralServing, serving: serving})
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+
+10:46:17.065 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_516', 4 bytes spill stores, 4 bytes spill loads
+
+
+10:46:17.681 [info] ptxas warning : Registers are spilled to local memory in function 'triton_gemm_dot_516', 104 bytes spill stores, 152 bytes spill loads
+
+
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok, #PID<0.347.0>}
+```
+
+```elixir
+prompt =
+  """
+  Context information is below.
+  ---------------------
+  #{context}
+  ---------------------
+  Given the context information and not prior knowledge, answer the query.
+  Query: #{query}
+  Answer:
+  """
+
+results = Nx.Serving.batched_run(MistralServing, prompt)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+%{
+  results: [
+    %{
+      text: "1. Writing: The author wrote short stories before college, which he describes as having hardly any plot and strong feelings.\n2. Programming: The author started programming on an IBM 1401 computer in 9th grade, using an early version of Fortran to write programs.",
+      token_summary: %{input: 1099, output: 61, padding: 4901}
+    }
+  ]
+}
+```
+
+And here we have our answer!
+
+<!-- livebook:{"break_markdown":true} -->
+
+For additional context you can also visit the [Mistral docs](https://docs.mistral.ai/guides/basic-RAG) that go through a similar example.

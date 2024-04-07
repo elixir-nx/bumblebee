@@ -149,16 +149,14 @@ defmodule Bumblebee.Text.Generation do
 
     traverse_cache_fun = &traverse_cache(spec, &1, &2)
 
-    model =
-      if not spec.output_hidden_states and config.strategy.type == :contrastive_search do
-        spec
-        |> Bumblebee.configure(output_hidden_states: true)
-        |> Bumblebee.build_model()
+    global_layer_options =
+      if config.strategy.type == :contrastive_search do
+        [output_hidden_states: true]
       else
-        model
+        []
       end
 
-    {_init_fun, predict_fun} = Axon.build(model)
+    {_init_fun, predict_fun} = Axon.build(model, global_layer_options: global_layer_options)
 
     logits_processor_fun = get_logits_processor(min_length_fun, config, opts[:logits_processors])
 
@@ -249,7 +247,7 @@ defmodule Bumblebee.Text.Generation do
           })
 
         max_length = max_length_fun.(1)
-        inputs = prepare_decoder_inputs(inputs, "decoder_", spec, max_length)
+        inputs = prepare_decoder_inputs(inputs, "decoder_", spec, model, max_length)
         {inputs, inputs["decoder_input_ids"], max_length}
       end
 
@@ -260,7 +258,7 @@ defmodule Bumblebee.Text.Generation do
       prepare_inputs_fun = fn inputs, _params ->
         sequence_length = Nx.axis_size(inputs["input_ids"], 1)
         max_length = max_length_fun.(sequence_length)
-        inputs = prepare_decoder_inputs(inputs, "", spec, max_length)
+        inputs = prepare_decoder_inputs(inputs, "", spec, model, max_length)
         {inputs, inputs["input_ids"], max_length}
       end
 
@@ -279,7 +277,7 @@ defmodule Bumblebee.Text.Generation do
     inputs["input_ids"] || inputs["input_features"] || inputs["pixel_values"]
   end
 
-  defp prepare_decoder_inputs(inputs, prefix, spec, max_length) do
+  defp prepare_decoder_inputs(inputs, prefix, spec, model, max_length) do
     input_ids = inputs[prefix <> "input_ids"]
     attention_mask = inputs[prefix <> "attention_mask"] || Nx.broadcast(1, input_ids)
 
@@ -295,7 +293,30 @@ defmodule Bumblebee.Text.Generation do
 
     batch_size = Nx.axis_size(input_ids, 0)
     cache = init_cache(spec, batch_size, max_length, inputs)
+
+    output_policy = model_output_policy(model)
+
+    # TODO: fix Axon.MixedPrecision.cast/2 to not cast integers, to
+    # match Axon compiler
+
+    # Cast all float cache tensors to match the model output. This way
+    # we make sure the cache we pass as input has the same types as
+    # the updated cache returned from the model
+    cache =
+      Bumblebee.Utils.Nx.map(cache, fn tensor ->
+        if Nx.Type.integer?(Nx.type(tensor)) do
+          tensor
+        else
+          Axon.MixedPrecision.cast(output_policy, tensor, :output)
+        end
+      end)
+
     Map.put(inputs, "cache", cache)
+  end
+
+  defp model_output_policy(model) do
+    {node, _} = Axon.pop_node(model)
+    node.policy
   end
 
   defp update_decoder_inputs(prefix, inputs, cache, token_ids) do
@@ -625,7 +646,13 @@ defmodule Bumblebee.Text.Generation do
     initial_hidden_state = decoder_hidden_state(outputs)
     batch_size = Nx.axis_size(initial_hidden_state, 0)
     hidden_size = Nx.axis_size(initial_hidden_state, -1)
-    joint_hidden_state = Nx.broadcast(0.0, {batch_size, max_length, hidden_size})
+
+    joint_hidden_state =
+      Nx.broadcast(
+        Nx.tensor(0, type: Nx.type(initial_hidden_state)),
+        {batch_size, max_length, hidden_size}
+      )
+
     joint_hidden_state = Nx.put_slice(joint_hidden_state, [0, 0, 0], initial_hidden_state)
 
     logits = outputs.logits[[.., -1]]

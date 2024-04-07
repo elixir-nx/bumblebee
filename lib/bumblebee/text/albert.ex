@@ -83,13 +83,7 @@ defmodule Bumblebee.Text.Albert do
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
-    ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ])
+    ] ++ Shared.common_options([:num_labels, :id_to_label])
 
   @moduledoc """
   ALBERT model family.
@@ -147,6 +141,10 @@ defmodule Bumblebee.Text.Albert do
 
   The `:for_multiple_choice` model accepts groups of sequences, so the
   expected sequence shape is `{batch_size, num_choices, sequence_length}`.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -389,8 +387,8 @@ defmodule Bumblebee.Text.Albert do
         name: join(name, "embedding_projection")
       )
 
-    hidden_states = Layers.maybe_container({hidden_state}, spec.output_hidden_states)
-    attentions = Layers.maybe_container({}, spec.output_attentions)
+    hidden_states = Axon.container({hidden_state})
+    attentions = Axon.container({})
 
     for block_idx <- 0..(spec.num_blocks - 1),
         inner_idx <- 0..(spec.block_depth - 1),

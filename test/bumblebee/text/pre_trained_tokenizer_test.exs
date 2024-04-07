@@ -164,6 +164,24 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
     )
   end
 
+  test ":code_gen" do
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "microsoft/phi-2"})
+
+    assert %Bumblebee.Text.PreTrainedTokenizer{type: :code_gen} = tokenizer
+
+    inputs = Bumblebee.apply_tokenizer(tokenizer, ["Hello everyobdy, how are you?"])
+
+    assert_equal(
+      inputs["input_ids"],
+      Nx.tensor([[15496, 790, 672, 9892, 11, 703, 389, 345, 30]])
+    )
+
+    assert_equal(
+      inputs["attention_mask"],
+      Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1]])
+    )
+  end
+
   test ":distilbert" do
     assert {:ok, tokenizer} =
              Bumblebee.load_tokenizer({:hf, "distilbert/distilbert-base-uncased"})
@@ -190,6 +208,42 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
         [1, 1, 1, 1, 1, 1, 1],
         [1, 1, 1, 1, 1, 1, 0]
       ])
+    )
+  end
+
+  test ":gemma" do
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "unsloth/gemma-7b-it"})
+
+    assert %Bumblebee.Text.PreTrainedTokenizer{type: :gemma} = tokenizer
+
+    inputs = Bumblebee.apply_tokenizer(tokenizer, ["Hello World"])
+
+    assert_equal(
+      inputs["input_ids"],
+      Nx.tensor([[2, 4521, 3855]])
+    )
+
+    assert_equal(
+      inputs["attention_mask"],
+      Nx.tensor([[1, 1, 1]])
+    )
+  end
+
+  test ":gpt_neo_x" do
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "EleutherAI/gpt-neox-20b"})
+
+    assert %Bumblebee.Text.PreTrainedTokenizer{type: :gpt_neo_x} = tokenizer
+
+    inputs = Bumblebee.apply_tokenizer(tokenizer, ["Hello World"])
+
+    assert_equal(
+      inputs["input_ids"],
+      Nx.tensor([[12092, 3645]])
+    )
+
+    assert_equal(
+      inputs["attention_mask"],
+      Nx.tensor([[1, 1]])
     )
   end
 

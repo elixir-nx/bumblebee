@@ -1,4 +1,4 @@
-defmodule Bumblebee.Conversion.PyTorch.Loader do
+defmodule Bumblebee.Conversion.PyTorchLoader do
   @moduledoc false
 
   @doc """
@@ -26,40 +26,50 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
   end
 
   defp load_zip!(path) do
+    open_zip!(path, fn unzip ->
+      file_name_map =
+        unzip
+        |> Unzip.list_entries()
+        |> Map.new(fn %Unzip.Entry{file_name: file_name} ->
+          # Strip the root dir from the file name
+          name = file_name |> Path.split() |> Enum.drop(1) |> Enum.join("/")
+          {name, file_name}
+        end)
+
+      binary = read_zip_file(unzip, Map.fetch!(file_name_map, "data.pkl"))
+
+      {term, ""} =
+        Unpickler.load!(binary,
+          object_resolver: &object_resolver/1,
+          persistent_id_resolver: fn
+            {"storage", storage_type, key, _location, _size} ->
+              file_name = Map.fetch!(file_name_map, "data/#{key}")
+              {:storage, storage_type, {:zip, path, file_name}}
+          end
+        )
+
+      term
+    end)
+  end
+
+  @doc false
+  def open_zip!(path, fun) do
     zip_file = Unzip.LocalFile.open(path)
-    {:ok, unzip} = Unzip.new(zip_file)
 
-    contents =
-      unzip
-      |> Unzip.list_entries()
-      |> Map.new(fn %Unzip.Entry{file_name: file_name} ->
-        content =
-          unzip
-          |> Unzip.file_stream!(file_name)
-          |> Enum.to_list()
-          |> IO.iodata_to_binary()
+    try do
+      {:ok, unzip} = Unzip.new(zip_file)
+      fun.(unzip)
+    after
+      Unzip.LocalFile.close(zip_file)
+    end
+  end
 
-        # Strip the root dir from the file name
-        name =
-          file_name
-          |> Path.split()
-          |> Enum.drop(1)
-          |> Enum.join("/")
-
-        {name, content}
-      end)
-
-    {term, ""} =
-      Unpickler.load!(Map.fetch!(contents, "data.pkl"),
-        object_resolver: &object_resolver/1,
-        persistent_id_resolver: fn
-          {"storage", storage_type, key, _location, _size} ->
-            binary = Map.fetch!(contents, "data/#{key}")
-            {:storage, storage_type, binary}
-        end
-      )
-
-    term
+  @doc false
+  def read_zip_file(unzip, file_name) do
+    unzip
+    |> Unzip.file_stream!(file_name)
+    |> Enum.to_list()
+    |> IO.iodata_to_binary()
   end
 
   defp object_resolver(%{constructor: "collections.OrderedDict", set_items: items}) do
@@ -71,13 +81,18 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
          constructor: "torch._utils._rebuild_tensor_v2",
          args: [storage, offset, shape, strides, _requires_grad, _backward_hooks]
        }) do
-    {:storage, storage_type, binary} = storage
-    {_, bit_unit} = type = storage_type_to_nx(storage_type)
-    byte_unit = div(bit_unit, 8)
-    size = Tuple.product(shape)
-    binary = binary_part(binary, offset * byte_unit, size * byte_unit)
-    tensor = binary |> Nx.from_binary(type) |> to_contiguous(shape, strides)
-    {:ok, tensor}
+    {:storage, storage_type, storage} = storage
+    type = storage_type_to_nx(storage_type)
+
+    lazy_tensor = %Bumblebee.Conversion.PyTorchLoader.FileTensor{
+      shape: shape,
+      type: type,
+      offset: offset,
+      strides: strides,
+      storage: storage
+    }
+
+    {:ok, lazy_tensor}
   end
 
   # See https://github.com/pytorch/pytorch/blob/v1.12.1/torch/_tensor.py#L222-L226
@@ -168,53 +183,17 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
     end
   end
 
-  defp to_contiguous(tensor, shape, strides) do
-    # PyTorch tensors may not be contiguous in memory, so strides are
-    # used to indicate jumps necessary when traversing each axis.
-    # Since Nx doesn't have the notion of strides, we transpose the
-    # tensor, in a way that makes it contiguous, which is equivalent
-    # to strides being decreasing
-
-    memory_axes_order =
-      strides
-      |> Tuple.to_list()
-      |> Enum.with_index()
-      |> Enum.sort_by(&elem(&1, 0), :desc)
-      |> Enum.map(&elem(&1, 1))
-
-    if memory_axes_order == Nx.axes(shape) do
-      Nx.reshape(tensor, shape)
-    else
-      memory_shape =
-        memory_axes_order
-        |> Enum.map(fn axis -> elem(shape, axis) end)
-        |> List.to_tuple()
-
-      tensor
-      |> Nx.reshape(memory_shape)
-      |> Nx.transpose(axes: inverse_permutation(memory_axes_order))
-    end
-  end
-
-  defp inverse_permutation(list) do
-    list
-    |> Enum.with_index()
-    |> Enum.reduce(List.to_tuple(list), fn {src_idx, dest_idx}, inverse ->
-      put_elem(inverse, src_idx, dest_idx)
-    end)
-    |> Tuple.to_list()
-  end
-
   @legacy_magic_number 119_547_037_146_038_801_333_356
 
   defp load_legacy!(path) do
     data = File.read!(path)
+    full_size = byte_size(data)
 
     {@legacy_magic_number, data} = Unpickler.load!(data)
     {_protocol_version, data} = Unpickler.load!(data)
     {_system_info, data} = Unpickler.load!(data)
 
-    binaries = storage_binaries(data)
+    binaries = storage_binaries(data, full_size)
 
     {term, _} =
       Unpickler.load!(data,
@@ -224,16 +203,18 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
             {_, bit_unit} = storage_type_to_nx(storage_type)
             byte_unit = div(bit_unit, 8)
 
-            binary =
+            {file_offset, size} = Map.fetch!(binaries, root_key)
+
+            storage =
               case view_metadata do
                 nil ->
-                  binaries[root_key]
+                  {:file, path, file_offset, size}
 
                 {_view_key, offset, view_size} ->
-                  binary_part(binaries[root_key], offset * byte_unit, view_size * byte_unit)
+                  {:file, path, file_offset + offset * byte_unit, view_size * byte_unit}
               end
 
-            {:storage, storage_type, binary}
+            {:storage, storage_type, storage}
 
           {"module", module, _source_file, _source} ->
             module
@@ -243,7 +224,7 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
     term
   end
 
-  defp storage_binaries(data) do
+  defp storage_binaries(data, full_size) do
     # We first do a dry run on the pickle and extract storage metadata,
     # then we use that metadata to read the storage binaries that follow
 
@@ -264,16 +245,20 @@ defmodule Bumblebee.Conversion.PyTorch.Loader do
 
     {storage_keys, data} = Unpickler.load!(data)
 
-    {pairs, ""} =
-      Enum.map_reduce(storage_keys, data, fn key, data ->
+    offset = full_size - byte_size(data)
+
+    {pairs, _offset} =
+      Enum.map_reduce(storage_keys, offset, fn key, offset ->
         {size, byte_unit} = Map.fetch!(storage_infos, key)
         bytes = size * byte_unit
 
-        # Each storage binary is prefixed with the number of elements.
+        # Each storage binary is prefixed with the number of elements,
+        # stored as integer-little-signed-size(64), hence the 8 bytes.
         # See https://github.com/pytorch/pytorch/blob/v1.11.0/torch/csrc/generic/serialization.cpp#L93-L134
-        <<^size::integer-little-signed-size(64), chunk::binary-size(bytes), data::binary>> = data
+        start_offset = offset + 8
+        offset = start_offset + bytes
 
-        {{key, chunk}, data}
+        {{key, {start_offset, bytes}}, offset}
       end)
 
     Map.new(pairs)

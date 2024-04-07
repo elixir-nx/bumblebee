@@ -32,7 +32,7 @@ defmodule Bumblebee.Vision.Deit do
         docs:
           "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
-      use_qkv_bias: [
+      use_attention_bias: [
         default: true,
         doc: "whether to use bias in query, key, and value projections"
       ],
@@ -57,13 +57,7 @@ defmodule Bumblebee.Vision.Deit do
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
-    ] ++
-      Shared.common_options([
-        :output_hidden_states,
-        :output_attentions,
-        :num_labels,
-        :id_to_label
-      ])
+    ] ++ Shared.common_options([:num_labels, :id_to_label])
 
   @moduledoc """
   DeiT model family.
@@ -93,6 +87,10 @@ defmodule Bumblebee.Vision.Deit do
     * `"patch_mask"` - `{batch_size, num_patches}`
 
       Mask to nullify selected embedded patches.
+
+  ## Global layer options
+
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
@@ -249,11 +247,11 @@ defmodule Bumblebee.Vision.Deit do
         name: join(name, "norm")
       )
 
-    pooled = pooler(hidden_state, spec, name: join(name, "pooler"))
+    pooled_state = pooler(hidden_state, spec, name: join(name, "pooler"))
 
     %{
       hidden_state: hidden_state,
-      pooled_state: pooled,
+      pooled_state: pooled_state,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions
     }
@@ -312,9 +310,9 @@ defmodule Bumblebee.Vision.Deit do
       kernel_initializer: kernel_initializer(spec),
       dropout_rate: spec.dropout_rate,
       attention_dropout_rate: spec.attention_dropout_rate,
-      query_use_bias: spec.use_qkv_bias,
-      key_use_bias: spec.use_qkv_bias,
-      value_use_bias: spec.use_qkv_bias,
+      query_use_bias: spec.use_attention_bias,
+      key_use_bias: spec.use_attention_bias,
+      value_use_bias: spec.use_attention_bias,
       layer_norm: [
         epsilon: spec.layer_norm_epsilon
       ],
@@ -323,8 +321,6 @@ defmodule Bumblebee.Vision.Deit do
         activation: spec.activation
       ],
       block_type: :norm_first,
-      output_hidden_states: spec.output_hidden_states,
-      output_attentions: spec.output_attentions,
       name: join(name, "blocks")
     )
   end
@@ -358,7 +354,7 @@ defmodule Bumblebee.Vision.Deit do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},
-          use_qkv_bias: {"qkv_bias", boolean()},
+          use_attention_bias: {"qkv_bias", boolean()},
           activation: {"hidden_act", activation()},
           dropout_rate: {"hidden_dropout_prob", number()},
           attention_dropout_rate: {"attention_probs_dropout_prob", number()},
