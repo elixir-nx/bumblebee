@@ -302,14 +302,14 @@ defmodule Bumblebee.Diffusion.ControlNet do
           |> Axon.conv(in_channels,
             kernel_size: 3,
             padding: [{1, 1}, {1, 1}],
-            name: name |> join(2 * i) |> join("conv"),
+            name: name |> join("inner_convs") |> join(2 * i),
             activation: :silu
           )
           |> Axon.conv(out_channels,
             kernel_size: 3,
             padding: [{1, 1}, {1, 1}],
             strides: 2,
-            name: name |> join(2 * i + 1) |> join("conv"),
+            name: name |> join("inner_convs") |> join(2 * i + 1),
             activation: :silu
           )
       end
@@ -488,7 +488,7 @@ defmodule Bumblebee.Diffusion.ControlNet do
       controlnet = %{
         "controlnet_down_blocks.{m}.zero_conv" => "controlnet_down_blocks.{m}",
         "controlnet_cond_embedding.input_conv" => "controlnet_cond_embedding.conv_in",
-        "controlnet_cond_embedding.{m}.conv" => "controlnet_cond_embedding.blocks.{m}",
+        "controlnet_cond_embedding.inner_convs.{m}" => "controlnet_cond_embedding.blocks.{m}",
         "controlnet_cond_embedding.output_conv" => "controlnet_cond_embedding.conv_out",
         "controlnet_mid_block.zero_conv" => "controlnet_mid_block"
       }
