@@ -248,7 +248,7 @@ defmodule Bumblebee.Diffusion.ControlNet do
       |> Axon.multiply(conditioning_scale, name: "mid_conditioning_scale")
 
     %{
-      down_blocks_residuals: down_blocks_residuals,
+      down_blocks_residuals: Axon.container(down_blocks_residuals),
       mid_block_residual: mid_block_residual
     }
   end
