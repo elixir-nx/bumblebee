@@ -30,7 +30,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
 
       {:ok, safety_checker} = Bumblebee.load_model({:hf, repository_id, subdir: "safety_checker"})
 
-      cond_size = unet.spec.sample_size * 2 ** (length(unet.spec.hidden_sizes) - 1)
+      conditioning_size = controlnet.spec.sample_size * 2 ** (length(controlnet.spec.conditioning_embedding_out_channels) - 1)
 
       serving =
         Bumblebee.Diffusion.StableDiffusionControlNet.text_to_image(
@@ -47,7 +47,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
 
       prompt = "numbat in forest, detailed, digital art"
 
-      conditioning = Nx.broadcast(Nx.tensor(50, type: :u8), {cond_size, cond_size, 3})
+      conditioning = Nx.broadcast(Nx.tensor(50, type: :u8), {conditioning_size, conditioning_size, 3})
 
       assert %{
                results: [%{image: %Nx.Tensor{}, is_safe: _boolean}]
@@ -91,7 +91,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
           num_steps: 3,
           safety_checker: safety_checker,
           safety_checker_featurizer: featurizer,
-          compile: [batch_size: 1, sequence_length: 60, conditioning_size: cond_size],
+          compile: [batch_size: 1, sequence_length: 60],
           defn_options: [compiler: EXLA]
         )
 

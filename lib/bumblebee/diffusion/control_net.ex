@@ -149,8 +149,8 @@ defmodule Bumblebee.Diffusion.ControlNet do
     sample_shape = {1, spec.sample_size, spec.sample_size, spec.in_channels}
     timestep_shape = {}
 
-    cond_size = spec.sample_size * 2 ** (length(spec.hidden_sizes) - 1)
-    conditioning_shape = {1, cond_size, cond_size, 3}
+    conditioning_size = spec.sample_size * 2 ** (length(spec.conditioning_embedding_out_channels) - 1)
+    conditioning_shape = {1, conditioning_size, conditioning_size, 3}
     encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
     %{
@@ -172,8 +172,8 @@ defmodule Bumblebee.Diffusion.ControlNet do
   defp inputs(spec) do
     sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
 
-    cond_size = spec.sample_size * 2 ** (length(spec.hidden_sizes) - 1)
-    conditioning_shape = {nil, cond_size, cond_size, 3}
+    conditioning_size = spec.sample_size * 2 ** (length(spec.conditioning_embedding_out_channels) - 1)
+    conditioning_shape = {nil, conditioning_size, conditioning_size, 3}
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("sample", shape: sample_shape),

@@ -101,7 +101,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
           num_images_per_prompt: 2,
           safety_checker: safety_checker,
           safety_checker_featurizer: featurizer,
-          compile: [batch_size: 1, sequence_length: 60, conditioning_size: 512],
+          compile: [batch_size: 1, sequence_length: 60],
           defn_options: [compiler: EXLA]
         )
 
@@ -175,13 +175,15 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
     compile =
       if compile = opts[:compile] do
         compile
-        |> Keyword.validate!([:batch_size, :sequence_length, :conditioning_size])
-        |> Shared.require_options!([:batch_size, :sequence_length, :conditioning_size])
+        |> Keyword.validate!([:batch_size, :sequence_length])
+        |> Shared.require_options!([:batch_size, :sequence_length])
       end
 
     batch_size = compile[:batch_size]
     sequence_length = compile[:sequence_length]
-    conditioning_size = compile[:conditioning_size]
+
+    conditioning_size =
+      controlnet.spec.sample_size * 2 ** (length(controlnet.spec.conditioning_embedding_out_channels) - 1)
 
     tokenizer =
       Bumblebee.configure(tokenizer,
