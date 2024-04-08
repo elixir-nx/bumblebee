@@ -183,7 +183,8 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
     sequence_length = compile[:sequence_length]
 
     conditioning_size =
-      controlnet.spec.sample_size * 2 ** (length(controlnet.spec.conditioning_embedding_out_channels) - 1)
+      controlnet.spec.sample_size *
+        2 ** (length(controlnet.spec.conditioning_embedding_hidden_sizes) - 1)
 
     tokenizer =
       Bumblebee.configure(tokenizer,

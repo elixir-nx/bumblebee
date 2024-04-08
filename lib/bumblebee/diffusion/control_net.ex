@@ -89,9 +89,9 @@ defmodule Bumblebee.Diffusion.ControlNet do
       default: 1.0e-5,
       doc: "the epsilon used by the group normalization layers"
     ],
-    conditioning_embedding_out_channels: [
+    conditioning_embedding_hidden_sizes: [
       default: [16, 32, 96, 256],
-      doc: "the dimensionality of conditioning embedding"
+      doc: "the dimensionality of hidden layers in the conditioning input embedding"
     ]
   ]
 
@@ -149,7 +149,9 @@ defmodule Bumblebee.Diffusion.ControlNet do
     sample_shape = {1, spec.sample_size, spec.sample_size, spec.in_channels}
     timestep_shape = {}
 
-    conditioning_size = spec.sample_size * 2 ** (length(spec.conditioning_embedding_out_channels) - 1)
+    conditioning_size =
+      spec.sample_size * 2 ** (length(spec.conditioning_embedding_hidden_sizes) - 1)
+
     conditioning_shape = {1, conditioning_size, conditioning_size, 3}
     encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
@@ -172,7 +174,9 @@ defmodule Bumblebee.Diffusion.ControlNet do
   defp inputs(spec) do
     sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
 
-    conditioning_size = spec.sample_size * 2 ** (length(spec.conditioning_embedding_out_channels) - 1)
+    conditioning_size =
+      spec.sample_size * 2 ** (length(spec.conditioning_embedding_hidden_sizes) - 1)
+
     conditioning_shape = {nil, conditioning_size, conditioning_size, 3}
 
     Bumblebee.Utils.Model.inputs_to_map([
@@ -282,15 +286,15 @@ defmodule Bumblebee.Diffusion.ControlNet do
     name = opts[:name]
 
     state =
-      Axon.conv(sample, hd(spec.conditioning_embedding_out_channels),
+      Axon.conv(sample, hd(spec.conditioning_embedding_hidden_sizes),
         kernel_size: 3,
         padding: [{1, 1}, {1, 1}],
         name: join(name, "input_conv"),
         activation: :silu
       )
 
-    block_in_channels = Enum.drop(spec.conditioning_embedding_out_channels, -1)
-    block_out_channels = Enum.drop(spec.conditioning_embedding_out_channels, 1)
+    block_in_channels = Enum.drop(spec.conditioning_embedding_hidden_sizes, -1)
+    block_out_channels = Enum.drop(spec.conditioning_embedding_hidden_sizes, 1)
 
     channels = Enum.zip(block_in_channels, block_out_channels)
 
@@ -429,7 +433,7 @@ defmodule Bumblebee.Diffusion.ControlNet do
           activation: {"act_fn", activation()},
           group_norm_num_groups: {"norm_num_groups", number()},
           group_norm_epsilon: {"norm_eps", number()},
-          conditioning_embedding_out_channels:
+          conditioning_embedding_hidden_sizes:
             {"conditioning_embedding_out_channels", list(number())}
         )
 
