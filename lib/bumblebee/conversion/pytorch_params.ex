@@ -300,8 +300,18 @@ defmodule Bumblebee.Conversion.PyTorchParams do
   defp match_template(name, template), do: match_template(name, template, %{})
 
   defp match_template(<<_, _::binary>> = name, <<"{", template::binary>>, substitutes) do
-    [value, name] = String.split(name, ".", parts: 2)
-    [key, template] = String.split(template, "}.", parts: 2)
+    {value, name} =
+      case String.split(name, ".", parts: 2) do
+        [value] -> {value, ""}
+        [value, name] -> {value, name}
+      end
+
+    {key, template} =
+      case String.split(template, "}", parts: 2) do
+        [key, ""] -> {key, ""}
+        [key, "." <> template] -> {key, template}
+      end
+
     match_template(name, template, put_in(substitutes[key], value))
   end
 

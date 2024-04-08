@@ -1,9 +1,9 @@
-defmodule Bumblebee.Diffusion.UNet2DConditional do
+defmodule Bumblebee.Diffusion.ControlNet do
   alias Bumblebee.Shared
 
   options = [
     sample_size: [
-      default: 32,
+      default: 64,
       doc: "the size of the input spatial dimensions"
     ],
     in_channels: [
@@ -13,10 +13,6 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     out_channels: [
       default: 4,
       doc: "the number of channels in the output"
-    ],
-    center_input_sample: [
-      default: false,
-      doc: "whether to center the input sample"
     ],
     embedding_flip_sin_to_cos: [
       default: true,
@@ -73,7 +69,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
         "the number of attention heads for each attention layer. Optionally can be a list with one number per block"
     ],
     cross_attention_size: [
-      default: 1280,
+      default: 1024,
       doc: "the dimensionality of the cross attention features"
     ],
     use_linear_projection: [
@@ -92,15 +88,19 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     group_norm_epsilon: [
       default: 1.0e-5,
       doc: "the epsilon used by the group normalization layers"
+    ],
+    conditioning_embedding_hidden_sizes: [
+      default: [16, 32, 96, 256],
+      doc: "the dimensionality of hidden layers in the conditioning input embedding"
     ]
   ]
 
   @moduledoc """
-  U-Net model with two spatial dimensions and conditioning state.
+  ControlNet model with two spatial dimensions and conditioning state.
 
   ## Architectures
 
-    * `:base` - the U-Net model
+    * `:base` - the ControlNet model
 
   ## Inputs
 
@@ -117,14 +117,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
       The conditioning state (context) to use with cross-attention.
 
-    * `"additional_down_block_states"`
+    * `"conditioning"` - `{batch_size, conditioning_size, conditioning_size, 3}`
 
-      Optional outputs matching the structure of down blocks, added as
-      part of the encoder-decoder skip connections.
-
-    * `"additional_mid_block_state"`
-
-      Optional output added to the mid block result.
+      The conditioning spatial input.
 
   ## Configuration
 
@@ -153,45 +148,57 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   def input_template(spec) do
     sample_shape = {1, spec.sample_size, spec.sample_size, spec.in_channels}
     timestep_shape = {}
+
+    conditioning_size =
+      spec.sample_size * 2 ** (length(spec.conditioning_embedding_hidden_sizes) - 1)
+
+    conditioning_shape = {1, conditioning_size, conditioning_size, 3}
     encoder_hidden_state_shape = {1, 1, spec.cross_attention_size}
 
     %{
       "sample" => Nx.template(sample_shape, :f32),
       "timestep" => Nx.template(timestep_shape, :u32),
+      "conditioning" => Nx.template(conditioning_shape, :f32),
+      "conditioning_scale" => Nx.template({}, :f32),
       "encoder_hidden_state" => Nx.template(encoder_hidden_state_shape, :f32)
     }
   end
 
   @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
-    inputs = inputs(spec)
-    sample = core(inputs, spec)
-    Layers.output(%{sample: sample})
+    inputs(spec)
+    |> core(spec)
+    |> Layers.output()
   end
 
   defp inputs(spec) do
     sample_shape = {nil, spec.sample_size, spec.sample_size, spec.in_channels}
 
+    conditioning_size =
+      spec.sample_size * 2 ** (length(spec.conditioning_embedding_hidden_sizes) - 1)
+
+    conditioning_shape = {nil, conditioning_size, conditioning_size, 3}
+
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("sample", shape: sample_shape),
       Axon.input("timestep", shape: {}),
-      Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size}),
-      Axon.input("additional_down_block_states", optional: true),
-      Axon.input("additional_mid_block_state", optional: true)
+      Axon.input("conditioning", shape: conditioning_shape),
+      Axon.input("conditioning_scale", optional: true),
+      Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size})
     ])
   end
 
   defp core(inputs, spec) do
     sample = inputs["sample"]
     timestep = inputs["timestep"]
-    encoder_hidden_state = inputs["encoder_hidden_state"]
+    conditioning = inputs["conditioning"]
 
-    sample =
-      if spec.center_input_sample do
-        Axon.nx(sample, fn sample -> 2 * sample - 1.0 end, op_name: :center)
-      else
-        sample
+    conditioning_scale =
+      Bumblebee.Layers.default inputs["conditioning_scale"] do
+        Axon.constant(1)
       end
+
+    encoder_hidden_state = inputs["encoder_hidden_state"]
 
     timestep =
       Axon.layer(
@@ -219,30 +226,98 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
         name: "input_conv"
       )
 
+    controlnet_conditioning_embeddings =
+      controlnet_embedding(conditioning, spec, name: "controlnet_conditioning_embedding")
+
+    sample = Axon.add(sample, controlnet_conditioning_embeddings)
+
     {sample, down_block_states} =
       down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, name: "down_blocks")
 
+    sample =
+      mid_block(sample, timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
+
+    down_block_states = controlnet_down_blocks(down_block_states, name: "controlnet_down_blocks")
+
     down_block_states =
-      maybe_add_down_block_states(down_block_states, inputs["additional_down_block_states"])
+      for down_block_state <- Tuple.to_list(down_block_states) do
+        Axon.multiply(down_block_state, conditioning_scale)
+      end
+      |> List.to_tuple()
+
+    mid_block_state =
+      sample
+      |> controlnet_mid_block(spec, name: "controlnet_mid_block")
+      |> Axon.multiply(conditioning_scale)
+
+    %{
+      down_block_states: Axon.container(down_block_states),
+      mid_block_state: mid_block_state
+    }
+  end
+
+  defp controlnet_down_blocks(down_block_states, opts) do
+    name = opts[:name]
+
+    states =
+      for {{state, out_channels}, i} <- Enum.with_index(Tuple.to_list(down_block_states)) do
+        Axon.conv(state, out_channels,
+          kernel_size: 1,
+          name: name |> join(i) |> join("zero_conv"),
+          kernel_initializer: :zeros
+        )
+      end
+
+    List.to_tuple(states)
+  end
+
+  defp controlnet_mid_block(input, spec, opts) do
+    name = opts[:name]
+
+    Axon.conv(input, List.last(spec.hidden_sizes),
+      kernel_size: 1,
+      name: name |> join("zero_conv"),
+      kernel_initializer: :zeros
+    )
+  end
+
+  defp controlnet_embedding(sample, spec, opts) do
+    name = opts[:name]
+
+    state =
+      Axon.conv(sample, hd(spec.conditioning_embedding_hidden_sizes),
+        kernel_size: 3,
+        padding: [{1, 1}, {1, 1}],
+        name: join(name, "input_conv"),
+        activation: :silu
+      )
+
+    size_pairs = Enum.chunk_every(spec.conditioning_embedding_hidden_sizes, 2, 1)
 
     sample =
-      sample
-      |> mid_block(timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
-      |> maybe_add_mid_block_state(inputs["additional_mid_block_state"])
+      for {[in_size, out_size], i} <- Enum.with_index(size_pairs), reduce: state do
+        input ->
+          input
+          |> Axon.conv(in_size,
+            kernel_size: 3,
+            padding: [{1, 1}, {1, 1}],
+            name: name |> join("inner_convs") |> join(2 * i),
+            activation: :silu
+          )
+          |> Axon.conv(out_size,
+            kernel_size: 3,
+            padding: [{1, 1}, {1, 1}],
+            strides: 2,
+            name: name |> join("inner_convs") |> join(2 * i + 1),
+            activation: :silu
+          )
+      end
 
-    sample
-    |> up_blocks(timestep_embedding, down_block_states, encoder_hidden_state, spec,
-      name: "up_blocks"
-    )
-    |> Axon.group_norm(spec.group_norm_num_groups,
-      epsilon: spec.group_norm_epsilon,
-      name: "output_norm"
-    )
-    |> Axon.activation(:silu)
-    |> Axon.conv(spec.out_channels,
+    Axon.conv(sample, hd(spec.hidden_sizes),
       kernel_size: 3,
       padding: [{1, 1}, {1, 1}],
-      name: "output_conv"
+      name: join(name, "output_conv"),
+      kernel_initializer: :zeros
     )
   end
 
@@ -304,97 +379,6 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     )
   end
 
-  defp up_blocks(
-         sample,
-         timestep_embedding,
-         down_block_states,
-         encoder_hidden_state,
-         spec,
-         opts
-       ) do
-    name = opts[:name]
-
-    down_block_states =
-      down_block_states
-      |> Tuple.to_list()
-      |> Enum.reverse()
-      |> Enum.chunk_every(spec.depth + 1)
-
-    reversed_hidden_sizes = Enum.reverse(spec.hidden_sizes)
-    in_channels = hd(reversed_hidden_sizes)
-
-    num_attention_heads_per_block =
-      spec
-      |> num_attention_heads_per_block()
-      |> Enum.reverse()
-
-    blocks_and_chunks =
-      [
-        reversed_hidden_sizes,
-        spec.up_block_types,
-        num_attention_heads_per_block,
-        down_block_states
-      ]
-      |> Enum.zip()
-      |> Enum.with_index()
-
-    {sample, _} =
-      for {{out_channels, block_type, num_attention_heads, states}, idx} <- blocks_and_chunks,
-          reduce: {sample, in_channels} do
-        {sample, in_channels} ->
-          last_block? = idx == length(spec.hidden_sizes) - 1
-
-          sample =
-            Diffusion.Layers.UNet.up_block_2d(
-              block_type,
-              sample,
-              timestep_embedding,
-              states,
-              encoder_hidden_state,
-              depth: spec.depth + 1,
-              in_channels: in_channels,
-              out_channels: out_channels,
-              add_upsample: not last_block?,
-              norm_epsilon: spec.group_norm_epsilon,
-              norm_num_groups: spec.group_norm_num_groups,
-              activation: spec.activation,
-              num_attention_heads: num_attention_heads,
-              use_linear_projection: spec.use_linear_projection,
-              name: join(name, idx)
-            )
-
-          {sample, out_channels}
-      end
-
-    sample
-  end
-
-  defp maybe_add_mid_block_state(mid_block_state, additional_mid_block_state) do
-    maybe_add(mid_block_state, additional_mid_block_state)
-  end
-
-  defp maybe_add_down_block_states(down_block_states, additional_down_block_states) do
-    down_block_states = Tuple.to_list(down_block_states)
-
-    for {{down_block_state, out_channels}, i} <- Enum.with_index(down_block_states) do
-      additional_down_block_state = Axon.nx(additional_down_block_states, &elem(&1, i))
-      {maybe_add(down_block_state, additional_down_block_state), out_channels}
-    end
-    |> List.to_tuple()
-  end
-
-  defp maybe_add(left, maybe_right) do
-    Axon.layer(
-      fn left, maybe_right, _opts ->
-        case maybe_right do
-          %Axon.None{} -> left
-          right -> Nx.add(left, right)
-        end
-      end,
-      [left, Axon.optional(maybe_right)]
-    )
-  end
-
   defp num_attention_heads_per_block(spec) when is_list(spec.num_attention_heads) do
     spec.num_attention_heads
   end
@@ -443,7 +427,9 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
           use_linear_projection: {"use_linear_projection", boolean()},
           activation: {"act_fn", activation()},
           group_norm_num_groups: {"norm_num_groups", number()},
-          group_norm_epsilon: {"norm_eps", number()}
+          group_norm_epsilon: {"norm_eps", number()},
+          conditioning_embedding_hidden_sizes:
+            {"conditioning_embedding_out_channels", list(number())}
         )
 
       @for.config(spec, opts)
@@ -490,23 +476,30 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
         "residual_blocks.{m}.norm_2" => "resnets.{m}.norm2",
         "residual_blocks.{m}.conv_2" => "resnets.{m}.conv2",
         "residual_blocks.{m}.shortcut.projection" => "resnets.{m}.conv_shortcut",
-        "downsamples.{m}.conv" => "downsamplers.{m}.conv",
-        "upsamples.{m}.conv" => "upsamplers.{m}.conv"
+        "downsamples.{m}.conv" => "downsamplers.{m}.conv"
       }
 
       blocks_mapping =
-        ["down_blocks.{n}", "mid_block", "up_blocks.{n}"]
+        ["down_blocks.{n}", "mid_block"]
         |> Enum.map(&Transformers.Utils.prefix_params_mapping(block_mapping, &1, &1))
         |> Enum.reduce(&Map.merge/2)
+
+      controlnet = %{
+        "controlnet_conditioning_embedding.input_conv" => "controlnet_cond_embedding.conv_in",
+        "controlnet_conditioning_embedding.inner_convs.{m}" =>
+          "controlnet_cond_embedding.blocks.{m}",
+        "controlnet_conditioning_embedding.output_conv" => "controlnet_cond_embedding.conv_out",
+        "controlnet_down_blocks.{m}.zero_conv" => "controlnet_down_blocks.{m}",
+        "controlnet_mid_block.zero_conv" => "controlnet_mid_block"
+      }
 
       %{
         "time_embedding.intermediate" => "time_embedding.linear_1",
         "time_embedding.output" => "time_embedding.linear_2",
-        "input_conv" => "conv_in",
-        "output_norm" => "conv_norm_out",
-        "output_conv" => "conv_out"
+        "input_conv" => "conv_in"
       }
       |> Map.merge(blocks_mapping)
+      |> Map.merge(controlnet)
     end
   end
 end

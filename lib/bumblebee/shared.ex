@@ -492,7 +492,7 @@ defmodule Bumblebee.Shared do
   def featurizer_resize_size(_images, %{height: height, width: width}), do: {height, width}
 
   def featurizer_resize_size(images, %{shortest_edge: size}) do
-    {height, width} = images_spacial_sizes(images)
+    {height, width} = images_spatial_sizes(images)
 
     {short, long} = if height < width, do: {height, width}, else: {width, height}
 
@@ -502,7 +502,7 @@ defmodule Bumblebee.Shared do
     if height < width, do: {out_short, out_long}, else: {out_long, out_short}
   end
 
-  defp images_spacial_sizes(images) do
+  defp images_spatial_sizes(images) do
     height = Nx.axis_size(images, -3)
     width = Nx.axis_size(images, -2)
     {height, width}

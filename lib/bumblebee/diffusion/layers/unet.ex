@@ -51,22 +51,22 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
         :cross_attention_up_block,
         sample,
         timestep_embedding,
-        residuals,
+        down_block_states,
         encoder_hidden_state,
         opts
       ) do
-    up_block_2d(sample, timestep_embedding, residuals, encoder_hidden_state, opts)
+    up_block_2d(sample, timestep_embedding, down_block_states, encoder_hidden_state, opts)
   end
 
   def up_block_2d(
         :up_block,
         sample,
         timestep_embedding,
-        residuals,
+        down_block_states,
         _encoder_hidden_state,
         opts
       ) do
-    up_block_2d(sample, timestep_embedding, residuals, nil, opts)
+    up_block_2d(sample, timestep_embedding, down_block_states, nil, opts)
   end
 
   @doc """
@@ -147,7 +147,7 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
   def up_block_2d(
         hidden_state,
         timestep_embedding,
-        residuals,
+        down_block_states,
         encoder_hidden_state,
         opts
       ) do
@@ -164,18 +164,18 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
     add_upsample = Keyword.get(opts, :add_upsample, true)
     name = opts[:name]
 
-    ^depth = length(residuals)
+    ^depth = length(down_block_states)
 
     hidden_state =
-      for {{residual, residual_channels}, idx} <- Enum.with_index(residuals),
+      for {{down_block_state, down_block_channels}, idx} <- Enum.with_index(down_block_states),
           reduce: hidden_state do
         hidden_state ->
           in_channels = if(idx == 0, do: in_channels, else: out_channels)
 
           hidden_state =
-            Axon.concatenate([hidden_state, residual], axis: -1)
+            Axon.concatenate([hidden_state, down_block_state], axis: -1)
             |> Diffusion.Layers.residual_block(
-              in_channels + residual_channels,
+              in_channels + down_block_channels,
               out_channels,
               timestep_embedding: timestep_embedding,
               norm_epsilon: norm_epsilon,

@@ -71,10 +71,12 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Audio,
           Bumblebee.Text,
           Bumblebee.Vision,
-          Bumblebee.Diffusion.StableDiffusion
+          Bumblebee.Diffusion.StableDiffusion,
+          Bumblebee.Diffusion.StableDiffusionControlNet
         ],
         Models: [
           Bumblebee.Audio.Whisper,
+          Bumblebee.Diffusion.ControlNet,
           Bumblebee.Diffusion.StableDiffusion.SafetyChecker,
           Bumblebee.Diffusion.UNet2DConditional,
           Bumblebee.Diffusion.VaeKl,
