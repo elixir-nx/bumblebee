@@ -231,45 +231,44 @@ defmodule Bumblebee.Diffusion.ControlNet do
 
     sample = Axon.add(sample, controlnet_conditioning_embeddings)
 
-    {sample, down_blocks_residuals} =
+    {sample, down_block_states} =
       down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, name: "down_blocks")
 
     sample =
       mid_block(sample, timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
 
-    down_blocks_residuals =
-      controlnet_down_blocks(down_blocks_residuals, name: "controlnet_down_blocks")
+    down_block_states = controlnet_down_blocks(down_block_states, name: "controlnet_down_blocks")
 
-    down_blocks_residuals =
-      for residual <- Tuple.to_list(down_blocks_residuals) do
-        Axon.multiply(residual, conditioning_scale, name: "down_conditioning_scale")
+    down_block_states =
+      for down_block_state <- Tuple.to_list(down_block_states) do
+        Axon.multiply(down_block_state, conditioning_scale)
       end
       |> List.to_tuple()
 
-    mid_block_residual =
+    mid_block_state =
       sample
       |> controlnet_mid_block(spec, name: "controlnet_mid_block")
       |> Axon.multiply(conditioning_scale)
 
     %{
-      down_blocks_residuals: Axon.container(down_blocks_residuals),
-      mid_block_residual: mid_block_residual
+      down_block_states: Axon.container(down_block_states),
+      mid_block_state: mid_block_state
     }
   end
 
-  defp controlnet_down_blocks(down_block_residuals, opts) do
+  defp controlnet_down_blocks(down_block_states, opts) do
     name = opts[:name]
 
-    residuals =
-      for {{residual, out_channels}, i} <- Enum.with_index(Tuple.to_list(down_block_residuals)) do
-        Axon.conv(residual, out_channels,
+    states =
+      for {{state, out_channels}, i} <- Enum.with_index(Tuple.to_list(down_block_states)) do
+        Axon.conv(state, out_channels,
           kernel_size: 1,
           name: name |> join(i) |> join("zero_conv"),
           kernel_initializer: :zeros
         )
       end
 
-    List.to_tuple(residuals)
+    List.to_tuple(states)
   end
 
   defp controlnet_mid_block(input, spec, opts) do
@@ -333,17 +332,17 @@ defmodule Bumblebee.Diffusion.ControlNet do
       Enum.zip([spec.hidden_sizes, spec.down_block_types, num_attention_heads_per_block(spec)])
 
     in_channels = hd(spec.hidden_sizes)
-    down_block_residuals = [{sample, in_channels}]
+    down_block_states = [{sample, in_channels}]
 
-    state = {sample, down_block_residuals, in_channels}
+    state = {sample, down_block_states, in_channels}
 
-    {sample, down_block_residuals, _} =
+    {sample, down_block_states, _} =
       for {{out_channels, block_type, num_attention_heads}, idx} <- Enum.with_index(blocks),
           reduce: state do
-        {sample, down_block_residuals, in_channels} ->
+        {sample, down_block_states, in_channels} ->
           last_block? = idx == length(spec.hidden_sizes) - 1
 
-          {sample, residuals} =
+          {sample, states} =
             Diffusion.Layers.UNet.down_block_2d(
               block_type,
               sample,
@@ -362,10 +361,10 @@ defmodule Bumblebee.Diffusion.ControlNet do
               name: join(name, idx)
             )
 
-          {sample, down_block_residuals ++ Tuple.to_list(residuals), out_channels}
+          {sample, down_block_states ++ Tuple.to_list(states), out_channels}
       end
 
-    {sample, List.to_tuple(down_block_residuals)}
+    {sample, List.to_tuple(down_block_states)}
   end
 
   defp mid_block(hidden_state, timesteps_embedding, encoder_hidden_state, spec, opts) do

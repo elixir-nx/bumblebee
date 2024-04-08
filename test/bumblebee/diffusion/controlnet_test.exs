@@ -25,18 +25,18 @@ defmodule Bumblebee.Diffusion.ControlNetTest do
 
     outputs = Axon.predict(model, params, inputs)
 
-    assert Nx.shape(outputs.mid_block_residual) == {1, 8, 8, 1280}
+    assert Nx.shape(outputs.mid_block_state) == {1, 8, 8, 1280}
 
     assert_all_close(
-      outputs.mid_block_residual[[0, 0, 0, 1..3]],
+      outputs.mid_block_state[[0, 0, 0, 1..3]],
       Nx.tensor([-1.2827045917510986, -0.6995724439620972, -0.610561192035675])
     )
 
-    first_down_residual = elem(outputs.down_blocks_residuals, 0)
-    assert Nx.shape(first_down_residual) == {1, 64, 64, 320}
+    first_down_block_state = elem(outputs.down_block_states, 0)
+    assert Nx.shape(first_down_block_state) == {1, 64, 64, 320}
 
     assert_all_close(
-      first_down_residual[[0, 0, 0, 1..3]],
+      first_down_block_state[[0, 0, 0, 1..3]],
       Nx.tensor([-0.029463158920407295, 0.04885300621390343, -0.12834328413009644])
     )
   end

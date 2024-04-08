@@ -35,7 +35,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
     )
   end
 
-  test ":base with additional residuals" do
+  test ":base with additional states for skip connection" do
     tiny = "bumblebee-testing/tiny-stable-diffusion"
 
     assert {:ok, %{model: model, params: params, spec: spec}} =
@@ -50,18 +50,18 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
     {_, out_shapes} =
       for block_out_channel <- spec.hidden_sizes, reduce: state do
         {spatial_size, acc} ->
-          residuals =
+          states =
             for _ <- 1..spec.depth, do: {1, spatial_size, spatial_size, block_out_channel}
 
           downsampled_spatial = div(spatial_size, 2)
           downsample = {1, downsampled_spatial, downsampled_spatial, block_out_channel}
 
-          {div(spatial_size, 2), acc ++ residuals ++ [downsample]}
+          {div(spatial_size, 2), acc ++ states ++ [downsample]}
       end
 
     out_shapes = Enum.drop(out_shapes, -1)
 
-    down_residuals =
+    down_block_states =
       for shape <- out_shapes do
         Nx.broadcast(0.5, shape)
       end
@@ -69,15 +69,15 @@ defmodule Bumblebee.Diffusion.UNet2DConditionalTest do
 
     mid_spatial = div(spec.sample_size, 2 ** (length(spec.hidden_sizes) - 1))
     mid_dim = List.last(spec.hidden_sizes)
-    mid_residual_shape = {1, mid_spatial, mid_spatial, mid_dim}
+    mid_block_shape = {1, mid_spatial, mid_spatial, mid_dim}
 
     inputs =
       %{
         "sample" => Nx.broadcast(0.5, {1, spec.sample_size, spec.sample_size, 4}),
         "timestep" => Nx.tensor(1),
         "encoder_hidden_state" => Nx.broadcast(0.5, {1, 1, spec.cross_attention_size}),
-        "additional_mid_residual" => Nx.broadcast(0.5, mid_residual_shape),
-        "additional_down_residuals" => down_residuals
+        "additional_mid_block_state" => Nx.broadcast(0.5, mid_block_shape),
+        "additional_down_block_states" => down_block_states
       }
 
     outputs = Axon.predict(model, params, inputs)

@@ -117,6 +117,15 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
       The conditioning state (context) to use with cross-attention.
 
+    * `"additional_down_block_states"`
+
+      Optional outputs matching the structure of down blocks, added as
+      part of the encoder-decoder skip connections.
+
+    * `"additional_mid_block_state"`
+
+      Optional output added to the mid block result.
+
   ## Configuration
 
   #{Shared.options_doc(options)}
@@ -167,8 +176,8 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       Axon.input("sample", shape: sample_shape),
       Axon.input("timestep", shape: {}),
       Axon.input("encoder_hidden_state", shape: {nil, nil, spec.cross_attention_size}),
-      Axon.input("additional_mid_residual", optional: true),
-      Axon.input("additional_down_residuals", optional: true)
+      Axon.input("additional_down_block_states", optional: true),
+      Axon.input("additional_mid_block_state", optional: true)
     ])
   end
 
@@ -210,22 +219,19 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
         name: "input_conv"
       )
 
-    {sample, down_block_residuals} =
+    {sample, down_block_states} =
       down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, name: "down_blocks")
 
-    down_block_residuals =
-      add_optional_additional_down_residuals(
-        down_block_residuals,
-        inputs["additional_down_residuals"]
-      )
+    down_block_states =
+      maybe_add_down_block_states(down_block_states, inputs["additional_down_block_states"])
 
     sample =
       sample
       |> mid_block(timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
-      |> add_optional_additional_mid_residual(inputs["additional_mid_residual"])
+      |> maybe_add_mid_block_state(inputs["additional_mid_block_state"])
 
     sample
-    |> up_blocks(timestep_embedding, down_block_residuals, encoder_hidden_state, spec,
+    |> up_blocks(timestep_embedding, down_block_states, encoder_hidden_state, spec,
       name: "up_blocks"
     )
     |> Axon.group_norm(spec.group_norm_num_groups,
@@ -247,17 +253,17 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
       Enum.zip([spec.hidden_sizes, spec.down_block_types, num_attention_heads_per_block(spec)])
 
     in_channels = hd(spec.hidden_sizes)
-    down_block_residuals = [{sample, in_channels}]
+    down_block_states = [{sample, in_channels}]
 
-    state = {sample, down_block_residuals, in_channels}
+    state = {sample, down_block_states, in_channels}
 
-    {sample, down_block_residuals, _} =
+    {sample, down_block_states, _} =
       for {{out_channels, block_type, num_attention_heads}, idx} <- Enum.with_index(blocks),
           reduce: state do
-        {sample, down_block_residuals, in_channels} ->
+        {sample, down_block_states, in_channels} ->
           last_block? = idx == length(spec.hidden_sizes) - 1
 
-          {sample, residuals} =
+          {sample, states} =
             Diffusion.Layers.UNet.down_block_2d(
               block_type,
               sample,
@@ -276,10 +282,10 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
               name: join(name, idx)
             )
 
-          {sample, down_block_residuals ++ Tuple.to_list(residuals), out_channels}
+          {sample, down_block_states ++ Tuple.to_list(states), out_channels}
       end
 
-    {sample, List.to_tuple(down_block_residuals)}
+    {sample, List.to_tuple(down_block_states)}
   end
 
   defp mid_block(hidden_state, timesteps_embedding, encoder_hidden_state, spec, opts) do
@@ -301,15 +307,15 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   defp up_blocks(
          sample,
          timestep_embedding,
-         down_block_residuals,
+         down_block_states,
          encoder_hidden_state,
          spec,
          opts
        ) do
     name = opts[:name]
 
-    down_block_residuals =
-      down_block_residuals
+    down_block_states =
+      down_block_states
       |> Tuple.to_list()
       |> Enum.reverse()
       |> Enum.chunk_every(spec.depth + 1)
@@ -327,13 +333,13 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
         reversed_hidden_sizes,
         spec.up_block_types,
         num_attention_heads_per_block,
-        down_block_residuals
+        down_block_states
       ]
       |> Enum.zip()
       |> Enum.with_index()
 
     {sample, _} =
-      for {{out_channels, block_type, num_attention_heads, residuals}, idx} <- blocks_and_chunks,
+      for {{out_channels, block_type, num_attention_heads, states}, idx} <- blocks_and_chunks,
           reduce: {sample, in_channels} do
         {sample, in_channels} ->
           last_block? = idx == length(spec.hidden_sizes) - 1
@@ -343,7 +349,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
               block_type,
               sample,
               timestep_embedding,
-              residuals,
+              states,
               encoder_hidden_state,
               depth: spec.depth + 1,
               in_channels: in_channels,
@@ -363,16 +369,16 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
     sample
   end
 
-  defp add_optional_additional_mid_residual(mid_block_residual, additional_mid_block_residual) do
-    maybe_add(mid_block_residual, additional_mid_block_residual)
+  defp maybe_add_mid_block_state(mid_block_state, additional_mid_block_state) do
+    maybe_add(mid_block_state, additional_mid_block_state)
   end
 
-  defp add_optional_additional_down_residuals(down_block_residuals, additional_down_residuals) do
-    down_residuals = Tuple.to_list(down_block_residuals)
+  defp maybe_add_down_block_states(down_block_states, additional_down_block_states) do
+    down_block_states = Tuple.to_list(down_block_states)
 
-    for {{down_residual, out_channels}, i} <- Enum.with_index(down_residuals) do
-      additional_down_residual = Axon.nx(additional_down_residuals, &elem(&1, i))
-      {maybe_add(down_residual, additional_down_residual), out_channels}
+    for {{down_block_state, out_channels}, i} <- Enum.with_index(down_block_states) do
+      additional_down_block_state = Axon.nx(additional_down_block_states, &elem(&1, i))
+      {maybe_add(down_block_state, additional_down_block_state), out_channels}
     end
     |> List.to_tuple()
   end

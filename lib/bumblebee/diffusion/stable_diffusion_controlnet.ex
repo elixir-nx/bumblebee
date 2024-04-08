@@ -458,7 +458,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
           "encoder_hidden_state" => text_embeddings
         }
 
-        %{down_blocks_residuals: down_blocks_residuals, mid_block_residual: mid_block_residual} =
+        %{down_block_states: down_block_states, mid_block_state: mid_block_state} =
           controlnet_predict.(controlnet_params, controlnet_inputs)
 
         unet_inputs =
@@ -466,8 +466,8 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
             "sample" => Nx.concatenate([latents, latents]),
             "timestep" => timestep,
             "encoder_hidden_state" => text_embeddings,
-            "additional_mid_residual" => mid_block_residual,
-            "additional_down_residuals" => down_blocks_residuals
+            "additional_down_block_states" => down_block_states,
+            "additional_mid_block_state" => mid_block_state
           }
 
         %{sample: noise_pred} = unet_predict.(unet_params, unet_inputs)
