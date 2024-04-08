@@ -18,7 +18,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNetTest do
 
       {:ok, unet} = Bumblebee.load_model({:hf, repository_id, subdir: "unet"})
 
-      {:ok, controlnet} = Bumblebee.load_model({:hf, "hf-internal-testing/tiny-controlnet"})
+      {:ok, controlnet} = Bumblebee.load_model({:hf, "bumblebee-testing/tiny-controlnet"})
 
       {:ok, vae} =
         Bumblebee.load_model({:hf, repository_id, subdir: "vae"}, architecture: :decoder)
