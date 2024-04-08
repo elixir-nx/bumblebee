@@ -96,7 +96,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
   ]
 
   @moduledoc """
-  U-Net model with two spatial dimensions and conditional state.
+  U-Net model with two spatial dimensions and conditioning state.
 
   ## Architectures
 
@@ -115,7 +115,7 @@ defmodule Bumblebee.Diffusion.UNet2DConditional do
 
     * `"encoder_hidden_state"` - `{batch_size, sequence_length, hidden_size}`
 
-      The conditional state (context) to use with cross-attention.
+      The conditioning state (context) to use with cross-attention.
 
   ## Configuration
 

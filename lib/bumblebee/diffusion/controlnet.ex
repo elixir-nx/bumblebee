@@ -96,7 +96,7 @@ defmodule Bumblebee.Diffusion.ControlNet do
   ]
 
   @moduledoc """
-  ControlNet model with two spatial dimensions and conditional state.
+  ControlNet model with two spatial dimensions and conditioning state.
 
   ## Architectures
 
@@ -115,11 +115,11 @@ defmodule Bumblebee.Diffusion.ControlNet do
 
     * `"encoder_hidden_state"` - `{batch_size, sequence_length, hidden_size}`
 
-      The conditional state (context) to use with cross-attention.
+      The conditioning state (context) to use with cross-attention.
 
     * `"conditioning"` - `{batch_size, conditioning_size, conditioning_size, 3}`
 
-      The conditional input
+      The conditioning spatial input.
 
   ## Configuration
 
@@ -226,10 +226,10 @@ defmodule Bumblebee.Diffusion.ControlNet do
         name: "input_conv"
       )
 
-    controlnet_cond_embeddings =
-      controlnet_embeddings(conditioning, spec, name: "controlnet_cond_embedding")
+    controlnet_conditioning_embeddings =
+      controlnet_embedding(conditioning, spec, name: "controlnet_conditioning_embedding")
 
-    sample = Axon.add(sample, controlnet_cond_embeddings)
+    sample = Axon.add(sample, controlnet_conditioning_embeddings)
 
     {sample, down_blocks_residuals} =
       down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, name: "down_blocks")
@@ -247,8 +247,9 @@ defmodule Bumblebee.Diffusion.ControlNet do
       |> List.to_tuple()
 
     mid_block_residual =
-      controlnet_mid_block(sample, spec, name: "controlnet_mid_block")
-      |> Axon.multiply(conditioning_scale, name: "mid_conditioning_scale")
+      sample
+      |> controlnet_mid_block(spec, name: "controlnet_mid_block")
+      |> Axon.multiply(conditioning_scale)
 
     %{
       down_blocks_residuals: Axon.container(down_blocks_residuals),
@@ -281,7 +282,7 @@ defmodule Bumblebee.Diffusion.ControlNet do
     )
   end
 
-  defp controlnet_embeddings(sample, spec, opts) do
+  defp controlnet_embedding(sample, spec, opts) do
     name = opts[:name]
 
     state =
@@ -489,10 +490,11 @@ defmodule Bumblebee.Diffusion.ControlNet do
         |> Enum.reduce(&Map.merge/2)
 
       controlnet = %{
+        "controlnet_conditioning_embedding.input_conv" => "controlnet_cond_embedding.conv_in",
+        "controlnet_conditioning_embedding.inner_convs.{m}" =>
+          "controlnet_cond_embedding.blocks.{m}",
+        "controlnet_conditioning_embedding.output_conv" => "controlnet_cond_embedding.conv_out",
         "controlnet_down_blocks.{m}.zero_conv" => "controlnet_down_blocks.{m}",
-        "controlnet_cond_embedding.input_conv" => "controlnet_cond_embedding.conv_in",
-        "controlnet_cond_embedding.inner_convs.{m}" => "controlnet_cond_embedding.blocks.{m}",
-        "controlnet_cond_embedding.output_conv" => "controlnet_cond_embedding.conv_out",
         "controlnet_mid_block.zero_conv" => "controlnet_mid_block"
       }
 
