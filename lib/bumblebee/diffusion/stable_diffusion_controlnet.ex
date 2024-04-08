@@ -107,9 +107,12 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
 
       prompt = "numbat in forest, detailed, digital art"
 
+      # The conditioning image matching the given ControlNet condition,
+      # such as edges, pose or depth. Here we use a simple handcrafted
+      # tensor
       conditioning =
         Nx.tensor(
-          [for(_ <- 1..8, do: [255]) ++ for(_ <- 1..24, do: [0])],
+          [List.duplicate(255, 8) ++ List.duplicate(0, 24)],
           type: :u8
         )
         |> Nx.tile([256, 8, 3])
@@ -450,10 +453,12 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
              {scheduler_state, text_embeddings, unet_params, conditioning, conditioning_scale,
               controlnet_params}},
             timestep <- timesteps do
+        sample = Nx.concatenate([latents, latents])
+
         controlnet_inputs = %{
           "conditioning" => conditioning,
           "conditioning_scale" => conditioning_scale,
-          "sample" => Nx.concatenate([latents, latents]),
+          "sample" => sample,
           "timestep" => timestep,
           "encoder_hidden_state" => text_embeddings
         }
@@ -463,7 +468,7 @@ defmodule Bumblebee.Diffusion.StableDiffusionControlNet do
 
         unet_inputs =
           %{
-            "sample" => Nx.concatenate([latents, latents]),
+            "sample" => sample,
             "timestep" => timestep,
             "encoder_hidden_state" => text_embeddings,
             "additional_down_block_states" => down_block_states,

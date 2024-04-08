@@ -292,23 +292,19 @@ defmodule Bumblebee.Diffusion.ControlNet do
         activation: :silu
       )
 
-    block_in_channels = Enum.drop(spec.conditioning_embedding_hidden_sizes, -1)
-    block_out_channels = Enum.drop(spec.conditioning_embedding_hidden_sizes, 1)
-
-    channels = Enum.zip(block_in_channels, block_out_channels)
+    size_pairs = Enum.chunk_every(spec.conditioning_embedding_hidden_sizes, 2, 1)
 
     sample =
-      for {{in_channels, out_channels}, i} <- Enum.with_index(channels),
-          reduce: state do
+      for {[in_size, out_size], i} <- Enum.with_index(size_pairs), reduce: state do
         input ->
           input
-          |> Axon.conv(in_channels,
+          |> Axon.conv(in_size,
             kernel_size: 3,
             padding: [{1, 1}, {1, 1}],
             name: name |> join("inner_convs") |> join(2 * i),
             activation: :silu
           )
-          |> Axon.conv(out_channels,
+          |> Axon.conv(out_size,
             kernel_size: 3,
             padding: [{1, 1}, {1, 1}],
             strides: 2,
