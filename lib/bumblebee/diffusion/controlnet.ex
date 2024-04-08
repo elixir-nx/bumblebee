@@ -226,11 +226,10 @@ defmodule Bumblebee.Diffusion.ControlNet do
         name: "input_conv"
       )
 
-    control_net_cond_embeddings =
-      control_net_embeddings(conditioning, spec, name: "controlnet_cond_embedding")
+    controlnet_cond_embeddings =
+      controlnet_embeddings(conditioning, spec, name: "controlnet_cond_embedding")
 
-    sample =
-      Axon.add(sample, control_net_cond_embeddings, name: "add_sample_control_net_embeddings")
+    sample = Axon.add(sample, controlnet_cond_embeddings)
 
     {sample, down_blocks_residuals} =
       down_blocks(sample, timestep_embedding, encoder_hidden_state, spec, name: "down_blocks")
@@ -239,7 +238,7 @@ defmodule Bumblebee.Diffusion.ControlNet do
       mid_block(sample, timestep_embedding, encoder_hidden_state, spec, name: "mid_block")
 
     down_blocks_residuals =
-      control_net_down_blocks(down_blocks_residuals, name: "controlnet_down_blocks")
+      controlnet_down_blocks(down_blocks_residuals, name: "controlnet_down_blocks")
 
     down_blocks_residuals =
       for residual <- Tuple.to_list(down_blocks_residuals) do
@@ -248,7 +247,7 @@ defmodule Bumblebee.Diffusion.ControlNet do
       |> List.to_tuple()
 
     mid_block_residual =
-      control_net_mid_block(sample, spec, name: "controlnet_mid_block")
+      controlnet_mid_block(sample, spec, name: "controlnet_mid_block")
       |> Axon.multiply(conditioning_scale, name: "mid_conditioning_scale")
 
     %{
@@ -257,7 +256,7 @@ defmodule Bumblebee.Diffusion.ControlNet do
     }
   end
 
-  defp control_net_down_blocks(down_block_residuals, opts) do
+  defp controlnet_down_blocks(down_block_residuals, opts) do
     name = opts[:name]
 
     residuals =
@@ -272,7 +271,7 @@ defmodule Bumblebee.Diffusion.ControlNet do
     List.to_tuple(residuals)
   end
 
-  defp control_net_mid_block(input, spec, opts) do
+  defp controlnet_mid_block(input, spec, opts) do
     name = opts[:name]
 
     Axon.conv(input, List.last(spec.hidden_sizes),
@@ -282,7 +281,7 @@ defmodule Bumblebee.Diffusion.ControlNet do
     )
   end
 
-  defp control_net_embeddings(sample, spec, opts) do
+  defp controlnet_embeddings(sample, spec, opts) do
     name = opts[:name]
 
     state =
