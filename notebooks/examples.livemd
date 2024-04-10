@@ -180,7 +180,7 @@ Another text-related task is question answering, where the objective is to retri
 
 ```elixir
 {:ok, roberta} = Bumblebee.load_model({:hf, "deepset/roberta-base-squad2"})
-{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "roberta-FacebookAI/roberta-base"})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "FacebookAI/roberta-base"})
 
 serving = Bumblebee.Text.question_answering(roberta, tokenizer)
 
