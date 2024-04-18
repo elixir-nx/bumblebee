@@ -299,7 +299,8 @@ defmodule Bumblebee.Text.GenerationConfig do
           forced_eos_token_id: {"forced_eos_token_id", optional(number())},
           forced_token_ids: {"forced_decoder_ids", list(tuple([number(), number()]))},
           suppressed_token_ids: {"suppress_tokens", list(number())},
-          no_repeat_ngram_length: {"no_repeat_ngram_size", number()}
+          no_repeat_ngram_length: {"no_repeat_ngram_size", number()},
+          temperature: {"temperature", number()}
         )
 
       strategy_opts =
