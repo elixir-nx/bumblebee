@@ -104,7 +104,7 @@ defmodule Bumblebee.Text.TextGenerationTest do
 
     # Raises when a batch is given
     assert_raise ArgumentError,
-                 "serving only accepts singular input when stream is enabled, call the serving with each input in the batch separately",
+                 "this serving only accepts singular input when stream is enabled, call the serving with each input in the batch separately",
                  fn ->
                    Nx.Serving.run(serving, [article])
                  end
