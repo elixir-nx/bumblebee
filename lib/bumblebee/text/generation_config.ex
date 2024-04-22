@@ -115,7 +115,8 @@ defmodule Bumblebee.Text.GenerationConfig do
     ],
     eos_token_id: [
       default: nil,
-      doc: "the id of the end-of-sequence token"
+      doc:
+        "the id of the end-of-sequence token. This can also be a list, in case multiple tokens should be recognized as EOS"
     ],
     pad_token_id: [
       default: nil,
@@ -293,7 +294,7 @@ defmodule Bumblebee.Text.GenerationConfig do
           min_length: {"min_length", optional(number())},
           decoder_start_token_id: {"decoder_start_token_id", optional(number())},
           bos_token_id: {"bos_token_id", optional(number())},
-          eos_token_id: {"eos_token_id", optional(number())},
+          eos_token_id: {"eos_token_id", optional(one_of([number(), list(number())]))},
           pad_token_id: {"pad_token_id", optional(number())},
           forced_bos_token_id: {"forced_bos_token_id", optional(number())},
           forced_eos_token_id: {"forced_eos_token_id", optional(number())},
