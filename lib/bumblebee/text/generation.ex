@@ -133,7 +133,13 @@ defmodule Bumblebee.Text.Generation do
 
     decoder_start_token_id = config.decoder_start_token_id || config.bos_token_id
     eos_token_id = config.eos_token_id
-    pad_token_id = config.pad_token_id || config.eos_token_id
+
+    pad_token_id =
+      config.pad_token_id ||
+        case config.eos_token_id do
+          [eos_token_id | _] -> eos_token_id
+          eos_token_id -> eos_token_id
+        end
 
     unless pad_token_id do
       raise ArgumentError,
@@ -342,7 +348,7 @@ defmodule Bumblebee.Text.Generation do
         if min_length_fun && config.eos_token_id do
           &min_length_processor(&1, &2,
             min_length_fun: min_length_fun,
-            eos_token_id: config.eos_token_id
+            eos_token_ids: List.wrap(config.eos_token_id)
           )
         end,
         if config.suppressed_token_ids != [] do
@@ -582,17 +588,11 @@ defmodule Bumblebee.Text.Generation do
     {batch_size, max_length} = Nx.shape(sequences)
 
     finished_length =
-      case eos_token_id do
-        nil ->
-          finished_length
-
-        eos_token_id ->
-          Nx.select(
-            finished_length == 0 and (token_id == eos_token_id or length == max_length),
-            length,
-            finished_length
-          )
-      end
+      Nx.select(
+        finished_length == 0 and (eos_token?(token_id, eos_token_id) or length == max_length),
+        length,
+        finished_length
+      )
 
     finished? = finished_length > 0
     output_length = Nx.broadcast(length - input_length, {batch_size})
@@ -602,6 +602,18 @@ defmodule Bumblebee.Text.Generation do
 
     state = %{state | sequences: sequences, length: length, finished_length: finished_length}
     attach_token(token, state)
+  end
+
+  deftransformp eos_token?(token_id, eos_token_id) do
+    if eos_token_id do
+      eos_token_ids = List.wrap(eos_token_id)
+
+      token_id
+      |> Nx.equal(Nx.tensor(eos_token_ids))
+      |> Nx.any()
+    else
+      Nx.tensor(false)
+    end
   end
 
   defnp batch_process_logits(logits_processor_fun, logits, state) do

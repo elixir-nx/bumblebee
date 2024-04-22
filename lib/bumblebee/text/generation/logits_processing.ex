@@ -52,14 +52,14 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
   end
 
   defn min_length_processor(logits, context, opts \\ []) do
-    opts = keyword!(opts, [:eos_token_id, :min_length_fun])
-    eos_token_id = opts[:eos_token_id]
+    opts = keyword!(opts, [:eos_token_ids, :min_length_fun])
+    eos_token_ids = opts[:eos_token_ids]
     min_length_fun = opts[:min_length_fun]
 
     min_length = min_length_fun.(context.input_length)
 
     if context.length < min_length do
-      ignore_token_id(logits, eos_token_id)
+      ignore_token_ids(logits, eos_token_ids)
     else
       logits
     end
@@ -119,6 +119,10 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
       [token_id],
       Nx.broadcast(Nx.Constants.neg_infinity(Nx.type(logits)), {1})
     )
+  end
+
+  deftransformp ignore_token_ids(logits, token_ids) do
+    Enum.reduce(token_ids, logits, &ignore_token_id(&2, &1))
   end
 
   defn temperature_processor(logits, _context, opts \\ []) do

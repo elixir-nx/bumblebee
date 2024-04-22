@@ -109,7 +109,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessingTest do
 
       assert_equal(
         LogitsProcessing.min_length_processor(logits, context,
-          eos_token_id: 2,
+          eos_token_ids: [2],
           min_length_fun: fn _ -> 3 end
         ),
         Nx.tensor([1.0, 2.0, :neg_infinity, 4.0])
@@ -123,10 +123,24 @@ defmodule Bumblebee.Text.Generation.LogitsProcessingTest do
 
       assert_equal(
         LogitsProcessing.min_length_processor(logits, context,
-          eos_token_id: 2,
+          eos_token_ids: [2],
           min_length_fun: fn _ -> 3 end
         ),
         logits
+      )
+    end
+
+    test "supports multiple token ids" do
+      logits = Nx.tensor([1.0, 2.0, 3.0, 4.0])
+
+      context = context([1, 1, 0, 0])
+
+      assert_equal(
+        LogitsProcessing.min_length_processor(logits, context,
+          eos_token_ids: [2, 1],
+          min_length_fun: fn _ -> 3 end
+        ),
+        Nx.tensor([1.0, :neg_infinity, :neg_infinity, 4.0])
       )
     end
   end
