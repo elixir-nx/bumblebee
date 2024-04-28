@@ -18,6 +18,12 @@ defmodule Bumblebee.Text.Phi3 do
         such as 512, 1024 or 2048
         """
       ],
+       original_max_positions: [
+       default: 4096,
+       doc: """
+       the original vocabulary size of the position embedding.
+       """
+       ],
       hidden_size: [
         default: 2048,
         doc: "the dimensionality of hidden layers"
@@ -43,17 +49,31 @@ defmodule Bumblebee.Text.Phi3 do
         Attention
         """
       ],
+      attention_window_size: [
+        default: 262144,
+        doc: "window size for both sides of the sliding attention window"
+      ],
       activation: [
         default: :gelu_approx_tanh,
         doc: "the activation function"
       ],
-      rotary_embedding_percentage: [
-        default: 0.5,
-        doc: "percentage of the query and keys that will have rotary embedding"
-      ],
       rotary_embedding_base: [
         default: 10_000,
         doc: "base for computing rotary embedding frequency"
+      ],
+      rotary_embedding_scaling_strategy: [
+        default: nil,
+        doc: """
+        scaling configuration for rotary embedding. Currently the supported values are:
+
+          * `%{type: :linear, factor: number()}`
+
+          * `%{type: :dynamic, factor: number()}`
+
+          * `%{type: :su, short_factor: [number], long_factor: [number]}`
+
+        For more details see https://www.reddit.com/r/LocalLlama/comments/14mrgpr/dynamically_scaled_rope_further_increases
+        """
       ],
       layer_norm_epsilon: [
         default: 1.0e-12,
@@ -352,6 +372,8 @@ defmodule Bumblebee.Text.Phi3 do
       num_key_value_heads: spec.num_key_value_heads,
       hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
+      dropout_rate: 0.0,
+      attention_dropout_rate: 0.0,
       layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
       ffn:
         &ffn(&1, spec.intermediate_size, spec.hidden_size,
@@ -365,11 +387,13 @@ defmodule Bumblebee.Text.Phi3 do
 #      block_type: &block_impl/3,
       block_type: :norm_first,
       causal: true,
+      attention_window_size:
+        spec.attention_window_size && {spec.attention_window_size, spec.attention_window_size},
       rotary_embedding: [
         position_ids: position_ids,
         max_positions: spec.max_positions,
         base: spec.rotary_embedding_base,
-        percentage: spec.rotary_embedding_percentage
+        scaling_strategy: spec.rotary_embedding_scaling_strategy
       ],
       query_use_bias: false,
       key_use_bias: false,
@@ -434,20 +458,39 @@ defmodule Bumblebee.Text.Phi3 do
     def load(spec, data) do
       import Shared.Converters
 
+      scaling_strategy_converter = fn name, value ->
+        case value do
+          %{"type" => "linear", "factor" => factor} when is_number(factor) ->
+            {:ok, %{type: :linear, factor: factor}}
+
+          %{"type" => "dynamic", "factor" => factor} when is_number(factor) ->
+            {:ok, %{type: :dynamic, factor: factor}}
+
+          %{"type" => "su", "long_factor" => lf, "short_factor" => sf} ->
+            {:ok, %{type: :su, long_factor: lf, short_factor: sf, original_max_positions: spec.original_max_positions}}
+
+          _other ->
+            {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
+        end
+      end
+
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
           max_positions: {"max_position_embeddings", number()},
+          original_max_positions: {"original_max_position_embeddings", number()},
           hidden_size: {"hidden_size", number()},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
+          attention_window_size: {"sliding_window", optional(number())},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
           rotary_embedding_base: {"rope_theta", number()},
-          rotary_embedding_percentage: {"partial_rotary_factor", number()},
+          rotary_embedding_scaling_strategy:
+            {"rope_scaling", optional(scaling_strategy_converter)},
           initializer_scale: {"initializer_range", number()},
-          layer_norm_epsilon: {"layer_norm_eps", number()}
+          layer_norm_epsilon: {"rms_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -457,6 +500,16 @@ defmodule Bumblebee.Text.Phi3 do
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(spec) do
       IO.inspect spec
+      #QKV
+      # Q ..., :query_pos
+      # K query_pos, query_pos + self_num_key_value_heads * head_dim
+      # V ..., everything else.
+      # Basically the sequence is self.num_key_value_heads * head_dim
+      # query_pos is num_heads * head_dim
+      # head_dim is hidden_size * num_heads
+      # query_pos is num_heads * hidden_size * num_heads??
+
+
       out_template = {spec.num_attention_heads, [1, 1, 1], :auto}
       %{
         "embedder.token_embedding" => "model.embed_tokens",
