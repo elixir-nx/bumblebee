@@ -392,8 +392,16 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
   end
 
   defp u32_binaries_to_tensor(list) do
-    list
-    |> IO.iodata_to_binary()
+    binary = IO.iodata_to_binary(list)
+
+    if binary == <<>> do
+      raise ArgumentError,
+            "the tokenizer returned zero tokens. Depending on the tokenizer," <>
+              " this may happen for blank input. You should check if the input is blank" <>
+              " before attempting tokenization"
+    end
+
+    binary
     |> Nx.from_binary(:u32)
     |> Nx.reshape({length(list), :auto})
   end
