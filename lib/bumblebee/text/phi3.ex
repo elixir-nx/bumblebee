@@ -85,7 +85,7 @@ defmodule Bumblebee.Text.Phi3 do
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
     ] ++
-      Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
+      Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 32000)
 
   @moduledoc """
   Phi model family.
@@ -325,11 +325,6 @@ defmodule Bumblebee.Text.Phi3 do
       )
 
     hidden_state = Layers.rms_norm(decoder_outputs.hidden_state, name: "output_norm", epsilon: spec.layer_norm_epsilon)
-#    hidden_state =
-#      Axon.layer_norm(decoder_outputs.hidden_state,
-#        name: "output_norm",
-#        epsilon: spec.layer_norm_epsilon
-#      )
 
     %{
       hidden_state: hidden_state,
@@ -372,19 +367,12 @@ defmodule Bumblebee.Text.Phi3 do
       num_key_value_heads: spec.num_key_value_heads,
       hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
-      dropout_rate: 0.0,
-      attention_dropout_rate: 0.0,
       layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
       ffn:
         &ffn(&1, spec.intermediate_size, spec.hidden_size,
           name: &2,
           activation: spec.activation
         ),
-#      ffn: [
-#        intermediate_size: spec.intermediate_size,
-#        activation: spec.activation
-#      ],
-#      block_type: &block_impl/3,
       block_type: :norm_first,
       causal: true,
       attention_window_size:
@@ -412,31 +400,11 @@ defmodule Bumblebee.Text.Phi3 do
         name: join(name, "gate_up"),
         use_bias: false
       )
-    {gate, up_states} = Axon.split(gate_up, 2)
+    {gate, up_states} = Axon.split(gate_up, 2, axis: -1)
 
     hidden_state = Axon.multiply(up_states, Axon.activation(gate, activation))
 
     Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
-  end
-
-  # :parallel block with attention norm applied earlier and without ffn norm
-  defp block_impl(hidden_state, steps, _name) do
-    shortcut = hidden_state
-
-    hidden_state = steps.self_attention_norm.(hidden_state)
-
-    {attention_hidden_state, attention_info} = steps.self_attention.(hidden_state)
-
-    {_hidden_state, cross_attention_info} =
-      steps.cross_attention_maybe.(hidden_state, fn _hidden_state ->
-        raise "cross attention not supported"
-      end)
-
-    ffn_hidden_state = steps.ffn.(hidden_state)
-
-    hidden_state = Axon.add([shortcut, attention_hidden_state, ffn_hidden_state])
-
-    {hidden_state, attention_info, cross_attention_info}
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do
@@ -499,17 +467,6 @@ defmodule Bumblebee.Text.Phi3 do
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(spec) do
-      IO.inspect spec
-      #QKV
-      # Q ..., :query_pos
-      # K query_pos, query_pos + self_num_key_value_heads * head_dim
-      # V ..., everything else.
-      # Basically the sequence is self.num_key_value_heads * head_dim
-      # query_pos is num_heads * head_dim
-      # head_dim is hidden_size * num_heads
-      # query_pos is num_heads * hidden_size * num_heads??
-
-
       out_template = {spec.num_attention_heads, [1, 1, 1], :auto}
       %{
         "embedder.token_embedding" => "model.embed_tokens",
