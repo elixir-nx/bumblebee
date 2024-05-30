@@ -479,7 +479,8 @@ defmodule Bumblebee.Text.Phi3 do
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(spec) do
-      out_template = {spec.num_attention_heads, [1, 1, 1], :auto}
+      out_template =
+        {[spec.num_attention_heads, spec.num_key_value_heads, spec.num_key_value_heads], :auto}
 
       %{
         "embedder.token_embedding" => "model.embed_tokens",
