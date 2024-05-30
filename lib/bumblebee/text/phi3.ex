@@ -18,12 +18,12 @@ defmodule Bumblebee.Text.Phi3 do
         such as 512, 1024 or 2048
         """
       ],
-       original_max_positions: [
-       default: 4096,
-       doc: """
-       the original vocabulary size of the position embedding.
-       """
-       ],
+      original_max_positions: [
+        default: 4096,
+        doc: """
+        the original vocabulary size of the position embedding.
+        """
+      ],
       hidden_size: [
         default: 2048,
         doc: "the dimensionality of hidden layers"
@@ -50,7 +50,7 @@ defmodule Bumblebee.Text.Phi3 do
         """
       ],
       attention_window_size: [
-        default: 262144,
+        default: 262_144,
         doc: "window size for both sides of the sliding attention window"
       ],
       activation: [
@@ -85,7 +85,8 @@ defmodule Bumblebee.Text.Phi3 do
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
     ] ++
-      Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 32000)
+      Shared.common_options([:num_labels, :id_to_label]) ++
+      Shared.token_options(pad_token_id: 32000)
 
   @moduledoc """
   Phi model family.
@@ -324,7 +325,11 @@ defmodule Bumblebee.Text.Phi3 do
         name: "decoder"
       )
 
-    hidden_state = Layers.rms_norm(decoder_outputs.hidden_state, name: "output_norm", epsilon: spec.layer_norm_epsilon)
+    hidden_state =
+      Layers.rms_norm(decoder_outputs.hidden_state,
+        name: "output_norm",
+        epsilon: spec.layer_norm_epsilon
+      )
 
     %{
       hidden_state: hidden_state,
@@ -400,6 +405,7 @@ defmodule Bumblebee.Text.Phi3 do
         name: join(name, "gate_up"),
         use_bias: false
       )
+
     {gate, up_states} = Axon.split(gate_up, 2, axis: -1)
 
     hidden_state = Axon.multiply(up_states, Axon.activation(gate, activation))
@@ -435,7 +441,13 @@ defmodule Bumblebee.Text.Phi3 do
             {:ok, %{type: :dynamic, factor: factor}}
 
           %{"type" => "su", "long_factor" => lf, "short_factor" => sf} ->
-            {:ok, %{type: :su, long_factor: lf, short_factor: sf, original_max_positions: spec.original_max_positions}}
+            {:ok,
+             %{
+               type: :su,
+               long_factor: lf,
+               short_factor: sf,
+               original_max_positions: spec.original_max_positions
+             }}
 
           _other ->
             {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
@@ -468,11 +480,27 @@ defmodule Bumblebee.Text.Phi3 do
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(spec) do
       out_template = {spec.num_attention_heads, [1, 1, 1], :auto}
+
       %{
         "embedder.token_embedding" => "model.embed_tokens",
-        "decoder.blocks.{n}.self_attention.query" => Shared.sliced_dense_params_source("model.layers.{n}.self_attn.qkv_proj", out_template, 0),
-        "decoder.blocks.{n}.self_attention.key" => Shared.sliced_dense_params_source("model.layers.{n}.self_attn.qkv_proj", out_template, 1),
-        "decoder.blocks.{n}.self_attention.value" => Shared.sliced_dense_params_source("model.layers.{n}.self_attn.qkv_proj", out_template, 2),
+        "decoder.blocks.{n}.self_attention.query" =>
+          Shared.sliced_dense_params_source(
+            "model.layers.{n}.self_attn.qkv_proj",
+            out_template,
+            0
+          ),
+        "decoder.blocks.{n}.self_attention.key" =>
+          Shared.sliced_dense_params_source(
+            "model.layers.{n}.self_attn.qkv_proj",
+            out_template,
+            1
+          ),
+        "decoder.blocks.{n}.self_attention.value" =>
+          Shared.sliced_dense_params_source(
+            "model.layers.{n}.self_attn.qkv_proj",
+            out_template,
+            2
+          ),
         "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.o_proj",
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
         "decoder.blocks.{n}.self_attention.rotary_embedding" =>

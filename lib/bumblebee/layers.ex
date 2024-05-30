@@ -1245,15 +1245,15 @@ defmodule Bumblebee.Layers do
 
         %{type: :su, short_factor: sf, long_factor: lf, original_max_positions: omp} ->
           scaling_factor =
-          if sequence_length > omp do
-           Nx.tensor(lf, type: :f32)
-         else
-          Nx.tensor(sf, type: :f32)
-         end
+            if sequence_length > omp do
+              Nx.tensor(lf, type: :f32)
+            else
+              Nx.tensor(sf, type: :f32)
+            end
 
           # Define how you want to use scaling_factor for base and position
           scaled_base = Nx.multiply(base, scaling_factor)
-#          scaled_position = Nx.divide(position, scaling_factor)
+          #          scaled_position = Nx.divide(position, scaling_factor)
 
           {scaled_base, position}
 
