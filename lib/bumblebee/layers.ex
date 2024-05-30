@@ -1230,25 +1230,66 @@ defmodule Bumblebee.Layers do
                 ) do
     position = Nx.iota({sequence_length})
 
-    {base, position} =
-      case scaling_strategy do
-        %{type: :linear, factor: factor} ->
-          {base, Nx.divide(position, factor)}
-
-        %{type: :dynamic, factor: factor} when sequence_length > max_positions ->
-          base =
-            base
-            |> Nx.multiply(factor * sequence_length / max_positions - (factor - 1))
-            |> Nx.pow(size / (size - 2))
-
-          {base, position}
-
-        _other ->
-          {base, position}
-      end
-
     range = Nx.iota({div(size, 2)}) |> Nx.multiply(2) |> Nx.divide(size)
-    inv_frequency = Nx.divide(1.0, Nx.pow(base, range))
+
+    case scaling_strategy do
+      %{type: :linear, factor: factor} ->
+        frequency = Nx.pow(base, range)
+        position = Nx.divide(position, factor)
+        positions_cos_sin(position, frequency)
+
+      %{type: :dynamic, factor: factor} when sequence_length > max_positions ->
+        base =
+          base
+          |> Nx.multiply(factor * sequence_length / max_positions - (factor - 1))
+          |> Nx.pow(size / (size - 2))
+
+        frequency = Nx.pow(base, range)
+        positions_cos_sin(position, frequency)
+
+      %{
+        type: type,
+        short_factor: short_factor,
+        long_factor: long_factor,
+        original_max_positions: original_max_positions
+      }
+      when type in [:su, :yarn] ->
+        factor =
+          if sequence_length > original_max_positions do
+            Nx.tensor(long_factor, type: :f32)
+          else
+            Nx.tensor(short_factor, type: :f32)
+          end
+
+        scale = max_positions / original_max_positions
+
+        cos_sin_factor =
+          cond do
+            scale <= 1.0 ->
+              1.0
+
+            type == :su ->
+              Nx.divide(Nx.log(scale), Nx.log(original_max_positions))
+              |> Nx.add(1)
+              |> Nx.sqrt()
+
+            type == :yarn ->
+              Nx.multiply(0.1, Nx.log(scale))
+              |> Nx.add(1.0)
+          end
+
+        frequency = Nx.multiply(factor, Nx.pow(base, range))
+        {cos, sin} = positions_cos_sin(position, frequency)
+        {Nx.multiply(cos, cos_sin_factor), Nx.multiply(sin, cos_sin_factor)}
+
+      _other ->
+        frequency = Nx.pow(base, range)
+        positions_cos_sin(position, frequency)
+    end
+  end
+
+  defnp positions_cos_sin(position, frequency) do
+    inv_frequency = 1.0 / frequency
     angle = Nx.outer(position, inv_frequency)
 
     angle = Nx.concatenate([angle, angle], axis: -1)
