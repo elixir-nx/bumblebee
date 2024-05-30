@@ -89,21 +89,21 @@ defmodule Bumblebee.Text.Phi3 do
       Shared.token_options(pad_token_id: 32000)
 
   @moduledoc """
-  Phi model family.
+  Phi-3 model family.
 
   ## Architectures
 
-    * `:base` - plain Phi without any head on top
+    * `:base` - plain Phi-3 without any head on top
 
-    * `:for_causal_language_modeling` - Phi with a language modeling
+    * `:for_causal_language_modeling` - Phi-3 with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - Phi with a sequence
+    * `:for_sequence_classification` - Phi-3 with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
-    * `:for_token_classification` - Phi with a token classification
+    * `:for_token_classification` - Phi-3 with a token classification
       head. The head returns logits for each token in the original
       sequence
 
