@@ -169,7 +169,7 @@ defmodule Bumblebee.Conversion.PyTorchParams do
       end)
 
     params_data = Map.new(params)
-    params = %{params_expr | data: params_data} |> IO.inspect()
+    params = %{params_expr | data: params_data}
 
     diff = %{
       missing: Enum.reverse(diff.missing),
