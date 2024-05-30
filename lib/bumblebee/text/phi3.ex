@@ -374,7 +374,7 @@ defmodule Bumblebee.Text.Phi3 do
       kernel_initializer: kernel_initializer(spec),
       layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
       ffn:
-        &ffn(&1, spec.intermediate_size, spec.hidden_size,
+        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
           name: &2,
           activation: spec.activation
         ),
@@ -396,19 +396,19 @@ defmodule Bumblebee.Text.Phi3 do
     )
   end
 
-  defp ffn(hidden_state, intermediate_size, output_size, opts) do
+  defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
     name = opts[:name]
     activation = opts[:activation]
 
-    gate_up =
-      Axon.dense(hidden_state, intermediate_size * 2,
-        name: join(name, "gate_up"),
+    intermediate =
+      Axon.dense(hidden_state, intermediate_size,
+        name: join(name, "intermediate"),
         use_bias: false
       )
 
-    {gate, up_states} = Axon.split(gate_up, 2, axis: -1)
+    gate = Axon.dense(hidden_state, intermediate_size, name: join(name, "gate"), use_bias: false)
 
-    hidden_state = Axon.multiply(up_states, Axon.activation(gate, activation))
+    hidden_state = Axon.multiply(intermediate, Axon.activation(gate, activation))
 
     Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
   end
@@ -506,7 +506,18 @@ defmodule Bumblebee.Text.Phi3 do
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
         "decoder.blocks.{n}.self_attention.rotary_embedding" =>
           "model.layers.{n}.self_attn.rotary_emb",
-        "decoder.blocks.{n}.ffn.gate_up" => "model.layers.{n}.mlp.gate_up_proj",
+        "decoder.blocks.{n}.ffn.gate" =>
+          Shared.sliced_dense_params_source(
+            "model.layers.{n}.mlp.gate_up_proj",
+            {[1, 1], :auto},
+            0
+          ),
+        "decoder.blocks.{n}.ffn.intermediate" =>
+          Shared.sliced_dense_params_source(
+            "model.layers.{n}.mlp.gate_up_proj",
+            {[1, 1], :auto},
+            1
+          ),
         "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",
         "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
         "output_norm" => "model.norm",
