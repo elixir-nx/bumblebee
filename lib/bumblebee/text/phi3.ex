@@ -18,12 +18,6 @@ defmodule Bumblebee.Text.Phi3 do
         such as 512, 1024 or 2048
         """
       ],
-      original_max_positions: [
-        default: 4096,
-        doc: """
-        the original vocabulary size of the position embedding.
-        """
-      ],
       hidden_size: [
         default: 2048,
         doc: "the dimensionality of hidden layers"
@@ -66,13 +60,10 @@ defmodule Bumblebee.Text.Phi3 do
         doc: """
         scaling configuration for rotary embedding. Currently the supported values are:
 
-          * `%{type: :linear, factor: number()}`
+          * `%{type: :su, short_factor: list(number()), long_factor: list(number()), original_max_positions: pos_integer()}`
 
-          * `%{type: :dynamic, factor: number()}`
+          * `%{type: :yarn, short_factor: list(number()), long_factor: list(number()), original_max_positions: pos_integer()}`
 
-          * `%{type: :su, short_factor: [number], long_factor: [number]}`
-
-        For more details see https://www.reddit.com/r/LocalLlama/comments/14mrgpr/dynamically_scaled_rope_further_increases
         """
       ],
       layer_norm_epsilon: [
@@ -433,20 +424,18 @@ defmodule Bumblebee.Text.Phi3 do
       import Shared.Converters
 
       scaling_strategy_converter = fn name, value ->
+        original_max_positions = data["original_max_position_embeddings"]
+
         case value do
-          %{"type" => "linear", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :linear, factor: factor}}
-
-          %{"type" => "dynamic", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :dynamic, factor: factor}}
-
-          %{"type" => "su", "long_factor" => lf, "short_factor" => sf} ->
+          %{"type" => type, "long_factor" => long_factor, "short_factor" => short_factor}
+          when type in ["su", "yarn"] and is_list(long_factor) and is_list(short_factor) and
+                 is_number(original_max_positions) ->
             {:ok,
              %{
-               type: :su,
-               long_factor: lf,
-               short_factor: sf,
-               original_max_positions: spec.original_max_positions
+               type: String.to_atom(type),
+               long_factor: long_factor,
+               short_factor: short_factor,
+               original_max_positions: original_max_positions
              }}
 
           _other ->
@@ -458,7 +447,6 @@ defmodule Bumblebee.Text.Phi3 do
         convert!(data,
           vocab_size: {"vocab_size", number()},
           max_positions: {"max_position_embeddings", number()},
-          original_max_positions: {"original_max_position_embeddings", number()},
           hidden_size: {"hidden_size", number()},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
