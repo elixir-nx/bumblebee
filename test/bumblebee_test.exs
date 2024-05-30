@@ -76,7 +76,7 @@ defmodule BumblebeeTest do
     end
 
     test "passing :type casts params accordingly" do
-      assert {:ok, %{params: params}} =
+      assert {:ok, %{params: %Axon.ModelState{data: params}}} =
                Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-GPT2Model"},
                  type: :bf16
                )
@@ -84,7 +84,7 @@ defmodule BumblebeeTest do
       assert Nx.type(params["decoder.blocks.0.ffn.output"]["kernel"]) == {:bf, 16}
       assert Nx.type(params["decoder.blocks.0.ffn.output"]["bias"]) == {:bf, 16}
 
-      assert {:ok, %{params: params}} =
+      assert {:ok, %{params: %Axon.ModelState{data: params}}} =
                Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-GPT2Model"},
                  type: Axon.MixedPrecision.create_policy(params: :f16)
                )
