@@ -100,13 +100,13 @@ defmodule Bumblebee.Conversion.PyTorchParams do
 
     {params, diff} =
       layers
-      |> Enum.filter(fn {_layer, layer_name} -> params_expr[layer_name] end)
+      |> Enum.filter(fn {_layer, layer_name} -> params_expr.data[layer_name] end)
       |> Enum.map_reduce(diff, fn {layer, layer_name}, diff ->
         params_source = params_source(layer_name, prefixes, params_mapping)
 
         {params, diff} =
           Enum.reduce(layer.parameters, {[], diff}, fn param, {params, diff} ->
-            param_expr = params_expr[layer_name][param.name]
+            param_expr = params_expr.data[layer_name][param.name]
 
             {sources, builder_fun} =
               case params_source do
@@ -168,7 +168,8 @@ defmodule Bumblebee.Conversion.PyTorchParams do
         {{layer_name, Map.new(params)}, diff}
       end)
 
-    params = Map.new(params)
+    params_data = Map.new(params)
+    params = %{params_expr | data: params_data} |> IO.inspect
 
     diff = %{
       missing: Enum.reverse(diff.missing),
