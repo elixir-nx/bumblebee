@@ -29,7 +29,7 @@ defmodule Bumblebee.Conversion.PyTorchParams do
       `Bumblebee.Conversion.PyTorchLoader.load!/1`
 
   """
-  @spec load_params!(Axon.t(), map(), Path.t() | list(Path.t()), keyword()) :: map()
+  @spec load_params!(Axon.t(), map(), Path.t() | list(Path.t()), keyword()) :: %Axon.ModelState{}
   def load_params!(model, input_template, path, opts \\ []) do
     opts =
       opts
@@ -55,25 +55,27 @@ defmodule Bumblebee.Conversion.PyTorchParams do
         end)
         |> Enum.reduce(&Map.merge/2)
 
-      params_expr = Axon.trace_init(model, input_template)
+      model_state = Axon.trace_init(model, input_template)
 
+      params_expr = model_state.data
       {params, diff} = init_params(model, params_expr, pytorch_state, opts[:params_mapping])
+      model_state = %{model_state | data: params}
 
       params_complete? = diff.missing == [] and diff.mismatched == []
 
-      params =
+      model_state =
         if params_complete? do
-          params
+          model_state
         else
           {init_fun, _} = Axon.build(model, compiler: Nx.Defn.Evaluator)
-          init_fun.(input_template, params)
+          init_fun.(input_template, model_state)
         end
 
       if Keyword.get(opts, :log_params_diff, not params_complete?) do
         log_params_diff(diff)
       end
 
-      params
+      model_state
     end)
   end
 
@@ -100,13 +102,13 @@ defmodule Bumblebee.Conversion.PyTorchParams do
 
     {params, diff} =
       layers
-      |> Enum.filter(fn {_layer, layer_name} -> params_expr.data[layer_name] end)
+      |> Enum.filter(fn {_layer, layer_name} -> params_expr[layer_name] end)
       |> Enum.map_reduce(diff, fn {layer, layer_name}, diff ->
         params_source = params_source(layer_name, prefixes, params_mapping)
 
         {params, diff} =
           Enum.reduce(layer.parameters, {[], diff}, fn param, {params, diff} ->
-            param_expr = params_expr.data[layer_name][param.name]
+            param_expr = params_expr[layer_name][param.name]
 
             {sources, builder_fun} =
               case params_source do
@@ -168,8 +170,7 @@ defmodule Bumblebee.Conversion.PyTorchParams do
         {{layer_name, Map.new(params)}, diff}
       end)
 
-    params_data = Map.new(params)
-    params = %{params_expr | data: params_data}
+    params = Map.new(params)
 
     diff = %{
       missing: Enum.reverse(diff.missing),
