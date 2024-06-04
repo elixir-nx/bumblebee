@@ -83,7 +83,7 @@ defmodule Bumblebee.Text.TextGeneration do
       {inputs, multi?} = Shared.validate_serving_input!(input, &validate_input/1)
 
       texts = Enum.map(inputs, & &1.text)
-      seed = Enum.map(inputs, & &1.seed) |> Nx.tensor(backend: Nx.BinaryBackend)
+      seed = Enum.map(inputs, & &1.seed) |> Nx.tensor(type: :s64, backend: Nx.BinaryBackend)
 
       inputs =
         Nx.with_default_backend(Nx.BinaryBackend, fn ->

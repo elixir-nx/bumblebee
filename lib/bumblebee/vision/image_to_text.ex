@@ -61,7 +61,7 @@ defmodule Bumblebee.Vision.ImageToText do
       {inputs, multi?} = Shared.validate_serving_input!(input, &validate_input/1)
 
       images = Enum.map(inputs, & &1.image)
-      seed = Enum.map(inputs, & &1.seed) |> Nx.tensor(backend: Nx.BinaryBackend)
+      seed = Enum.map(inputs, & &1.seed) |> Nx.tensor(type: :s64, backend: Nx.BinaryBackend)
 
       inputs = Bumblebee.Featurizer.process_input(featurizer, images)
       {Nx.Batch.concatenate([{inputs, seed}]), multi?}

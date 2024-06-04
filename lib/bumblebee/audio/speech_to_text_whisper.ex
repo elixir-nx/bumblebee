@@ -108,7 +108,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         |> Stream.map(fn chunks ->
           seed =
             seed
-            |> Nx.tensor(backend: Nx.BinaryBackend)
+            |> Nx.tensor(type: :s64, backend: Nx.BinaryBackend)
             |> Nx.broadcast({length(chunks)})
 
           inputs = Bumblebee.Featurizer.process_input(featurizer, chunks)

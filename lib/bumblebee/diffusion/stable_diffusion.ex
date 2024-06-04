@@ -292,7 +292,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
   defp client_preprocessing(input, tokenizer) do
     {inputs, multi?} = Shared.validate_serving_input!(input, &validate_input/1)
 
-    seed = Enum.map(inputs, & &1.seed) |> Nx.tensor(backend: Nx.BinaryBackend)
+    seed = Enum.map(inputs, & &1.seed) |> Nx.tensor(type: :s64, backend: Nx.BinaryBackend)
 
     # Note: we need to tokenize all sequences together, so that
     # they are padded to the same length (if not specified)
