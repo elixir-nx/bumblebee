@@ -251,6 +251,8 @@ defmodule Bumblebee.Text.TokenClassification do
     {idx, score}
   end
 
+  defp group_entities([], _tokenizer), do: []
+
   defp group_entities([entity | entities], tokenizer) do
     {_prefix, label} = parse_label(entity.label)
 
