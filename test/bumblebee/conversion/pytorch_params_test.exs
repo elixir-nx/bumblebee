@@ -39,7 +39,7 @@ defmodule Bumblebee.Conversion.PyTorchParamsTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params =
+          %Axon.ModelState{data: params} =
             PyTorchParams.load_params!(model, input_template(), path,
               params_mapping: params_mapping()
             )
@@ -89,7 +89,7 @@ defmodule Bumblebee.Conversion.PyTorchParamsTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params =
+          %Axon.ModelState{data: params} =
             PyTorchParams.load_params!(model, input_template(), path,
               params_mapping: params_mapping()
             )
@@ -107,7 +107,7 @@ defmodule Bumblebee.Conversion.PyTorchParamsTest do
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          params =
+          %Axon.ModelState{data: params} =
             PyTorchParams.load_params!(model, input_template(), path,
               params_mapping: params_mapping()
             )

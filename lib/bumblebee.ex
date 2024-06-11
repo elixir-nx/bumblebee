@@ -299,7 +299,7 @@ defmodule Bumblebee do
   """
   @type model_info :: %{
           model: Axon.t(),
-          params: map(),
+          params: %Axon.ModelState{},
           spec: Bumblebee.ModelSpec.t()
         }
 

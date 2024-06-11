@@ -29,7 +29,7 @@ defmodule Bumblebee.Conversion.PyTorchParams do
       `Bumblebee.Conversion.PyTorchLoader.load!/1`
 
   """
-  @spec load_params!(Axon.t(), map(), Path.t() | list(Path.t()), keyword()) :: map()
+  @spec load_params!(Axon.t(), map(), Path.t() | list(Path.t()), keyword()) :: %Axon.ModelState{}
   def load_params!(model, input_template, path, opts \\ []) do
     opts =
       opts
@@ -55,25 +55,27 @@ defmodule Bumblebee.Conversion.PyTorchParams do
         end)
         |> Enum.reduce(&Map.merge/2)
 
-      params_expr = Axon.trace_init(model, input_template)
+      model_state = Axon.trace_init(model, input_template)
 
+      params_expr = model_state.data
       {params, diff} = init_params(model, params_expr, pytorch_state, opts[:params_mapping])
+      model_state = %{model_state | data: params}
 
       params_complete? = diff.missing == [] and diff.mismatched == []
 
-      params =
+      model_state =
         if params_complete? do
-          params
+          model_state
         else
           {init_fun, _} = Axon.build(model, compiler: Nx.Defn.Evaluator)
-          init_fun.(input_template, params)
+          init_fun.(input_template, model_state)
         end
 
       if Keyword.get(opts, :log_params_diff, not params_complete?) do
         log_params_diff(diff)
       end
 
-      params
+      model_state
     end)
   end
 
