@@ -312,6 +312,70 @@ defmodule Bumblebee.Vision.Swin do
     {hidden_state, attention, cross_attention, block_cache, position_bias}
   end
 
+  def attention_mask(height, width, window_size, shift_size) do
+    if shift_size > 0 do
+      # calculate attention mask for shifted window multi-head self-attention (SW-MSA)
+      img_mask = Nx.broadcast(0.0, {1, height, width, 1})
+
+      hslices = [
+        0..(height - window_size - 1),
+        (height - window_size)..(height - shift_size - 1),
+        (height - shift_size)..(height - 1)
+      ]
+
+      wslices = [
+        0..(width - window_size - 1),
+        (width - window_size)..(width - shift_size - 1),
+        (width - shift_size)..(width - 1)
+      ]
+
+      {img_mask, count} =
+        for hrange <- hslices, wrange <- wslices, reduce: {img_mask, 0.0} do
+          {mask, count} ->
+            mask =
+              for hidx <- hrange, widx <- wrange, reduce: mask do
+                deepest_mask ->
+                  Nx.indexed_put(deepest_mask, Nx.tensor([0, hidx, widx, 0]), count)
+              end
+
+            {mask, count + 1.0}
+        end
+
+      mask_windows =
+        img_mask
+        |> window_partition(window_size)
+        |> Nx.reshape({:auto, window_size * window_size})
+
+      mask_windows
+      |> Nx.new_axis(1)
+      |> Nx.subtract(Nx.new_axis(mask_windows, 2))
+      |> Nx.equal(0)
+      |> Nx.logical_not()
+      |> Nx.select(-100.0, 0)
+    else
+      nil
+    end
+  end
+
+  defp window_partition(%Axon{} = input_feature, window_size) do
+    input_feature
+    |> Axon.nx(fn x -> window_partition(x, window_size) end)
+  end
+
+  defp window_partition(%Nx.Tensor{} = tensor, window_size) do
+    {batch_size, height, width, num_channels} = Nx.shape(tensor)
+    windowed_height = div(height, window_size)
+    windowed_width = div(width, window_size)
+
+    # TODO: Check last reshape (in Python - view(-1, window_size, window_size, num_channels))
+    Nx.reshape(
+      tensor,
+      {batch_size, windowed_height, window_size, windowed_width, window_size, num_channels}
+    )
+    |> Nx.transpose(axes: [0, 1, 3, 2, 4, 5])
+    |> Nx.reshape({:auto, window_size, window_size, num_channels})
+  end
+
   defp downsample(hidden_state, input_resolution, dim, norm_epsilon) do
     Axon.nx(hidden_state, fn x ->
       {batch_size, _dim, num_channels} = Nx.shape(x)
