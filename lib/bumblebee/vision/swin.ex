@@ -419,7 +419,6 @@ defmodule Bumblebee.Vision.Swin do
       |> Nx.subtract(Nx.new_axis(mask_windows, 2))
       |> Nx.equal(0)
       |> Nx.logical_not()
-      |> Nx.select(-100.0, 0)
     else
       Layers.none()
     end
