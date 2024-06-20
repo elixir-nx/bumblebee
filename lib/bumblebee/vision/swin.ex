@@ -217,9 +217,6 @@ defmodule Bumblebee.Vision.Swin do
     |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
   end
 
-  # TODO: How to get and return output dimensions
-  # They are used in Python later but here it is not clear
-  # how to get them till we have loadable implementation.
   defp patch_embedding(pixel_values, spec, opts) do
     name = opts[:name]
     hidden_size = spec.embed_dim
@@ -239,77 +236,148 @@ defmodule Bumblebee.Vision.Swin do
     hidden_states = Axon.container({hidden_state})
     attentions = Axon.container({})
 
-    0..(length(spec.depths) - 1)
-    |> Enum.reduce(
-      {hidden_state, hidden_states, attentions},
-      fn layer_idx, {hidden_state, hidden_states, attentions} ->
-        {hidden_state, attention, _cross_attention, _block_cache, _position_bias} =
-          stage(hidden_state, spec, layer_idx, opts)
+    state = {
+      hidden_state,
+      hidden_states,
+      attentions
+    }
+
+    for layer_idx <- 0..(length(spec.depths) - 1), reduce: state do
+      {hidden_state, hidden_states, attentions} ->
+        grid_size = div(spec.image_size, spec.patch_size)
+        input_resolution = div(grid_size, 2 ** layer_idx)
+        dim = spec.embed_dim * 2 ** layer_idx
+
+        {hidden_state, attention} =
+          layer(hidden_state, dim, layer_idx, spec, opts[:name])
+
+        hidden_state =
+          if layer_idx < length(spec.depths) - 1 do
+            downsample(hidden_state, input_resolution, dim, spec.layer_norm_epsilon)
+          else
+            hidden_state
+          end
 
         {
           hidden_state,
           Layers.append(hidden_states, hidden_state),
           Layers.append(attentions, attention)
         }
-      end
+    end
+  end
+
+  defp layer(hidden_state, dim, layer_idx, spec, name) do
+    attention =
+      hidden_state
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon)
+      |> reshape(layer_idx)
+      |> hidden_windows(layer_idx, spec)
+      |> attention_window(layer_idx, dim, spec, name)
+      |> Axon.dropout(rate: spec.dropout_rate)
+
+    output =
+      Axon.add(hidden_state, hidden_state)
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon)
+      |> Axon.dense(round(spec.intermediate_size_ratio * dim))
+      |> Layers.activation(spec.activation)
+      |> Axon.dense(round(spec.intermediate_size_ratio * dim))
+      |> Axon.dropout(rate: spec.dropout_rate)
+
+    hidden_state = Axon.add(hidden_state, output)
+
+    {hidden_state, attention}
+  end
+
+  defp reshape(input, layer_idx) do
+    input
+    |> Axon.nx(
+      fn x ->
+        {batch_size, dimension, num_channels} = Nx.shape(x)
+        height_width = dimension |> :math.sqrt() |> floor()
+
+        x
+        |> Nx.reshape({batch_size, height_width, height_width, num_channels})
+      end,
+      name: "reshape_#{layer_idx}"
     )
   end
 
-  defp stage(hidden_state, spec, layer_idx, opts) do
-    grid_size = div(spec.image_size, spec.patch_size)
-    input_resolution = div(grid_size, 2 ** layer_idx)
-    num_attention_heads = Enum.at(spec.num_heads, layer_idx)
-    dim = spec.embed_dim * 2 ** layer_idx
+  defp hidden_windows(input, layer_idx, spec) do
+    shift_size = if 0 == rem(layer_idx, 2), do: 0, else: div(spec.window_size, 2)
 
-    {hidden_state, attention, cross_attention, block_cache, position_bias} =
-      layer(hidden_state, num_attention_heads, dim, spec, opts)
+    input
+    |> Axon.nx(
+      fn x ->
+        {_batch_size, height, width, num_channels} = Nx.shape(x)
 
-    hidden_state =
-      if layer_idx < length(spec.depths) - 1 do
-        downsample(hidden_state, input_resolution, dim, spec.layer_norm_epsilon)
-      else
-        hidden_state
-      end
+        {shift_size, _window_size} =
+          if min(height, width) <= spec.window_size,
+            do: {0, min(height, width)},
+            else: {shift_size, spec.window_size}
 
-    {hidden_state, attention, cross_attention, block_cache, position_bias}
+        shiffted_hidden_state =
+          if shift_size > 0,
+            do: roll(x, shifts: {-shift_size, -shift_size}, dims: {1, 2}),
+            else: x
+
+        shiffted_hidden_state
+        |> window_partition(spec.window_size)
+        |> Nx.reshape({:auto, spec.window_size * spec.window_size, num_channels})
+      end,
+      name: "hidden_windows_#{layer_idx}"
+    )
   end
 
-  # Steps in Python implementation:
-  # Normalization
-  # if shift_size > 0 -> roll hidden states
-  # window partition
-  # attention with attention mask
-  # window reverse
-  # if shift_size > 0 -> roll shifted windows
-  # shortcut + drop_path(attention_windows)
-  # Normalization
-  # Intermediate
-  # add result of intermediate
-  defp layer(hidden_state, num_attention_heads, dim, spec, opts) do
-    name = opts[:name]
+  defp attention_window(input, layer_idx, dim, spec, name) do
+    num_attention_heads = Enum.at(spec.num_heads, layer_idx)
+    shift_size = if 0 == rem(layer_idx, 2), do: 0, else: div(spec.window_size, 2)
 
-    # shift_size = if 0 == rem(layer_idx, 2), do: 0, else: div(spec.window_size, 2)
-    # depth = Enum.at(spec.depths, layer_idx)
+    input
+    |> Axon.nx(
+      fn x ->
+        {batch_size, dimension, num_channels} = Nx.shape(x)
+        height_width = dimension |> :math.sqrt() |> floor()
 
-    {hidden_state, attention, cross_attention, block_cache, position_bias} =
-      Layers.Transformer.block(hidden_state,
-        block_type: :norm_first,
-        num_attention_heads: num_attention_heads,
-        hidden_size: dim,
-        kernel_initializer: kernel_initializer(spec),
-        dropout_rate: spec.dropout_rate,
-        attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm: [
-          epsilon: spec.layer_norm_epsilon
-        ],
-        ffn: [
-          intermediate_size: round(spec.intermediate_size_ratio * dim),
-          activation: spec.activation
-        ],
-        name: join(name, "block_#{num_attention_heads}")
-      )
+        {shift_size, window_size} =
+          if height_width <= spec.window_size,
+            do: {0, height_width},
+            else: {shift_size, spec.window_size}
 
-    {hidden_state, attention, cross_attention, block_cache, position_bias}
+        attn_mask = attention_mask(height_width, height_width, window_size, shift_size)
+
+        {_hidden_state, attention, _self_attention_cache, _attention_relative_bias} =
+          Bumblebee.Layers.Transformer.multi_head_attention(
+            input,
+            input,
+            input,
+            attention_mask: attn_mask,
+            num_heads: num_attention_heads,
+            hidden_size: dim,
+            kernel_initializer: kernel_initializer(spec),
+            dropout_rate: spec.dropout_rate,
+            name: join(name, "self_attention_#{layer_idx}")
+          )
+
+        attention = Axon.dropout(attention, rate: spec.dropout_rate)
+
+        shifted_windows =
+          attention
+          |> Axon.reshape({:auto, window_size, window_size, num_channels})
+          |> window_reverse(window_size)
+
+        att_window =
+          if shift_size > 0 do
+            roll(shifted_windows, shifts: {shift_size, shift_size}, dims: {1, 2})
+            |> Nx.reshape({batch_size, height_width * height_width, num_channels})
+          else
+            shifted_windows
+            |> Nx.reshape({batch_size, height_width * height_width, num_channels})
+          end
+
+        att_window
+      end,
+      name: "attention_windows_#{layer_idx}"
+    )
   end
 
   def attention_mask(height, width, window_size, shift_size) do
@@ -329,7 +397,7 @@ defmodule Bumblebee.Vision.Swin do
         (width - shift_size)..(width - 1)
       ]
 
-      {img_mask, count} =
+      {img_mask, _count} =
         for hrange <- hslices, wrange <- wslices, reduce: {img_mask, 0.0} do
           {mask, count} ->
             mask =
@@ -353,7 +421,7 @@ defmodule Bumblebee.Vision.Swin do
       |> Nx.logical_not()
       |> Nx.select(-100.0, 0)
     else
-      nil
+      Layers.none()
     end
   end
 
@@ -367,13 +435,30 @@ defmodule Bumblebee.Vision.Swin do
     windowed_height = div(height, window_size)
     windowed_width = div(width, window_size)
 
-    # TODO: Check last reshape (in Python - view(-1, window_size, window_size, num_channels))
     Nx.reshape(
       tensor,
       {batch_size, windowed_height, window_size, windowed_width, window_size, num_channels}
     )
     |> Nx.transpose(axes: [0, 1, 3, 2, 4, 5])
     |> Nx.reshape({:auto, window_size, window_size, num_channels})
+  end
+
+  defp window_reverse(%Axon{} = input_feature, window_size) do
+    input_feature
+    |> Axon.nx(fn x -> window_reverse(x, window_size) end)
+  end
+
+  defp window_reverse(%Nx.Tensor{} = tensor, window_size) do
+    {_batch_size, height, width, num_channels} = Nx.shape(tensor)
+    windowed_height = div(height, window_size)
+    windowed_width = div(width, window_size)
+
+    Nx.reshape(
+      tensor,
+      {:auto, windowed_height, windowed_width, window_size, window_size, num_channels}
+    )
+    |> Nx.transpose(axes: [0, 1, 3, 2, 4, 5])
+    |> Nx.reshape({:auto, height, width, num_channels})
   end
 
   defp downsample(hidden_state, input_resolution, dim, norm_epsilon) do
@@ -471,7 +556,11 @@ defmodule Bumblebee.Vision.Swin do
     end
   end
 
-  defp roll(%Nx.Tensor{} = x, opts \\ []) do
+  defp roll(%Axon{} = x, opts) do
+    Axon.nx(x, fn y -> roll(y, opts) end)
+  end
+
+  defp roll(%Nx.Tensor{} = x, opts) do
     opts = Keyword.validate!(opts, shifts: [], axes: [])
     shifts = opts[:shifts]
     axes = opts[:axes]
