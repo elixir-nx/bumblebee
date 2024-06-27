@@ -267,23 +267,27 @@ defmodule Bumblebee.Vision.Swin do
   end
 
   defp layer(hidden_state, dim, layer_idx, spec, name) do
+    shortcut = hidden_state
     attn_mask = attention_mask_layer(hidden_state, layer_idx, spec)
 
-    attention =
+    {hidden_state, attention} =
       hidden_state
       |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon)
       |> reshape(layer_idx)
       |> hidden_windows(layer_idx, spec)
-      |> attention_window(attn_mask, layer_idx, dim, spec, name)
+      |> attention(attn_mask, layer_idx, dim, spec, name)
+
+    hidden_state =
+      {hidden_state, shortcut}
       |> unroll(layer_idx, spec)
       |> Axon.dropout(rate: spec.dropout_rate)
 
     output =
-      Axon.add(hidden_state, attention)
+      Axon.add(shortcut, hidden_state)
       |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon)
-      |> Axon.dense(round(spec.intermediate_size_ratio * dim))
+      |> Axon.dense(dim)
       |> Layers.activation(spec.activation)
-      |> Axon.dense(round(spec.intermediate_size_ratio * dim))
+      |> Axon.dense(dim)
       |> Axon.dropout(rate: spec.dropout_rate)
 
     hidden_state = Axon.add(hidden_state, output)
@@ -320,7 +324,7 @@ defmodule Bumblebee.Vision.Swin do
 
         shiffted_hidden_state =
           if shift_size > 0,
-            do: roll(x, shifts: {-shift_size, -shift_size}, dims: {1, 2}),
+            do: roll(x, shifts: [-shift_size, -shift_size], axes: [1, 2]),
             else: x
 
         shiffted_hidden_state
@@ -331,7 +335,7 @@ defmodule Bumblebee.Vision.Swin do
     )
   end
 
-  defp attention_window(input, attention_mask, layer_idx, dim, spec, name) do
+  defp attention(input, attention_mask, layer_idx, dim, spec, name) do
     num_attention_heads = Enum.at(spec.num_heads, layer_idx)
 
     {hidden_state, attention, _self_attention_cache, _attention_relative_bias} =
@@ -343,20 +347,24 @@ defmodule Bumblebee.Vision.Swin do
         num_heads: num_attention_heads,
         hidden_size: dim,
         kernel_initializer: kernel_initializer(spec),
-        dropout_rate: spec.dropout_rate,
+        dropout_rate: spec.attention_dropout_rate,
         name: join(name, "self_attention_#{layer_idx}")
       )
 
-    attention = Axon.dropout(attention, rate: spec.dropout_rate)
+    hidden_state =
+      Axon.dropout(hidden_state,
+        rate: spec.dropout_rate,
+        name: join(name, "self_attention_dropout")
+      )
 
     {hidden_state, attention}
   end
 
-  def unroll({hidden_state, attention}, layer_idx, spec) do
+  def unroll({hidden_state, input}, layer_idx, spec) do
     shift_size = if 0 == rem(layer_idx, 2), do: 0, else: div(spec.window_size, 2)
 
     Axon.layer(
-      fn input, att, _ ->
+      fn state, input, _ ->
         {batch_size, dimension, num_channels} = Nx.shape(input)
         height_width = dimension |> :math.sqrt() |> floor()
 
@@ -366,19 +374,19 @@ defmodule Bumblebee.Vision.Swin do
             else: {shift_size, spec.window_size}
 
         shifted_windows =
-          att
+          state
           |> Nx.reshape({:auto, window_size, window_size, num_channels})
           |> window_reverse(window_size)
 
         if shift_size > 0 do
-          roll(shifted_windows, shifts: {shift_size, shift_size}, dims: {1, 2})
+          roll(shifted_windows, shifts: [shift_size, shift_size], axes: [1, 2])
           |> Nx.reshape({batch_size, height_width * height_width, num_channels})
         else
           shifted_windows
           |> Nx.reshape({batch_size, height_width * height_width, num_channels})
         end
       end,
-      [hidden_state, attention],
+      [hidden_state, input],
       name: "unroll_#{layer_idx}"
     )
   end
@@ -594,10 +602,10 @@ defmodule Bumblebee.Vision.Swin do
 
       Enum.zip(shifts, axes)
       |> Enum.reduce(x, fn {shift, dim}, acc ->
-        shift = rem(shift, Enum.at(shape, dim)) |> IO.inspect(label: :shift)
+        shift = rem(shift, Enum.at(shape, dim))
 
         if 0 < shift do
-          {base, move} = Nx.split(acc, -1 * shift, axis: dim) |> IO.inspect()
+          {base, move} = Nx.split(acc, -1 * shift, axis: dim)
           Nx.concatenate([move, base], axis: dim)
         else
           acc
