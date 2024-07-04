@@ -609,8 +609,10 @@ defmodule Bumblebee.Text.Generation do
       eos_token_ids = List.wrap(eos_token_id)
 
       token_id
+      |> Nx.vectorize(:batch)
       |> Nx.equal(Nx.tensor(eos_token_ids))
       |> Nx.any()
+      |> Nx.devectorize()
     else
       Nx.tensor(false)
     end

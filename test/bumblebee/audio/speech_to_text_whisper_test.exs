@@ -109,7 +109,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisperTest do
         generation_config,
         chunk_num_seconds: 30,
         defn_options: [compiler: EXLA],
-        compile: [batch_size: 1]
+        compile: [batch_size: 4]
       )
 
     audio =
