@@ -13,7 +13,7 @@ Nx.global_default_backend({EXLA.Backend, client: :host})
 
 ## Introduction
 
-In this notebook we outline the general setup for running a Large Langauge Model (LLM).
+In this notebook we outline the general setup for running a Large Language Model (LLM).
 
 <!-- livebook:{"branch_parent_index":0} -->
 
