@@ -176,7 +176,7 @@ defmodule Bumblebee.Vision.Swin do
     hidden_state =
       Axon.layer_norm(hidden_state,
         epsilon: spec.layer_norm_epsilon,
-        name: join(name, "norm")
+        name: join(name, "layernorm")
       )
 
     pooled_state =
@@ -233,6 +233,7 @@ defmodule Bumblebee.Vision.Swin do
   end
 
   defp encoder(hidden_state, spec, opts) do
+    name = opts[:name]
     hidden_states = Axon.container({hidden_state})
     attentions = Axon.container({})
 
@@ -242,21 +243,10 @@ defmodule Bumblebee.Vision.Swin do
       attentions
     }
 
-    for layer_idx <- 0..(length(spec.depths) - 1), reduce: state do
+    for stage_idx <- 0..(length(spec.depths) - 1), reduce: state do
       {hidden_state, hidden_states, attentions} ->
-        grid_size = div(spec.image_size, spec.patch_size)
-        input_resolution = div(grid_size, 2 ** layer_idx)
-        dim = spec.embed_dim * 2 ** layer_idx
-
         {hidden_state, attention} =
-          layer(hidden_state, dim, layer_idx, spec, opts[:name])
-
-        hidden_state =
-          if layer_idx < length(spec.depths) - 1 do
-            downsample(hidden_state, input_resolution, dim, spec.layer_norm_epsilon)
-          else
-            hidden_state
-          end
+          stage(hidden_state, stage_idx, spec, join("#{name}.blocks", stage_idx))
 
         {
           hidden_state,
@@ -266,16 +256,42 @@ defmodule Bumblebee.Vision.Swin do
     end
   end
 
-  defp layer(hidden_state, dim, layer_idx, spec, name) do
+  defp stage(hidden_state, stage_idx, spec, name) do
+    grid_size = div(spec.image_size, spec.patch_size)
+    input_resolution = div(grid_size, 2 ** stage_idx)
+    dim = spec.embed_dim * 2 ** stage_idx
+    num_attention_heads = Enum.at(spec.num_heads, stage_idx)
+
+    {hidden_state, attention} =
+      for layer_idx <- 0..(Enum.at(spec.depths, stage_idx) - 1), reduce: {hidden_state, nil} do
+        {hidden_state, _} ->
+          {hidden_state, attention} =
+            layer(hidden_state, layer_idx, dim, num_attention_heads, spec, name)
+
+          {hidden_state, attention}
+      end
+
+    hidden_state =
+      if stage_idx < length(spec.depths) - 1 do
+        downsample(hidden_state, input_resolution, dim, spec.layer_norm_epsilon, name)
+      else
+        hidden_state
+      end
+
+    {hidden_state, attention}
+  end
+
+  defp layer(hidden_state, layer_idx, dim, num_attention_heads, spec, name) do
     shortcut = hidden_state
     attn_mask = attention_mask_layer(hidden_state, layer_idx, spec)
+    name = join(name, "layer.#{layer_idx}")
 
     {hidden_state, attention} =
       hidden_state
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon)
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_before"))
       |> reshape(layer_idx)
       |> hidden_windows(layer_idx, spec)
-      |> attention(attn_mask, layer_idx, dim, spec, name)
+      |> attention(attn_mask, num_attention_heads, dim, spec, name)
 
     hidden_state =
       {hidden_state, shortcut}
@@ -284,10 +300,10 @@ defmodule Bumblebee.Vision.Swin do
 
     output =
       Axon.add(shortcut, hidden_state)
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon)
-      |> Axon.dense(dim)
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_after"))
+      |> Axon.dense(dim, name: join(name, "dense"))
       |> Layers.activation(spec.activation)
-      |> Axon.dense(dim)
+      |> Axon.dense(dim, name: join(name, "dense"))
       |> Axon.dropout(rate: spec.dropout_rate)
 
     hidden_state = Axon.add(hidden_state, output)
@@ -335,9 +351,7 @@ defmodule Bumblebee.Vision.Swin do
     )
   end
 
-  defp attention(input, attention_mask, layer_idx, dim, spec, name) do
-    num_attention_heads = Enum.at(spec.num_heads, layer_idx)
-
+  defp attention(input, attention_mask, num_attention_heads, dim, spec, name) do
     {hidden_state, attention, _self_attention_cache, _attention_relative_bias} =
       Bumblebee.Layers.Transformer.multi_head_attention(
         input,
@@ -348,7 +362,7 @@ defmodule Bumblebee.Vision.Swin do
         hidden_size: dim,
         kernel_initializer: kernel_initializer(spec),
         dropout_rate: spec.attention_dropout_rate,
-        name: join(name, "self_attention_#{layer_idx}")
+        name: join(name, "self_attention")
       )
 
     hidden_state =
@@ -491,7 +505,7 @@ defmodule Bumblebee.Vision.Swin do
     |> Nx.reshape({:auto, height, width, num_channels})
   end
 
-  defp downsample(hidden_state, input_resolution, dim, norm_epsilon) do
+  defp downsample(hidden_state, input_resolution, dim, norm_epsilon, name) do
     Axon.nx(hidden_state, fn x ->
       {batch_size, _dim, num_channels} = Nx.shape(x)
 
@@ -507,10 +521,10 @@ defmodule Bumblebee.Vision.Swin do
       )
       |> Nx.reshape({batch_size, :auto, 4 * num_channels})
     end)
-    |> Axon.layer_norm(epsilon: norm_epsilon, name: "downsample_norm")
+    |> Axon.layer_norm(epsilon: norm_epsilon, name: join(name, "downsample_norm"))
     |> Axon.dense(2 * dim,
       kernel_initializer: Axon.Initializers.uniform(),
-      name: "image_classification_head.output"
+      name: join(name, "downsample_reduction")
     )
   end
 
@@ -550,38 +564,25 @@ defmodule Bumblebee.Vision.Swin do
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(_spec) do
       %{
+        "layernorm" => "swin.layernorm",
+        "encoder.blocks.{n}.layer.{m}.self_attention.output" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.output.dense",
+        "encoder.blocks.{n}.layer.{m}.self_attention.value" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.self.value",
+        "encoder.blocks.{n}.layer.{m}.self_attention.query" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.self.query",
+        "encoder.blocks.{n}.layer.{m}.self_attention.key" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.self.key",
+        "encoder.blocks.{n}.layer.{m}.layernorm_before" =>
+          "swin.encoder.layers.{n}.blocks.{m}.layernorm_before",
+        "encoder.blocks.{n}.layer.{m}.layernorm_after" =>
+          "swin.encoder.layers.{n}.blocks.{m}.layernorm_after",
         "embedder.patch_embedding.projection" => "swin.embeddings.patch_embeddings.projection",
-        "embedder.class_embedding" => %{
-          "embeddings" => {
-            [{"swin.embeddings", "cls_token"}],
-            fn [value] -> Nx.squeeze(value, axes: [0]) end
-          }
-        },
-        "embedder.position_embedding" => %{
-          "embeddings" => {
-            [{"swin.embeddings", "position_embeddings"}],
-            fn [value] -> Nx.squeeze(value, axes: [0]) end
-          }
-        },
-        "encoder.block_{n}.self_attention_norm" => "swin.encoder.layer.{n}.layernorm_before",
-        "encoder.block_{n}.self_attention.key" =>
-          "swin.encoder.layer.{n}.attention.attention.key",
-        "encoder.block_{n}.self_attention.query" =>
-          "swin.encoder.layer.{n}.attention.attention.query",
-        "encoder.block_{n}.self_attention.value" =>
-          "swin.encoder.layer.{n}.attention.attention.value",
-        "encoder.block_{n}.self_attention.output" =>
-          "swin.encoder.layer.{n}.attention.output.dense",
-        "encoder.block_{n}.ffn.intermediate" => "swin.encoder.layer.{n}.intermediate.dense",
-        "encoder.block_{n}.ffn.output" => "swin.encoder.layer.{n}.output.dense",
-        "encoder.block_{n}.output_norm" => "swin.encoder.layer.{n}.layernorm_after",
-        "norm" => "swin.layernorm",
-        "pooler.output" => "swin.pooler.dense",
+        "encoder.blocks.{n}.downsample_norm" => "swin.encoder.layers.{n}.downsample.norm",
+        "encoder.blocks.{n}.downsample_reduction" =>
+          "swin.encoder.layers.{n}.downsample.reduction",
         "image_classification_head.output" => "classifier",
-        "masked_image_modeling_head.output" => "decoder.0",
-        "layer_norm_{n}" => "swin.encoder.layers.{n}.blocks.{n}.layernorm",
-        "layer_{n}_downsample_norm" => "swin.encoder.layers.{n}.downsample.norm",
-        "downsample_norm" => "swin.encoder.downsample.norm"
+        "encoder.blocks.{n}.layer.{m}.dense" => "swin.encoder.layers.{n}.blocks.{m}.output.dense"
       }
     end
   end
