@@ -15,7 +15,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
     num_seconds: [
       default: 30,
       doc: """
-      the maximum duration of the audio sequence. This implies that the the maximum length of the
+      the maximum duration of the audio sequence. This implies that the maximum length of the
       input sequence is `:num_seconds` * `:sampling_rate`
       """
     ],

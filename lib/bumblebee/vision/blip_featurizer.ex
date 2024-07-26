@@ -58,7 +58,7 @@ defmodule Bumblebee.Vision.BlipFeaturizer do
     images = List.wrap(images)
 
     for image <- images do
-      images =
+      image =
         image
         |> Image.to_batched_tensor()
         |> Nx.as_type(:f32)
@@ -66,9 +66,9 @@ defmodule Bumblebee.Vision.BlipFeaturizer do
 
       if featurizer.resize do
         %{height: height, width: width} = featurizer.size
-        NxImage.resize(images, {height, width}, method: featurizer.resize_method)
+        NxImage.resize(image, {height, width}, method: featurizer.resize_method)
       else
-        images
+        image
       end
     end
     |> Nx.concatenate()
