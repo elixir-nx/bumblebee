@@ -26,7 +26,7 @@ defmodule Bumblebee.Shared do
       use_cross_attention: [
         default: false,
         doc:
-          "whether cross-attention layers should be added to the model." <>
+          "whether cross-attention layers should be added to the model. " <>
             "This is only relevant for decoder models"
       ]
     ]

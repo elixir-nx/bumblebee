@@ -92,9 +92,9 @@ defmodule Bumblebee.Tokenizer do
   end
 
   @doc """
-  Converts the given token id the corresponding token.
+  Converts the given token id to the corresponding token.
   """
-  @spec token_to_id(t(), token_id()) :: token()
+  @spec id_to_token(t(), token_id()) :: token()
   def id_to_token(%module{} = tokenizer, id) do
     module.id_to_token(tokenizer, id)
   end

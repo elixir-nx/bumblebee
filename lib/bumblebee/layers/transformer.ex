@@ -241,7 +241,7 @@ defmodule Bumblebee.Layers.Transformer do
 
       Alternatively a custom 2-arity function may be given. The function
       should add a normalization node to the given Axon node. The function
-      also receives layer name prefix as the second argument.
+      also receives the layer name prefix as the second argument.
 
     * `:block_type` - controls which configuration of the block to use,
       one of:
