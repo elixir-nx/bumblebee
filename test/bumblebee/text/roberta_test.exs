@@ -33,7 +33,10 @@ defmodule Bumblebee.Text.RobertaTest do
     assert %Bumblebee.Text.Roberta{architecture: :for_masked_language_modeling} = spec
 
     # TODO: remove once we load tied embeddings
-    params = put_in(params["language_modeling_head.output"], params["embedder.token_embedding"])
+    params =
+      update_in(params, [Access.key!(:data)], fn data ->
+        put_in(data["language_modeling_head.output"], data["embedder.token_embedding"])
+      end)
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -157,7 +160,10 @@ defmodule Bumblebee.Text.RobertaTest do
     assert %Bumblebee.Text.Roberta{architecture: :for_causal_language_modeling} = spec
 
     # TODO: remove once we load tied embeddings
-    params = put_in(params["language_modeling_head.output"], params["embedder.token_embedding"])
+    params =
+      update_in(params, [Access.key!(:data)], fn data ->
+        put_in(data["language_modeling_head.output"], data["embedder.token_embedding"])
+      end)
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
