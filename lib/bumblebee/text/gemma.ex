@@ -381,7 +381,7 @@ defmodule Bumblebee.Text.Gemma do
 
     gate = Axon.dense(hidden_state, intermediate_size, name: join(name, "gate"), use_bias: false)
 
-    hidden_state = Axon.multiply(intermediate, Axon.activation(gate, activation))
+    hidden_state = Axon.multiply(intermediate, Layers.activation(gate, activation))
 
     Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
   end
