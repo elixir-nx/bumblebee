@@ -290,7 +290,7 @@ defmodule Bumblebee.Vision.Swin do
       hidden_state
       |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_before"))
       |> reshape(layer_idx)
-      |> hidden_windows(layer_idx, spec)
+      |> hidden_state_windows(layer_idx, spec)
       |> attention(attn_mask, num_attention_heads, dim, spec, name)
 
     hidden_state =
@@ -325,7 +325,14 @@ defmodule Bumblebee.Vision.Swin do
     )
   end
 
-  defp hidden_windows(input, layer_idx, spec) do
+  defp maybe_pad(input, window_size, height, width) do
+    pad1 = (window_size - rem(width, window_size)) |> rem(window_size)
+    pad2 = (window_size - rem(height, window_size)) |> rem(window_size)
+
+    Nx.pad(input, 0, [{0, 0, 0}, {0, pad1, 0}, {0, pad2, 0}, {0, 0, 0}])
+  end
+
+  defp hidden_state_windows(input, layer_idx, spec) do
     shift_size = if 0 == rem(layer_idx, 2), do: 0, else: div(spec.window_size, 2)
 
     input
@@ -333,22 +340,54 @@ defmodule Bumblebee.Vision.Swin do
       fn x ->
         {_batch_size, height, width, num_channels} = Nx.shape(x)
 
+        x = maybe_pad(x, spec.window_size, height, width)
+
+        {_, height, width, _} = Nx.shape(x)
+
         {shift_size, _window_size} =
           if min(height, width) <= spec.window_size,
             do: {0, min(height, width)},
             else: {shift_size, spec.window_size}
 
+        # cyclic shift
         shiffted_hidden_state =
           if shift_size > 0,
             do: roll(x, shifts: [-shift_size, -shift_size], axes: [1, 2]),
             else: x
 
+        # partition windows
         shiffted_hidden_state
         |> window_partition(spec.window_size)
         |> Nx.reshape({:auto, spec.window_size * spec.window_size, num_channels})
       end,
-      name: "hidden_windows_#{layer_idx}"
+      name: "hidden_state_windows_#{layer_idx}"
     )
+  end
+
+  defp relative_position_index(window_size) do
+    coords_h = Nx.iota({window_size}) |> Nx.tile([window_size, 1]) |> Nx.transpose()
+    coords_w = Nx.iota({window_size}) |> Nx.tile([window_size, 1])
+
+    coords_flatten =
+      Nx.stack([coords_h, coords_w])
+      # flatten dimension 1
+      |> Nx.reshape({2, window_size * window_size})
+
+    relative_coords =
+      Nx.subtract(Nx.new_axis(coords_flatten, 2), Nx.new_axis(coords_flatten, 1))
+      |> Nx.transpose(axes: [1, 2, 0])
+
+    relative_coords =
+      Nx.add(
+        relative_coords,
+        Nx.broadcast(Nx.tensor([window_size - 1, window_size - 1]), relative_coords)
+      )
+
+    Nx.multiply(
+      relative_coords,
+      Nx.broadcast(Nx.tensor([2 * window_size - 1, 1]), relative_coords)
+    )
+    |> Nx.sum(axes: [-1])
   end
 
   defp attention(input, attention_mask, num_attention_heads, dim, spec, name) do
@@ -375,6 +414,7 @@ defmodule Bumblebee.Vision.Swin do
   end
 
   def unroll({hidden_state, input}, layer_idx, spec) do
+    # reverse cyclic shift
     shift_size = if 0 == rem(layer_idx, 2), do: 0, else: div(spec.window_size, 2)
 
     Axon.layer(
