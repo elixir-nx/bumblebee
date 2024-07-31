@@ -33,11 +33,11 @@ defprotocol Bumblebee.HuggingFace.Transformers.Model do
         ...
       }
 
-  The mapping should always use longest names, that is, depending on
+  The mapping should always use the longest names, that is, depending on
   the architecture, the PyTorch layer name could be either
   `"bert.embeddings.word_embeddings"` or `"embeddings.word_embeddings"`.
   The longer version should generally be used. Prefixes are removed/added
-  as necessary, so loading partial models supported automatically.
+  as necessary, so loading partial models is supported automatically.
 
   The layer names may include simple substitutions, useful for lists
   of layers:

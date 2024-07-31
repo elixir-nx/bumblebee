@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.WhisperTest do
+defmodule Bumblebee.Audio.WhisperTest do
   use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
