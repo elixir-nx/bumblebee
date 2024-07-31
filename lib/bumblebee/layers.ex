@@ -682,7 +682,7 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Splits the input node with shape `{bach_size, sequence_length, 2}` into
+  Splits the input node with shape `{batch_size, sequence_length, 2}` into
   two nodes with shape `{batch_size, sequence_length}`.
   """
   def split_pair(%Axon{} = x) do
@@ -783,7 +783,7 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
-  Adds a layer that that computes cosine similarity between the inputs.
+  Adds a layer that computes cosine similarity between the inputs.
   """
   def cosine_similarity(x, y) do
     Axon.layer(&cosine_similarity_impl/3, [x, y], op_names: :cosine_similarity)

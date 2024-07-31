@@ -63,7 +63,7 @@ defmodule Bumblebee.Diffusion.Layers do
 
     if rem(embedding_size, 2) != 0 do
       raise ArgumentError,
-            "expected embedding size to an even number, but got: #{inspect(embedding_size)}"
+            "expected embedding size to be an even number, but got: #{inspect(embedding_size)}"
     end
 
     half_size = div(embedding_size, 2)
