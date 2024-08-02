@@ -100,4 +100,19 @@ defmodule Bumblebee.Text.TextEmbeddingTest do
 
     assert_equal(embedding1, embedding2)
   end
+
+  test "cls token pooling" do
+    {:ok, model_info} = Bumblebee.load_model({:hf, "intfloat/e5-small-v2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "intfloat/e5-small-v2"})
+
+    serving =
+      Bumblebee.Text.text_embedding(model_info, tokenizer,
+        output_attribute: :hidden_state,
+        output_pool: :cls_token_pooling,
+        embedding_processor: :l2_norm
+      )
+
+      # Nx.Serving.run(serving, "A long text to test the embeddings")
+      # TBD: tests 
+  end
 end
