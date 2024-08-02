@@ -66,7 +66,7 @@ defmodule Bumblebee.Text.TextEmbedding do
               3 ->
                 # Assuming CLS token is always at the first position
                 Nx.take(output, 0, axis: 1)
-                
+
               rank ->
                 raise ArgumentError,
                       "expected the output tensor to have rank 3 to apply :cls pooling, got: #{rank}." <>
