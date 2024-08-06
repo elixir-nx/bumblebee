@@ -55,6 +55,8 @@ defmodule Bumblebee.Text.Llama do
 
           * `%{type: :dynamic, factor: number()}`
 
+          * `%{type: :llama3, factor: number(), low_frequency_factor: number(), high_frequency_factor: number(), original_max_positions: pos_integer()}`
+
         For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
         """
       ],
@@ -383,12 +385,38 @@ defmodule Bumblebee.Text.Llama do
       import Shared.Converters
 
       scaling_strategy_converter = fn name, value ->
+        # "type" has been renamed to "rope_type"
+        value =
+          case Map.pop(value, "type") do
+            {nil, value} -> value
+            {type, value} -> Map.put(value, "rope_type", type)
+          end
+
         case value do
-          %{"type" => "linear", "factor" => factor} when is_number(factor) ->
+          %{"rope_type" => "linear", "factor" => factor} when is_number(factor) ->
             {:ok, %{type: :linear, factor: factor}}
 
-          %{"type" => "dynamic", "factor" => factor} when is_number(factor) ->
+          %{"rope_type" => "dynamic", "factor" => factor} when is_number(factor) ->
             {:ok, %{type: :dynamic, factor: factor}}
+
+          %{
+            "rope_type" => "llama3",
+            "factor" => factor,
+            "low_freq_factor" => low_frequency_factor,
+            "high_freq_factor" => high_frequency_factor,
+            "original_max_position_embeddings" => original_max_positions
+          }
+          when is_number(factor) and is_number(low_frequency_factor) and
+                 is_number(high_frequency_factor) and
+                 is_number(original_max_positions) ->
+            {:ok,
+             %{
+               type: :llama3,
+               factor: factor,
+               low_frequency_factor: low_frequency_factor,
+               high_frequency_factor: high_frequency_factor,
+               original_max_positions: original_max_positions
+             }}
 
           _other ->
             {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}

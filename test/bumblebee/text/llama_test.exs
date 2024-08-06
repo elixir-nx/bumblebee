@@ -28,6 +28,32 @@ defmodule Bumblebee.Text.LlamaTest do
     )
   end
 
+  test ":base rotary embedding scaling strategy :llama3" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf,
+                "bumblebee-testing/tiny-random-LlamaModel-rope_scaling-llama3-original_max_position_embeddings-64"}
+             )
+
+    assert %Bumblebee.Text.Llama{architecture: :base} = spec
+
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
+
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
+
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[1.4802, -2.0331, 0.4759], [2.3749, -0.8367, -0.0205], [0.5762, -0.0517, -1.1795]]
+      ])
+    )
+  end
+
   test ":for_sequence_classification" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(
