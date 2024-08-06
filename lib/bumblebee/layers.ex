@@ -1234,9 +1234,9 @@ defmodule Bumblebee.Layers do
 
     case scaling_strategy do
       %{type: :linear, factor: factor} ->
-        frequency = Nx.pow(base, range)
+        inv_frequency = inv_frequency(base, range)
         position = Nx.divide(position, factor)
-        positions_cos_sin(position, frequency)
+        positions_cos_sin(position, inv_frequency)
 
       %{type: :dynamic, factor: factor} when sequence_length > max_positions ->
         base =
@@ -1244,8 +1244,8 @@ defmodule Bumblebee.Layers do
           |> Nx.multiply(factor * sequence_length / max_positions - (factor - 1))
           |> Nx.pow(size / (size - 2))
 
-        frequency = Nx.pow(base, range)
-        positions_cos_sin(position, frequency)
+        inv_frequency = inv_frequency(base, range)
+        positions_cos_sin(position, inv_frequency)
 
       %{
         type: type,
@@ -1278,22 +1278,80 @@ defmodule Bumblebee.Layers do
               |> Nx.add(1.0)
           end
 
-        frequency = Nx.multiply(factor, Nx.pow(base, range))
-        {cos, sin} = positions_cos_sin(position, frequency)
+        inv_frequency = inv_frequency(base, range) |> Nx.divide(factor)
+        {cos, sin} = positions_cos_sin(position, inv_frequency)
         {Nx.multiply(cos, cos_sin_factor), Nx.multiply(sin, cos_sin_factor)}
 
+      %{
+        type: :llama3,
+        factor: factor,
+        low_frequency_factor: low_frequency_factor,
+        high_frequency_factor: high_frequency_factor,
+        original_max_positions: original_max_positions
+      } ->
+        inv_frequency = inv_frequency(base, range)
+
+        inv_frequency =
+          llama3_inv_frequency(
+            inv_frequency,
+            factor,
+            low_frequency_factor,
+            high_frequency_factor,
+            original_max_positions
+          )
+
+        positions_cos_sin(position, inv_frequency)
+
       _other ->
-        frequency = Nx.pow(base, range)
-        positions_cos_sin(position, frequency)
+        inv_frequency = inv_frequency(base, range)
+        positions_cos_sin(position, inv_frequency)
     end
   end
 
-  defnp positions_cos_sin(position, frequency) do
-    inv_frequency = 1.0 / frequency
+  defnp llama3_inv_frequency(
+          inv_frequency,
+          factor,
+          low_frequency_factor,
+          high_frequency_factor,
+          original_max_positions
+        ) do
+    low_frequency_wavelength = original_max_positions / low_frequency_factor
+    high_frequency_wavelength = original_max_positions / high_frequency_factor
+
+    # Vectorize to enable cleaner conditional
+    inv_frequency = Nx.vectorize(inv_frequency, :range)
+
+    wavelength = 2 * Nx.Constants.pi() / inv_frequency
+
+    inv_frequency =
+      cond do
+        wavelength < high_frequency_wavelength ->
+          inv_frequency
+
+        wavelength > low_frequency_wavelength ->
+          inv_frequency / factor
+
+        true ->
+          # Interpolation between the two cases above
+
+          smooth_factor =
+            (original_max_positions / wavelength - low_frequency_factor) /
+              (high_frequency_factor - low_frequency_factor)
+
+          (1 - smooth_factor) * inv_frequency / factor + smooth_factor * inv_frequency
+      end
+
+    Nx.devectorize(inv_frequency)
+  end
+
+  defnp inv_frequency(base, range) do
+    frequency = Nx.pow(base, range)
+    1.0 / frequency
+  end
+
+  defnp positions_cos_sin(position, inv_frequency) do
     angle = Nx.outer(position, inv_frequency)
-
     angle = Nx.concatenate([angle, angle], axis: -1)
-
     {Nx.cos(angle), Nx.sin(angle)}
   end
 
