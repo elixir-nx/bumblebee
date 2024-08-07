@@ -3,6 +3,8 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
 
   import Nx.Defn
 
+  alias Bumblebee.Text.Generation.GrammarConstraint
+
   deftransform suppressed_tokens_processor(logits, _context, opts \\ []) do
     opts = Keyword.validate!(opts, [:suppressed_token_ids])
 
@@ -258,5 +260,15 @@ defmodule Bumblebee.Text.Generation.LogitsProcessing do
       nil -> 1
       {idx, _token_id} -> idx + 1
     end
+  end
+
+  deftransform grammar_constrained_processor(logits, input_ids, opts \\ []) do
+    opts = Keyword.validate!(opts, [:grammar, :tokenizer])
+
+    grammar = opts[:grammar]
+    tokenizer = opts[:tokenizer]
+
+    constraint = GrammarConstraint.create(grammar, "root", tokenizer)
+    batch_stacks = GrammarConstraint.init_stacks(constraint)
   end
 end
