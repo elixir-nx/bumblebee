@@ -42,13 +42,13 @@ defmodule Bumblebee.Utils.HTTP do
             if Process.alive?(caller) do
               send(caller, {:http, reply_info})
             else
-              :httpc.cancel_request(request_id)
+              :httpc.cancel_request(request_id, :bumblebee)
             end
           end
 
           opts = [stream: :self, sync: false, receiver: receiver]
 
-          {:ok, request_id} = :httpc.request(:get, request, http_opts, opts)
+          {:ok, request_id} = :httpc.request(:get, request, http_opts, opts, :bumblebee)
           download_loop(%{request_id: request_id, file: file, total_size: nil, size: nil})
         after
           File.close(file)
@@ -97,7 +97,7 @@ defmodule Bumblebee.Utils.HTTP do
         download_loop(state)
 
       {:error, error} ->
-        :httpc.cancel_request(state.request_id)
+        :httpc.cancel_request(state.request_id, :bumblebee)
         {:error, error}
     end
   end
@@ -161,7 +161,7 @@ defmodule Bumblebee.Utils.HTTP do
       body_format: :binary
     ]
 
-    case :httpc.request(method, request, http_opts, opts) do
+    case :httpc.request(method, request, http_opts, opts, :bumblebee) do
       {:ok, {{_, status, _}, headers, body}} ->
         {:ok, %{status: status, headers: parse_headers(headers), body: body}}
 
@@ -186,13 +186,59 @@ defmodule Bumblebee.Utils.HTTP do
   end
 
   defp http_ssl_opts() do
+    # Allow a user-specified CA certs to support, for example, HTTPS proxies
+    cacert_opt =
+      case System.get_env("BUMBLEBEE_CACERTS_PATH") do
+        nil -> {:cacerts, :public_key.cacerts_get()}
+        file -> {:cacertfile, file}
+      end
+
     # Use secure options, see https://gist.github.com/jonatanklosko/5e20ca84127f6b31bbe3906498e1a1d7
     [
+      cacert_opt,
       verify: :verify_peer,
-      cacertfile: CAStore.file_path(),
       customize_hostname_check: [
         match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
       ]
     ]
+  end
+
+  @doc false
+  def start_inets_profile() do
+    # Starting an HTTP client profile allows us to scope the httpc
+    # configuration options, such as proxy options
+    {:ok, _pid} = :inets.start(:httpc, profile: :bumblebee)
+    set_proxy_options()
+  end
+
+  @doc false
+  def stop_inets_profile() do
+    :inets.stop(:httpc, :bumblebee)
+  end
+
+  defp set_proxy_options() do
+    http_proxy = System.get_env("HTTP_PROXY") || System.get_env("http_proxy")
+    https_proxy = System.get_env("HTTPS_PROXY") || System.get_env("https_proxy")
+
+    no_proxy =
+      if no_proxy = System.get_env("NO_PROXY") || System.get_env("no_proxy") do
+        no_proxy
+        |> String.split(",")
+        |> Enum.map(&String.to_charlist/1)
+      else
+        []
+      end
+
+    set_proxy_option(:proxy, http_proxy, no_proxy)
+    set_proxy_option(:https_proxy, https_proxy, no_proxy)
+  end
+
+  defp set_proxy_option(proxy_scheme, proxy, no_proxy) do
+    uri = URI.parse(proxy || "")
+
+    if uri.host && uri.port do
+      host = String.to_charlist(uri.host)
+      :httpc.set_options([{proxy_scheme, {{host, uri.port}, no_proxy}}], :bumblebee)
+    end
   end
 end
