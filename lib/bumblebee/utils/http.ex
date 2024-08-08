@@ -71,13 +71,7 @@ defmodule Bumblebee.Utils.HTTP do
   end
 
   defp download_receive(state, {_, {{_, 200, _}, _headers, body}}) do
-    case IO.binwrite(state.file, body) do
-      :ok ->
-        :ok
-
-      {:error, error} ->
-        {:error, "failed to write to file, reason: #{:file.format_error(error)}"}
-    end
+    safe_binwrite(state.file, body)
   end
 
   defp download_receive(_state, {_, {{_, status, _}, _headers, _body}}) do
@@ -90,7 +84,7 @@ defmodule Bumblebee.Utils.HTTP do
   end
 
   defp download_receive(state, {_, :stream, body_part}) do
-    case IO.binwrite(state.file, body_part) do
+    case safe_binwrite(state.file, body_part) do
       :ok ->
         part_size = byte_size(body_part)
         state = update_in(state.size, &(&1 + part_size))
@@ -104,7 +98,7 @@ defmodule Bumblebee.Utils.HTTP do
 
       {:error, error} ->
         :httpc.cancel_request(state.request_id)
-        {:error, "failed to write to file, reason: #{:file.format_error(error)}"}
+        {:error, error}
     end
   end
 
@@ -119,6 +113,15 @@ defmodule Bumblebee.Utils.HTTP do
 
       _ ->
         nil
+    end
+  end
+
+  defp safe_binwrite(file, iodata) do
+    try do
+      IO.binwrite(file, iodata)
+    catch
+      :error, error ->
+        {:error, "failed to write to file, reason: #{inspect(error)}"}
     end
   end
 
