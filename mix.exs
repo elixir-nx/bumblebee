@@ -21,6 +21,7 @@ defmodule Bumblebee.MixProject do
 
   def application do
     [
+      mod: {Bumblebee.Application, []},
       extra_applications: [:logger, :inets, :ssl]
     ]
   end
@@ -42,7 +43,6 @@ defmodule Bumblebee.MixProject do
       {:nx_image, "~> 0.1.0"},
       {:unpickler, "~> 0.1.0"},
       {:safetensors, "~> 0.1.3"},
-      {:castore, "~> 0.1 or ~> 1.0"},
       {:jason, "~> 1.4.0"},
       {:unzip, "~> 0.10.0"},
       {:progress_bar, "~> 3.0"},
