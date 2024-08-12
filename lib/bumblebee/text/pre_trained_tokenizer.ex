@@ -179,6 +179,16 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
         mask: "<mask>"
       }
     },
+    m2m_100: %{
+      special_tokens: %{
+        eos: "</s>",
+        unk: "<unk>",
+        sep: "</s>",
+        pad: "<pad>",
+        cls: "<s>",
+        mask: "<mask>"
+      }
+    },
     roberta: %{
       special_tokens: %{
         bos: "<s>",
