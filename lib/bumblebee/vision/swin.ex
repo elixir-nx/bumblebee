@@ -196,7 +196,7 @@ defmodule Bumblebee.Vision.Swin do
     embeddings =
       pixel_values
       |> patch_embedding(spec, name: join(name, "patch_embedding"))
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon)
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: "layernorm_embeddings")
 
     embeddings =
       if spec.use_absolute_embeddings do
@@ -291,8 +291,11 @@ defmodule Bumblebee.Vision.Swin do
       |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_before"))
       |> reshape(layer_idx)
       |> hidden_state_windows(layer_idx, spec)
-      |> attention(attn_mask, num_attention_heads, dim, spec, name)
+      # |> attention_bumblebee(attn_mask, num_attention_heads, dim, spec, name)
+      |> attention(attn_mask, Layers.none(), num_attention_heads, dim, spec, name)
 
+    # TODO "unpad" if it was padded
+    # After unroll we have to reverse padding (before dropout)
     hidden_state =
       {hidden_state, shortcut}
       |> unroll(layer_idx, spec)
@@ -301,9 +304,11 @@ defmodule Bumblebee.Vision.Swin do
     output =
       Axon.add(shortcut, hidden_state)
       |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_after"))
-      |> Axon.dense(dim, name: join(name, "dense"))
+      |> Axon.dense(round(spec.intermediate_size_ratio * dim),
+        name: join(name, "intermediate.dense")
+      )
       |> Layers.activation(spec.activation)
-      |> Axon.dense(dim, name: join(name, "dense"))
+      |> Axon.dense(dim, name: join(name, "output.dense"))
       |> Axon.dropout(rate: spec.dropout_rate)
 
     hidden_state = Axon.add(hidden_state, output)
@@ -390,7 +395,182 @@ defmodule Bumblebee.Vision.Swin do
     |> Nx.sum(axes: [-1])
   end
 
-  defp attention(input, attention_mask, num_attention_heads, dim, spec, name) do
+  defp transpose_for_scores(x, num_attention_heads, attention_head_size) do
+    new_shape =
+      x
+      |> Nx.shape()
+      |> Tuple.to_list()
+      |> List.replace_at(-1, [num_attention_heads, attention_head_size])
+      |> List.flatten()
+      |> List.to_tuple()
+
+    x
+    |> Nx.reshape(new_shape)
+    |> Nx.transpose(axes: [0, 2, 1, 3])
+  end
+
+  defp attention(hidden_state, attention_mask, head_mask, num_attention_heads, dim, spec, name) do
+    attention_head_size = floor(dim / num_attention_heads)
+    all_head_size = num_attention_heads * attention_head_size
+    name = join(name, "self_attention")
+
+    query =
+      hidden_state
+      |> Axon.dense(all_head_size, name: join(name, "query"))
+      |> Axon.nx(fn x ->
+        transpose_for_scores(x, num_attention_heads, attention_head_size)
+      end)
+
+    key =
+      hidden_state
+      |> Axon.dense(all_head_size, name: join(name, "key"))
+      |> Axon.nx(fn x ->
+        transpose_for_scores(x, num_attention_heads, attention_head_size)
+      end)
+
+    value =
+      hidden_state
+      |> Axon.dense(all_head_size, name: join(name, "value"))
+      |> Axon.nx(fn x ->
+        transpose_for_scores(x, num_attention_heads, attention_head_size)
+      end)
+
+    relative_position_bias_table =
+      Axon.param(
+        "relative_position_bias_table",
+        {(2 * spec.window_size - 1) * (2 * spec.window_size - 1), num_attention_heads}
+      )
+
+    probabilities =
+      Axon.layer(
+        &attention_weights_impl/7,
+        [
+          hidden_state,
+          query,
+          key,
+          relative_position_bias_table,
+          Axon.optional(attention_mask),
+          Axon.optional(head_mask)
+        ],
+        name: join(name, "weights"),
+        window_size: spec.window_size,
+        num_heads: num_attention_heads,
+        head_size: attention_head_size,
+        dropout_rate: spec.attention_dropout_rate
+      )
+
+    output_name = join(name, "output")
+
+    context =
+      Axon.layer(
+        &attention_output_impl/3,
+        [probabilities, value],
+        name: output_name,
+        num_heads: num_attention_heads,
+        head_size: attention_head_size
+      )
+      |> Axon.dense(dim, name: join(output_name, "dense"))
+      |> Axon.dropout(
+        rate: spec.attention_dropout_rate,
+        name: join(output_name, "dropout")
+      )
+
+    {context, probabilities}
+  end
+
+  defp attention_weights_impl(
+         hidden_state,
+         query,
+         key,
+         relative_position_bias_table,
+         attention_mask,
+         head_mask,
+         opts
+       ) do
+    opts =
+      Keyword.validate!(opts, [:mode, :name, :window_size, :num_heads, :head_size, :dropout_rate])
+
+    {batch_size, dim, _num_channels} = Nx.shape(hidden_state)
+
+    scores =
+      query
+      |> Nx.dot([3], [0, 1], Nx.transpose(key, axes: [0, 1, -1, -2]), [2], [0, 1])
+      |> Nx.divide(Nx.sqrt(opts[:head_size]))
+
+    rel_pos_idx = relative_position_index(opts[:window_size]) |> Nx.reshape({:auto})
+
+    relative_position_bias =
+      Nx.take(relative_position_bias_table, rel_pos_idx)
+      |> Nx.reshape(
+        {opts[:window_size] * opts[:window_size], opts[:window_size] * opts[:window_size], :auto}
+      )
+      |> Nx.transpose(axes: [2, 0, 1])
+      |> Nx.new_axis(0)
+
+    scores = Nx.add(scores, relative_position_bias)
+
+    scores =
+      case attention_mask do
+        %Axon.None{} ->
+          scores
+
+        _ ->
+          {mask_size, _, _} = Nx.shape(attention_mask)
+
+          scores =
+            Nx.reshape(
+              scores,
+              {floor(batch_size / mask_size), mask_size, opts[:num_heads], dim, dim}
+            )
+
+          attention_mask =
+            attention_mask
+            |> Nx.new_axis(1)
+            |> Nx.new_axis(0)
+
+          scores
+          |> Nx.add(attention_mask)
+          |> Nx.reshape({:auto, opts[:num_heads], dim, dim})
+      end
+
+    # Normalize the attention scores to probabilities (softmax).
+    #
+    # This is actually dropping out entire tokens to attend to, which
+    # might seem a bit unusual, but is taken from the original
+    # Transformer paper (dropout).
+    seed = :erlang.system_time()
+
+    probabilities =
+      Axon.Activations.softmax(scores, axis: -1)
+      |> Axon.Layers.dropout(Nx.Random.key(seed), rate: opts[:dropout_rate])
+
+    case head_mask do
+      %Axon.None{} ->
+        probabilities
+
+      head_mask ->
+        Nx.multiply(probabilities, head_mask)
+    end
+  end
+
+  def attention_output_impl(weights, value, opts) do
+    context =
+      weights
+      |> Nx.dot([3], [0, 1], value, [2], [0, 1])
+      |> Nx.transpose(axes: [0, 2, 1, 3])
+
+    new_context_shape =
+      context
+      |> Nx.shape()
+      |> Tuple.to_list()
+      |> Enum.slice(0..-3//1)
+      |> Kernel.++([opts[:num_heads] * opts[:head_size]])
+      |> List.to_tuple()
+
+    Nx.reshape(context, new_context_shape)
+  end
+
+  defp attention_bumblebee(input, attention_mask, num_attention_heads, dim, spec, name) do
     {hidden_state, attention, _self_attention_cache, _attention_relative_bias} =
       Bumblebee.Layers.Transformer.multi_head_attention(
         input,
@@ -509,11 +689,6 @@ defmodule Bumblebee.Vision.Swin do
     end
   end
 
-  defp window_partition(%Axon{} = input_feature, window_size) do
-    input_feature
-    |> Axon.nx(fn x -> window_partition(x, window_size) end)
-  end
-
   defp window_partition(%Nx.Tensor{} = tensor, window_size) do
     {batch_size, height, width, num_channels} = Nx.shape(tensor)
     windowed_height = div(height, window_size)
@@ -564,7 +739,8 @@ defmodule Bumblebee.Vision.Swin do
     |> Axon.layer_norm(epsilon: norm_epsilon, name: join(name, "downsample_norm"))
     |> Axon.dense(2 * dim,
       kernel_initializer: Axon.Initializers.uniform(),
-      name: join(name, "downsample_reduction")
+      name: join(name, "downsample_reduction"),
+      use_bias: false
     )
   end
 
@@ -604,25 +780,31 @@ defmodule Bumblebee.Vision.Swin do
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(_spec) do
       %{
-        "layernorm" => "swin.layernorm",
-        "encoder.blocks.{n}.layer.{m}.self_attention.output" =>
-          "swin.encoder.layers.{n}.blocks.{m}.attention.output.dense",
-        "encoder.blocks.{n}.layer.{m}.self_attention.value" =>
-          "swin.encoder.layers.{n}.blocks.{m}.attention.self.value",
-        "encoder.blocks.{n}.layer.{m}.self_attention.query" =>
-          "swin.encoder.layers.{n}.blocks.{m}.attention.self.query",
-        "encoder.blocks.{n}.layer.{m}.self_attention.key" =>
-          "swin.encoder.layers.{n}.blocks.{m}.attention.self.key",
-        "encoder.blocks.{n}.layer.{m}.layernorm_before" =>
-          "swin.encoder.layers.{n}.blocks.{m}.layernorm_before",
+        "encoder.blocks.{n}.layer.{m}.intermediate.dense" =>
+          "swin.encoder.layers.{n}.blocks.{m}.intermediate.dense",
         "encoder.blocks.{n}.layer.{m}.layernorm_after" =>
           "swin.encoder.layers.{n}.blocks.{m}.layernorm_after",
+        "encoder.blocks.{n}.layer.{m}.layernorm_before" =>
+          "swin.encoder.layers.{n}.blocks.{m}.layernorm_before",
+        "encoder.blocks.{n}.layer.{m}.output.dense" =>
+          "swin.encoder.layers.{n}.blocks.{m}.output.dense",
+        "encoder.blocks.{n}.layer.{m}.self_attention.key" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.self.key",
+        "encoder.blocks.{n}.layer.{m}.self_attention.output.dense" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.output.dense",
+        "encoder.blocks.{n}.layer.{m}.self_attention.query" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.self.query",
+        "encoder.blocks.{n}.layer.{m}.self_attention.value" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.self.value",
+        "encoder.blocks.{n}.layer.{m}.self_attention.weights" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.self",
+        "layernorm" => "swin.layernorm",
+        "layernorm_embeddings" => "swin.embeddings.norm",
         "embedder.patch_embedding.projection" => "swin.embeddings.patch_embeddings.projection",
         "encoder.blocks.{n}.downsample_norm" => "swin.encoder.layers.{n}.downsample.norm",
         "encoder.blocks.{n}.downsample_reduction" =>
           "swin.encoder.layers.{n}.downsample.reduction",
-        "image_classification_head.output" => "classifier",
-        "encoder.blocks.{n}.layer.{m}.dense" => "swin.encoder.layers.{n}.blocks.{m}.output.dense"
+        "image_classification_head.output" => "classifier"
       }
     end
   end
