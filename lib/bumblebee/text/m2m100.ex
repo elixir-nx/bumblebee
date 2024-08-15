@@ -1,6 +1,8 @@
 defmodule Bumblebee.Text.M2m100 do
   alias Bumblebee.Shared
 
+  import Nx.Defn
+
   options =
     [
       vocab_size: [
@@ -429,30 +431,40 @@ defmodule Bumblebee.Text.M2m100 do
     padding_idx = spec.pad_token_id
     half_dim = div(embedding_dim, 2)
 
-    position_ids
-    |> Axon.nx(
-      fn position_ids ->
-        emb = Nx.log(10_000)
-        emb = Nx.divide(emb, half_dim - 1)
-        emb = Nx.exp(Nx.multiply(Nx.iota({half_dim}), Nx.negate(emb)))
-        emb = Nx.multiply(Nx.new_axis(Nx.iota({num_embeddings}), 1), Nx.new_axis(emb, 0))
-        emb = Nx.concatenate([Nx.sin(emb), Nx.cos(emb)], axis: 1)
-        emb = Nx.reshape(emb, {num_embeddings, :auto})
-
-        emb =
-          if rem(embedding_dim, 2) == 1 do
-            Nx.concatenate([emb, Nx.broadcast(0, {num_embeddings, 1})], axis: 1)
-          else
-            emb
-          end
-
-        zero_pad_slice = Nx.broadcast(0.0, {1, embedding_dim})
-        emb = Nx.put_slice(emb, [padding_idx, 0], zero_pad_slice)
-
-        Nx.take(emb, Nx.as_type(position_ids, {:s, 64}))
-      end,
+    Axon.nx(
+      position_ids,
+      &position_embedding_impl(&1, embedding_dim, half_dim, num_embeddings, padding_idx),
       name: join(name, "sinusoidal_position_embedding")
     )
+  end
+
+  defnp position_embedding_impl(
+          position_ids,
+          embedding_dim,
+          half_dim,
+          num_embeddings,
+          padding_idx
+        ) do
+    zero_pad_slice = Nx.broadcast(0.0, {1, embedding_dim})
+
+    Nx.log(10_000)
+    |> Nx.divide(half_dim - 1)
+    |> Nx.negate()
+    |> Nx.multiply(Nx.iota({half_dim}))
+    |> Nx.exp()
+    |> Nx.new_axis(0)
+    |> Nx.multiply(Nx.new_axis(Nx.iota({num_embeddings}), 1))
+    |> then(&Nx.concatenate([Nx.sin(&1), Nx.cos(&1)], axis: 1))
+    |> Nx.reshape({num_embeddings, :auto})
+    |> then(fn emb ->
+      if rem(embedding_dim, 2) == 1 do
+        Nx.concatenate([emb, Nx.broadcast(0, {num_embeddings, 1})], axis: 1)
+      else
+        emb
+      end
+    end)
+    |> Nx.put_slice([padding_idx, 0], zero_pad_slice)
+    |> Nx.take(Nx.as_type(position_ids, {:s, 64}))
   end
 
   defp decoder(
