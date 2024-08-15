@@ -911,7 +911,7 @@ defmodule Bumblebee do
                   type
 
                 {:error, error} ->
-                  raise ArgumentError, "#{error}, please specify the :module option"
+                  raise ArgumentError, "#{error}, please specify the :type option"
               end
 
           tokenizer_config_result =
