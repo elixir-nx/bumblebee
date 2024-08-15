@@ -73,9 +73,7 @@ defmodule Bumblebee.Text.M2m100 do
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
-    ] ++
-      Shared.common_options([:num_labels, :id_to_label]) ++
-      Shared.token_options(pad_token_id: 1, eos_token_id: 2, decoder_start_token_id: 2)
+    ] ++ Shared.token_options(pad_token_id: 1, eos_token_id: 2, decoder_start_token_id: 2)
 
   @moduledoc """
   M2M100 model family.
@@ -102,7 +100,6 @@ defmodule Bumblebee.Text.M2m100 do
   def config(spec, opts) do
     spec
     |> Shared.put_config_attrs(opts)
-    |> Shared.validate_label_options()
   end
 
   @impl true
@@ -126,10 +123,7 @@ defmodule Bumblebee.Text.M2m100 do
     inputs = encoder_decoder_inputs(spec)
     outputs = core(inputs, spec)
 
-    logits =
-      outputs.hidden_state
-      |> language_modeling_head(spec, name: "language_modeling_head")
-      |> Axon.bias(name: "language_modeling_head.logits_bias", bias_initializer: :zeros)
+    logits = language_modeling_head(outputs.hidden_state, spec, name: "language_modeling_head")
 
     Layers.output(%{
       logits: logits,
@@ -459,7 +453,7 @@ defmodule Bumblebee.Text.M2m100 do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(spec) do
+    def params_mapping(_spec) do
       %{
         "encoder_embedder.token_embedding" => "model.encoder.embed_tokens",
         "encoder_embedder.position_embedding" => "model.encoder.embed_positions",
@@ -499,14 +493,7 @@ defmodule Bumblebee.Text.M2m100 do
         "decoder.blocks.{n}.ffn.output" => "model.decoder.layers.{n}.fc2",
         "decoder.blocks.{n}.output_norm" => "model.decoder.layers.{n}.final_layer_norm",
         "decoder.norm" => "model.decoder.layer_norm",
-        "language_modeling_head.output" =>
-          case spec.architecture do
-            :for_causal_language_modeling -> "lm_head"
-            _other -> "model.shared"
-          end,
-        "language_modeling_head.logits_bias" => %{
-          "bias" => {[{"model", "final_logits_bias"}], fn [value] -> Nx.squeeze(value) end}
-        },
+        "language_modeling_head.output" => "lm_head",
         "sequence_classification_head.dense" => "classification_head.dense",
         "sequence_classification_head.output" => "classification_head.out_proj",
         "question_answering_head.output" => "qa_outputs"
