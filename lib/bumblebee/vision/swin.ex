@@ -291,7 +291,6 @@ defmodule Bumblebee.Vision.Swin do
       |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_before"))
       |> reshape(layer_idx)
       |> hidden_state_windows(layer_idx, spec)
-      # |> attention_bumblebee(attn_mask, num_attention_heads, dim, spec, name)
       |> attention(attn_mask, Layers.none(), num_attention_heads, dim, spec, name)
 
     # TODO "unpad" if it was padded
@@ -568,29 +567,6 @@ defmodule Bumblebee.Vision.Swin do
       |> List.to_tuple()
 
     Nx.reshape(context, new_context_shape)
-  end
-
-  defp attention_bumblebee(input, attention_mask, num_attention_heads, dim, spec, name) do
-    {hidden_state, attention, _self_attention_cache, _attention_relative_bias} =
-      Bumblebee.Layers.Transformer.multi_head_attention(
-        input,
-        input,
-        input,
-        attention_mask: attention_mask,
-        num_heads: num_attention_heads,
-        hidden_size: dim,
-        kernel_initializer: kernel_initializer(spec),
-        dropout_rate: spec.attention_dropout_rate,
-        name: join(name, "self_attention")
-      )
-
-    hidden_state =
-      Axon.dropout(hidden_state,
-        rate: spec.dropout_rate,
-        name: join(name, "self_attention_dropout")
-      )
-
-    {hidden_state, attention}
   end
 
   def unroll({hidden_state, input}, layer_idx, spec) do
