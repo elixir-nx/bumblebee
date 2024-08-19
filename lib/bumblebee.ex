@@ -165,6 +165,8 @@ defmodule Bumblebee do
     "MBartForQuestionAnswering" => {Bumblebee.Text.Mbart, :for_question_answering},
     "MBartForSequenceClassification" => {Bumblebee.Text.Mbart, :for_sequence_classification},
     "MBartModel" => {Bumblebee.Text.Mbart, :base},
+    "M2M100Model" => {Bumblebee.Text.M2m100, :base},
+    "M2M100ForConditionalGeneration" => {Bumblebee.Text.M2m100, :for_conditional_generation},
     "MistralModel" => {Bumblebee.Text.Mistral, :base},
     "MistralForCausalLM" => {Bumblebee.Text.Mistral, :for_causal_language_modeling},
     "MistralForSequenceClassification" => {Bumblebee.Text.Mistral, :for_sequence_classification},
@@ -252,7 +254,13 @@ defmodule Bumblebee do
     "roberta" => :roberta,
     "t5" => :t5,
     "whisper" => :whisper,
-    "xlm-roberta" => :xlm_roberta
+    "xlm-roberta" => :xlm_roberta,
+    # Both M2M100 and NLLB model checkpoints use the M2M100 model,
+    # but have distinct tokenizers. Consequently, model type is
+    # "m2m_100" in both cases. Currently only NLLB has fast tokenizer
+    # implementation, so if we load the tokenizer correctly, it is
+    # safe to assume it's NLLB
+    "m2m_100" => :nllb
   }
 
   @diffusers_class_to_scheduler %{
