@@ -295,13 +295,15 @@ defmodule Bumblebee.Vision.Swin do
 
     # TODO "unpad" if it was padded
     # After unroll we have to reverse padding (before dropout)
-    hidden_state =
+    attention_windows =
       {hidden_state, shortcut}
       |> unroll(layer_idx, spec)
       |> Axon.dropout(rate: spec.dropout_rate)
 
+    hidden_state = Axon.add(shortcut, attention_windows)
+
     output =
-      Axon.add(shortcut, hidden_state)
+      hidden_state
       |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_after"))
       |> Axon.dense(round(spec.intermediate_size_ratio * dim),
         name: join(name, "intermediate.dense")
