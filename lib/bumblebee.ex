@@ -255,7 +255,12 @@ defmodule Bumblebee do
     "t5" => :t5,
     "whisper" => :whisper,
     "xlm-roberta" => :xlm_roberta,
-    "m2m_100" => :m2m_100
+    # Both M2M100 and NLLB model checkpoints use the M2M100 model,
+    # but have distinct tokenizers. Consequently, model type is
+    # "m2m_100" in both cases. Currently only NLLB has fast tokenizer
+    # implementation, so if we load the tokenizer correctly, it is
+    # safe to assume it's NLLB
+    "m2m_100" => :nllb
   }
 
   @diffusers_class_to_scheduler %{

@@ -179,7 +179,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
         mask: "<mask>"
       }
     },
-    m2m_100: %{
+    nllb: %{
       special_tokens: %{
         eos: "</s>",
         unk: "<unk>",
