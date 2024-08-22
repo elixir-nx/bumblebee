@@ -244,13 +244,13 @@ defmodule Bumblebee.Text.Generation do
         encoder_outputs = encoder_predict_fun.(params, inputs)
 
         batch_size = Nx.axis_size(encoder_input(inputs), 0)
-        decoder_input_ids = Nx.broadcast(decoder_start_token_id, {batch_size, 1})
+
+        inputs = Map.put(inputs, "encoder_hidden_state", encoder_outputs.hidden_state)
 
         inputs =
-          Map.merge(inputs, %{
-            "encoder_hidden_state" => encoder_outputs.hidden_state,
-            "decoder_input_ids" => decoder_input_ids
-          })
+          Map.put_new_lazy(inputs, "decoder_input_ids", fn ->
+            Nx.broadcast(decoder_start_token_id, {batch_size, 1})
+          end)
 
         max_length = max_length_fun.(1)
         inputs = prepare_decoder_inputs(inputs, "decoder_", spec, model, max_length)

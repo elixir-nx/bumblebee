@@ -196,7 +196,8 @@ defmodule Bumblebee.Text do
       #=> %{
       #=>   results: [
       #=>     %{
-      #=>       text: "Elixir is a functional programming language that is designed to be used in a variety of applications. It"
+      #=>       text: " programming language that is designed to be used in a variety of applications. It",
+      #=>       token_summary: %{input: 5, output: 15, padding: 0}
       #=>     }
       #=>   ]
       #=> }
@@ -223,6 +224,69 @@ defmodule Bumblebee.Text do
         ) :: Nx.Serving.t()
   defdelegate generation(model_info, tokenizer, generation_config, opts \\ []),
     to: Bumblebee.Text.TextGeneration
+
+  @type translation_input ::
+          %{
+            :text => String.t(),
+            :source_language_token => String.t(),
+            :target_language_token => String.t(),
+            optional(:seed) => integer() | nil
+          }
+  @type translation_output :: generation_output()
+
+  @doc """
+  Builds serving for text translation.
+
+  The serving accepts `t:translation_input/0` and returns `t:translation_output/0`.
+  A list of inputs is also supported.
+
+  This serving is an extension of `generation/4` that handles per-input
+  language configuration.
+
+  Note that this serving is designed for multilingual models that
+  require source/target language to be specified. Some text models are
+  trained for specific language pairs, others expect a command such as
+  "translate English to Spanish", in such cases you most likely want
+  to use `generation/4`.
+
+  ## Options
+
+  See `generation/4` for available options.
+
+  ## Examples
+
+      repository_id = "facebook/nllb-200-distilled-600M"
+
+      {:ok, model_info} = Bumblebee.load_model({:hf, repository_id})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, repository_id})
+      {:ok, generation_config} = Bumblebee.load_generation_config({:hf, repository_id})
+
+      serving = Bumblebee.Text.translation(model_info, tokenizer, generation_config)
+
+      text = "The bank of the river is beautiful in spring"
+
+      Nx.Serving.run(serving, %{
+        text: text,
+        source_language_token: "eng_Latn",
+        target_language_token: "pol_Latn"
+      })
+      #=> %{
+      #=>   results: [
+      #=>     %{
+      #=>       text: "W wiosnę brzeg rzeki jest piękny",
+      #=>       token_summary: %{input: 11, output: 13, padding: 0}
+      #=>     }
+      #=>   ]
+      #=> }
+  """
+  @spec translation(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          Bumblebee.Text.GenerationConfig.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate translation(model_info, tokenizer, generation_config, opts \\ []),
+    to: Bumblebee.Text.Translation
 
   @type text_classification_input :: String.t()
   @type text_classification_output :: %{predictions: list(text_classification_prediction())}
@@ -316,7 +380,7 @@ defmodule Bumblebee.Text do
       it is not already a pooled embedding. Supported values:
 
         * `:mean_pooling` - performs a mean across all tokens
-        
+
         * `cls_token_pooling` - takes the embedding for the special CLS token.
           Note that we currently assume that the CLS token is the first token
           in the sequence

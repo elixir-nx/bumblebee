@@ -339,6 +339,47 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
     )
   end
 
+  test ":nllb" do
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "facebook/nllb-200-distilled-600M"})
+
+    assert %Bumblebee.Text.PreTrainedTokenizer{type: :nllb} = tokenizer
+
+    inputs = Bumblebee.apply_tokenizer(tokenizer, ["Hello, my dog is cute <mask>"])
+
+    assert_equal(
+      inputs["input_ids"],
+      Nx.tensor([
+        [256_047, 94124, 248_079, 1537, 6658, 248, 95740, 256_203, 2]
+      ])
+    )
+
+    assert_equal(
+      inputs["attention_mask"],
+      Nx.tensor([
+        [1, 1, 1, 1, 1, 1, 1, 1, 1]
+      ])
+    )
+
+    tokenizer =
+      Bumblebee.configure(tokenizer, template_options: [language_token: "fra_Latn"])
+
+    inputs = Bumblebee.apply_tokenizer(tokenizer, ["Hello, my dog is cute <mask>"])
+
+    assert_equal(
+      inputs["input_ids"],
+      Nx.tensor([
+        [256_057, 94124, 248_079, 1537, 6658, 248, 95740, 256_203, 2]
+      ])
+    )
+
+    assert_equal(
+      inputs["attention_mask"],
+      Nx.tensor([
+        [1, 1, 1, 1, 1, 1, 1, 1, 1]
+      ])
+    )
+  end
+
   test ":roberta" do
     assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "FacebookAI/roberta-base"})
 

@@ -52,12 +52,12 @@ defmodule Bumblebee.Tokenizer do
   @doc """
   Converts the given token into the corresponding numeric id.
   """
-  @callback token_to_id(t(), token()) :: token_id()
+  @callback token_to_id(t(), token()) :: token_id() | nil
 
   @doc """
   Converts the given token id the corresponding token.
   """
-  @callback id_to_token(t(), token_id()) :: token()
+  @callback id_to_token(t(), token_id()) :: token() | nil
 
   @doc """
   Returns a map with special tokens.
@@ -86,7 +86,7 @@ defmodule Bumblebee.Tokenizer do
   @doc """
   Converts the given token into the corresponding numeric id.
   """
-  @spec token_to_id(t(), token()) :: token_id()
+  @spec token_to_id(t(), token()) :: token_id() | nil
   def token_to_id(%module{} = tokenizer, token) do
     module.token_to_id(tokenizer, token)
   end
@@ -94,7 +94,7 @@ defmodule Bumblebee.Tokenizer do
   @doc """
   Converts the given token id to the corresponding token.
   """
-  @spec id_to_token(t(), token_id()) :: token()
+  @spec id_to_token(t(), token_id()) :: token() | nil
   def id_to_token(%module{} = tokenizer, id) do
     module.id_to_token(tokenizer, id)
   end
