@@ -53,6 +53,16 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
       whether to return the sequence length. The length is the effective number of tokens,
       so it is calculated after truncation, but does not include padding
       """
+    ],
+    template_options: [
+      default: [],
+      doc: """
+      options configuring the tokenization template, specific to the given tokenizer type.
+      Recognised options are:
+
+        * `:language_token` - for tokenizers: `:nllb`
+
+      """
     ]
   ]
 
@@ -187,7 +197,8 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
         pad: "<pad>",
         cls: "<s>",
         mask: "<mask>"
-      }
+      },
+      default_template_options: [language_token: "eng_Latn"]
     },
     roberta: %{
       special_tokens: %{
@@ -246,8 +257,15 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
     # special tokens added by a template post-processor. By setting
     # truncation upfront, the tokenizer will apply it before the
     # post-processor accounting for the extra special tokens
-    if Keyword.has_key?(opts, :length) or Keyword.has_key?(opts, :truncation_direction) do
-      update_truncation(tokenizer)
+    tokenizer =
+      if Keyword.has_key?(opts, :length) or Keyword.has_key?(opts, :truncation_direction) do
+        update_truncation(tokenizer)
+      else
+        tokenizer
+      end
+
+    if Keyword.has_key?(opts, :template_options) do
+      set_template(tokenizer)
     else
       tokenizer
     end
@@ -267,6 +285,42 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
         direction: tokenizer.truncate_direction
       )
     )
+  end
+
+  defp set_template(%{type: :nllb} = tokenizer) do
+    language_token = Keyword.fetch!(tokenizer.template_options, :language_token)
+    eos_token = tokenizer.special_tokens.eos
+
+    set_template_postprocessor(
+      tokenizer,
+      "#{language_token} $A #{eos_token}",
+      "#{language_token} $A $B #{eos_token}",
+      [language_token, eos_token]
+    )
+  end
+
+  defp set_template(%{type: type} = tokenizer) do
+    if tokenizer.template_options != [] do
+      raise ArgumentError,
+            "#{inspect(type)} tokenizer expects no :template_options," <>
+              " got: #{inspect(tokenizer.template_options)}"
+    end
+
+    tokenizer
+  end
+
+  defp set_template_postprocessor(tokenizer, single, pair, special_tokens) do
+    post_processor =
+      Tokenizers.PostProcessor.template(
+        single: single,
+        pair: pair,
+        special_tokens:
+          for token <- special_tokens do
+            {token, Tokenizer.token_to_id(tokenizer.native_tokenizer, token)}
+          end
+      )
+
+    update_in(tokenizer.native_tokenizer, &Tokenizer.set_post_processor(&1, post_processor))
   end
 
   @impl true
@@ -480,7 +534,7 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
                 " but got: #{inspect(tokenizer.type)}"
       end
 
-      %{special_tokens: special_tokens} = tokenizer_types[tokenizer.type]
+      tokenizer_type = %{special_tokens: special_tokens} = tokenizer_types[tokenizer.type]
 
       special_tokens = load_special_tokens(special_tokens, special_tokens_map)
 
@@ -493,12 +547,15 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
             []
         end
 
+      template_options = tokenizer_type[:default_template_options] || []
+
       %{
         tokenizer
         | native_tokenizer: native_tokenizer,
           special_tokens: special_tokens,
           additional_special_tokens: additional_special_tokens
       }
+      |> @for.config(template_options: template_options)
     end
 
     defp load_special_tokens(special_tokens, data) do

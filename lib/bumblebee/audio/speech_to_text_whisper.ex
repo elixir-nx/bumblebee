@@ -117,7 +117,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
 
       {stream, {}}
     end)
-    |> maybe_stream(opts[:stream], spec, featurizer, tokenizer, options)
+    |> add_postprocessing(opts[:stream], spec, featurizer, tokenizer, options)
   end
 
   defp validate_input(%{audio: audio} = input, sampling_rate, chunk_num_seconds) do
@@ -351,7 +351,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     end
   end
 
-  defp maybe_stream(serving, false, spec, featurizer, tokenizer, options) do
+  defp add_postprocessing(serving, false, spec, featurizer, tokenizer, options) do
     Nx.Serving.client_postprocessing(serving, fn {outputs, _metadata}, {} ->
       outputs = Nx.to_list(outputs)
       state = decode_chunk_outputs_init(spec, featurizer, tokenizer)
@@ -362,7 +362,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     end)
   end
 
-  defp maybe_stream(serving, true, spec, featurizer, tokenizer, options) do
+  defp add_postprocessing(serving, true, spec, featurizer, tokenizer, options) do
     serving
     |> Nx.Serving.streaming()
     |> Nx.Serving.client_postprocessing(fn stream, {} ->

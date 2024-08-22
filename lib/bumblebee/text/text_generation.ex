@@ -100,7 +100,7 @@ defmodule Bumblebee.Text.TextGeneration do
 
       {batch, {multi?, input_length, input_padded_length}}
     end)
-    |> maybe_stream(opts[:stream], opts[:stream_done], tokenizer)
+    |> add_postprocessing(opts[:stream], opts[:stream_done], tokenizer)
   end
 
   defp validate_input(text) when is_binary(text), do: validate_input(%{text: text})
@@ -117,7 +117,10 @@ defmodule Bumblebee.Text.TextGeneration do
     {:error, "expected either a string or a map, got: #{inspect(input)}"}
   end
 
-  defp maybe_stream(serving, false, _stream_done, tokenizer) do
+  @doc false
+  def add_postprocessing(serving, stream, stream_done, tokenizer)
+
+  def add_postprocessing(serving, false, _stream_done, tokenizer) do
     Nx.Serving.client_postprocessing(
       serving,
       fn {%{token_ids: token_ids, length: length}, _metadata},
@@ -138,7 +141,7 @@ defmodule Bumblebee.Text.TextGeneration do
     )
   end
 
-  defp maybe_stream(serving, true, stream_done, tokenizer) do
+  def add_postprocessing(serving, true, stream_done, tokenizer) do
     serving
     |> Nx.Serving.streaming(hooks: [:token])
     |> Nx.Serving.client_postprocessing(fn stream,
