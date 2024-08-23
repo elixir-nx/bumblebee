@@ -83,7 +83,10 @@ defmodule Bumblebee.Vision.Swin do
 
   ## Architectures
 
-    * `:for_image_classification` - Swin tranformer model for image classification.
+    * `:base` - plain Swin without any head on top
+
+    * `:for_image_classification` - Swin tranformer model with a
+      classification head
 
   ## Global layer options
 
@@ -108,7 +111,7 @@ defmodule Bumblebee.Vision.Swin do
   alias Bumblebee.Layers
 
   @impl true
-  def architectures(), do: [:for_image_classification]
+  def architectures(), do: [:base, :for_image_classification]
 
   @impl true
   def config(spec, opts) do
