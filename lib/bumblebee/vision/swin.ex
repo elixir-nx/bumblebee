@@ -3,22 +3,49 @@ defmodule Bumblebee.Vision.Swin do
 
   options =
     [
-      attention_dropout_rate: [
-        default: 0.0,
-        doc: "the dropout rate for attention weights"
+      image_size: [
+        default: 224,
+        doc: "the size of the input spatial dimensions"
       ],
-      depths: [
-        default: [2, 2, 18, 2],
-        doc: "the depth (number of residual blocks) at each stage"
+      num_channels: [
+        default: 3,
+        doc: "the number of channels in the input"
       ],
-      drop_path_rate: [
-        default: 0.1,
-        doc: "the drop path rate used to for stochastic depth"
+      patch_size: [
+        default: 4,
+        doc: "the size of the patch spatial dimensions"
       ],
-      # Maybe it should be renamed to hidden_size
-      embed_dim: [
-        default: 128,
-        doc: ""
+      embedding_size: [
+        default: 96,
+        doc: "the dimensionality of patch embedding layer"
+      ],
+      use_absolute_position_embeddings: [
+        default: false,
+        doc: "whether to add absolute position embeddings to the patch embeddings"
+      ],
+      num_blocks: [
+        default: [2, 2, 6, 2],
+        doc: "the number of Transformer blocks in the encoder at each stage"
+      ],
+      num_attention_heads: [
+        default: [3, 6, 12, 24],
+        doc: "the number of attention heads for each attention layer in the encoder at each stage"
+      ],
+      window_size: [
+        default: 7,
+        doc:
+          "the window size, used to limit self-attention computation to non-overlapping windows"
+      ],
+      intermediate_size_ratio: [
+        default: 4,
+        doc: """
+        the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder,
+        expressed as a multiplier of hidden size (at the given stage)
+        """
+      ],
+      use_attention_bias: [
+        default: true,
+        doc: "whether to use bias in query, key, and value projections"
       ],
       activation: [
         default: :gelu,
@@ -28,53 +55,22 @@ defmodule Bumblebee.Vision.Swin do
         default: 0.0,
         doc: "the dropout rate for encoder and decoder"
       ],
-      image_size: [
-        default: 384,
-        doc: "the size of the input spatial dimensions"
+      attention_dropout_rate: [
+        default: 0.0,
+        doc: "the dropout rate for attention weights"
       ],
       initializer_scale: [
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ],
+      drop_path_rate: [
+        default: 0.1,
+        doc: "the drop path rate used to for stochastic depth"
+      ],
       layer_norm_epsilon: [
         default: 1.0e-5,
         doc: "the epsilon used by the layer normalization layers"
-      ],
-      intermediate_size_ratio: [
-        default: 4,
-        doc: """
-        the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder,
-        expressed as a multiplier of `:hidden_size`
-        """
-      ],
-      num_channels: [
-        default: 3,
-        doc: "the number of channels in the input"
-      ],
-      num_heads: [
-        default: [4, 8, 16, 32],
-        doc: "number of attention heads"
-      ],
-      patch_size: [
-        default: 4,
-        doc: "the size of the patch spatial dimensions"
-      ],
-      path_norm: [
-        default: true,
-        doc: ""
-      ],
-      use_attention_bias: [
-        default: true,
-        doc: "whether to use bias in query, key, and value projections"
-      ],
-      use_absolute_embeddings: [
-        default: false,
-        doc: ""
-      ],
-      window_size: [
-        default: 12,
-        doc: ""
       ]
     ] ++ Shared.common_options([:num_labels, :id_to_label])
 
@@ -90,15 +86,16 @@ defmodule Bumblebee.Vision.Swin do
 
   ## Global layer options
 
-  # {Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
+  #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
 
   ## Configuration
 
-  # {Shared.options_doc(options)}
+  #{Shared.options_doc(options)}
 
   ## References
 
     * [Swin Transformer: Hierarchical Vision Transformer using Shifted Windows](https://arxiv.org/abs/2103.14030)
+
   """
 
   defstruct [architecture: :base] ++ Shared.option_defaults(options)
@@ -107,6 +104,7 @@ defmodule Bumblebee.Vision.Swin do
   @behaviour Bumblebee.Configurable
 
   import Bumblebee.Utils.Model, only: [join: 2]
+  import Nx.Defn
 
   alias Bumblebee.Layers
 
@@ -141,9 +139,7 @@ defmodule Bumblebee.Vision.Swin do
     outputs = core(inputs, spec)
 
     logits =
-      outputs.hidden_state
-      |> Layers.take_token(index: 0, axis: 1)
-      |> Axon.dense(spec.num_labels,
+      Axon.dense(outputs.pooled_state, spec.num_labels,
         kernel_initializer: kernel_initializer(spec),
         name: "image_classification_head.output"
       )
@@ -164,49 +160,49 @@ defmodule Bumblebee.Vision.Swin do
     ])
   end
 
-  # Contrary to Python implementation we do not have here argument
-  # bool_maked_pos. This parameter is propagated from model through
-  # core to embedder.
   defp core(inputs, spec, opts \\ []) do
     name = opts[:name]
 
     embeddings =
-      embedder(inputs["pixel_values"], spec, name: join(name, "embedder"))
+      embedder(inputs["pixel_values"], inputs["patch_mask"], spec, name: join(name, "embedder"))
 
-    {hidden_state, hidden_states, attentions} =
+    encoder_outputs =
       encoder(embeddings, spec, name: join(name, "encoder"))
 
     hidden_state =
-      Axon.layer_norm(hidden_state,
+      Axon.layer_norm(encoder_outputs.hidden_state,
         epsilon: spec.layer_norm_epsilon,
-        name: join(name, "layernorm")
+        name: join(name, "norm")
       )
 
     pooled_state =
-      Axon.adaptive_avg_pool(hidden_state, output_size: {1, 1}, name: join(name, "pooler"))
+      hidden_state
+      |> Axon.adaptive_avg_pool(output_size: {1}, name: join(name, "pooler"))
+      |> Axon.flatten()
 
     %{
       hidden_state: hidden_state,
       pooled_state: pooled_state,
-      hidden_states: hidden_states,
-      attentions: attentions
+      hidden_states: encoder_outputs.hidden_states,
+      attentions: encoder_outputs.attentions
     }
   end
 
-  defp embedder(pixel_values, spec, opts) do
+  defp embedder(pixel_values, patch_mask, spec, opts) do
     name = opts[:name]
 
     embeddings =
       pixel_values
       |> patch_embedding(spec, name: join(name, "patch_embedding"))
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: "layernorm_embeddings")
+      |> Layers.apply_vision_patch_mask(patch_mask, name: join(name, "mask_tokens"))
+      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "norm"))
 
     embeddings =
-      if spec.use_absolute_embeddings do
+      if spec.use_absolute_position_embeddings do
         num_patches = div(spec.image_size, spec.patch_size) ** 2
 
         position_embeddings =
-          Layers.learned_embeddings(num_patches, spec.embed_dim,
+          Layers.learned_embeddings(num_patches, spec.embedding_size,
             initializer: :zeros,
             name: join(name, "position_embedding")
           )
@@ -222,7 +218,7 @@ defmodule Bumblebee.Vision.Swin do
 
   defp patch_embedding(pixel_values, spec, opts) do
     name = opts[:name]
-    hidden_size = spec.embed_dim
+    hidden_size = spec.embedding_size
 
     pixel_values
     |> Axon.conv(hidden_size,
@@ -232,495 +228,361 @@ defmodule Bumblebee.Vision.Swin do
       kernel_initializer: kernel_initializer(spec),
       name: join(name, "projection")
     )
-    |> Axon.reshape({:batch, :auto, spec.embed_dim}, name: join(name, "reshape"))
+    |> Axon.reshape({:batch, :auto, spec.embedding_size}, name: join(name, "reshape"))
   end
 
   defp encoder(hidden_state, spec, opts) do
     name = opts[:name]
-    hidden_states = Axon.container({hidden_state})
-    attentions = Axon.container({})
 
-    state = {
-      hidden_state,
-      hidden_states,
-      attentions
+    state = %{
+      hidden_state: hidden_state,
+      hidden_states: Axon.container({hidden_state}),
+      attentions: Axon.container({})
     }
 
-    for stage_idx <- 0..(length(spec.depths) - 1), reduce: state do
-      {hidden_state, hidden_states, attentions} ->
-        {hidden_state, attention} =
-          stage(hidden_state, stage_idx, spec, join("#{name}.blocks", stage_idx))
+    for stage_idx <- 0..(length(spec.num_blocks) - 1), reduce: state do
+      state ->
+        name = name |> join("stages") |> join(stage_idx)
 
-        {
-          hidden_state,
-          Layers.append(hidden_states, hidden_state),
-          Layers.append(attentions, attention)
+        grid_size = div(spec.image_size, spec.patch_size)
+        input_resolution = div(grid_size, 2 ** stage_idx)
+
+        {hidden_state, attention, hidden_state_before_downsample} =
+          stage(state.hidden_state, spec,
+            hidden_size: spec.embedding_size * 2 ** stage_idx,
+            num_blocks: Enum.at(spec.num_blocks, stage_idx),
+            num_attention_heads: Enum.at(spec.num_attention_heads, stage_idx),
+            downsample: stage_idx < length(spec.num_blocks) - 1,
+            input_resolution: input_resolution,
+            name: name
+          )
+
+        %{
+          hidden_state: hidden_state,
+          hidden_states: Layers.append(state.hidden_states, hidden_state_before_downsample),
+          attentions: Layers.append(state.attentions, attention)
         }
     end
   end
 
-  defp stage(hidden_state, stage_idx, spec, name) do
-    grid_size = div(spec.image_size, spec.patch_size)
-    input_resolution = div(grid_size, 2 ** stage_idx)
-    dim = spec.embed_dim * 2 ** stage_idx
-    num_attention_heads = Enum.at(spec.num_heads, stage_idx)
+  defp stage(hidden_state, spec, opts) do
+    name = opts[:name]
+    downsample = opts[:downsample]
+    hidden_size = opts[:hidden_size]
+    num_blocks = opts[:num_blocks]
+    num_attention_heads = opts[:num_attention_heads]
+    input_resolution = opts[:input_resolution]
+
+    # Note that we include only record hidden_state and attention
+    # from the last block in each stage
 
     {hidden_state, attention} =
-      for layer_idx <- 0..(Enum.at(spec.depths, stage_idx) - 1), reduce: {hidden_state, nil} do
-        {hidden_state, _} ->
+      for block_idx <- 0..(num_blocks - 1), reduce: {hidden_state, nil} do
+        {hidden_state, _attention} ->
+          name = name |> join("blocks") |> join(block_idx)
+
+          shift_size =
+            if rem(block_idx, 2) == 0 do
+              0
+            else
+              div(spec.window_size, 2)
+            end
+
           {hidden_state, attention} =
-            layer(hidden_state, layer_idx, dim, num_attention_heads, spec, name)
+            transformer_block(hidden_state,
+              num_attention_heads: num_attention_heads,
+              hidden_size: hidden_size,
+              kernel_initializer: kernel_initializer(spec),
+              dropout_rate: spec.dropout_rate,
+              attention_dropout_rate: spec.attention_dropout_rate,
+              layer_norm_epsilon: spec.layer_norm_epsilon,
+              intermediate_size: floor(spec.intermediate_size_ratio * hidden_size),
+              activation: spec.activation,
+              name: name,
+              window_size: spec.window_size,
+              shift_size: shift_size,
+              input_resolution: input_resolution
+            )
 
           {hidden_state, attention}
       end
 
+    hidden_state_before_downsample = hidden_state
+
     hidden_state =
-      if stage_idx < length(spec.depths) - 1 do
-        downsample(hidden_state, input_resolution, dim, spec.layer_norm_epsilon, name)
+      if downsample do
+        patch_merging(hidden_state,
+          input_resolution: input_resolution,
+          hidden_size: hidden_size,
+          layer_norm_epsilon: spec.layer_norm_epsilon,
+          kernel_initializer: kernel_initializer(spec),
+          name: join(name, "downsample")
+        )
       else
         hidden_state
       end
 
-    {hidden_state, attention}
+    {hidden_state, attention, hidden_state_before_downsample}
   end
 
-  defp layer(hidden_state, layer_idx, dim, num_attention_heads, spec, name) do
+  defp transformer_block(hidden_state, opts) do
+    num_attention_heads = opts[:num_attention_heads]
+    hidden_size = opts[:hidden_size]
+    kernel_initializer = opts[:kernel_initializer]
+    dropout_rate = opts[:dropout_rate]
+    attention_dropout_rate = opts[:attention_dropout_rate]
+    layer_norm_epsilon = opts[:layer_norm_epsilon]
+    intermediate_size = opts[:intermediate_size]
+    activation = opts[:activation]
+    name = opts[:name]
+    window_size = opts[:window_size]
+    shift_size = opts[:shift_size]
+    input_resolution = opts[:input_resolution]
+
+    {shift_size, window_size} =
+      if input_resolution <= window_size do
+        {0, input_resolution}
+      else
+        {shift_size, window_size}
+      end
+
     shortcut = hidden_state
-    attn_mask = attention_mask_layer(hidden_state, layer_idx, spec)
-    name = join(name, "layer.#{layer_idx}")
 
-    {hidden_state, attention} =
-      hidden_state
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_before"))
-      |> reshape(layer_idx)
-      |> hidden_state_windows(layer_idx, spec)
-      |> attention(attn_mask, Layers.none(), num_attention_heads, dim, spec, name)
+    attention_mask =
+      window_attention_mask(hidden_state, shift_size, window_size, input_resolution)
 
-    # TODO "unpad" if it was padded
-    # After unroll we have to reverse padding (before dropout)
-    attention_windows =
-      {hidden_state, shortcut}
-      |> unroll(layer_idx, spec)
-      |> Axon.dropout(rate: spec.dropout_rate)
-
-    hidden_state = Axon.add(shortcut, attention_windows)
-
-    output =
-      hidden_state
-      |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm_after"))
-      |> Axon.dense(round(spec.intermediate_size_ratio * dim),
-        name: join(name, "intermediate.dense")
+    relative_attention_bias =
+      relative_attention_bias(window_size, num_attention_heads,
+        name: join(name, "self_attention.relative_attention_bias")
       )
-      |> Layers.activation(spec.activation)
-      |> Axon.dense(dim, name: join(name, "output.dense"))
-      |> Axon.dropout(rate: spec.dropout_rate)
 
-    hidden_state = Axon.add(hidden_state, output)
+    hidden_state =
+      hidden_state
+      |> Axon.layer_norm(epsilon: layer_norm_epsilon, name: join(name, "self_attention_norm"))
+      |> hidden_state_windows(shift_size, window_size, input_resolution)
+
+    {hidden_state, attention, _self_attention_cache, _attention_relative_bias} =
+      Layers.Transformer.multi_head_attention(hidden_state, hidden_state, hidden_state,
+        attention_mask: attention_mask,
+        attention_relative_bias: relative_attention_bias,
+        num_heads: num_attention_heads,
+        hidden_size: hidden_size,
+        kernel_initializer: kernel_initializer,
+        dropout_rate: attention_dropout_rate,
+        name: join(name, "self_attention")
+      )
+
+    hidden_state =
+      Axon.dropout(hidden_state, rate: dropout_rate, name: join(name, "self_attention_dropout"))
+
+    hidden_state =
+      hidden_state
+      |> reverse_hidden_state_windows(shift_size, window_size, input_resolution)
+      |> Axon.dropout(rate: dropout_rate)
+
+    hidden_state = Axon.add(hidden_state, shortcut)
+
+    shortcut = hidden_state
+
+    hidden_state =
+      hidden_state
+      |> Axon.layer_norm(epsilon: layer_norm_epsilon, name: join(name, "output_norm"))
+      |> Axon.dense(intermediate_size, name: join(name, "ffn.intermediate"))
+      |> Layers.activation(activation)
+      |> Axon.dense(hidden_size, name: join(name, "ffn.output"))
+      |> Axon.dropout(rate: dropout_rate)
+
+    hidden_state = Axon.add(hidden_state, shortcut)
 
     {hidden_state, attention}
   end
 
-  defp reshape(input, layer_idx) do
-    input
-    |> Axon.nx(
-      fn x ->
-        {batch_size, dimension, num_channels} = Nx.shape(x)
-        height_width = dimension |> :math.sqrt() |> floor()
+  defp window_attention_mask(hidden_state, shift_size, window_size, input_resolution) do
+    if shift_size > 0 do
+      # Computes attention mask for shifted window multi-head self-attention (SW-MSA)
 
-        x
-        |> Nx.reshape({batch_size, height_width, height_width, num_channels})
-      end,
-      name: "reshape_#{layer_idx}"
-    )
+      Axon.nx(hidden_state, fn hidden_state ->
+        {batch_size, _dimension, _hidden_size} = Nx.shape(hidden_state)
+        height = width = input_resolution
+
+        # See Figure 4. in the paper. We color the 2D patches (tokens)
+        # into 4 groups. Then, we compute a mask such that each token
+        # attends only to tokens within the same group.
+
+        grid_0 = Nx.broadcast(0, {height - shift_size, width - shift_size})
+        grid_b = Nx.broadcast(1, {height - shift_size, shift_size})
+        grid_c = Nx.broadcast(2, {shift_size, width - shift_size})
+        grid_a = Nx.broadcast(3, {shift_size, shift_size})
+
+        grid =
+          Nx.concatenate([
+            Nx.concatenate([grid_0, grid_b], axis: 1),
+            Nx.concatenate([grid_c, grid_a], axis: 1)
+          ])
+
+        windowed_patch_groups =
+          grid
+          |> Nx.reshape({1, height, width, 1})
+          |> window_partition(window_size)
+          |> Nx.reshape({:auto, window_size * window_size})
+
+        windows_attention_mask =
+          Nx.equal(
+            Nx.new_axis(windowed_patch_groups, 1),
+            Nx.new_axis(windowed_patch_groups, 2)
+          )
+          |> Nx.new_axis(1)
+
+        # Note that we repeat the mask for each batched input, so that
+        # the batch dimension has size batch_size * num_windows, which
+        # matches the input. This way we can apply the mask as usual,
+        # without reshaping back and forth.
+        Nx.tile(windows_attention_mask, [batch_size, 1, 1, 1])
+      end)
+    else
+      Layers.none()
+    end
   end
 
-  defp maybe_pad(input, window_size, height, width) do
-    pad1 = (window_size - rem(width, window_size)) |> rem(window_size)
-    pad2 = (window_size - rem(height, window_size)) |> rem(window_size)
+  defp relative_attention_bias(window_size, num_attention_heads, opts) do
+    name = opts[:name]
 
-    Nx.pad(input, 0, [{0, 0, 0}, {0, pad1, 0}, {0, pad2, 0}, {0, 0, 0}])
-  end
+    kernel =
+      Axon.param("kernel", {(2 * window_size - 1) * (2 * window_size - 1), num_attention_heads})
 
-  defp hidden_state_windows(input, layer_idx, spec) do
-    shift_size = if 0 == rem(layer_idx, 2), do: 0, else: div(spec.window_size, 2)
+    Axon.layer(
+      fn kernel, opts ->
+        window_size = opts[:window_size]
 
-    input
-    |> Axon.nx(
-      fn x ->
-        {_batch_size, height, width, num_channels} = Nx.shape(x)
+        idx = relative_position_index(window_size) |> Nx.reshape({:auto})
 
-        x = maybe_pad(x, spec.window_size, height, width)
-
-        {_, height, width, _} = Nx.shape(x)
-
-        {shift_size, _window_size} =
-          if min(height, width) <= spec.window_size,
-            do: {0, min(height, width)},
-            else: {shift_size, spec.window_size}
-
-        # cyclic shift
-        shiffted_hidden_state =
-          if shift_size > 0,
-            do: roll(x, shifts: [-shift_size, -shift_size], axes: [1, 2]),
-            else: x
-
-        # partition windows
-        shiffted_hidden_state
-        |> window_partition(spec.window_size)
-        |> Nx.reshape({:auto, spec.window_size * spec.window_size, num_channels})
+        kernel
+        |> Nx.take(idx)
+        |> Nx.reshape({window_size * window_size, window_size * window_size, :auto})
+        |> Nx.transpose(axes: [2, 0, 1])
+        |> Nx.new_axis(0)
       end,
-      name: "hidden_state_windows_#{layer_idx}"
+      [kernel],
+      window_size: window_size,
+      name: name
     )
   end
 
   defp relative_position_index(window_size) do
-    coords_h = Nx.iota({window_size}) |> Nx.tile([window_size, 1]) |> Nx.transpose()
-    coords_w = Nx.iota({window_size}) |> Nx.tile([window_size, 1])
+    coords_h = Nx.iota({window_size, window_size}, axis: 0) |> Nx.flatten()
+    coords_w = Nx.iota({window_size, window_size}, axis: 1) |> Nx.flatten()
+    coord_pairs = Nx.stack([coords_h, coords_w])
 
-    coords_flatten =
-      Nx.stack([coords_h, coords_w])
-      # flatten dimension 1
-      |> Nx.reshape({2, window_size * window_size})
+    relative_coords = Nx.subtract(Nx.new_axis(coord_pairs, 2), Nx.new_axis(coord_pairs, 1))
 
-    relative_coords =
-      Nx.subtract(Nx.new_axis(coords_flatten, 2), Nx.new_axis(coords_flatten, 1))
-      |> Nx.transpose(axes: [1, 2, 0])
-
-    relative_coords =
-      Nx.add(
-        relative_coords,
-        Nx.broadcast(Nx.tensor([window_size - 1, window_size - 1]), relative_coords)
-      )
-
-    Nx.multiply(
-      relative_coords,
-      Nx.broadcast(Nx.tensor([2 * window_size - 1, 1]), relative_coords)
-    )
-    |> Nx.sum(axes: [-1])
+    relative_coords
+    |> Nx.add(Nx.reshape(Nx.tensor([window_size - 1, window_size - 1]), {2, 1, 1}))
+    |> Nx.multiply(Nx.reshape(Nx.tensor([2 * window_size - 1, 1]), {2, 1, 1}))
+    |> Nx.sum(axes: [0])
   end
 
-  defp transpose_for_scores(x, num_attention_heads, attention_head_size) do
-    new_shape =
-      x
-      |> Nx.shape()
-      |> Tuple.to_list()
-      |> List.replace_at(-1, [num_attention_heads, attention_head_size])
-      |> List.flatten()
-      |> List.to_tuple()
+  defp hidden_state_windows(hidden_state, shift_size, window_size, input_resolution) do
+    Axon.nx(hidden_state, fn hidden_state ->
+      {batch_size, _dimension, hidden_size} = Nx.shape(hidden_state)
 
-    x
-    |> Nx.reshape(new_shape)
-    |> Nx.transpose(axes: [0, 2, 1, 3])
-  end
+      height = width = input_resolution
+      hidden_state = Nx.reshape(hidden_state, {batch_size, height, width, hidden_size})
 
-  defp attention(hidden_state, attention_mask, head_mask, num_attention_heads, dim, spec, name) do
-    attention_head_size = floor(dim / num_attention_heads)
-    all_head_size = num_attention_heads * attention_head_size
-    name = join(name, "self_attention")
-
-    query =
-      hidden_state
-      |> Axon.dense(all_head_size, name: join(name, "query"))
-      |> Axon.nx(fn x ->
-        transpose_for_scores(x, num_attention_heads, attention_head_size)
-      end)
-
-    key =
-      hidden_state
-      |> Axon.dense(all_head_size, name: join(name, "key"))
-      |> Axon.nx(fn x ->
-        transpose_for_scores(x, num_attention_heads, attention_head_size)
-      end)
-
-    value =
-      hidden_state
-      |> Axon.dense(all_head_size, name: join(name, "value"))
-      |> Axon.nx(fn x ->
-        transpose_for_scores(x, num_attention_heads, attention_head_size)
-      end)
-
-    relative_position_bias_table =
-      Axon.param(
-        "relative_position_bias_table",
-        {(2 * spec.window_size - 1) * (2 * spec.window_size - 1), num_attention_heads}
-      )
-
-    probabilities =
-      Axon.layer(
-        &attention_weights_impl/7,
-        [
-          hidden_state,
-          query,
-          key,
-          relative_position_bias_table,
-          Axon.optional(attention_mask),
-          Axon.optional(head_mask)
-        ],
-        name: join(name, "weights"),
-        window_size: spec.window_size,
-        num_heads: num_attention_heads,
-        head_size: attention_head_size,
-        dropout_rate: spec.attention_dropout_rate
-      )
-
-    output_name = join(name, "output")
-
-    context =
-      Axon.layer(
-        &attention_output_impl/3,
-        [probabilities, value],
-        name: output_name,
-        num_heads: num_attention_heads,
-        head_size: attention_head_size
-      )
-      |> Axon.dense(dim, name: join(output_name, "dense"))
-      |> Axon.dropout(
-        rate: spec.attention_dropout_rate,
-        name: join(output_name, "dropout")
-      )
-
-    {context, probabilities}
-  end
-
-  defp attention_weights_impl(
-         hidden_state,
-         query,
-         key,
-         relative_position_bias_table,
-         attention_mask,
-         head_mask,
-         opts
-       ) do
-    opts =
-      Keyword.validate!(opts, [:mode, :name, :window_size, :num_heads, :head_size, :dropout_rate])
-
-    {batch_size, dim, _num_channels} = Nx.shape(hidden_state)
-
-    scores =
-      query
-      |> Nx.dot([3], [0, 1], Nx.transpose(key, axes: [0, 1, -1, -2]), [2], [0, 1])
-      |> Nx.divide(Nx.sqrt(opts[:head_size]))
-
-    rel_pos_idx = relative_position_index(opts[:window_size]) |> Nx.reshape({:auto})
-
-    relative_position_bias =
-      Nx.take(relative_position_bias_table, rel_pos_idx)
-      |> Nx.reshape(
-        {opts[:window_size] * opts[:window_size], opts[:window_size] * opts[:window_size], :auto}
-      )
-      |> Nx.transpose(axes: [2, 0, 1])
-      |> Nx.new_axis(0)
-
-    scores = Nx.add(scores, relative_position_bias)
-
-    scores =
-      case attention_mask do
-        %Axon.None{} ->
-          scores
-
-        _ ->
-          {mask_size, _, _} = Nx.shape(attention_mask)
-
-          scores =
-            Nx.reshape(
-              scores,
-              {floor(batch_size / mask_size), mask_size, opts[:num_heads], dim, dim}
-            )
-
-          attention_mask =
-            attention_mask
-            |> Nx.new_axis(1)
-            |> Nx.new_axis(0)
-
-          scores
-          |> Nx.add(attention_mask)
-          |> Nx.reshape({:auto, opts[:num_heads], dim, dim})
-      end
-
-    # Normalize the attention scores to probabilities (softmax).
-    #
-    # This is actually dropping out entire tokens to attend to, which
-    # might seem a bit unusual, but is taken from the original
-    # Transformer paper (dropout).
-    seed = :erlang.system_time()
-
-    probabilities =
-      Axon.Activations.softmax(scores, axis: -1)
-      |> Axon.Layers.dropout(Nx.Random.key(seed), rate: opts[:dropout_rate])
-
-    case head_mask do
-      %Axon.None{} ->
-        probabilities
-
-      head_mask ->
-        Nx.multiply(probabilities, head_mask)
-    end
-  end
-
-  def attention_output_impl(weights, value, opts) do
-    context =
-      weights
-      |> Nx.dot([3], [0, 1], value, [2], [0, 1])
-      |> Nx.transpose(axes: [0, 2, 1, 3])
-
-    new_context_shape =
-      context
-      |> Nx.shape()
-      |> Tuple.to_list()
-      |> Enum.slice(0..-3//1)
-      |> Kernel.++([opts[:num_heads] * opts[:head_size]])
-      |> List.to_tuple()
-
-    Nx.reshape(context, new_context_shape)
-  end
-
-  def unroll({hidden_state, input}, layer_idx, spec) do
-    # reverse cyclic shift
-    shift_size = if 0 == rem(layer_idx, 2), do: 0, else: div(spec.window_size, 2)
-
-    Axon.layer(
-      fn state, input, _ ->
-        {batch_size, dimension, num_channels} = Nx.shape(input)
-        height_width = dimension |> :math.sqrt() |> floor()
-
-        {shift_size, window_size} =
-          if height_width <= spec.window_size,
-            do: {0, height_width},
-            else: {shift_size, spec.window_size}
-
-        shifted_windows =
-          state
-          |> Nx.reshape({:auto, window_size, window_size, num_channels})
-          |> window_reverse(window_size)
-
+      # Apply cyclic shift
+      hidden_state =
         if shift_size > 0 do
-          roll(shifted_windows, shifts: [shift_size, shift_size], axes: [1, 2])
-          |> Nx.reshape({batch_size, height_width * height_width, num_channels})
+          Bumblebee.Utils.Nx.roll(hidden_state, shifts: [-shift_size, -shift_size], axes: [1, 2])
         else
-          shifted_windows
-          |> Nx.reshape({batch_size, height_width * height_width, num_channels})
+          hidden_state
         end
-      end,
-      [hidden_state, input],
-      name: "unroll_#{layer_idx}"
-    )
+
+      # Partition windows
+      hidden_state
+      |> window_partition(window_size)
+      |> Nx.reshape({:auto, window_size * window_size, hidden_size})
+    end)
   end
 
-  defp attention_mask_layer(hidden_state, layer_idx, spec) do
-    shift_size = if 0 == rem(layer_idx, 2), do: 0, else: div(spec.window_size, 2)
+  defp reverse_hidden_state_windows(hidden_state, shift_size, window_size, input_resolution) do
+    Axon.nx(hidden_state, fn hidden_state ->
+      {_batch_size, _dimension, hidden_size} = Nx.shape(hidden_state)
+      height = width = input_resolution
+
+      # Reverse window partitioning
+      hidden_state =
+        hidden_state
+        |> Nx.reshape({:auto, window_size, window_size, hidden_size})
+        |> window_unpartition(window_size, height, width)
+
+      # Reverse cyclic shift
+      hidden_state =
+        if shift_size > 0 do
+          Bumblebee.Utils.Nx.roll(hidden_state, shifts: [shift_size, shift_size], axes: [1, 2])
+        else
+          hidden_state
+        end
+
+      Nx.reshape(hidden_state, {:auto, height * width, hidden_size})
+    end)
+  end
+
+  defnp window_partition(tensor, window_size) do
+    {batch_size, height, width, hidden_size} = Nx.shape(tensor)
+    windowed_height = div(height, window_size)
+    windowed_width = div(width, window_size)
+
+    Nx.reshape(
+      tensor,
+      {batch_size, windowed_height, window_size, windowed_width, window_size, hidden_size}
+    )
+    |> Nx.transpose(axes: [0, 1, 3, 2, 4, 5])
+    |> Nx.reshape({:auto, window_size, window_size, hidden_size})
+  end
+
+  defnp window_unpartition(tensor, window_size, height, width) do
+    {_batch_size, _height, _width, hidden_size} = Nx.shape(tensor)
+    windowed_height = div(height, window_size)
+    windowed_width = div(width, window_size)
+
+    Nx.reshape(
+      tensor,
+      {:auto, windowed_height, windowed_width, window_size, window_size, hidden_size}
+    )
+    |> Nx.transpose(axes: [0, 1, 3, 2, 4, 5])
+    |> Nx.reshape({:auto, height, width, hidden_size})
+  end
+
+  defp patch_merging(hidden_state, opts) do
+    input_resolution = opts[:input_resolution]
+    hidden_size = opts[:hidden_size]
+    layer_norm_epsilon = opts[:layer_norm_epsilon]
+    kernel_initializer = opts[:kernel_initializer]
+    name = opts[:name]
+
+    # We group patches from each 2x2 square and apply a dense layer
+    # against each group
 
     hidden_state
-    |> Axon.nx(
-      fn x ->
-        {_batch_size, dimension, _num_channels} = Nx.shape(x)
-        height_width = dimension |> :math.sqrt() |> floor()
+    |> Axon.nx(fn hidden_state ->
+      {batch_size, _sequence_length, _hidden_size} = Nx.shape(hidden_state)
 
-        {shift_size, window_size} =
-          if height_width <= spec.window_size,
-            do: {0, height_width},
-            else: {shift_size, spec.window_size}
+      hidden_state =
+        Nx.reshape(hidden_state, {batch_size, input_resolution, input_resolution, :auto})
 
-        attention_mask(height_width, height_width, window_size, shift_size)
-      end,
-      name: "att_mask_#{layer_idx}"
-    )
-  end
-
-  def attention_mask(height, width, window_size, shift_size) do
-    if shift_size > 0 do
-      # calculate attention mask for shifted window multi-head self-attention (SW-MSA)
-      img_mask = Nx.broadcast(0.0, {1, height, width, 1})
-
-      hslices = [
-        0..(height - window_size - 1),
-        (height - window_size)..(height - shift_size - 1),
-        (height - shift_size)..(height - 1)
-      ]
-
-      wslices = [
-        0..(width - window_size - 1),
-        (width - window_size)..(width - shift_size - 1),
-        (width - shift_size)..(width - 1)
-      ]
-
-      {img_mask, _count} =
-        for hrange <- hslices, wrange <- wslices, reduce: {img_mask, 0.0} do
-          {mask, count} ->
-            mask =
-              for hidx <- hrange, widx <- wrange, reduce: mask do
-                deepest_mask ->
-                  Nx.indexed_put(deepest_mask, Nx.tensor([0, hidx, widx, 0]), count)
-              end
-
-            {mask, count + 1.0}
-        end
-
-      mask_windows =
-        img_mask
-        |> window_partition(window_size)
-        |> Nx.reshape({:auto, window_size * window_size})
-
-      mask_windows
-      |> Nx.new_axis(1)
-      |> Nx.subtract(Nx.new_axis(mask_windows, 2))
-      |> Nx.equal(0)
-      |> Nx.logical_not()
-    else
-      %Axon.None{}
-    end
-  end
-
-  defp window_partition(%Nx.Tensor{} = tensor, window_size) do
-    {batch_size, height, width, num_channels} = Nx.shape(tensor)
-    windowed_height = div(height, window_size)
-    windowed_width = div(width, window_size)
-
-    Nx.reshape(
-      tensor,
-      {batch_size, windowed_height, window_size, windowed_width, window_size, num_channels}
-    )
-    |> Nx.transpose(axes: [0, 1, 3, 2, 4, 5])
-    |> Nx.reshape({:auto, window_size, window_size, num_channels})
-  end
-
-  defp window_reverse(%Axon{} = input_feature, window_size) do
-    input_feature
-    |> Axon.nx(fn x -> window_reverse(x, window_size) end)
-  end
-
-  defp window_reverse(%Nx.Tensor{} = tensor, window_size) do
-    {_batch_size, height, width, num_channels} = Nx.shape(tensor)
-    windowed_height = div(height, window_size)
-    windowed_width = div(width, window_size)
-
-    Nx.reshape(
-      tensor,
-      {:auto, windowed_height, windowed_width, window_size, window_size, num_channels}
-    )
-    |> Nx.transpose(axes: [0, 1, 3, 2, 4, 5])
-    |> Nx.reshape({:auto, height, width, num_channels})
-  end
-
-  defp downsample(hidden_state, input_resolution, dim, norm_epsilon, name) do
-    Axon.nx(hidden_state, fn x ->
-      {batch_size, _dim, num_channels} = Nx.shape(x)
-
-      x = Nx.reshape(x, {batch_size, input_resolution, input_resolution, :auto})
-
-      input_feature_0 = x[[.., 0..-1//2, 0..-1//2, ..]]
-      input_feature_1 = x[[.., 1..-1//2, 0..-1//2, ..]]
-      input_feature_2 = x[[.., 0..-1//2, 1..-1//2, ..]]
-      input_feature_3 = x[[.., 1..-1//2, 1..-1//2, ..]]
+      input_feature_0 = hidden_state[[.., 0..-1//2, 0..-1//2, ..]]
+      input_feature_1 = hidden_state[[.., 1..-1//2, 0..-1//2, ..]]
+      input_feature_2 = hidden_state[[.., 0..-1//2, 1..-1//2, ..]]
+      input_feature_3 = hidden_state[[.., 1..-1//2, 1..-1//2, ..]]
 
       Nx.concatenate([input_feature_0, input_feature_1, input_feature_2, input_feature_3],
         axis: -1
       )
-      |> Nx.reshape({batch_size, :auto, 4 * num_channels})
+      |> Nx.reshape({batch_size, :auto, 4 * hidden_size})
     end)
-    |> Axon.layer_norm(epsilon: norm_epsilon, name: join(name, "downsample_norm"))
-    |> Axon.dense(2 * dim,
-      kernel_initializer: Axon.Initializers.uniform(),
-      name: join(name, "downsample_reduction"),
+    |> Axon.layer_norm(epsilon: layer_norm_epsilon, name: join(name, "norm"))
+    |> Axon.dense(2 * hidden_size,
+      kernel_initializer: kernel_initializer,
+      name: join(name, "reduction"),
       use_bias: false
     )
   end
@@ -736,9 +598,9 @@ defmodule Bumblebee.Vision.Swin do
       opts =
         convert!(data,
           attention_dropout_rate: {"attention_probs_dropout_prob", number()},
-          depths: {"depths", list(number())},
+          num_blocks: {"depths", list(number())},
           drop_path_rate: {"drop_path_rate", number()},
-          embed_dim: {"embed_dim", number()},
+          embedding_size: {"embed_dim", number()},
           activation: {"hidden_act", activation()},
           dropout_rate: {"hidden_dropout_prob", number()},
           image_size: {"image_size", number()},
@@ -746,11 +608,10 @@ defmodule Bumblebee.Vision.Swin do
           layer_norm_epsilon: {"layer_norm_eps", number()},
           intermediate_size_ratio: {"mlp_ratio", number()},
           num_channels: {"num_channels", number()},
-          num_heads: {"num_heads", list(number())},
+          num_attention_heads: {"num_heads", list(number())},
           patch_size: {"patch_size", number()},
-          path_norm: {"path_norm", boolean()},
           use_attention_bias: {"qkv_bias", boolean()},
-          use_absolute_embeddings: {"use_absolute_embeddings", boolean()},
+          use_absolute_position_embeddings: {"use_absolute_embeddings", boolean()},
           window_size: {"window_size", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
@@ -761,60 +622,39 @@ defmodule Bumblebee.Vision.Swin do
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(_spec) do
       %{
-        "encoder.blocks.{n}.layer.{m}.intermediate.dense" =>
-          "swin.encoder.layers.{n}.blocks.{m}.intermediate.dense",
-        "encoder.blocks.{n}.layer.{m}.layernorm_after" =>
-          "swin.encoder.layers.{n}.blocks.{m}.layernorm_after",
-        "encoder.blocks.{n}.layer.{m}.layernorm_before" =>
-          "swin.encoder.layers.{n}.blocks.{m}.layernorm_before",
-        "encoder.blocks.{n}.layer.{m}.output.dense" =>
-          "swin.encoder.layers.{n}.blocks.{m}.output.dense",
-        "encoder.blocks.{n}.layer.{m}.self_attention.key" =>
-          "swin.encoder.layers.{n}.blocks.{m}.attention.self.key",
-        "encoder.blocks.{n}.layer.{m}.self_attention.output.dense" =>
-          "swin.encoder.layers.{n}.blocks.{m}.attention.output.dense",
-        "encoder.blocks.{n}.layer.{m}.self_attention.query" =>
-          "swin.encoder.layers.{n}.blocks.{m}.attention.self.query",
-        "encoder.blocks.{n}.layer.{m}.self_attention.value" =>
-          "swin.encoder.layers.{n}.blocks.{m}.attention.self.value",
-        "encoder.blocks.{n}.layer.{m}.self_attention.weights" =>
-          "swin.encoder.layers.{n}.blocks.{m}.attention.self",
-        "layernorm" => "swin.layernorm",
-        "layernorm_embeddings" => "swin.embeddings.norm",
         "embedder.patch_embedding.projection" => "swin.embeddings.patch_embeddings.projection",
-        "encoder.blocks.{n}.downsample_norm" => "swin.encoder.layers.{n}.downsample.norm",
-        "encoder.blocks.{n}.downsample_reduction" =>
+        "embedder.norm" => "swin.embeddings.norm",
+        "encoder.stages.{n}.blocks.{m}.output_norm" =>
+          "swin.encoder.layers.{n}.blocks.{m}.layernorm_after",
+        "encoder.stages.{n}.blocks.{m}.self_attention_norm" =>
+          "swin.encoder.layers.{n}.blocks.{m}.layernorm_before",
+        "encoder.stages.{n}.blocks.{m}.self_attention.key" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.self.key",
+        "encoder.stages.{n}.blocks.{m}.self_attention.output" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.output.dense",
+        "encoder.stages.{n}.blocks.{m}.self_attention.query" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.self.query",
+        "encoder.stages.{n}.blocks.{m}.self_attention.value" =>
+          "swin.encoder.layers.{n}.blocks.{m}.attention.self.value",
+        "encoder.stages.{n}.blocks.{m}.self_attention.relative_attention_bias" => %{
+          "kernel" => {
+            [
+              {"swin.encoder.layers.{n}.blocks.{m}.attention.self",
+               "relative_position_bias_table"}
+            ],
+            fn [kernel] -> kernel end
+          }
+        },
+        "encoder.stages.{n}.blocks.{m}.ffn.intermediate" =>
+          "swin.encoder.layers.{n}.blocks.{m}.intermediate.dense",
+        "encoder.stages.{n}.blocks.{m}.ffn.output" =>
+          "swin.encoder.layers.{n}.blocks.{m}.output.dense",
+        "encoder.stages.{n}.downsample.norm" => "swin.encoder.layers.{n}.downsample.norm",
+        "encoder.stages.{n}.downsample.reduction" =>
           "swin.encoder.layers.{n}.downsample.reduction",
+        "norm" => "swin.layernorm",
         "image_classification_head.output" => "classifier"
       }
-    end
-  end
-
-  defp roll(%Axon{} = x, opts) do
-    Axon.nx(x, fn y -> roll(y, opts) end)
-  end
-
-  defp roll(%Nx.Tensor{} = x, opts) do
-    opts = Keyword.validate!(opts, shifts: [], axes: [])
-    shifts = opts[:shifts]
-    axes = opts[:axes]
-
-    if length(shifts) != length(axes) do
-      raise ArgumentError, "shifts and axes must align, shifts: #{shifts}, axes: #{axes}"
-    else
-      shape = Nx.shape(x) |> Tuple.to_list()
-
-      Enum.zip(shifts, axes)
-      |> Enum.reduce(x, fn {shift, dim}, acc ->
-        shift = rem(shift, Enum.at(shape, dim))
-
-        if 0 < shift do
-          {base, move} = Nx.split(acc, -1 * shift, axis: dim)
-          Nx.concatenate([move, base], axis: dim)
-        else
-          acc
-        end
-      end)
     end
   end
 end

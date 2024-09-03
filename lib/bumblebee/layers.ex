@@ -200,7 +200,7 @@ defmodule Bumblebee.Layers do
     * `query` - `{batch_size, sequence_length, num_heads, head_size}`
     * `key` - `{batch_size, kv_sequence_length, num_heads, head_size}`
     * `value` - `{batch_size, kv_sequence_length, num_heads, head_size}`
-    * `key_mask` (optional) - `{batch_size, kv_sequence_length}`
+    * `key_mask` (optional) - `{batch_size, kv_sequence_length} | {batch_size, num_heads, sequence_length, kv_sequence_length}`
     * `head_mask` (optional) - `{num_heads}`
     * `bias` (optional) - `{batch_size | 1, num_heads | 1, sequence_length, kv_sequence_length}`
     * `offset` (optional) - `{}`
@@ -273,8 +273,14 @@ defmodule Bumblebee.Layers do
 
     key_mask =
       case key_mask do
-        %Axon.None{} -> Nx.broadcast(1, {1, 1, 1, 1})
-        key_mask -> key_mask |> Nx.new_axis(1) |> Nx.new_axis(1)
+        %Axon.None{} ->
+          Nx.broadcast(1, {1, 1, 1, 1})
+
+        key_mask ->
+          case Nx.rank(key_mask) do
+            2 -> key_mask |> Nx.new_axis(1) |> Nx.new_axis(1)
+            4 -> key_mask
+          end
       end
 
     query_sequence_length = Nx.axis_size(query, 2)
