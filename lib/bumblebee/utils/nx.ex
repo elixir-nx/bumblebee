@@ -409,6 +409,82 @@ defmodule Bumblebee.Utils.Nx do
   end
 
   @doc """
+  Shifts elements along the specified axes.
+
+  When an shift is positive, the elements are shifted clockwise.
+  Negative shifts result in counter-clockwise shift.
+
+  ## Options
+
+    * `:shifts` - the shift size to apply to the corresponding axis
+      from `:axes`
+
+    * `:axes` - the axes to apply shift to, must have the same length
+      as `:shifts`
+
+  ## Examples
+
+    iex> x = Nx.iota({3, 3})
+    iex> Bumblebee.Utils.Nx.roll(x, shifts: [1], axes: [0])
+    #Nx.Tensor<
+      s64[3][3]
+      [
+        [6, 7, 8],
+        [0, 1, 2],
+        [3, 4, 5]
+      ]
+    >
+
+    iex> x = Nx.iota({3, 3})
+    iex> Bumblebee.Utils.Nx.roll(x, shifts: [-1], axes: [0])
+    #Nx.Tensor<
+      s64[3][3]
+      [
+        [3, 4, 5],
+        [6, 7, 8],
+        [0, 1, 2]
+      ]
+    >
+
+    iex> x = Nx.iota({3, 3})
+    iex> Bumblebee.Utils.Nx.roll(x, shifts: [1, 2], axes: [0, 1])
+    #Nx.Tensor<
+      s64[3][3]
+      [
+        [7, 8, 6],
+        [1, 2, 0],
+        [4, 5, 3]
+      ]
+    >
+
+  """
+  deftransform roll(tensor, opts) do
+    opts = Keyword.validate!(opts, shifts: [], axes: [])
+
+    shifts = opts[:shifts]
+    axes = opts[:axes]
+
+    if length(shifts) != length(axes) do
+      raise ArgumentError,
+            "expected shifts and axes to have the same number of elements," <>
+              " got shifts: #{inspect(shifts)}, axes: #{inspect(axes)}"
+    end
+
+    shifts
+    |> Enum.zip(axes)
+    |> Enum.reduce(tensor, fn {shift, axis}, tensor ->
+      shift = rem(shift, Nx.axis_size(tensor, axis))
+
+      if shift == 0 do
+        tensor
+      else
+        {left, right} = Nx.split(tensor, -shift, axis: axis)
+        Nx.concatenate([right, left], axis: axis)
+      end
+    end)
+  end
+
+  @doc """
   Returns size of the given `Nx.Batch`, including padding.
   """
   @spec batch_size(Nx.Batch.t()) :: non_neg_integer()
