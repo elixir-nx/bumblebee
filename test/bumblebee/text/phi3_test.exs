@@ -28,11 +28,11 @@ defmodule Bumblebee.Text.Phi3Test do
     )
   end
 
-  test ":base rotary embedding scaling strategy :su" do
+  test ":base rotary embedding scaling strategy :longrope" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(
                {:hf,
-                "bumblebee-testing/tiny-random-Phi3Model-rope_scaling-su-original_max_position_embeddings-256"}
+                "bumblebee-testing/tiny-random-Phi3Model-rope_scaling-longrope-original_max_position_embeddings-256"}
              )
 
     assert %Bumblebee.Text.Phi3{architecture: :base} = spec
@@ -50,32 +50,6 @@ defmodule Bumblebee.Text.Phi3Test do
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-1.4528, 0.5995, 0.1573], [-0.2664, 1.9339, 0.5336], [1.1053, -0.1643, 0.5989]]
-      ])
-    )
-  end
-
-  test ":base rotary embedding scaling strategy :yarn" do
-    assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model(
-               {:hf,
-                "bumblebee-testing/tiny-random-Phi3Model-rope_scaling-yarn-original_max_position_embeddings-256"}
-             )
-
-    assert %Bumblebee.Text.Phi3{architecture: :base} = spec
-
-    inputs = %{
-      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
-      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
-    }
-
-    outputs = Axon.predict(model, params, inputs)
-
-    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
-
-    assert_all_close(
-      outputs.hidden_state[[.., 1..3, 1..3]],
-      Nx.tensor([
-        [[-1.4530, 0.5995, 0.1574], [-0.2663, 1.9339, 0.5336], [1.1052, -0.1642, 0.5989]]
       ])
     )
   end

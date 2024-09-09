@@ -1254,12 +1254,11 @@ defmodule Bumblebee.Layers do
         positions_cos_sin(position, inv_frequency)
 
       %{
-        type: type,
+        type: :longrope,
         short_factor: short_factor,
         long_factor: long_factor,
         original_max_positions: original_max_positions
-      }
-      when type in [:su, :yarn] ->
+      } ->
         factor =
           if sequence_length > original_max_positions do
             Nx.tensor(long_factor, type: :f32)
@@ -1270,18 +1269,12 @@ defmodule Bumblebee.Layers do
         scale = max_positions / original_max_positions
 
         cos_sin_factor =
-          cond do
-            scale <= 1.0 ->
-              1.0
-
-            type == :su ->
-              Nx.divide(Nx.log(scale), Nx.log(original_max_positions))
-              |> Nx.add(1)
-              |> Nx.sqrt()
-
-            type == :yarn ->
-              Nx.multiply(0.1, Nx.log(scale))
-              |> Nx.add(1.0)
+          if scale <= 1.0 do
+            1.0
+          else
+            Nx.divide(Nx.log(scale), Nx.log(original_max_positions))
+            |> Nx.add(1)
+            |> Nx.sqrt()
           end
 
         inv_frequency = inv_frequency(base, range) |> Nx.divide(factor)

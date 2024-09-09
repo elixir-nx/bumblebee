@@ -60,9 +60,7 @@ defmodule Bumblebee.Text.Phi3 do
         doc: """
         scaling configuration for rotary embedding. Currently the supported values are:
 
-          * `%{type: :su, short_factor: list(number()), long_factor: list(number()), original_max_positions: pos_integer()}`
-
-          * `%{type: :yarn, short_factor: list(number()), long_factor: list(number()), original_max_positions: pos_integer()}`
+          * `%{type: :longrope, short_factor: list(number()), long_factor: list(number()), original_max_positions: pos_integer()}`
 
         """
       ],
@@ -428,11 +426,12 @@ defmodule Bumblebee.Text.Phi3 do
 
         case value do
           %{"type" => type, "long_factor" => long_factor, "short_factor" => short_factor}
-          when type in ["su", "yarn"] and is_list(long_factor) and is_list(short_factor) and
+          when type in ["longrope", "su", "yarn"] and
+                 is_list(long_factor) and is_list(short_factor) and
                  is_number(original_max_positions) ->
             {:ok,
              %{
-               type: String.to_atom(type),
+               type: :longrope,
                long_factor: long_factor,
                short_factor: short_factor,
                original_max_positions: original_max_positions
