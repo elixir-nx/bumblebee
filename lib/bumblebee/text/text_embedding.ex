@@ -105,8 +105,10 @@ defmodule Bumblebee.Text.TextEmbedding do
       fn batch_key, defn_options ->
         params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
 
+        scope = {:embedding, batch_key}
+
         embedding_fun =
-          Shared.compile_or_jit(embedding_fun, defn_options, compile != nil, fn ->
+          Shared.compile_or_jit(embedding_fun, scope, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key
 
             inputs = %{

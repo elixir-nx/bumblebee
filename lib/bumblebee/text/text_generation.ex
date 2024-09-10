@@ -53,8 +53,10 @@ defmodule Bumblebee.Text.TextGeneration do
       fn batch_key, defn_options ->
         params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
 
+        scope = {:generate, batch_key}
+
         generate_fun =
-          Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
+          Shared.compile_or_jit(generate_fun, scope, defn_options, compile != nil, fn ->
             {:sequence_length, sequence_length} = batch_key
 
             inputs = %{

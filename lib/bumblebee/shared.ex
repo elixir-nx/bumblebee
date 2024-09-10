@@ -312,14 +312,29 @@ defmodule Bumblebee.Shared do
   and calls compiles the function upfront. The template function may
   return a mix of tensors and templates, all arguments are automatically
   converter to templates.
+
+  If `defn_options[:cache]` is set, the given `scope` is used to create
+  a suffix.
   """
   @spec compile_or_jit(
           function(),
+          scope,
           keyword(),
           boolean(),
           (-> list(Nx.Tensor.t()))
         ) :: function()
-  def compile_or_jit(fun, defn_options, compile?, template_fun) do
+        when scope: String.Chars.t() | {scope, scope}
+  def compile_or_jit(fun, scope, defn_options, compile?, template_fun) do
+    defn_options =
+      case defn_options[:cache] do
+        cache when is_binary(cache) ->
+          suffix = "__bumblebee_" <> scope_to_string(scope)
+          Keyword.replace!(defn_options, :cache, cache <> suffix)
+
+        _ ->
+          defn_options
+      end
+
     if compile? do
       template_args = template_fun.() |> templates()
       Nx.Defn.compile(fun, template_args, defn_options)
@@ -327,6 +342,12 @@ defmodule Bumblebee.Shared do
       Nx.Defn.jit(fun, defn_options)
     end
   end
+
+  defp scope_to_string({left, right}) do
+    scope_to_string(left) <> "_" <> scope_to_string(right)
+  end
+
+  defp scope_to_string(scope), do: to_string(scope)
 
   @doc """
   Returns at template for the given model input.

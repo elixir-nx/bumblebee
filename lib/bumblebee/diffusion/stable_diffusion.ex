@@ -242,7 +242,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
     vae_params = Shared.maybe_preallocate(vae_params, preallocate_params, defn_options)
 
     image_fun =
-      Shared.compile_or_jit(image_fun, defn_options, compile?, fn ->
+      Shared.compile_or_jit(image_fun, :image, defn_options, compile?, fn ->
         inputs = %{
           "conditional_and_unconditional" => %{
             "input_ids" => Nx.template({batch_size, 2, sequence_length}, :u32)
@@ -255,7 +255,7 @@ defmodule Bumblebee.Diffusion.StableDiffusion do
 
     safety_checker_fun =
       safety_checker_fun &&
-        Shared.compile_or_jit(safety_checker_fun, defn_options, compile?, fn ->
+        Shared.compile_or_jit(safety_checker_fun, :safety_checker, defn_options, compile?, fn ->
           inputs =
             Bumblebee.Featurizer.batch_template(
               safety_checker_featurizer,

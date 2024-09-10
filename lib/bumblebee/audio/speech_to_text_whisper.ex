@@ -74,7 +74,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
 
         generate_fun =
-          Shared.compile_or_jit(generate_fun, defn_options, compile != nil, fn ->
+          Shared.compile_or_jit(generate_fun, :generate, defn_options, compile != nil, fn ->
             inputs = Bumblebee.Featurizer.batch_template(featurizer, batch_size)
             seed = Nx.template({batch_size}, :s64)
             [params, {inputs, seed}]

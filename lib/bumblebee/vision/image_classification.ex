@@ -50,7 +50,7 @@ defmodule Bumblebee.Vision.ImageClassification do
         params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
 
         scores_fun =
-          Shared.compile_or_jit(scores_fun, defn_options, compile != nil, fn ->
+          Shared.compile_or_jit(scores_fun, :scores, defn_options, compile != nil, fn ->
             inputs = Bumblebee.Featurizer.batch_template(featurizer, batch_size)
             [params, inputs]
           end)
