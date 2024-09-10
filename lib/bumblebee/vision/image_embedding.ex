@@ -73,7 +73,7 @@ defmodule Bumblebee.Vision.ImageEmbedding do
         params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
 
         embedding_fun =
-          Shared.compile_or_jit(embedding_fun, defn_options, compile != nil, fn ->
+          Shared.compile_or_jit(embedding_fun, :embedding, defn_options, compile != nil, fn ->
             inputs = Bumblebee.Featurizer.batch_template(featurizer, batch_size)
             [params, inputs]
           end)
