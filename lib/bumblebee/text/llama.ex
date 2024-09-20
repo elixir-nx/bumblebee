@@ -75,6 +75,10 @@ defmodule Bumblebee.Text.Llama do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ],
+      tie_word_embeddings: [
+        default: false,
+        doc: "whether to tie input and output embedding weights"
       ]
     ] ++
       Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
@@ -435,6 +439,7 @@ defmodule Bumblebee.Text.Llama do
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
+          tie_word_embeddings: {"tie_word_embeddings", boolean()},
           max_positions: {"max_position_embeddings", number()},
           hidden_size: {"hidden_size", number()},
           num_blocks: {"num_hidden_layers", number()},
@@ -447,7 +452,8 @@ defmodule Bumblebee.Text.Llama do
           rotary_embedding_scaling_strategy:
             {"rope_scaling", optional(scaling_strategy_converter)},
           initializer_scale: {"initializer_range", number()},
-          layer_norm_epsilon: {"rms_norm_eps", number()}
+          layer_norm_epsilon: {"rms_norm_eps", number()},
+          tie_word_embeddings: {"tie_word_embeddings", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -455,7 +461,7 @@ defmodule Bumblebee.Text.Llama do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(_spec) do
+    def params_mapping(spec) do
       %{
         "embedder.token_embedding" => "model.embed_tokens",
         "decoder.blocks.{n}.self_attention.query" => "model.layers.{n}.self_attn.q_proj",
@@ -470,7 +476,8 @@ defmodule Bumblebee.Text.Llama do
         "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",
         "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
         "output_norm" => "model.norm",
-        "language_modeling_head.output" => "lm_head",
+        "language_modeling_head.output" =>
+          if(spec.tie_word_embeddings, do: "model.embed_tokens", else: "lm_head"),
         "sequence_classification_head.output" => "score"
       }
     end

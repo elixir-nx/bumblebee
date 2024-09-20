@@ -10,12 +10,6 @@ defmodule Bumblebee.Text.T5 do
         tokens that can be represented in model input and output
         """
       ],
-      tie_word_embeddings: [
-        default: true,
-        doc: """
-        whether or not to tie encoder and decoder token embedding
-        """
-      ],
       hidden_size: [
         default: 512,
         doc: "the dimensionality of hidden layers"
@@ -74,6 +68,10 @@ defmodule Bumblebee.Text.T5 do
       layer_norm_epsilon: [
         default: 1.0e-6,
         doc: "the epsilon used by the layer normalization layers"
+      ],
+      tie_word_embeddings: [
+        default: true,
+        doc: "whether or not to tie encoder and decoder token embedding"
       ]
     ] ++
       Shared.common_options([:num_labels, :id_to_label]) ++
@@ -538,7 +536,6 @@ defmodule Bumblebee.Text.T5 do
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
-          tie_word_embeddings: {"tie_word_embeddings", boolean()},
           hidden_size: {"d_model", number()},
           attention_head_size: {"d_kv", number()},
           encoder_num_blocks: {"num_layers", number()},
@@ -551,7 +548,8 @@ defmodule Bumblebee.Text.T5 do
           activation: {"feed_forward_proj", t5_activation()},
           ffn_gated_activation: {"feed_forward_proj", ffn_gated_activation()},
           dropout_rate: {"dropout", number()},
-          initializer_scale: {"initializer_factor", number()}
+          initializer_scale: {"initializer_factor", number()},
+          tie_word_embeddings: {"tie_word_embeddings", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
