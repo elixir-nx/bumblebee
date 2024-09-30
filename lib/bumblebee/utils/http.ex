@@ -188,7 +188,7 @@ defmodule Bumblebee.Utils.HTTP do
   defp http_ssl_opts() do
     # Allow a user-specified CA certs to support, for example, HTTPS proxies
     cacert_opt =
-      case System.get_env("BUMBLEBEE_CACERTS_PATH") do
+      case System.get_env("BUMBLEBEE_CACERTS_PATH") || System.get_env("HEX_CACERTS_PATH") do
         nil -> {:cacerts, :public_key.cacerts_get()}
         file -> {:cacertfile, file}
       end
