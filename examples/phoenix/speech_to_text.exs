@@ -1,17 +1,5 @@
-Application.put_env(:sample, PhoenixDemo.Endpoint,
-  http: [ip: {127, 0, 0, 1}, port: 8080],
-  server: true,
-  live_view: [signing_salt: "bumblebee"],
-  secret_key_base: String.duplicate("b", 64),
-  pubsub_server: PhoenixDemo.PubSub
-)
-
 Mix.install([
-  {:plug_cowboy, "~> 2.6"},
-  {:jason, "~> 1.4"},
-  {:phoenix, "1.7.10"},
-  {:phoenix_live_view, "0.20.1"},
-  # Bumblebee and friends
+  {:phoenix_playground, "~> 0.1.7"},
   {:bumblebee, "~> 0.6.0"},
   {:nx, "~> 0.9.0"},
   {:exla, "~> 0.9.0"}
@@ -19,21 +7,62 @@ Mix.install([
 
 Application.put_env(:nx, :default_backend, EXLA.Backend)
 
-defmodule PhoenixDemo.Layouts do
-  use Phoenix.Component
+defmodule DemoLive do
+  use Phoenix.LiveView
 
-  def render("live.html", assigns) do
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok,
+     socket
+     |> assign(transcription: nil)
+     |> allow_upload(:audio, accept: :any, progress: &handle_progress/3, auto_upload: true)}
+  end
+
+  @impl true
+  def render(assigns) do
     ~H"""
-    <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.10/priv/static/phoenix.min.js">
+    <script src="https://cdn.tailwindcss.com">
     </script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/phoenix_live_view@0.20.1/priv/static/phoenix_live_view.min.js"
-    >
-    </script>
+
+    <div class="h-screen w-screen flex items-center justify-center antialiased">
+      <div class="flex flex-col items-center w-1/2">
+        <div class="mb-6 text-gray-600 text-lg">
+          <h1>Press and hold</h1>
+        </div>
+
+        <button
+          type="button"
+          id="microphone"
+          phx-hook="Microphone"
+          data-endianness={System.endianness()}
+          class="p-5 text-white bg-blue-700 rounded-full text-sm hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 active:bg-red-400 group"
+        >
+          <.microphone_icon class="w-8 h-8 group-active:animate-pulse" />
+        </button>
+
+        <form phx-change="noop" phx-submit="noop" class="hidden">
+          <.live_file_input upload={@uploads.audio} />
+        </form>
+
+        <div class="mt-6 flex space-x-1.5 items-center text-gray-600 text-lg">
+          <div>Transcription:</div>
+          <.async_result :let={transcription} :if={@transcription} assign={@transcription}>
+            <:loading>
+              <.spinner />
+            </:loading>
+            <:failed :let={_reason}>
+              <span>Oops, something went wrong!</span>
+            </:failed>
+            <span class="text-gray-900 font-medium"><%= transcription %></span>
+          </.async_result>
+        </div>
+      </div>
+    </div>
+
     <script>
       const SAMPLING_RATE = 16_000;
 
-      const Microphone = {
+      window.hooks.Microphone = {
         mounted() {
           this.mediaRecorder = null;
 
@@ -153,71 +182,7 @@ defmodule PhoenixDemo.Layouts do
           }
         },
       };
-
-      const hooks = { Microphone };
-
-      const liveSocket = new window.LiveView.LiveSocket("/live", window.Phoenix.Socket, { hooks });
-      liveSocket.connect();
     </script>
-    <script src="https://cdn.tailwindcss.com">
-    </script>
-    <%= @inner_content %>
-    """
-  end
-end
-
-defmodule PhoenixDemo.ErrorView do
-  def render(_, _), do: "error"
-end
-
-defmodule PhoenixDemo.SampleLive do
-  use Phoenix.LiveView, layout: {PhoenixDemo.Layouts, :live}
-
-  @impl true
-  def mount(_params, _session, socket) do
-    {:ok,
-     socket
-     |> assign(transcription: nil)
-     |> allow_upload(:audio, accept: :any, progress: &handle_progress/3, auto_upload: true)}
-  end
-
-  @impl true
-  def render(assigns) do
-    ~H"""
-    <div class="h-screen w-screen flex items-center justify-center antialiased">
-      <div class="flex flex-col items-center w-1/2">
-        <div class="mb-6 text-gray-600 text-lg">
-          <h1>Press and hold</h1>
-        </div>
-
-        <button
-          type="button"
-          id="microphone"
-          phx-hook="Microphone"
-          data-endianness={System.endianness()}
-          class="p-5 text-white bg-blue-700 rounded-full text-sm hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 active:bg-red-400 group"
-        >
-          <.microphone_icon class="w-8 h-8 group-active:animate-pulse" />
-        </button>
-
-        <form phx-change="noop" phx-submit="noop" class="hidden">
-          <.live_file_input upload={@uploads.audio} />
-        </form>
-
-        <div class="mt-6 flex space-x-1.5 items-center text-gray-600 text-lg">
-          <div>Transcription:</div>
-          <.async_result :let={transcription} assign={@transcription} :if={@transcription}>
-            <:loading>
-              <.spinner />
-            </:loading>
-            <:failed :let={_reason}>
-              <span>Oops, something went wrong!</span>
-            </:failed>
-            <span class="text-gray-900 font-medium"><%= transcription %></span>
-          </.async_result>
-        </div>
-      </div>
-    </div>
     """
   end
 
@@ -274,7 +239,7 @@ defmodule PhoenixDemo.SampleLive do
       # Discard previous transcription so we show the loading state once more
       |> assign(:transcription, nil)
       |> assign_async(:transcription, fn ->
-        output = Nx.Serving.batched_run(PhoenixDemo.Serving, audio)
+        output = Nx.Serving.batched_run(Demo.Serving, audio)
         transcription = output.chunks |> Enum.map_join(& &1.text) |> String.trim()
         {:ok, %{transcription: transcription}}
       end)
@@ -293,29 +258,6 @@ defmodule PhoenixDemo.SampleLive do
   end
 end
 
-defmodule PhoenixDemo.Router do
-  use Phoenix.Router
-
-  import Phoenix.LiveView.Router
-
-  pipeline :browser do
-    plug(:accepts, ["html"])
-  end
-
-  scope "/", PhoenixDemo do
-    pipe_through(:browser)
-
-    live("/", SampleLive, :index)
-  end
-end
-
-defmodule PhoenixDemo.Endpoint do
-  use Phoenix.Endpoint, otp_app: :sample
-
-  socket("/live", Phoenix.LiveView.Socket)
-  plug(PhoenixDemo.Router)
-end
-
 # Application startup
 
 {:ok, model_info} = Bumblebee.load_model({:hf, "openai/whisper-tiny"})
@@ -326,17 +268,12 @@ end
 serving =
   Bumblebee.Audio.speech_to_text_whisper(model_info, featurizer, tokenizer, generation_config,
     compile: [batch_size: 4],
-    defn_options: [compiler: EXLA]
+    defn_options: [
+      compiler: EXLA,
+      cache: Path.join(System.tmp_dir!(), "bumblebee_examples/speech_to_text")
+    ]
   )
 
-{:ok, _} =
-  Supervisor.start_link(
-    [
-      {Phoenix.PubSub, name: PhoenixDemo.PubSub},
-      {Nx.Serving, serving: serving, name: PhoenixDemo.Serving, batch_timeout: 100},
-      PhoenixDemo.Endpoint
-    ],
-    strategy: :one_for_one
-  )
+Nx.Serving.start_link(serving: serving, name: Demo.Serving, batch_timeout: 100)
 
-Process.sleep(:infinity)
+PhoenixPlayground.start(live: DemoLive, port: 8080)

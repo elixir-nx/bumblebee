@@ -1,17 +1,5 @@
-Application.put_env(:sample, PhoenixDemo.Endpoint,
-  http: [ip: {127, 0, 0, 1}, port: 8080],
-  server: true,
-  live_view: [signing_salt: "bumblebee"],
-  secret_key_base: String.duplicate("b", 64),
-  pubsub_server: PhoenixDemo.PubSub
-)
-
 Mix.install([
-  {:plug_cowboy, "~> 2.6"},
-  {:jason, "~> 1.4"},
-  {:phoenix, "1.7.10"},
-  {:phoenix_live_view, "0.20.1"},
-  # Bumblebee and friends
+  {:phoenix_playground, "~> 0.1.7"},
   {:bumblebee, "~> 0.6.0"},
   {:nx, "~> 0.9.0"},
   {:exla, "~> 0.9.0"}
@@ -19,171 +7,8 @@ Mix.install([
 
 Application.put_env(:nx, :default_backend, EXLA.Backend)
 
-defmodule PhoenixDemo.Layouts do
-  use Phoenix.Component
-
-  def render("live.html", assigns) do
-    ~H"""
-    <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.10/priv/static/phoenix.min.js">
-    </script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/phoenix_live_view@0.20.1/priv/static/phoenix_live_view.min.js"
-    >
-    </script>
-    <script>
-      const DROP_CLASSES = ["bg-blue-100", "border-blue-300"];
-
-      const ImageInput = {
-        mounted() {
-          this.props = {
-            height: parseInt(this.el.dataset.height),
-            width: parseInt(this.el.dataset.width),
-          };
-
-          this.inputEl = this.el.querySelector(`[data-el-input]`);
-          this.previewEl = this.el.querySelector(`[data-el-preview]`);
-
-          // File selection
-
-          this.el.addEventListener("click", (event) => {
-            this.inputEl.click();
-          });
-
-          this.inputEl.addEventListener("change", (event) => {
-            const [file] = event.target.files;
-            file && this.loadFile(file);
-          });
-
-          // Drag and drop
-
-          this.el.addEventListener("dragover", (event) => {
-            event.stopPropagation();
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "copy";
-          });
-
-          this.el.addEventListener("drop", (event) => {
-            event.stopPropagation();
-            event.preventDefault();
-            const [file] = event.dataTransfer.files;
-            file && this.loadFile(file);
-          });
-
-          this.el.addEventListener("dragenter", (event) => {
-            this.el.classList.add(...DROP_CLASSES);
-          });
-
-          this.el.addEventListener("dragleave", (event) => {
-            if (!this.el.contains(event.relatedTarget)) {
-              this.el.classList.remove(...DROP_CLASSES);
-            }
-          });
-
-          this.el.addEventListener("drop", (event) => {
-            this.el.classList.remove(...DROP_CLASSES);
-          });
-        },
-
-        loadFile(file) {
-          const reader = new FileReader();
-
-          reader.onload = (readerEvent) => {
-            const imgEl = document.createElement("img");
-
-            imgEl.addEventListener("load", (loadEvent) => {
-              this.setPreview(imgEl);
-
-              const canvas = this.toCanvas(imgEl);
-              const blob = this.canvasToBlob(canvas);
-              this.upload("image", [blob]);
-            });
-
-            imgEl.src = readerEvent.target.result;
-          };
-
-          reader.readAsDataURL(file);
-        },
-
-        setPreview(imgEl) {
-          // Keep the original image size intact
-          const previewImgEl = imgEl.cloneNode();
-          previewImgEl.style.maxHeight = "100%";
-          this.previewEl.replaceChildren(previewImgEl);
-        },
-
-        toCanvas(imgEl) {
-          // We resize the image, such that it fits in the configured
-          // height x width, but keeping the aspect ratio. We could
-          // also easily crop, pad or squash the image, if desired
-
-          const { width, height } = imgEl;
-          const { width: boundWidth, height: boundHeight } = this.props;
-
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-
-          const widthScale = boundWidth / width;
-          const heightScale = boundHeight / height;
-          const scale = Math.min(widthScale, heightScale);
-
-          const scaledWidth = Math.round(width * scale);
-          const scaledHeight = Math.round(height * scale);
-
-          canvas.width = scaledWidth;
-          canvas.height = scaledHeight;
-
-          ctx.drawImage(imgEl, 0, 0, width, height, 0, 0, scaledWidth, scaledHeight);
-
-          return canvas;
-        },
-
-        canvasToBlob(canvas) {
-          const imageData = canvas
-            .getContext("2d")
-            .getImageData(0, 0, canvas.width, canvas.height);
-
-          const buffer = this.imageDataToRGBBuffer(imageData);
-
-          const meta = new ArrayBuffer(8);
-          const view = new DataView(meta);
-          view.setUint32(0, canvas.height, false);
-          view.setUint32(4, canvas.width, false);
-
-          return new Blob([meta, buffer], { type: "application/octet-stream" });
-        },
-
-        imageDataToRGBBuffer(imageData) {
-          const pixelCount = imageData.width * imageData.height;
-          const bytes = new Uint8ClampedArray(pixelCount * 3);
-
-          for (let i = 0; i < pixelCount; i++) {
-            bytes[i * 3] = imageData.data[i * 4];
-            bytes[i * 3 + 1] = imageData.data[i * 4 + 1];
-            bytes[i * 3 + 2] = imageData.data[i * 4 + 2];
-          }
-
-          return bytes.buffer;
-        },
-      };
-
-      const hooks = { ImageInput };
-
-      const liveSocket = new window.LiveView.LiveSocket("/live", window.Phoenix.Socket, { hooks });
-      liveSocket.connect();
-    </script>
-    <script src="https://cdn.tailwindcss.com">
-    </script>
-    <%= @inner_content %>
-    """
-  end
-end
-
-defmodule PhoenixDemo.ErrorView do
-  def render(_, _), do: "error"
-end
-
-defmodule PhoenixDemo.SampleLive do
-  use Phoenix.LiveView, layout: {PhoenixDemo.Layouts, :live}
+defmodule DemoLive do
+  use Phoenix.LiveView
 
   @impl true
   def mount(_params, _session, socket) do
@@ -196,6 +21,9 @@ defmodule PhoenixDemo.SampleLive do
   @impl true
   def render(assigns) do
     ~H"""
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+
     <div class="h-screen w-screen flex items-center justify-center antialiased">
       <div class="flex flex-col items-center w-1/2">
         <form class="m-0 flex flex-col items-center space-y-2" phx-change="noop" phx-submit="noop">
@@ -203,7 +31,7 @@ defmodule PhoenixDemo.SampleLive do
         </form>
         <div class="mt-6 flex space-x-1.5 items-center text-gray-600 text-lg">
           <span>Label:</span>
-          <.async_result :let={label} assign={@label} :if={@label}>
+          <.async_result :let={label} :if={@label} assign={@label}>
             <:loading>
               <.spinner />
             </:loading>
@@ -214,6 +42,143 @@ defmodule PhoenixDemo.SampleLive do
           </.async_result>
         </div>
       </div>
+
+      <script>
+        const DROP_CLASSES = ["bg-blue-100", "border-blue-300"];
+
+        window.hooks.ImageInput = {
+          mounted() {
+            this.props = {
+              height: parseInt(this.el.dataset.height),
+              width: parseInt(this.el.dataset.width),
+            };
+
+            this.inputEl = this.el.querySelector(`[data-el-input]`);
+            this.previewEl = this.el.querySelector(`[data-el-preview]`);
+
+            // File selection
+
+            this.el.addEventListener("click", (event) => {
+              this.inputEl.click();
+            });
+
+            this.inputEl.addEventListener("change", (event) => {
+              const [file] = event.target.files;
+              file && this.loadFile(file);
+            });
+
+            // Drag and drop
+
+            this.el.addEventListener("dragover", (event) => {
+              event.stopPropagation();
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+            });
+
+            this.el.addEventListener("drop", (event) => {
+              event.stopPropagation();
+              event.preventDefault();
+              const [file] = event.dataTransfer.files;
+              file && this.loadFile(file);
+            });
+
+            this.el.addEventListener("dragenter", (event) => {
+              this.el.classList.add(...DROP_CLASSES);
+            });
+
+            this.el.addEventListener("dragleave", (event) => {
+              if (!this.el.contains(event.relatedTarget)) {
+                this.el.classList.remove(...DROP_CLASSES);
+              }
+            });
+
+            this.el.addEventListener("drop", (event) => {
+              this.el.classList.remove(...DROP_CLASSES);
+            });
+          },
+
+          loadFile(file) {
+            const reader = new FileReader();
+
+            reader.onload = (readerEvent) => {
+              const imgEl = document.createElement("img");
+
+              imgEl.addEventListener("load", (loadEvent) => {
+                this.setPreview(imgEl);
+
+                const canvas = this.toCanvas(imgEl);
+                const blob = this.canvasToBlob(canvas);
+                this.upload("image", [blob]);
+              });
+
+              imgEl.src = readerEvent.target.result;
+            };
+
+            reader.readAsDataURL(file);
+          },
+
+          setPreview(imgEl) {
+            // Keep the original image size intact
+            const previewImgEl = imgEl.cloneNode();
+            previewImgEl.style.maxHeight = "100%";
+            this.previewEl.replaceChildren(previewImgEl);
+          },
+
+          toCanvas(imgEl) {
+            // We resize the image, such that it fits in the configured
+            // height x width, but keeping the aspect ratio. We could
+            // also easily crop, pad or squash the image, if desired
+
+            const { width, height } = imgEl;
+            const { width: boundWidth, height: boundHeight } = this.props;
+
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+
+            const widthScale = boundWidth / width;
+            const heightScale = boundHeight / height;
+            const scale = Math.min(widthScale, heightScale);
+
+            const scaledWidth = Math.round(width * scale);
+            const scaledHeight = Math.round(height * scale);
+
+            canvas.width = scaledWidth;
+            canvas.height = scaledHeight;
+
+            ctx.drawImage(imgEl, 0, 0, width, height, 0, 0, scaledWidth, scaledHeight);
+
+            return canvas;
+          },
+
+          canvasToBlob(canvas) {
+            const imageData = canvas
+              .getContext("2d")
+              .getImageData(0, 0, canvas.width, canvas.height);
+
+            const buffer = this.imageDataToRGBBuffer(imageData);
+
+            const meta = new ArrayBuffer(8);
+            const view = new DataView(meta);
+            view.setUint32(0, canvas.height, false);
+            view.setUint32(4, canvas.width, false);
+
+            return new Blob([meta, buffer], { type: "application/octet-stream" });
+          },
+
+          imageDataToRGBBuffer(imageData) {
+            const pixelCount = imageData.width * imageData.height;
+            const bytes = new Uint8ClampedArray(pixelCount * 3);
+
+            for (let i = 0; i < pixelCount; i++) {
+              bytes[i * 3] = imageData.data[i * 4];
+              bytes[i * 3 + 1] = imageData.data[i * 4 + 1];
+              bytes[i * 3 + 2] = imageData.data[i * 4 + 2];
+            }
+
+            return bytes.buffer;
+          },
+        };
+      </script>
     </div>
     """
   end
@@ -276,7 +241,7 @@ defmodule PhoenixDemo.SampleLive do
       # Discard previous label so we show the loading state once more
       |> assign(:label, nil)
       |> assign_async(:label, fn ->
-        output = Nx.Serving.batched_run(PhoenixDemo.Serving, image)
+        output = Nx.Serving.batched_run(Demo.Serving, image)
         %{predictions: [%{label: label}]} = output
         {:ok, %{label: label}}
       end)
@@ -299,29 +264,6 @@ defmodule PhoenixDemo.SampleLive do
   end
 end
 
-defmodule PhoenixDemo.Router do
-  use Phoenix.Router
-
-  import Phoenix.LiveView.Router
-
-  pipeline :browser do
-    plug(:accepts, ["html"])
-  end
-
-  scope "/", PhoenixDemo do
-    pipe_through(:browser)
-
-    live("/", SampleLive, :index)
-  end
-end
-
-defmodule PhoenixDemo.Endpoint do
-  use Phoenix.Endpoint, otp_app: :sample
-
-  socket("/live", Phoenix.LiveView.Socket)
-  plug(PhoenixDemo.Router)
-end
-
 # Application startup
 
 {:ok, model_info} = Bumblebee.load_model({:hf, "microsoft/resnet-50"})
@@ -331,17 +273,12 @@ serving =
   Bumblebee.Vision.image_classification(model_info, featurizer,
     top_k: 1,
     compile: [batch_size: 4],
-    defn_options: [compiler: EXLA]
+    defn_options: [
+      compiler: EXLA,
+      cache: Path.join(System.tmp_dir!(), "bumblebee_examples/image_classification")
+    ]
   )
 
-{:ok, _} =
-  Supervisor.start_link(
-    [
-      {Phoenix.PubSub, name: PhoenixDemo.PubSub},
-      {Nx.Serving, serving: serving, name: PhoenixDemo.Serving, batch_timeout: 100},
-      PhoenixDemo.Endpoint
-    ],
-    strategy: :one_for_one
-  )
+Nx.Serving.start_link(serving: serving, name: Demo.Serving, batch_timeout: 100)
 
-Process.sleep(:infinity)
+PhoenixPlayground.start(live: DemoLive, port: 8080)
