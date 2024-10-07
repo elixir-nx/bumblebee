@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.0](https://github.com/elixir-nx/bumblebee/tree/v0.6.0) (2024-10-08)
+
+### Added
+
+* Notebook about Retrieval-Augmented Generation (RAG) ([#353](https://github.com/elixir-nx/bumblebee/pull/353))
+* Phi model ([#356](https://github.com/elixir-nx/bumblebee/pull/356))
+* Gemma model ([#358](https://github.com/elixir-nx/bumblebee/pull/358))
+* Support for input streaming in Whisper serving ([#361](https://github.com/elixir-nx/bumblebee/pull/361))
+* Stable Diffusion ControlNet model ([#359](https://github.com/elixir-nx/bumblebee/pull/359))
+* Support for multiple EOS tokens in text generation ([#368](https://github.com/elixir-nx/bumblebee/pull/368))
+* Phi-3 model ([#374](https://github.com/elixir-nx/bumblebee/pull/374))
+* Support for Llama 3 ([#387](https://github.com/elixir-nx/bumblebee/pull/387))
+* Support for CLS token pooling in text embedding ([#385](https://github.com/elixir-nx/bumblebee/pull/385))
+* Support for HTTP proxies ([#391](https://github.com/elixir-nx/bumblebee/pull/391))
+* M2M100 and NLLB models ([#392](https://github.com/elixir-nx/bumblebee/pull/392))
+* Multilingual translation serving (`Bumblebee.Text.translation/4`) ([#395](https://github.com/elixir-nx/bumblebee/pull/395))
+* Swin model ([#394](https://github.com/elixir-nx/bumblebee/pull/394))
+
+### Changed
+
+* **(Breaking)** Renamed `:use_qkv_bias` spec option to `:use_attention_bias` in ViT, DeiT and DINOv2
+* **(Breaking)** Changed spec options for optional outputs (`:output_hidden_states`, `:output_attentions`) to global layer options ([#360](https://github.com/elixir-nx/bumblebee/pull/360))
+* Whisper serving to stream input using ffmpeg when given a file path ([#361](https://github.com/elixir-nx/bumblebee/pull/361))
+* **(Breaking)** Changed model params to use `%Axon.ModelState{}`, matching Axon v0.7.0 ([#375](https://github.com/elixir-nx/bumblebee/pull/375))
+
+### Removed
+
+### Fixed
+
+* Token classification crashing when all tokens are special
+* Batched text generation finishing too early
+* Crash on empty list of entities when aggregating entities in token classification ([#386](https://github.com/elixir-nx/bumblebee/pull/386))
+
 ## [v0.5.3](https://github.com/elixir-nx/bumblebee/tree/v0.5.3) (2024-02-26)
 
 ### Fixed

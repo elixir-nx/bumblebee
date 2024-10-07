@@ -11,9 +11,9 @@ Mix.install([
   {:phoenix, "1.7.10"},
   {:phoenix_live_view, "0.20.1"},
   # Bumblebee and friends
-  {:bumblebee, "~> 0.5.0"},
-  {:nx, "~> 0.7.0"},
-  {:exla, "~> 0.7.0"}
+  {:bumblebee, "~> 0.6.0"},
+  {:nx, "~> 0.9.0"},
+  {:exla, "~> 0.9.0"}
 ])
 
 Application.put_env(:nx, :default_backend, EXLA.Backend)
