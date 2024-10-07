@@ -30,7 +30,7 @@ defmodule Bumblebee.Text.Llama do
         default: nil,
         doc: """
         the size of the key, value, and query projection per attention head.
-        Defaults to `div(hidden_size, num_attention_heads)
+        Defaults to `div(hidden_size, num_attention_heads)`
         """
       ],
       num_blocks: [

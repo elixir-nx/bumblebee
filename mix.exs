@@ -108,6 +108,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Vision.Deit,
           Bumblebee.Vision.DinoV2,
           Bumblebee.Vision.ResNet,
+          Bumblebee.Vision.Swin,
           Bumblebee.Vision.Vit
         ],
         Preprocessors: [
@@ -138,7 +139,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.WhisperGenerationConfig
         ]
       ],
-      groups_for_functions: [
+      groups_for_docs: [
         # Bumblebee
         Models: &(&1[:type] == :model),
         Featurizers: &(&1[:type] == :featurizer),

@@ -30,8 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Whisper serving to stream input using ffmpeg when given a file path ([#361](https://github.com/elixir-nx/bumblebee/pull/361))
 * **(Breaking)** Changed model params to use `%Axon.ModelState{}`, matching Axon v0.7.0 ([#375](https://github.com/elixir-nx/bumblebee/pull/375))
 
-### Removed
-
 ### Fixed
 
 * Token classification crashing when all tokens are special
