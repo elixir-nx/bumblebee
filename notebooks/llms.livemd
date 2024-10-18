@@ -90,8 +90,11 @@ Nx.Serving.batched_run(Llama, prompt) |> Enum.each(&IO.write/1)
 
 We can easily test other LLMs, we just need to change the repository and possibly adjust the prompt template. In this example we run the [Mistral](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2) model.
 
+Just like Llama, Mistral now also requires users to request access to their models, so make sure you are granted access to the model, then generate a [HuggingFace auth token](https://huggingface.co/settings/tokens) and put it in a `HF_TOKEN` Livebook secret.
+
 ```elixir
-repo = {:hf, "mistralai/Mistral-7B-Instruct-v0.2"}
+hf_token = System.fetch_env!('LB_HF_TOKEN')
+repo = {:hf, "mistralai/Mistral-7B-Instruct-v0.2", auth_token: hf_token}
 
 {:ok, model_info} = Bumblebee.load_model(repo, type: :bf16, backend: EXLA.Backend)
 {:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
@@ -109,7 +112,7 @@ generation_config =
 
 serving =
   Bumblebee.Text.generation(model_info, tokenizer, generation_config,
-    compile: [batch_size: 1, sequence_length: 1028],
+    compile: [batch_size: 1, sequence_length: 512],
     stream: true,
     defn_options: [compiler: EXLA]
   )
