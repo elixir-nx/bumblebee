@@ -211,4 +211,14 @@ defmodule Bumblebee.Vision do
         ) :: Nx.Serving.t()
   defdelegate image_embedding(model_info, featurizer, opts \\ []),
     to: Bumblebee.Vision.ImageEmbedding
+
+  @spec zero_shot_classification(
+          Bumblebee.model_info(),
+          Bumblebee.Featurizer.t(),
+          Bumblebee.Tokenizer.t(),
+          list(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate zero_shot_classification(model_info, featurizer, tokenizer, labels, opts \\ []),
+    to: Bumblebee.Vision.ZeroShotClassification
 end
