@@ -177,7 +177,9 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
           out_channels: 1,
           out_sample_rate: sampling_rate
         )
-        |> Stream.map(fn frame -> Xav.Frame.to_nx(frame) end)
+        |> Stream.map(fn frame ->
+          Nx.with_default_backend(Nx.BinaryBackend, fn -> Xav.Frame.to_nx(frame) end)
+        end)
         |> Stream.chunk_every(1000)
         |> Stream.map(&Nx.Batch.concatenate/1)
         |> Stream.map(fn batch -> Nx.Defn.jit_apply(&Function.identity/1, [batch]) end)
