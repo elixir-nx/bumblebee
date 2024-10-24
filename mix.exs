@@ -50,7 +50,7 @@ defmodule Bumblebee.MixProject do
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
       {:nx_signal, "~> 0.2.0"},
-      {:xav, "~> 0.6.0"}
+      {:xav, "~> 0.6.0", optional: true}
     ]
   end
 
