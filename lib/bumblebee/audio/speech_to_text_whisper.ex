@@ -168,6 +168,8 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     # This chunk can be of arbitrary size, the serving accumulates
     # and overlaps chunks internally as needed.
 
+    chunk_samples = sampling_rate * 30
+
     if File.exists?(path) do
       stream =
         path
@@ -177,12 +179,25 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
           out_channels: 1,
           out_sample_rate: sampling_rate
         )
-        |> Stream.map(fn frame ->
-          Nx.with_default_backend(Nx.BinaryBackend, fn -> Xav.Frame.to_nx(frame) end)
-        end)
-        |> Stream.chunk_every(1000)
-        |> Stream.map(&Nx.Batch.concatenate/1)
-        |> Stream.map(fn batch -> Nx.Defn.jit_apply(&Function.identity/1, [batch]) end)
+        |> Stream.transform(
+          fn -> {<<>>, 0} end,
+          fn frame, {buffer, samples} ->
+            buffer = buffer <> frame.data
+            samples = samples + frame.samples
+
+            if samples >= chunk_samples do
+              chunk = Nx.from_binary(buffer, :f32, backend: Nx.BinaryBackend)
+              {[chunk], {<<>>, 0}}
+            else
+              {[], {buffer, samples}}
+            end
+          end,
+          fn {buffer, _samples} ->
+            chunk = Nx.from_binary(buffer, :f32, backend: Nx.BinaryBackend)
+            {[chunk], {<<>>, 0}}
+          end,
+          fn _ -> :ok end
+        )
 
       {:ok, stream}
     else
