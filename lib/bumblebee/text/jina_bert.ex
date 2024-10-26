@@ -71,7 +71,7 @@ defmodule Bumblebee.Text.JinaBert do
     ] ++ Shared.common_options([:use_cross_attention, :num_labels, :id_to_label])
 
   @moduledoc """
-  BERT model family.
+  Jina adaption of BERT model family.
 
   ## Architectures
 
@@ -432,9 +432,7 @@ defmodule Bumblebee.Text.JinaBert do
     decoder? = Keyword.get(opts, :decoder?, false)
 
     embeddings =
-      embedder(inputs["input_ids"], inputs["position_ids"], inputs["token_type_ids"], spec,
-        name: "embedder"
-      )
+      embedder(inputs["input_ids"], inputs["token_type_ids"], spec, name: "embedder")
 
     encoder_outputs =
       encoder(
@@ -462,13 +460,8 @@ defmodule Bumblebee.Text.JinaBert do
     }
   end
 
-  defp embedder(input_ids, position_ids, token_type_ids, spec, opts) do
+  defp embedder(input_ids, token_type_ids, spec, opts) do
     name = opts[:name]
-
-    position_ids =
-      Layers.default position_ids do
-        Layers.default_position_ids(input_ids)
-      end
 
     token_type_ids =
       Layers.default token_type_ids do
@@ -481,21 +474,53 @@ defmodule Bumblebee.Text.JinaBert do
         name: join(name, "token_embedding")
       )
 
-    position_embeddings =
-      Axon.embedding(position_ids, spec.max_positions, spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "position_embedding")
-      )
-
     token_type_embeddings =
       Axon.embedding(token_type_ids, spec.max_token_types, spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
         name: join(name, "token_type_embedding")
       )
 
-    Axon.add([inputs_embeddings, position_embeddings, token_type_embeddings])
+    Axon.add([inputs_embeddings, token_type_embeddings])
     |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "norm"))
     |> Axon.dropout(rate: spec.dropout_rate, name: join(name, "dropout"))
+  end
+
+  defp get_slopes_power_of_2(n) do
+    start = 2 ** -(2 ** -(:math.log2(n) - 3))
+    ratio = start
+    for i <- 0..(n - 1), do: start * ratio ** i
+  end
+
+  defp integer?(number) do
+    round(number) == number
+  end
+
+  defp get_alibi_head_slopes(n_heads) do
+    if integer?(:math.log2(n_heads)) do
+      get_slopes_power_of_2(n_heads)
+    else
+      closest_power_of_2 = 2 ** round(:math.floor(:math.log2(n_heads)))
+
+      get_slopes_power_of_2(closest_power_of_2) ++
+        (get_alibi_head_slopes(2 * closest_power_of_2)
+         |> Enum.take_every(2)
+         |> Enum.take(n_heads - closest_power_of_2))
+    end
+  end
+
+  defp alibi_matrix(num_attention_heads, size) do
+    context_position = Nx.iota({1, size, 1}, axis: 1)
+    memory_position = Nx.iota({1, size}, axis: 1)
+    relative_position = Nx.abs(Nx.subtract(context_position, memory_position))
+
+    relative_position = Nx.tile(relative_position, [num_attention_heads, 1, 1])
+    slopes = Nx.tensor(get_alibi_head_slopes(num_attention_heads)) |> Nx.multiply(-1)
+
+    slopes
+    |> Nx.new_axis(-1)
+    |> Nx.new_axis(-1)
+    |> Nx.multiply(relative_position)
+    |> Nx.new_axis(0)
   end
 
   defp encoder(
@@ -514,11 +539,22 @@ defmodule Bumblebee.Text.JinaBert do
 
     cross_attention? = decoder? and spec.use_cross_attention
 
+    # we build the alibi matrix only once instead of rebuilding
+    # for this we must use the maximum seqlen
+    alibi_relative_bias_matrix =
+      Axon.nx(hidden_state, fn hidden_state ->
+        {_, seqlen, _} = Nx.shape(hidden_state)
+        matrix = alibi_matrix(spec.num_attention_heads, spec.max_positions)
+
+        matrix[[.., .., 0..(seqlen - 1), 0..(seqlen - 1)]]
+      end)
+
     Layers.Transformer.blocks(
       hidden_state,
       [
         attention_mask: attention_mask,
         attention_head_mask: attention_head_mask,
+        attention_relative_bias: alibi_relative_bias_matrix,
         cache: cache,
         causal: decoder?,
         num_blocks: spec.num_blocks,
@@ -530,10 +566,8 @@ defmodule Bumblebee.Text.JinaBert do
         layer_norm: [
           epsilon: spec.layer_norm_epsilon
         ],
-        ffn: [
-          intermediate_size: spec.intermediate_size,
-          activation: spec.activation
-        ],
+        ffn: &glumlp(&1, spec, name: &2),
+        block_type: &jina_block_impl/3,
         name: join(name, "blocks")
       ] ++
         if(cross_attention?,
@@ -545,6 +579,45 @@ defmodule Bumblebee.Text.JinaBert do
           else: []
         )
     )
+  end
+
+  def glumlp(
+        hidden_states,
+        spec,
+        opts
+      ) do
+    name = opts[:name]
+    intermediate_size = spec.intermediate_size
+    activation = spec.activation
+    hidden_dropout_prob = spec.dropout_rate
+    hidden_size = spec.hidden_size
+    layer_norm_eps = spec.layer_norm_epsilon
+
+    residual_connection = hidden_states
+
+    hidden_states =
+      hidden_states
+      |> Axon.dense(intermediate_size * 2, use_bias: false, name: join(name, "gated_layers"))
+
+    gated =
+      Axon.nx(hidden_states, fn hidden_states ->
+        hidden_states[[.., .., 0..(intermediate_size - 1)]]
+      end)
+      |> Axon.activation(activation)
+
+    non_gated =
+      Axon.nx(hidden_states, fn hidden_states ->
+        hidden_states[[.., .., intermediate_size..-1//1]]
+      end)
+
+    hidden_states =
+      Axon.multiply(gated, non_gated)
+      |> Axon.dropout(rate: hidden_dropout_prob)
+      |> Axon.dense(hidden_size, name: join(name, "wo"))
+
+    hidden_states
+    |> Axon.add(residual_connection)
+    |> Axon.layer_norm(epsilon: layer_norm_eps, name: join(name, "layernorm"))
   end
 
   defp pooler(hidden_state, spec, opts) do
@@ -586,6 +659,37 @@ defmodule Bumblebee.Text.JinaBert do
 
   defp kernel_initializer(spec) do
     Axon.Initializers.normal(scale: spec.initializer_scale)
+  end
+
+  defp jina_block_impl(hidden_state, steps, _name) do
+    shortcut = hidden_state
+
+    {hidden_state, attention_info} = steps.self_attention.(hidden_state)
+
+    hidden_state =
+      hidden_state
+      |> Axon.add(shortcut)
+      |> steps.self_attention_norm.()
+
+    {hidden_state, cross_attention_info} =
+      steps.cross_attention_maybe.(hidden_state, fn hidden_state ->
+        shortcut = hidden_state
+
+        {hidden_state, cross_attention_info} = steps.cross_attention.(hidden_state)
+
+        hidden_state =
+          hidden_state
+          |> Axon.add(shortcut)
+          |> steps.cross_attention_norm.()
+
+        {hidden_state, cross_attention_info}
+      end)
+
+    hidden_state =
+      hidden_state
+      |> steps.ffn.()
+
+    {hidden_state, attention_info, cross_attention_info}
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
@@ -651,7 +755,10 @@ defmodule Bumblebee.Text.JinaBert do
         "sequence_classification_head.output" => "classifier",
         "token_classification_head.output" => "classifier",
         "multiple_choice_head.output" => "classifier",
-        "question_answering_head.output" => "qa_outputs"
+        "question_answering_head.output" => "qa_outputs",
+        "encoder.blocks.{n}.ffn.wo" => "encoder.layer.{n}.mlp.wo",
+        "encoder.blocks.{n}.ffn.layernorm" => "encoder.layer.{n}.mlp.layernorm",
+        "encoder.blocks.{n}.ffn.gated_layers" => "encoder.layer.{n}.mlp.gated_layers"
       }
     end
   end
