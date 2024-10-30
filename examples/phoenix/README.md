@@ -1,6 +1,6 @@
 # Phoenix LiveView examples
 
-The [examples/phoenix](https://github.com/elixir-nx/bumblebee/tree/main/examples/phoenix) directory contains contains minimal, single-file LiveView applications, which showcase how to integrate Bumblebee as part of the application.
+The [examples/phoenix](https://github.com/elixir-nx/bumblebee/tree/main/examples/phoenix) directory contains minimal, single-file LiveView applications, which showcase how to integrate Bumblebee as part of the application.
 
 ## Running
 
