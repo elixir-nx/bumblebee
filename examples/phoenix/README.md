@@ -1,6 +1,6 @@
 # Phoenix LiveView examples
 
-This directory contains minimal, single-file LiveView applications, which showcase how to integrate Bumblebee as part of the application.
+The [examples/phoenix](https://github.com/elixir-nx/bumblebee/tree/main/examples/phoenix) directory contains minimal, single-file LiveView applications, which showcase how to integrate Bumblebee as part of the application.
 
 ## Running
 
@@ -89,12 +89,12 @@ When working with user-given images, the most trivial approach would be to just 
 
 Both of these downsides can be avoided by moving all the work to the client. Specifically, when the user selects an image, we can resize it to a much smaller version and decode to pixel values right away. Both of these steps are fairly straightforward using the Canvas API.
 
-For an example implementation of this technique see the [image classification example](image_classification.exs).
+For an example implementation of this technique see the [image classification example](https://github.com/elixir-nx/bumblebee/tree/main/examples/phoenix/image_classification.exs).
 
 ### User audio
 
 The points made about images above are relevant to user-given audio as well. In fact, decoding audio files on the server requires ffmpeg to be installed system-wide. However, we can do all preprocessing on the client and send raw PCM data with a single channel to the server.
 
-For an example implementation of this technique see the [speech-to-text example](speech_to_text.exs).
+For an example implementation of this technique see the [speech-to-text example](https://github.com/elixir-nx/bumblebee/tree/main/examples/phoenix/speech_to_text.exs).
 
 If you are interested in real-time streaming, look at the [Membrane Framework](https://github.com/membraneframework/membrane_core).
