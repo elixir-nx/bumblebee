@@ -36,5 +36,6 @@
   "torchx": {:hex, :torchx, "0.9.0", "936cbd32233f89d73700c39b7ef56f94b3f3541db03c90f8ddf6b3fe73260e28", [:mix], [{:nx, "~> 0.9.0", [hex: :nx, repo: "hexpm", optional: false]}], "hexpm", "4e057d6b93fc91191957230b2c61c408861b888abdf6a900baf0db4125405505"},
   "unpickler": {:hex, :unpickler, "0.1.0", "c2262c0819e6985b761e7107546cef96a485f401816be5304a65fdd200d5bd6a", [:mix], [], "hexpm", "e2b3f61e62406187ac52afead8a63bfb4e49394028993f3c4c42712743cab79e"},
   "unzip": {:hex, :unzip, "0.12.0", "beed92238724732418b41eba77dcb7f51e235b707406c05b1732a3052d1c0f36", [:mix], [], "hexpm", "95655b72db368e5a84951f0bed586ac053b55ee3815fd96062fce10ce4fc998d"},
+  "xav": {:hex, :xav, "0.6.0", "38835d735fc3d620e41c84fe29cd7db0381436b54c9ef209ba9112255a091fc4", [:make, :mix], [{:elixir_make, "~> 0.7", [hex: :elixir_make, repo: "hexpm", optional: false]}, {:nx, "~> 0.7.0", [hex: :nx, repo: "hexpm", optional: true]}], "hexpm", "ad988df9d44c0ca3ccc4053ea0f1f1702ca14d4b926047b224deb527f0866edf"},
   "xla": {:hex, :xla, "0.8.0", "fef314d085dd3ee16a0816c095239938f80769150e15db16dfaa435553d7cb16", [:make, :mix], [{:elixir_make, "~> 0.4", [hex: :elixir_make, repo: "hexpm", optional: false]}], "hexpm", "739c61c8d93b97e12ba0369d10e76130224c208f1a76ad293e3581f056833e57"},
 }
