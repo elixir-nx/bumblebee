@@ -170,6 +170,8 @@ defmodule Bumblebee do
     "MistralModel" => {Bumblebee.Text.Mistral, :base},
     "MistralForCausalLM" => {Bumblebee.Text.Mistral, :for_causal_language_modeling},
     "MistralForSequenceClassification" => {Bumblebee.Text.Mistral, :for_sequence_classification},
+    "MPNetModel" => {Bumblebee.Text.MPNet, :base},
+    "MPNetForMaskedLM" => {Bumblebee.Text.MPNet, :for_masked_language_modeling},
     "PhiModel" => {Bumblebee.Text.Phi, :base},
     "PhiForCausalLM" => {Bumblebee.Text.Phi, :for_causal_language_modeling},
     "PhiForSequenceClassification" => {Bumblebee.Text.Phi, :for_sequence_classification},
