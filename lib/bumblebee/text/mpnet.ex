@@ -11,7 +11,7 @@ defmodule Bumblebee.Text.MpNet do
         """
       ],
       max_positions: [
-        default: 514,
+        default: 512,
         doc: """
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
         length that this model can process. Typically this is set to a large value just in case,
@@ -60,7 +60,7 @@ defmodule Bumblebee.Text.MpNet do
           "the dropout rate for the classification head. If not specified, the value of `:dropout_rate` is used instead"
       ],
       layer_norm_epsilon: [
-        default: 1.0e-05,
+        default: 1.0e-12,
         doc: "the epsilon used by the layer normalization layers"
       ],
       initializer_scale: [
