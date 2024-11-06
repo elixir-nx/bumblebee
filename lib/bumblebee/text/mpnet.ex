@@ -68,7 +68,7 @@ defmodule Bumblebee.Text.MpNet do
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
-    ] ++ Shared.common_options([:use_cross_attention, :num_labels, :id_to_label])
+    ] ++ Shared.common_options([:num_labels, :id_to_label])
 
   @moduledoc """
   MpNet model family.
@@ -112,7 +112,7 @@ defmodule Bumblebee.Text.MpNet do
 
   The `:for_causal_language_modeling` model is a decoder and accepts
   the following additional inputs: `"encoder_hidden_state"`,
-  `"encoder_attention_mask"`, `"cross_attention_head_mask"`, `"cache"`.
+  `"encoder_attention_mask"`, `"cache"`.
 
   ## Global layer options
 
@@ -219,7 +219,6 @@ defmodule Bumblebee.Text.MpNet do
       Bumblebee.Utils.Model.inputs_to_map([
         Axon.input("encoder_hidden_state", optional: true, shape: hidden_shape),
         Axon.input("encoder_attention_mask", optional: true, shape: shape),
-        Axon.input("cross_attention_head_mask", optional: true, shape: attention_head_mask_shape),
         Axon.input("cache", optional: true)
       ])
 
@@ -248,7 +247,6 @@ defmodule Bumblebee.Text.MpNet do
         inputs["attention_head_mask"],
         inputs["encoder_hidden_state"],
         inputs["encoder_attention_mask"],
-        inputs["cross_attention_head_mask"],
         inputs["cache"],
         spec,
         decoder?: decoder?,
@@ -262,7 +260,6 @@ defmodule Bumblebee.Text.MpNet do
       pooled_state: pooled_state,
       hidden_states: encoder_outputs.hidden_states,
       attentions: encoder_outputs.attentions,
-      cross_attentions: encoder_outputs.cross_attentions,
       cache: encoder_outputs.cache
     }
   end
@@ -309,15 +306,12 @@ defmodule Bumblebee.Text.MpNet do
          attention_head_mask,
          encoder_hidden_state,
          encoder_attention_mask,
-         cross_attention_head_mask,
          cache,
          spec,
          opts
        ) do
     name = opts[:name]
     decoder? = opts[:decoder?]
-
-    cross_attention? = decoder? and spec.use_cross_attention
 
     Layers.Transformer.blocks(
       hidden_state,
@@ -340,15 +334,7 @@ defmodule Bumblebee.Text.MpNet do
           activation: spec.activation
         ],
         name: join(name, "blocks")
-      ] ++
-        if(cross_attention?,
-          do: [
-            cross_hidden_state: encoder_hidden_state,
-            cross_attention_mask: encoder_attention_mask,
-            cross_attention_head_mask: cross_attention_head_mask
-          ],
-          else: []
-        )
+      ]
     )
   end
 
@@ -426,24 +412,14 @@ defmodule Bumblebee.Text.MpNet do
         "embedder.token_type_embedding" => "mpnet.embeddings.token_type_embeddings",
         "embedder.norm" => "mpnet.embeddings.LayerNorm",
         "encoder.blocks.{n}.self_attention.query" =>
-          "mpnet.encoder.layer.{n}.attention.self.query",
-        "encoder.blocks.{n}.self_attention.key" => "mpnet.encoder.layer.{n}.attention.self.key",
+          "mpnet.encoder.layer.{n}.attention.self.q",
+        "encoder.blocks.{n}.self_attention.key" => "mpnet.encoder.layer.{n}.attention.self.k",
         "encoder.blocks.{n}.self_attention.value" =>
-          "mpnet.encoder.layer.{n}.attention.self.value",
+          "mpnet.encoder.layer.{n}.attention.self.v",
         "encoder.blocks.{n}.self_attention.output" =>
           "mpnet.encoder.layer.{n}.attention.output.dense",
         "encoder.blocks.{n}.self_attention_norm" =>
           "mpnet.encoder.layer.{n}.attention.output.LayerNorm",
-        "encoder.blocks.{n}.cross_attention.query" =>
-          "mpnet.encoder.layer.{n}.crossattention.self.query",
-        "encoder.blocks.{n}.cross_attention.key" =>
-          "mpnet.encoder.layer.{n}.crossattention.self.key",
-        "encoder.blocks.{n}.cross_attention.value" =>
-          "mpnet.encoder.layer.{n}.crossattention.self.value",
-        "encoder.blocks.{n}.cross_attention.output" =>
-          "mpnet.encoder.layer.{n}.crossattention.output.dense",
-        "encoder.blocks.{n}.cross_attention_norm" =>
-          "mpnet.encoder.layer.{n}.crossattention.output.LayerNorm",
         "encoder.blocks.{n}.ffn.intermediate" => "mpnet.encoder.layer.{n}.intermediate.dense",
         "encoder.blocks.{n}.ffn.output" => "mpnet.encoder.layer.{n}.output.dense",
         "encoder.blocks.{n}.output_norm" => "mpnet.encoder.layer.{n}.output.LayerNorm",
