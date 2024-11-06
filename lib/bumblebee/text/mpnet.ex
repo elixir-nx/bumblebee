@@ -143,6 +143,10 @@ defmodule Bumblebee.Text.MpNet do
     do: [
       :base,
       :for_masked_language_modeling,
+      # :for_sequence_classification, # https://github.com/huggingface/transformers/blob/main/src/transformers/models/mpnet/modeling_mpnet.py
+      # :for_token_classification,
+      # :for_question_answering,
+      # :for_multiple_choice,
     ]
 
   @impl true
@@ -424,10 +428,10 @@ defmodule Bumblebee.Text.MpNet do
         "encoder.blocks.{n}.ffn.output" => "mpnet.encoder.layer.{n}.output.dense",
         "encoder.blocks.{n}.output_norm" => "mpnet.encoder.layer.{n}.output.LayerNorm",
         "pooler.output" => "mpnet.pooler.dense",
-        "language_modeling_head.dense" => "cls.predictions.transform.dense",
-        "language_modeling_head.norm" => "cls.predictions.transform.LayerNorm",
-        "language_modeling_head.output" => "cls.predictions.decoder",
-        "language_modeling_head.bias" => "cls.predictions"
+        "language_modeling_head.dense" => "lm_head.dense",
+        "language_modeling_head.norm" => "lm_head.layer_norm",
+        "language_modeling_head.output" => "lm_head.decoder",
+        "language_modeling_head.bias" => "lm_head.bias"
       }
     end
   end
