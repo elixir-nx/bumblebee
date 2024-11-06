@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.MPNetTest do
+defmodule Bumblebee.Text.MpNetTest do
   use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
@@ -7,9 +7,9 @@ defmodule Bumblebee.Text.MPNetTest do
 
   test ":base" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-MPNetModel"})
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-MpNetModel"})
 
-    assert %Bumblebee.Text.MPNet{architecture: :base} = spec
+    assert %Bumblebee.Text.MpNet{architecture: :base} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -18,21 +18,21 @@ defmodule Bumblebee.Text.MPNetTest do
 
     outputs = Axon.predict(model, params, inputs)
 
-    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 64}
 
     assert_all_close(
-      outputs.hidden_state[[.., 1..3, 1..3]],
+      outputs.hidden_state[[.., 1..4, 1..4]],
       Nx.tensor([
-        [[-0.2331, 1.7817, 1.1736], [-1.1001, 1.3922, -0.3391], [0.0408, 0.8677, -0.0779]]
+        [[0.0033, -0.2547,  0.4954], [-1.5348, -1.5433,  0.4846], [0.7795, -0.3995, -0.9499]]
       ])
     )
   end
 
   test ":for_masked_language_modeling" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-MPNetForMaskedLM"})
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-MpNetForMaskedLM"})
 
-    assert %Bumblebee.Text.MPNet{architecture: :for_masked_language_modeling} = spec
+    assert %Bumblebee.Text.MpNet{architecture: :for_masked_language_modeling} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),

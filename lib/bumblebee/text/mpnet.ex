@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.MPNet do
+defmodule Bumblebee.Text.MpNet do
   alias Bumblebee.Shared
 
   options =
@@ -71,13 +71,13 @@ defmodule Bumblebee.Text.MPNet do
     ] ++ Shared.common_options([:use_cross_attention, :num_labels, :id_to_label])
 
   @moduledoc """
-  MPNet model family.
+  MpNet model family.
 
   ## Architectures
 
-    * `:base` - plain MPNet without any head on top
+    * `:base` - plain MpNet without any head on top
 
-    * `:for_masked_language_modeling` - MPNet with a language modeling
+    * `:for_masked_language_modeling` - MpNet with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
@@ -124,7 +124,7 @@ defmodule Bumblebee.Text.MPNet do
 
   ## References
 
-    * [MPNet: MPNet: Masked and Permuted Pre-training for Language Understanding](https://arxiv.org/pdf/2004.09297)
+    * [MpNet: MpNet: Masked and Permuted Pre-training for Language Understanding](https://arxiv.org/pdf/2004.09297)
 
   """
 
