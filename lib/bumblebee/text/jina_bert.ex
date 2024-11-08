@@ -391,37 +391,34 @@ defmodule Bumblebee.Text.JinaBert do
         opts
       ) do
     name = opts[:name]
-    intermediate_size = spec.intermediate_size
-    activation = spec.activation
-    hidden_dropout_prob = spec.dropout_rate
-    hidden_size = spec.hidden_size
-    layer_norm_eps = spec.layer_norm_epsilon
 
     residual_connection = hidden_states
 
     hidden_states =
-      hidden_states
-      |> Axon.dense(intermediate_size * 2, use_bias: false, name: join(name, "gated_layers"))
+      Axon.dense(hidden_states, spec.intermediate_size * 2,
+        use_bias: false,
+        name: join(name, "gated_layers")
+      )
 
     gated =
       Axon.nx(hidden_states, fn hidden_states ->
-        hidden_states[[.., .., 0..(intermediate_size - 1)]]
+        hidden_states[[.., .., 0..(spec.intermediate_size - 1)]]
       end)
-      |> Axon.activation(activation)
+      |> Axon.activation(spec.activation)
 
     non_gated =
       Axon.nx(hidden_states, fn hidden_states ->
-        hidden_states[[.., .., intermediate_size..-1//1]]
+        hidden_states[[.., .., spec.intermediate_size..-1//1]]
       end)
 
     hidden_states =
       Axon.multiply(gated, non_gated)
-      |> Axon.dropout(rate: hidden_dropout_prob)
-      |> Axon.dense(hidden_size, name: join(name, "wo"))
+      |> Axon.dropout(rate: spec.dropout_rate)
+      |> Axon.dense(spec.hidden_size, name: join(name, "wo"))
 
     hidden_states
     |> Axon.add(residual_connection)
-    |> Axon.layer_norm(epsilon: layer_norm_eps, name: join(name, "layernorm"))
+    |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "layernorm"))
   end
 
   defp pooler(hidden_state, spec, opts) do
@@ -485,9 +482,7 @@ defmodule Bumblebee.Text.JinaBert do
         {hidden_state, cross_attention_info}
       end)
 
-    hidden_state =
-      hidden_state
-      |> steps.ffn.()
+    hidden_state = steps.ffn.(hidden_state)
 
     {hidden_state, attention_info, cross_attention_info}
   end
