@@ -151,7 +151,7 @@ Nx.Serving.run(serving, text)
 
 ## Text generation
 
-Generation is where things get even more exciting. In this section w will use the extremely popular [GPT-2](https://huggingface.co/gpt2) model to generate text continuation.
+Generation is where things get even more exciting. In this section we will use the extremely popular [GPT-2](https://huggingface.co/gpt2) model to generate text continuation.
 
 Generation generally is an iterative process, where the model predicts the sentence token by token, adhering to some constraints. Again, we will make use of a higher-level API based on `Nx.Serving`.
 
