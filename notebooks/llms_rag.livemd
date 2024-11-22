@@ -357,4 +357,4 @@ And here we have our answer!
 
 <!-- livebook:{"break_markdown":true} -->
 
-For additional context you can also visit the [Mistral docs](https://docs.mistral.ai/guides/basic-RAG) that go through a similar example.
+For additional context you can also visit the [Mistral docs](https://docs.mistral.ai/guides/rag/) that go through a similar example.
