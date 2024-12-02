@@ -306,19 +306,12 @@ defmodule Bumblebee.Text.Generation do
 
     output_policy = model_output_policy(model)
 
-    # TODO: fix Axon.MixedPrecision.cast/2 to not cast integers, to
-    # match Axon compiler
-
     # Cast all float cache tensors to match the model output. This way
     # we make sure the cache we pass as input has the same types as
     # the updated cache returned from the model
     cache =
       Bumblebee.Utils.Nx.map(cache, fn tensor ->
-        if Nx.Type.integer?(Nx.type(tensor)) do
-          tensor
-        else
-          Axon.MixedPrecision.cast(output_policy, tensor, :output)
-        end
+        Axon.MixedPrecision.cast(output_policy, tensor, :output)
       end)
 
     Map.put(inputs, "cache", cache)
