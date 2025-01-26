@@ -210,6 +210,14 @@ defmodule Bumblebee.Shared do
     end
   end
 
+  def validate_string_or_pairs(input) do
+    case input do
+      input when is_binary(input) -> {:ok, input}
+      {left, right} when is_binary(left) and is_binary(right) -> {:ok, input}
+      _other -> {:error, "expected a string or a pair of strings, got: #{inspect(input)}"}
+    end
+  end
+
   @doc """
   Validates that the input is a single value and not a batch.
   """

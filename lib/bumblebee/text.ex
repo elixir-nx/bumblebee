@@ -288,7 +288,7 @@ defmodule Bumblebee.Text do
   defdelegate translation(model_info, tokenizer, generation_config, opts \\ []),
     to: Bumblebee.Text.Translation
 
-  @type text_classification_input :: String.t()
+  @type text_classification_input :: String.t() | {String.t(), String.t()}
   @type text_classification_output :: %{predictions: list(text_classification_prediction())}
   @type text_classification_prediction :: %{score: number(), label: String.t()}
 

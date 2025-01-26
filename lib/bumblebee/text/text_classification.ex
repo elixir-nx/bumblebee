@@ -74,7 +74,7 @@ defmodule Bumblebee.Text.TextClassification do
     |> Nx.Serving.batch_size(batch_size)
     |> Nx.Serving.process_options(batch_keys: batch_keys)
     |> Nx.Serving.client_preprocessing(fn input ->
-      {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string/1)
+      {texts, multi?} = Shared.validate_serving_input!(input, &Shared.validate_string_or_pairs/1)
 
       inputs =
         Nx.with_default_backend(Nx.BinaryBackend, fn ->
