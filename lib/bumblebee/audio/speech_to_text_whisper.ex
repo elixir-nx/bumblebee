@@ -136,7 +136,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         {:ok, [Nx.backend_transfer(input, Nx.BinaryBackend)]}
 
       {:file, path} when is_binary(path) ->
-        ffmpeg_read_as_pcm(path, sampling_rate)
+        from_file(path, sampling_rate)
 
       other ->
         cond do
@@ -164,49 +164,93 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
     end
   end
 
-  defp ffmpeg_read_as_pcm(path, sampling_rate) do
-    channels = 1
+  if Code.ensure_loaded?(Xav) do
+    defp from_file(path, sampling_rate) do
+      # This chunk can be of arbitrary size, the serving accumulates
+      # and overlaps chunks internally as needed.
 
-    format =
-      case System.endianness() do
-        :little -> "f32le"
-        :big -> "f32be"
-      end
+      chunk_size = 30
+      chunk_samples = sampling_rate * chunk_size
 
-    cond do
-      System.find_executable("ffmpeg") == nil ->
-        {:error, "ffmpeg not found in PATH"}
-
-      not File.exists?(path) ->
-        {:error, "no file found at #{path}"}
-
-      true ->
-        # This chunk can be of arbitrary size, the serving accumulates
-        # and overlaps chunks internally as needed. We read the file
-        # as stream to reduce memory usage
-        chunk_size = 30
-
+      if File.exists?(path) do
         stream =
-          Stream.iterate(0, fn offset -> offset + chunk_size end)
-          |> Stream.transform({}, fn offset, acc ->
-            System.cmd(
-              "ffmpeg",
-              ~w[-ss #{offset} -t #{chunk_size} -i #{path} -ac #{channels} -ar #{sampling_rate} -f #{format} -hide_banner -loglevel quiet pipe:1]
-            )
-            |> case do
-              {<<>>, 0} ->
-                {:halt, acc}
+          path
+          |> Xav.Reader.stream!(
+            read: :audio,
+            out_format: :f32,
+            out_channels: 1,
+            out_sample_rate: sampling_rate
+          )
+          |> Stream.transform(
+            fn -> {<<>>, 0} end,
+            fn frame, {buffer, samples} ->
+              buffer = buffer <> frame.data
+              samples = samples + frame.samples
 
-              {data, 0} ->
-                chunk = Nx.from_binary(data, :f32, backend: Nx.BinaryBackend)
-                {[chunk], acc}
-
-              {_, 1} ->
-                raise "ffmpeg failed to decode the given file"
-            end
-          end)
+              if samples >= chunk_samples do
+                chunk = Nx.from_binary(buffer, :f32, backend: Nx.BinaryBackend)
+                {[chunk], {<<>>, 0}}
+              else
+                {[], {buffer, samples}}
+              end
+            end,
+            fn {buffer, _samples} ->
+              chunk = Nx.from_binary(buffer, :f32, backend: Nx.BinaryBackend)
+              {[chunk], {<<>>, 0}}
+            end,
+            fn _ -> :ok end
+          )
 
         {:ok, stream}
+      else
+        {:error, "no file found at #{path}"}
+      end
+    end
+  else
+    defp from_file(path, sampling_rate) do
+      channels = 1
+
+      format =
+        case System.endianness() do
+          :little -> "f32le"
+          :big -> "f32be"
+        end
+
+      cond do
+        System.find_executable("ffmpeg") == nil ->
+          {:error, "ffmpeg not found in PATH"}
+
+        not File.exists?(path) ->
+          {:error, "no file found at #{path}"}
+
+        true ->
+          # This chunk can be of arbitrary size, the serving accumulates
+          # # and overlaps chunks internally as needed. We read the file
+          # as stream to reduce memory usage
+          chunk_size = 30
+
+          stream =
+            Stream.iterate(0, fn offset -> offset + chunk_size end)
+            |> Stream.transform({}, fn offset, acc ->
+              System.cmd(
+                "ffmpeg",
+                ~w[-ss #{offset} -t #{chunk_size} -i #{path} -ac #{channels} -ar #{sampling_rate} -f #{format} -hide_banner -loglevel quiet pipe:1]
+              )
+              |> case do
+                {<<>>, 0} ->
+                  {:halt, acc}
+
+                {data, 0} ->
+                  chunk = Nx.from_binary(data, :f32, backend: Nx.BinaryBackend)
+                  {[chunk], acc}
+
+                {_, 1} ->
+                  raise "ffmpeg failed to decode the given file"
+              end
+            end)
+
+          {:ok, stream}
+      end
     end
   end
 

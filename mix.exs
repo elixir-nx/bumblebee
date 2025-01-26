@@ -34,7 +34,7 @@ defmodule Bumblebee.MixProject do
       {:axon, "~> 0.7.0"},
       # {:axon, github: "elixir-nx/axon", override: true},
       {:tokenizers, "~> 0.4"},
-      {:nx, "~> 0.9.0"},
+      {:nx, "~> 0.9.0", override: true},
       {:exla, ">= 0.0.0", only: [:dev, :test]},
       {:torchx, ">= 0.0.0", only: [:dev, :test]},
       # {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
@@ -49,7 +49,8 @@ defmodule Bumblebee.MixProject do
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
-      {:nx_signal, "~> 0.2.0"}
+      {:nx_signal, "~> 0.2.0"},
+      {:xav, "~> 0.6.0", optional: true}
     ]
   end
 
