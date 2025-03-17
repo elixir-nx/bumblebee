@@ -51,6 +51,10 @@ defmodule Bumblebee.Text.Phi3 do
         default: :gelu_approx_tanh,
         doc: "the activation function"
       ],
+      rotary_embedding_percentage: [
+        default: 1.0,
+        doc: "percentage of hidden dimensions to allocate to rotary embeddings"
+      ],
       rotary_embedding_base: [
         default: 10_000,
         doc: "base for computing rotary embedding frequency"
@@ -375,6 +379,7 @@ defmodule Bumblebee.Text.Phi3 do
         position_ids: position_ids,
         max_positions: spec.max_positions,
         base: spec.rotary_embedding_base,
+        percentage: spec.rotary_embedding_percentage,
         scaling_strategy: spec.rotary_embedding_scaling_strategy
       ],
       query_use_bias: false,
@@ -453,6 +458,7 @@ defmodule Bumblebee.Text.Phi3 do
           attention_window_size: {"sliding_window", optional(number())},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
+          rotary_embedding_percentage: {"partial_rotary_factor", number()},
           rotary_embedding_base: {"rope_theta", number()},
           rotary_embedding_scaling_strategy:
             {"rope_scaling", optional(scaling_strategy_converter)},
