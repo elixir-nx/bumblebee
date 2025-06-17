@@ -243,6 +243,7 @@ defmodule Bumblebee.Text.Generation do
       prepare_inputs_fun = fn inputs, params ->
         encoder_outputs = encoder_predict_fun.(params, inputs)
 
+        padded_batch_item? = padded_batch_item?(encoder_input(inputs))
         batch_size = Nx.axis_size(encoder_input(inputs), 0)
 
         inputs = Map.put(inputs, "encoder_hidden_state", encoder_outputs.hidden_state)
@@ -254,7 +255,7 @@ defmodule Bumblebee.Text.Generation do
 
         max_length = max_length_fun.(1)
         inputs = prepare_decoder_inputs(inputs, "decoder_", spec, model, max_length)
-        {inputs, inputs["decoder_input_ids"], max_length}
+        {inputs, inputs["decoder_input_ids"], padded_batch_item?, max_length}
       end
 
       update_inputs_fun = &update_decoder_inputs("decoder_", &1, &2, &3)
@@ -262,10 +263,11 @@ defmodule Bumblebee.Text.Generation do
       {prepare_inputs_fun, update_inputs_fun}
     else
       prepare_inputs_fun = fn inputs, _params ->
+        padded_batch_item? = padded_batch_item?(inputs["input_ids"])
         sequence_length = Nx.axis_size(inputs["input_ids"], 1)
         max_length = max_length_fun.(sequence_length)
         inputs = prepare_decoder_inputs(inputs, "", spec, model, max_length)
-        {inputs, inputs["input_ids"], max_length}
+        {inputs, inputs["input_ids"], padded_batch_item?, max_length}
       end
 
       update_inputs_fun = &update_decoder_inputs("", &1, &2, &3)
@@ -281,6 +283,13 @@ defmodule Bumblebee.Text.Generation do
 
   defp encoder_input(inputs) do
     inputs["input_ids"] || inputs["input_features"] || inputs["pixel_values"]
+  end
+
+  defp padded_batch_item?(input) do
+    [_ | non_batch_axes] = Nx.axes(input)
+    # We check each batch item if it is full of zeros, in which case
+    # case we assume it's padding, not an actual input.
+    input |> Nx.equal(0) |> Nx.all(axes: non_batch_axes)
   end
 
   defp prepare_decoder_inputs(inputs, prefix, spec, model, max_length) do
@@ -396,7 +405,8 @@ defmodule Bumblebee.Text.Generation do
         ) do
     {seed, inputs} = pop_seed(inputs)
 
-    {decoder_inputs, decoder_input_ids, max_length} = prepare_inputs_fun.(inputs, params)
+    {decoder_inputs, decoder_input_ids, padded_batch_item?, max_length} =
+      prepare_inputs_fun.(inputs, params)
 
     length = Nx.axis_size(decoder_input_ids, 1)
 
@@ -414,6 +424,7 @@ defmodule Bumblebee.Text.Generation do
           greedy(
             decoder_inputs,
             decoder_input_ids,
+            padded_batch_item?,
             predict_fun,
             params,
             logits_processor_fun,
@@ -425,6 +436,7 @@ defmodule Bumblebee.Text.Generation do
           contrastive(
             decoder_inputs,
             decoder_input_ids,
+            padded_batch_item?,
             predict_fun,
             params,
             logits_processor_fun,
@@ -440,6 +452,7 @@ defmodule Bumblebee.Text.Generation do
           sampling(
             decoder_inputs,
             decoder_input_ids,
+            padded_batch_item?,
             predict_fun,
             params,
             seed,
@@ -469,6 +482,7 @@ defmodule Bumblebee.Text.Generation do
   defnp greedy(
           inputs,
           decoder_input_ids,
+          padded_batch_item?,
           predict_fun,
           params,
           logits_processor_fun,
@@ -479,7 +493,7 @@ defmodule Bumblebee.Text.Generation do
     pad_token_id = opts[:pad_token_id]
     eos_token_id = opts[:eos_token_id]
 
-    state = init_sequences(decoder_input_ids, max_length, pad_token_id)
+    state = init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id)
 
     # The loop works with inputs of length 1, so if the initial input
     # is longer, we make the initial pass outside
@@ -519,15 +533,17 @@ defmodule Bumblebee.Text.Generation do
     state
   end
 
-  defnp init_sequences(decoder_input_ids, max_length, pad_token_id) do
+  defnp init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id) do
     {batch_size, length} = Nx.shape(decoder_input_ids)
 
     sequences = Nx.broadcast(pad_token_id, {batch_size, max_length})
     sequences = Nx.put_slice(sequences, [0, 0], decoder_input_ids)
 
     # For each sequence, we keep track of its final length, where 0
-    # means that it has not been finished yet
-    finished_length = Nx.broadcast(0, {batch_size})
+    # means that it has not been finished yet. If there are padding
+    # batch inputs, we immediately mark them as finished, otherwise
+    # they could produce arbitrary tokens until we reach max length.
+    finished_length = Nx.select(padded_batch_item?, 1, 0)
 
     %{
       sequences: sequences,
@@ -631,6 +647,7 @@ defmodule Bumblebee.Text.Generation do
   defnp contrastive(
           inputs,
           decoder_input_ids,
+          padded_batch_item?,
           predict_fun,
           params,
           logits_processor_fun,
@@ -644,7 +661,7 @@ defmodule Bumblebee.Text.Generation do
     top_k = opts[:top_k]
     penalty_alpha = opts[:penalty_alpha]
 
-    state = init_sequences(decoder_input_ids, max_length, pad_token_id)
+    state = init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id)
 
     # Step (1)
     # Initial pass to obtain hidden state and expand inputs to top-k
@@ -796,6 +813,7 @@ defmodule Bumblebee.Text.Generation do
   defnp sampling(
           inputs,
           decoder_input_ids,
+          padded_batch_item?,
           predict_fun,
           params,
           seed,
@@ -807,7 +825,7 @@ defmodule Bumblebee.Text.Generation do
     pad_token_id = opts[:pad_token_id]
     eos_token_id = opts[:eos_token_id]
 
-    state = init_sequences(decoder_input_ids, max_length, pad_token_id)
+    state = init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id)
 
     prng_key = seed |> Nx.vectorize(:batch) |> Nx.Random.key()
 
