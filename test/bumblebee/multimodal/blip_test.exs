@@ -25,7 +25,9 @@ defmodule Bumblebee.Multimodal.BlipTest do
 
     assert_all_close(
       outputs.logits[[.., 1..3, 1..3]],
-      Nx.tensor([[[0.1215, 0.0226, -0.1134], [0.1472, 0.1118, 0.1031], [-0.0687, 0.0104, 0.1781]]])
+      Nx.tensor([
+        [[0.1215, 0.0226, -0.1134], [0.1472, 0.1118, 0.1031], [-0.0687, 0.0104, 0.1781]]
+      ])
     )
   end
 end

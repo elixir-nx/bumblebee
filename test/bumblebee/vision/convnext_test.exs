@@ -22,7 +22,9 @@ defmodule Bumblebee.Vision.ConvNextTest do
 
     assert_all_close(
       outputs.hidden_state[[.., 1..2, 1..2, 1..2]],
-      Nx.tensor([[[[0.3924, -0.2330], [0.3924, -0.2330]], [[0.3924, -0.2330], [0.3924, -0.2330]]]])
+      Nx.tensor([
+        [[[0.3924, -0.2330], [0.3924, -0.2330]], [[0.3924, -0.2330], [0.3924, -0.2330]]]
+      ])
     )
 
     assert_all_close(

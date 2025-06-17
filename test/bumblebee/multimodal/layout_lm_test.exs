@@ -37,7 +37,9 @@ defmodule Bumblebee.Multimodal.LayoutLmTest do
 
     assert_all_close(
       outputs.hidden_state[[.., 1..3, 1..3]],
-      Nx.tensor([[[0.0240, -0.8855, 1.8877], [1.8435, 0.6223, 2.0573], [1.6961, -1.2411, 1.2824]]])
+      Nx.tensor([
+        [[0.0240, -0.8855, 1.8877], [1.8435, 0.6223, 2.0573], [1.6961, -1.2411, 1.2824]]
+      ])
     )
   end
 
