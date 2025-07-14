@@ -34,7 +34,7 @@ defmodule Bumblebee.MixProject do
       {:axon, "~> 0.7.0"},
       # {:axon, github: "elixir-nx/axon", override: true},
       {:tokenizers, "~> 0.4"},
-      {:nx, "~> 0.9.0"},
+      {:nx, "~> 0.9.0 or ~> 0.10.0"},
       {:exla, ">= 0.0.0", only: [:dev, :test]},
       {:torchx, ">= 0.0.0", only: [:dev, :test]},
       # {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
