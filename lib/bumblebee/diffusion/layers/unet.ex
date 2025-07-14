@@ -123,7 +123,8 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
               hidden_state
             end
 
-          {hidden_state, Tuple.append(output_states, {hidden_state, out_channels})}
+          {hidden_state,
+           Tuple.insert_at(output_states, tuple_size(output_states), {hidden_state, out_channels})}
       end
 
     if add_downsample do
@@ -133,7 +134,8 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
           name: join(name, "downsamples.0")
         )
 
-      {hidden_state, Tuple.append(output_states, {hidden_state, out_channels})}
+      {hidden_state,
+       Tuple.insert_at(output_states, tuple_size(output_states), {hidden_state, out_channels})}
     else
       {hidden_state, output_states}
     end

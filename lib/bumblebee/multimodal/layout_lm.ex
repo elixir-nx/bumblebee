@@ -272,7 +272,7 @@ defmodule Bumblebee.Multimodal.LayoutLm do
     shape = Keyword.get(opts, :shape, {nil, nil})
 
     attention_head_mask_shape = {spec.num_blocks, spec.num_attention_heads}
-    bounding_box_shape = Tuple.append(shape, 4)
+    bounding_box_shape = Tuple.insert_at(shape, tuple_size(shape), 4)
 
     Bumblebee.Utils.Model.inputs_to_map([
       Axon.input("input_ids", shape: shape),

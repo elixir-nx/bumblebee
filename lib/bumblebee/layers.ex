@@ -923,7 +923,13 @@ defmodule Bumblebee.Layers do
   Appends tuple element to the node result.
   """
   def append(%Axon{} = tuple, %Axon{} = x) do
-    Axon.layer(fn tuple, x, _ -> Tuple.append(tuple, x) end, [tuple, x], op_name: :append)
+    Axon.layer(
+      fn tuple, x, _ ->
+        Tuple.insert_at(tuple, tuple_size(tuple), x)
+      end,
+      [tuple, x],
+      op_name: :append
+    )
   end
 
   @doc """

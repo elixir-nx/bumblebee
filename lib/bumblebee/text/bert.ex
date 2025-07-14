@@ -398,7 +398,7 @@ defmodule Bumblebee.Text.Bert do
     shape = Keyword.get(opts, :shape, {nil, nil})
     decoder? = Keyword.get(opts, :decoder?, false)
 
-    hidden_shape = Tuple.append(shape, spec.hidden_size)
+    hidden_shape = Tuple.insert_at(shape, tuple_size(shape), spec.hidden_size)
     attention_head_mask_shape = {spec.num_blocks, spec.num_attention_heads}
 
     inputs =
