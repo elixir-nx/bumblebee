@@ -188,6 +188,7 @@ defmodule Bumblebee do
     "RobertaForTokenClassification" => {Bumblebee.Text.Roberta, :for_token_classification},
     "RobertaForCausalLM" => {Bumblebee.Text.Roberta, :for_causal_language_modeling},
     "RobertaModel" => {Bumblebee.Text.Roberta, :base},
+    "SmolLM3ForCausalLM" => {Bumblebee.Text.SmolLM3, :for_causal_language_modeling},
     "SwinModel" => {Bumblebee.Vision.Swin, :base},
     "SwinForImageClassification" => {Bumblebee.Vision.Swin, :for_image_classification},
     "T5Model" => {Bumblebee.Text.T5, :base},
