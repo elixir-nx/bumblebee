@@ -16,7 +16,6 @@ defmodule Bumblebee.Text.SmolLM3 do
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
         length that this model can process. Typically this is set to a large value just in case,
         such as 512, 1024 or 2048.
-        SmolLM3 supports up to 128k tokens with YaRN extrapolation.
         """
       ],
       hidden_size: [
@@ -65,8 +64,6 @@ defmodule Bumblebee.Text.SmolLM3 do
 
           * `%{type: :llama3, factor: number(), low_frequency_factor: number(), high_frequency_factor: number(), original_max_positions: pos_integer()}`
 
-          * `%{type: :yarn, factor: number(), original_max_positions: pos_integer()}`
-
         For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
         """
       ],
@@ -100,7 +97,7 @@ defmodule Bumblebee.Text.SmolLM3 do
 
     * Instruct model optimized for hybrid reasoning
     * Fully open model: open weights + full training details including public data mixture and training configs
-    * Long context: Trained on 64k context and supports up to 128k tokens using YARN extrapolation
+    * Long context: Trained on 64k context and supports up to 128k tokens using YARN extrapolation (not implemented in `bumblebee`)
     * Multilingual: 6 natively supported (English, French, Spanish, German, Italian, and Portuguese)
 
   For more details see: https://huggingface.co/HuggingFaceTB/SmolLM3-3B
@@ -517,20 +514,6 @@ defmodule Bumblebee.Text.SmolLM3 do
                factor: factor,
                low_frequency_factor: low_frequency_factor,
                high_frequency_factor: high_frequency_factor,
-               original_max_positions: original_max_positions
-             }}
-
-          # TODO: implement yarn or find out if it's same as longrope
-          %{
-            "rope_type" => "yarn",
-            "factor" => factor,
-            "original_max_position_embeddings" => original_max_positions
-          }
-          when is_number(factor) and is_number(original_max_positions) ->
-            {:ok,
-             %{
-               type: :yarn,
-               factor: factor,
                original_max_positions: original_max_positions
              }}
 

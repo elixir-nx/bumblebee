@@ -1307,26 +1307,6 @@ defmodule Bumblebee.Layers do
 
         positions_cos_sin(position, inv_frequency)
 
-      %{
-        type: :yarn,
-        factor: factor,
-        low_frequency_factor: low_frequency_factor,
-        high_frequency_factor: high_frequency_factor,
-        original_max_positions: original_max_positions
-      } ->
-        inv_frequency = inv_frequency(base, range)
-
-        inv_frequency =
-          llama3_inv_frequency(
-            inv_frequency,
-            factor,
-            low_frequency_factor,
-            high_frequency_factor,
-            original_max_positions
-          )
-
-        positions_cos_sin(position, inv_frequency)
-
       _other ->
         inv_frequency = inv_frequency(base, range)
         positions_cos_sin(position, inv_frequency)
