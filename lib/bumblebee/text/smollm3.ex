@@ -70,6 +70,11 @@ defmodule Bumblebee.Text.SmolLM3 do
         For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
         """
       ],
+      no_rope_layers: [
+        default: nil,
+        doc:
+          "a list containing 0 or 1 at the corresponding index for each layer. 0 means no rope layer, 1 means rope layer."
+      ],
       layer_norm_epsilon: [
         default: 1.0e-12,
         doc: "the epsilon used by RMS normalization layers"
@@ -397,7 +402,6 @@ defmodule Bumblebee.Text.SmolLM3 do
        ) do
     name = opts[:name]
 
-    # TODO: remove hardcoding of 4th layers, read from config
     rotary_embedding_config = [
       position_ids: position_ids,
       max_positions: spec.max_positions,
@@ -405,13 +409,20 @@ defmodule Bumblebee.Text.SmolLM3 do
       scaling_strategy: spec.rotary_embedding_scaling_strategy
     ]
 
-    nope_rotary_embedding = fn layer_idx ->
-      if rem(layer_idx + 1, 4) != 0 do
-        rotary_embedding_config
-      else
-        nil
+    nope_rotary_embedding =
+      case opts[:no_rope_layers] do
+        nil ->
+          rotary_embedding_config
+
+        no_rope_layers ->
+          fn layer_index ->
+            if Enum.at(no_rope_layers, layer_index) == 1 do
+              rotary_embedding_config
+            else
+              nil
+            end
+          end
       end
-    end
 
     Layers.Transformer.blocks(hidden_state,
       attention_mask: attention_mask,
@@ -573,11 +584,18 @@ defmodule Bumblebee.Text.SmolLM3 do
         "question_answering_head.output" => "qa_outputs"
       }
 
-      # TODO: remove hardcoding, read from config
       rotary_mapping =
-        for n <- 0..(spec.num_blocks - 1), rem(n + 1, 4) != 0 do
-          {"decoder.blocks.#{n}.self_attention.rotary_embedding",
-           "model.layers.#{n}.self_attn.rotary_emb"}
+        case spec.no_rope_layers do
+          nil ->
+            []
+
+          no_rope_layers ->
+            Enum.with_index(no_rope_layers, fn rope, index ->
+              if rope == 1 do
+                {"decoder.blocks.#{index}.self_attention.rotary_embedding",
+                 "model.layers.#{index}.self_attn.rotary_emb"}
+              end
+            end)
         end
 
       mapping = Map.merge(base_mapping, Map.new(rotary_mapping))
