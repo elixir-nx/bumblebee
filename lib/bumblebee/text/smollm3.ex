@@ -4,18 +4,19 @@ defmodule Bumblebee.Text.SmolLM3 do
   options =
     [
       vocab_size: [
-        default: 32000,
+        default: 128_256,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
         """
       ],
       max_positions: [
-        default: 1024,
+        default: 65536,
         doc: """
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
         length that this model can process. Typically this is set to a large value just in case,
-        such as 512, 1024 or 2048
+        such as 512, 1024 or 2048.
+        SmolLM3 supports up to 128k tokens with YaRN extrapolation.
         """
       ],
       hidden_size: [
@@ -42,7 +43,7 @@ defmodule Bumblebee.Text.SmolLM3 do
         doc: "the number of attention heads for each attention layer in the model"
       ],
       num_key_value_heads: [
-        default: nil,
+        default: 4,
         doc: "the number of key value heads for each attention layer in the model"
       ],
       activation: [
@@ -50,7 +51,7 @@ defmodule Bumblebee.Text.SmolLM3 do
         doc: "the activation function"
       ],
       rotary_embedding_base: [
-        default: 10_000,
+        default: 5_000_000,
         doc: "base for computing rotary embedding frequency"
       ],
       rotary_embedding_scaling_strategy: [
@@ -63,6 +64,8 @@ defmodule Bumblebee.Text.SmolLM3 do
           * `%{type: :dynamic, factor: number()}`
 
           * `%{type: :llama3, factor: number(), low_frequency_factor: number(), high_frequency_factor: number(), original_max_positions: pos_integer()}`
+
+          * `%{type: :yarn, factor: number(), original_max_positions: pos_integer()}`
 
         For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
         """
@@ -77,26 +80,44 @@ defmodule Bumblebee.Text.SmolLM3 do
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ],
       tie_word_embeddings: [
-        default: false,
+        default: true,
         doc: "whether to tie input and output embedding weights"
       ]
     ] ++
       Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
-  LLaMA model family.
+  SmolLM3 is a 3B parameter language model designed to push the boundaries of small models.
+  It supports dual mode reasoning, 6 languages and long context. SmolLM3 is a fully open model
+  that offers strong performance at the 3B–4B scale.
+
+  Key features
+
+    * Instruct model optimized for hybrid reasoning
+    * Fully open model: open weights + full training details including public data mixture and training configs
+    * Long context: Trained on 64k context and supports up to 128k tokens using YARN extrapolation
+    * Multilingual: 6 natively supported (English, French, Spanish, German, Italian, and Portuguese)
+
+  For more details see: https://huggingface.co/HuggingFaceTB/SmolLM3-3B
 
   ## Architectures
 
-    * `:base` - plain LLaMA without any head on top
+    * `:base` - plain SmolLM3 without any head on top
 
-    * `:for_causal_language_modeling` - LLaMA with a language modeling
+    * `:for_causal_language_modeling` - SmolLM3 with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - LLaMA with a sequence
+    * `:for_sequence_classification` - SmolLM3 with a sequence
       classification head. The head returns logits corresponding to
       possible classes
+
+    * `:for_token_classification` - SmolLM3 with a token classification
+      head. The head returns logits for each token in the original
+      sequence
+
+    * `:for_question_answering` - SmolLM3 with a span classification head.
+      The head returns logits for the span start and end positions
 
   ## Inputs
 
@@ -159,7 +180,9 @@ defmodule Bumblebee.Text.SmolLM3 do
     do: [
       :base,
       :for_causal_language_modeling,
-      :for_sequence_classification
+      :for_sequence_classification,
+      :for_token_classification,
+      :for_question_answering
     ]
 
   @impl true
@@ -253,6 +276,50 @@ defmodule Bumblebee.Text.SmolLM3 do
     })
   end
 
+  def model(%__MODULE__{architecture: :for_token_classification} = spec) do
+    inputs = inputs(spec)
+
+    outputs = core(inputs, spec)
+
+    logits =
+      outputs.hidden_state
+      |> Axon.dropout(
+        rate: 0.1,
+        name: "token_classification_head.dropout"
+      )
+      |> Axon.dense(spec.num_labels,
+        kernel_initializer: kernel_initializer(spec),
+        name: "token_classification_head.output"
+      )
+
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions,
+      cache: outputs.cache
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_question_answering} = spec) do
+    inputs = inputs(spec)
+    outputs = core(inputs, spec)
+
+    logits =
+      Axon.dense(outputs.hidden_state, 2,
+        kernel_initializer: kernel_initializer(spec),
+        name: "question_answering_head.output"
+      )
+
+    {start_logits, end_logits} = Layers.split_pair(logits)
+
+    Layers.output(%{
+      start_logits: start_logits,
+      end_logits: end_logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
+  end
+
   defp inputs(spec) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, spec.hidden_size}
@@ -330,6 +397,22 @@ defmodule Bumblebee.Text.SmolLM3 do
        ) do
     name = opts[:name]
 
+    # TODO: remove hardcoding of 4th layers, read from config
+    rotary_embedding_config = [
+      position_ids: position_ids,
+      max_positions: spec.max_positions,
+      base: spec.rotary_embedding_base,
+      scaling_strategy: spec.rotary_embedding_scaling_strategy
+    ]
+
+    nope_rotary_embedding = fn layer_idx ->
+      if rem(layer_idx + 1, 4) != 0 do
+        rotary_embedding_config
+      else
+        nil
+      end
+    end
+
     Layers.Transformer.blocks(hidden_state,
       attention_mask: attention_mask,
       attention_head_mask: attention_head_mask,
@@ -348,12 +431,7 @@ defmodule Bumblebee.Text.SmolLM3 do
         ),
       block_type: :norm_first,
       causal: true,
-      rotary_embedding: [
-        position_ids: position_ids,
-        max_positions: spec.max_positions,
-        base: spec.rotary_embedding_base,
-        scaling_strategy: spec.rotary_embedding_scaling_strategy
-      ],
+      rotary_embedding: nope_rotary_embedding,
       query_use_bias: false,
       key_use_bias: false,
       value_use_bias: false,
@@ -431,6 +509,20 @@ defmodule Bumblebee.Text.SmolLM3 do
                original_max_positions: original_max_positions
              }}
 
+          # TODO: implement yarn or find out if it's same as longrope
+          %{
+            "rope_type" => "yarn",
+            "factor" => factor,
+            "original_max_position_embeddings" => original_max_positions
+          }
+          when is_number(factor) and is_number(original_max_positions) ->
+            {:ok,
+             %{
+               type: :yarn,
+               factor: factor,
+               original_max_positions: original_max_positions
+             }}
+
           _other ->
             {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
         end
@@ -462,15 +554,13 @@ defmodule Bumblebee.Text.SmolLM3 do
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(spec) do
-      %{
+      base_mapping = %{
         "embedder.token_embedding" => "model.embed_tokens",
         "decoder.blocks.{n}.self_attention.query" => "model.layers.{n}.self_attn.q_proj",
         "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
         "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
         "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.o_proj",
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
-        "decoder.blocks.{n}.self_attention.rotary_embedding" =>
-          "model.layers.{n}.self_attn.rotary_emb",
         "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
         "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.up_proj",
         "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",
@@ -478,8 +568,41 @@ defmodule Bumblebee.Text.SmolLM3 do
         "output_norm" => "model.norm",
         "language_modeling_head.output" =>
           if(spec.tie_word_embeddings, do: "model.embed_tokens", else: "lm_head"),
-        "sequence_classification_head.output" => "score"
+        "sequence_classification_head.output" => "score",
+        "token_classification_head.output" => "score",
+        "question_answering_head.output" => "qa_outputs"
       }
+
+      # TODO: remove hardcoding, read from config
+      rotary_mapping =
+        for n <- 0..(spec.num_blocks - 1), rem(n + 1, 4) != 0 do
+          {"decoder.blocks.#{n}.self_attention.rotary_embedding",
+           "model.layers.#{n}.self_attn.rotary_emb"}
+        end
+
+      mapping = Map.merge(base_mapping, Map.new(rotary_mapping))
+
+      case spec do
+        %{architecture: :for_question_answering} ->
+          question_answering_mapping = %{
+            "output_norm" => "transformer.norm",
+            "embedder.token_embedding" => "transformer.embed_tokens",
+            "decoder.blocks.0.output_norm" => "transformer.layers.0.post_attention_layernorm",
+            "decoder.blocks.0.self_attention.key" => "transformer.layers.0.self_attn.k_proj",
+            "decoder.blocks.0.self_attention.query" => "transformer.layers.0.self_attn.q_proj",
+            "decoder.blocks.0.self_attention.value" => "transformer.layers.0.self_attn.v_proj",
+            "decoder.blocks.0.self_attention_norm" => "transformer.layers.0.input_layernorm",
+            "decoder.blocks.0.self_attention.output" => "transformer.layers.0.self_attn.o_proj",
+            "decoder.blocks.0.ffn.output" => "transformer.layers.0.mlp.down_proj",
+            "decoder.blocks.0.ffn.intermediate" => "transformer.layers.0.mlp.up_proj",
+            "decoder.blocks.0.ffn.gate" => "transformer.layers.0.mlp.gate_proj"
+          }
+
+          Map.merge(mapping, question_answering_mapping)
+
+        _else ->
+          mapping
+      end
     end
   end
 end

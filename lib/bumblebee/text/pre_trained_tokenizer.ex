@@ -211,6 +211,12 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
         mask: "<mask>"
       }
     },
+    smollm3: %{
+      special_tokens: %{
+        eos: "<|im_end|>",
+        pad: "<|im_end|>"
+      }
+    },
     t5: %{
       special_tokens: %{
         bos: "<s>",
