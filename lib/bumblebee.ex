@@ -181,6 +181,7 @@ defmodule Bumblebee do
     "Qwen3Model" => {Bumblebee.Text.Qwen3, :base},
     "Qwen3ForCausalLM" => {Bumblebee.Text.Qwen3, :for_causal_language_modeling},
     "Qwen3ForSequenceClassification" => {Bumblebee.Text.Qwen3, :for_sequence_classification},
+    "Qwen3ForEmbedding" => {Bumblebee.Text.Qwen3, :for_embedding},
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
     "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
     "RobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},

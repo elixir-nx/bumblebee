@@ -14,53 +14,26 @@ Mix.install([
 
 Application.put_env(:nx, :default_backend, EXLA.Backend)
 
-# Load embedding model
-{:ok, model_info} = Bumblebee.load_model({:hf, "Qwen/Qwen3-Embedding-0.6B"})
-{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Qwen/Qwen3-Embedding-0.6B"})
-
-# For Qwen3-Embedding, we need to manually create the serving since we need
-# to extract the last hidden state from the tuple and then pool the last token
-
-# Build the model with output_hidden_states enabled
-{_init_fn, encoder} =
-  Axon.build(model_info.model,
-    mode: :inference,
-    global_layer_options: [output_hidden_states: true]
+# Load embedding model with :for_embedding architecture
+{:ok, model_info} =
+  Bumblebee.load_model({:hf, "Qwen/Qwen3-Embedding-0.6B"},
+    architecture: :for_embedding
   )
 
-# Create custom embedding function
-embedding_fun = fn params, inputs ->
-  # Run the model
-  output = encoder.(params, inputs)
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Qwen/Qwen3-Embedding-0.6B"})
 
-  # Extract the last layer's hidden states
-  # hidden_states is a tuple of all layers, we want the last one
-  last_hidden_state =
-    if is_tuple(output.hidden_states) do
-      output.hidden_states |> Tuple.to_list() |> List.last()
-    else
-      raise "Model must output hidden_states for embeddings"
-    end
+# Create text embedding serving
+# The :for_embedding architecture automatically pools the last token
+serving =
+  Bumblebee.Text.text_embedding(model_info, tokenizer,
+    output_attribute: :embedding,
+    embedding_processor: :l2_norm
+  )
 
-  # Pool the last token (last non-padding token in the sequence)
-  sequence_lengths =
-    inputs["attention_mask"]
-    |> Nx.sum(axes: [1])
-    |> Nx.subtract(1)
-    |> Nx.as_type({:s, 64})
-
-  embedding = Bumblebee.Utils.Nx.batched_take(last_hidden_state, sequence_lengths)
-
-  # Squeeze batch dimension and L2 normalize
-  embedding
-  |> Nx.squeeze(axes: [0])
-  |> Bumblebee.Utils.Nx.normalize()
-end
-
-# Helper function to generate embeddings for text
+# Helper function
 generate_embedding = fn text ->
-  inputs = Bumblebee.apply_tokenizer(tokenizer, text)
-  embedding_fun.(model_info.params, inputs)
+  result = Nx.Serving.run(serving, text)
+  result.embedding
 end
 
 # Example 1: Simple text embeddings

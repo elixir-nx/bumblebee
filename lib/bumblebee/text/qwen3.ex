@@ -161,7 +161,8 @@ defmodule Bumblebee.Text.Qwen3 do
     do: [
       :base,
       :for_causal_language_modeling,
-      :for_sequence_classification
+      :for_sequence_classification,
+      :for_embedding
     ]
 
   @impl true
@@ -252,6 +253,38 @@ defmodule Bumblebee.Text.Qwen3 do
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions,
       cache: outputs.cache
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_embedding} = spec) do
+    inputs = inputs(spec)
+
+    outputs = core(inputs, spec)
+
+    # Pool the last token (last non-padding token) for embeddings
+    pooled_state =
+      Layers.if_present inputs["input_ids"] do
+        Axon.layer(
+          fn hidden_state, input_ids, _opts ->
+            indices =
+              input_ids
+              |> Nx.not_equal(spec.pad_token_id)
+              |> Nx.sum(axes: [-1])
+              |> Nx.subtract(1)
+              |> Nx.as_type({:s, 64})
+
+            Bumblebee.Utils.Nx.batched_take(hidden_state, indices)
+          end,
+          [outputs.hidden_state, inputs["input_ids"]]
+        )
+      else
+        Layers.take_token(outputs.hidden_state, axis: 1, index: -1)
+      end
+
+    Layers.output(%{
+      embedding: pooled_state,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
     })
   end
 
