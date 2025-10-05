@@ -2,62 +2,56 @@
 
 This directory contains example scripts demonstrating how to use Bumblebee models.
 
-## Qwen3 Text Generation
+## Qwen3 Examples
 
-### Basic Usage
+See the `qwen3/` subdirectory for comprehensive Qwen3 model examples:
 
+### Text Generation
 ```bash
-elixir examples/qwen3_text_generation.exs
+elixir examples/qwen3/qwen3.exs
 ```
 
-This example demonstrates:
-- Loading Qwen3-4B-Instruct model
+### Text Embeddings
+```bash
+elixir examples/qwen3/qwen3_embedding.exs
+elixir examples/qwen3/qwen3_embedding_prompts.exs
+```
+
+### Document Reranking
+```bash
+elixir examples/qwen3/qwen3_reranker.exs
+```
+
+### Features Demonstrated
+
+**Text Generation** (`qwen3.exs`):
 - Text completion
 - Question answering
-- Story generation
-- Chat format (Instruct model)
+- Chat format
 - Code generation
+
+**Embeddings** (`qwen3_embedding.exs`, `qwen3_embedding_prompts.exs`):
+- 1024-dimensional text embeddings
+- Semantic similarity computation
+- Instruction-aware prompts (recommended by Qwen team)
+- Multilingual support
+- Code search
+
+**Reranking** (`qwen3_reranker.exs`):
+- Query-document relevance scoring
+- Custom task instructions
+- Top-k result selection
 
 ### Requirements
 
-- **Disk space**: ~8GB for model weights (downloaded once and cached)
-- **Memory**: ~10GB RAM for inference
+- **Text Generation**: ~8GB disk space, ~10GB RAM
+- **Embeddings**: ~1.5GB disk space, ~4GB RAM (0.6B model)
+- **Reranking**: ~1.5GB disk space, ~4GB RAM (0.6B model)
 - **Backend**: EXLA (CPU or GPU)
 
-### Example Output
+### Documentation
 
-```
-=== Example 1: Text Completion ===
-The future of artificial intelligence is being shaped by the development
-of more advanced models that can understand and generate human-like language...
-
-=== Example 2: Question Answering ===
-What are the benefits of functional programming? The main benefits are
-immutability, composability, and easier testing...
-```
-
-### Customization
-
-Edit the script to:
-- Change `max_new_tokens` for longer/shorter output
-- Adjust `temperature` (0.0-1.0) for more deterministic/creative output
-- Modify `top_k` and `top_p` for sampling behavior
-- Use different prompts
-
-### Other Models
-
-To use different Qwen3 model sizes, change the model name:
-
-```elixir
-# Smaller (faster)
-{:ok, model_info} = Bumblebee.load_model({:hf, "Qwen/Qwen3-0.6B"})
-
-# Balanced (recommended)
-{:ok, model_info} = Bumblebee.load_model({:hf, "Qwen/Qwen3-4B-Instruct-2507"})
-
-# Larger (better quality)
-{:ok, model_info} = Bumblebee.load_model({:hf, "Qwen/Qwen3-8B"})
-```
+See `examples/qwen3/QWEN3_IEX_GUIDE.md` for interactive IEx usage examples.
 
 ## Phoenix Examples
 
