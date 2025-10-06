@@ -257,7 +257,7 @@ defmodule Bumblebee do
     "mbart" => :mbart,
     "phi" => :code_gen,
     "phi3" => :llama,
-    "qwen3" => :gpt2,
+    "qwen3" => :qwen2,
     "roberta" => :roberta,
     "t5" => :t5,
     "whisper" => :whisper,
