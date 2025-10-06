@@ -399,7 +399,7 @@ defmodule Bumblebee.Text.Qwen3 do
       ],
       query_norm: query_norm,
       key_norm: key_norm,
-      name: name
+      name: join(name, "blocks")
     )
   end
 
