@@ -365,267 +365,42 @@ defmodule Bumblebee.Text.Qwen3 do
        ) do
     name = opts[:name]
 
-    # For Qwen3, we need custom attention with QK normalization
-    # We'll use a custom block implementation instead of Layers.Transformer.blocks
-    {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
-    offset = Layers.Decoder.get_cache_offset(cache)
+    # Build query and key normalization configuration for Qwen3
+    query_norm = if spec.use_qk_norm, do: [epsilon: spec.layer_norm_epsilon], else: nil
+    key_norm = if spec.use_qk_norm, do: [epsilon: spec.layer_norm_epsilon], else: nil
 
-    state = %{
-      hidden_state: hidden_state,
-      hidden_states: Axon.container({hidden_state}),
-      attentions: Axon.container({}),
-      cache: cache
-    }
-
-    outputs =
-      for idx <- 0..(spec.num_blocks - 1), reduce: state do
-        state ->
-          block_name = join(name, "blocks.#{idx}")
-
-          block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
-
-          block_attention_head_mask =
-            Layers.if_present attention_head_mask do
-              Axon.nx(attention_head_mask, & &1[idx])
-            else
-              Layers.none()
-            end
-
-          block_output =
-            qwen3_decoder_block(
-              state.hidden_state,
-              position_ids,
-              attention_mask,
-              block_attention_head_mask,
-              block_cache,
-              offset,
-              spec,
-              name: block_name
-            )
-
-          cache = Layers.Decoder.put_block_cache(state.cache, idx, block_output.cache)
-
-          %{
-            hidden_state: block_output.hidden_state,
-            hidden_states: Layers.append(state.hidden_states, block_output.hidden_state),
-            attentions: Layers.append(state.attentions, block_output.attention_weights),
-            cache: cache
-          }
-      end
-
-    outputs =
-      update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, outputs.hidden_state))
-
-    %{
-      hidden_state: outputs.hidden_state,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions,
-      cache: outputs.cache
-    }
-  end
-
-  defp qwen3_decoder_block(
-         hidden_state,
-         position_ids,
-         attention_mask,
-         attention_head_mask,
-         block_cache,
-         offset,
-         spec,
-         opts
-       ) do
-    name = opts[:name]
-
-    # Extract self-attention cache from block cache
-    {self_attention_cache, _cross_attention_cache} =
-      Layers.Decoder.get_attention_caches(block_cache)
-
-    # Pre-normalization
-    normalized_hidden_state =
-      Layers.rms_norm(hidden_state,
-        name: join(name, "self_attention_norm"),
-        epsilon: spec.layer_norm_epsilon
-      )
-
-    # Self-attention with QK normalization
-    attention_output =
-      qwen3_attention(
-        normalized_hidden_state,
-        position_ids,
-        attention_mask,
-        attention_head_mask,
-        self_attention_cache,
-        offset,
-        spec,
-        name: join(name, "self_attention")
-      )
-
-    # Residual connection
-    hidden_state = Axon.add(hidden_state, attention_output.hidden_state)
-
-    # FFN pre-normalization
-    normalized_hidden_state =
-      Layers.rms_norm(hidden_state,
-        name: join(name, "output_norm"),
-        epsilon: spec.layer_norm_epsilon
-      )
-
-    # Feed-forward network
-    ffn_output =
-      gated_ffn(normalized_hidden_state, spec.intermediate_size, spec.hidden_size,
-        name: join(name, "ffn"),
+    # Use the generalized Layers.Transformer.blocks with QK normalization
+    Layers.Transformer.blocks(hidden_state,
+      num_blocks: spec.num_blocks,
+      num_attention_heads: spec.num_attention_heads,
+      num_key_value_heads: spec.num_key_value_heads,
+      hidden_size: spec.hidden_size,
+      attention_head_size: spec.attention_head_size,
+      kernel_initializer: kernel_initializer(spec),
+      query_use_bias: false,
+      key_use_bias: false,
+      value_use_bias: false,
+      output_use_bias: false,
+      block_type: :norm_first,
+      attention_mask: attention_mask,
+      attention_head_mask: attention_head_mask,
+      cache: cache,
+      causal: true,
+      layer_norm: &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, name: &2),
+      ffn: &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
+        name: &2,
         activation: spec.activation
-      )
-
-    # Residual connection
-    hidden_state = Axon.add(hidden_state, ffn_output)
-
-    # Build block cache with self-attention cache
-    updated_block_cache =
-      Layers.Decoder.put_attention_caches(
-        block_cache,
-        attention_output.cache,
-        Layers.none()
-      )
-
-    %{
-      hidden_state: hidden_state,
-      attention_weights: attention_output.attention_weights,
-      cache: updated_block_cache
-    }
-  end
-
-  defp qwen3_attention(
-         hidden_state,
-         position_ids,
-         attention_mask,
-         attention_head_mask,
-         cache,
-         offset,
-         spec,
-         opts
-       ) do
-    name = opts[:name]
-
-    num_heads = spec.num_attention_heads
-    num_key_value_heads = spec.num_key_value_heads
-    attention_head_size = spec.attention_head_size
-    hidden_size = spec.hidden_size
-
-    inner_size = num_heads * attention_head_size
-    inner_kv_size = num_key_value_heads * attention_head_size
-
-    # Query, Key, Value projections
-    query =
-      hidden_state
-      |> Axon.dense(inner_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "query"),
-        use_bias: false
-      )
-      |> Layers.split_heads(num_heads)
-
-    key =
-      hidden_state
-      |> Axon.dense(inner_kv_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "key"),
-        use_bias: false
-      )
-      |> Layers.split_heads(num_key_value_heads)
-
-    value =
-      hidden_state
-      |> Axon.dense(inner_kv_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "value"),
-        use_bias: false
-      )
-      |> Layers.split_heads(num_key_value_heads)
-
-    # QK Normalization (Qwen3-specific) - normalize over head_dim
-    query =
-      if spec.use_qk_norm do
-        Layers.rms_norm(query,
-          name: join(name, "query_norm"),
-          epsilon: spec.layer_norm_epsilon,
-          channel_index: -1
-        )
-      else
-        query
-      end
-
-    key =
-      if spec.use_qk_norm do
-        Layers.rms_norm(key,
-          name: join(name, "key_norm"),
-          epsilon: spec.layer_norm_epsilon,
-          channel_index: -1
-        )
-      else
-        key
-      end
-
-    # Apply rotary embeddings
-    {query, key} =
-      Layers.rotary_embedding(
-        query,
-        key,
-        position_ids,
-        attention_mask,
-        attention_head_size,
-        name: join(name, "rotary_embedding"),
+      ),
+      rotary_embedding: [
+        position_ids: position_ids,
         max_positions: spec.max_positions,
         base: spec.rotary_embedding_base,
         scaling_strategy: spec.rotary_embedding_scaling_strategy
-      )
-
-    # Repeat key-value for grouped query attention AFTER rotary embedding
-    num_key_value_groups = div(num_heads, num_key_value_heads)
-    key = repeat_states(key, num_key_value_groups)
-    value = repeat_states(value, num_key_value_groups)
-
-    # Cache key and value
-    {key, value, cache} =
-      Layers.Decoder.cached_attention_key_values(key, value, cache, offset)
-
-    # Compute attention
-    {attention_output, attention_weights} =
-      Layers.attention(
-        query,
-        key,
-        value,
-        attention_mask,
-        attention_head_mask,
-        Layers.none(),
-        offset,
-        scale: 1 / :math.sqrt(attention_head_size),
-        causal: true
-      )
-
-    # Merge heads and output projection
-    attention_output =
-      attention_output
-      |> Layers.flatten_trailing()
-      |> Axon.dense(hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "output"),
-        use_bias: false
-      )
-
-    %{
-      hidden_state: attention_output,
-      attention_weights: attention_weights,
-      cache: cache
-    }
-  end
-
-  defp repeat_states(state, n) when n == 1, do: state
-
-  defp repeat_states(state, n) do
-    # state shape: {batch, seq, num_kv_heads, head_size}
-    # Repeat along axis 2 (the heads axis) - same as Layers.Transformer
-    Layers.repeat_interleave(state, n, axis: 2)
+      ],
+      query_norm: query_norm,
+      key_norm: key_norm,
+      name: name
+    )
   end
 
   defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do

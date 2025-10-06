@@ -50,7 +50,9 @@ defmodule Bumblebee.Layers.Transformer do
       :block_type,
       :attention_window_size,
       :scale_attention_weights,
-      :rotary_embedding
+      :rotary_embedding,
+      :query_norm,
+      :key_norm
     ]
 
     opts =
@@ -317,7 +319,9 @@ defmodule Bumblebee.Layers.Transformer do
         layer_norm: [],
         attention_window_size: nil,
         scale_attention_weights: true,
-        rotary_embedding: nil
+        rotary_embedding: nil,
+        query_norm: nil,
+        key_norm: nil
       ])
 
     name = opts[:name]
@@ -347,6 +351,8 @@ defmodule Bumblebee.Layers.Transformer do
     attention_window_size = opts[:attention_window_size]
     scale_attention_weights = opts[:scale_attention_weights]
     rotary_embedding = opts[:rotary_embedding]
+    query_norm = opts[:query_norm]
+    key_norm = opts[:key_norm]
 
     ffn_fun =
       case ffn do
@@ -405,6 +411,8 @@ defmodule Bumblebee.Layers.Transformer do
           attention_window_size: attention_window_size,
           scale_attention_weights: scale_attention_weights,
           rotary_embedding: rotary_embedding,
+          query_norm: query_norm,
+          key_norm: key_norm,
           name: join(name, "self_attention")
         )
 
@@ -690,6 +698,14 @@ defmodule Bumblebee.Layers.Transformer do
 
         * `:max_positions` - the maximum number of distinct positions
 
+    * `:query_norm` - configuration for query normalization. If set, normalizes
+      the query projection before rotary embedding. Configured with the same
+      options as `:layer_norm` in the block function. Defaults to `nil`
+
+    * `:key_norm` - configuration for key normalization. If set, normalizes
+      the key projection before rotary embedding. Configured with the same
+      options as `:layer_norm` in the block function. Defaults to `nil`
+
     * `:name` - the prefix for layer names
 
   ## References
@@ -721,7 +737,9 @@ defmodule Bumblebee.Layers.Transformer do
         key_use_bias: true,
         value_use_bias: true,
         output_use_bias: true,
-        rotary_embedding: nil
+        rotary_embedding: nil,
+        query_norm: nil,
+        key_norm: nil
       ])
 
     attention_mask = opts[:attention_mask]
@@ -739,6 +757,8 @@ defmodule Bumblebee.Layers.Transformer do
     scale_attention_weights = opts[:scale_attention_weights]
     dropout_rate = opts[:dropout_rate]
     rotary_embedding = opts[:rotary_embedding]
+    query_norm = opts[:query_norm]
+    key_norm = opts[:key_norm]
 
     query_use_bias = opts[:query_use_bias]
     key_use_bias = opts[:key_use_bias]
@@ -777,6 +797,35 @@ defmodule Bumblebee.Layers.Transformer do
         use_bias: value_use_bias
       )
       |> Layers.split_heads(num_key_value_heads)
+
+    # Apply query and key normalization if configured (before rotary embedding)
+    query =
+      case query_norm do
+        opts when is_list(opts) ->
+          opts = Keyword.validate!(opts, epsilon: 1.0e-5)
+          # Normalize over the head dimension (channel_index: -1)
+          Layers.rms_norm(query, [epsilon: opts[:epsilon], channel_index: -1, name: join(name, "query_norm")])
+
+        fun when is_function(fun) ->
+          fun.(query, join(name, "query_norm"))
+
+        nil ->
+          query
+      end
+
+    key =
+      case key_norm do
+        opts when is_list(opts) ->
+          opts = Keyword.validate!(opts, epsilon: 1.0e-5)
+          # Normalize over the head dimension (channel_index: -1)
+          Layers.rms_norm(key, [epsilon: opts[:epsilon], channel_index: -1, name: join(name, "key_norm")])
+
+        fun when is_function(fun) ->
+          fun.(key, join(name, "key_norm"))
+
+        nil ->
+          key
+      end
 
     {query, key} =
       case rotary_embedding do

@@ -200,6 +200,12 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
       },
       default_template_options: [language_token: "eng_Latn"]
     },
+    qwen2: %{
+      special_tokens: %{
+        eos: "<|im_end|>",
+        pad: "<|endoftext|>"
+      }
+    },
     roberta: %{
       special_tokens: %{
         bos: "<s>",

@@ -24,6 +24,3 @@ bumblebee-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
-
-# Lexical LSP
-/.lexical/
