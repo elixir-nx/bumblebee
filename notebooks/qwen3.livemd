@@ -100,21 +100,32 @@ serving =
 Kino.start_child({Nx.Serving, name: Qwen3Embedding, serving: serving})
 ```
 
-Test the embedding model with some example texts:
+Test the embedding model with some example texts. The Qwen3 embedding model uses an instruction format for better results:
 
 ```elixir
+query = "animals"
+
 texts = [
   "The quick brown fox jumps over the lazy dog",
   "A fast auburn canine leaps above an idle hound",
   "Python is a programming language"
 ]
 
-# Get embeddings for all texts
-embeddings =
+# Format texts with instruction prefix for Qwen3 embeddings
+# Format: "Instruct: Given a query, retrieve relevant documents\nQuery: {query}\n{text}"
+formatted_texts =
   texts
   |> Enum.map(fn text ->
-    %{embedding: embedding} = Nx.Serving.batched_run(Qwen3Embedding, text)
-    {text, embedding}
+    "Instruct: Given a query, retrieve relevant documents\nQuery: #{query}\n#{text}"
+  end)
+
+# Get embeddings for all texts
+embeddings =
+  formatted_texts
+  |> Enum.zip(texts)
+  |> Enum.map(fn {formatted_text, original_text} ->
+    %{embedding: embedding} = Nx.Serving.batched_run(Qwen3Embedding, formatted_text)
+    {original_text, embedding}
   end)
 
 # Calculate cosine similarity between first two texts (similar meaning)
