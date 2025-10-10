@@ -444,6 +444,48 @@ defmodule Bumblebee.Text do
   defdelegate text_embedding(model_info, tokenizer, opts \\ []),
     to: Bumblebee.Text.TextEmbedding
 
+  @type text_reranking_input :: {String.t(), String.t()} | [{String.t(), String.t()}]
+  @type text_reranking_output :: %{scores: text_reranking_score() | list(text_reranking_score())}
+  @type text_reranking_score :: %{score: number(), query: String.t(), document: String.t()}
+
+  @doc """
+  Builds a serving for text reranking.
+
+  The serving expects input in one of the following formats:
+
+    * `{query, document}` - a tuple with query and document text
+    * `[{query1, doc1}, {query2, doc2}, ...]` - a list of query-document pairs
+
+  ## Options
+
+  See `Bumblebee.Text.TextReranking.text_reranking/3` for available options.
+
+  ## Examples
+
+      {:ok, model_info} = Bumblebee.load_model({:hf, "Qwen/Qwen3-Reranker-0.6B"},
+        architecture: :for_reranker)
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Qwen/Qwen3-Reranker-0.6B"})
+
+      serving = Bumblebee.Text.text_reranking(model_info, tokenizer)
+
+      query = "What is the capital of France?"
+      documents = [
+        "Paris is the capital of France.",
+        "Berlin is the capital of Germany."
+      ]
+
+      pairs = Enum.map(documents, &{query, &1})
+      Nx.Serving.run(serving, pairs)
+
+  """
+  @spec text_reranking(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate text_reranking(model_info, tokenizer, opts \\ []),
+    to: Bumblebee.Text.TextReranking
+
   @type fill_mask_input :: String.t()
   @type fill_mask_output :: %{predictions: list(fill_mask_prediction())}
   @type fill_mask_prediction :: %{score: number(), token: String.t()}

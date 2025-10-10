@@ -160,12 +160,13 @@ Reranking models take a query and a list of candidate documents, then score how 
 ```elixir
 repo = {:hf, "Qwen/Qwen3-Reranker-0.6B"}
 
-{:ok, model_info} = Bumblebee.load_model(repo, type: :f32, backend: EXLA.Backend, architecture: :for_embedding)
+{:ok, model_info} =
+  Bumblebee.load_model(repo, type: :f32, backend: EXLA.Backend, architecture: :for_reranker)
+
 {:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
 
 serving =
-  Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer,
-    output_attribute: :embedding,
+  Bumblebee.Text.text_reranking(model_info, tokenizer,
     compile: [batch_size: 4, sequence_length: 512],
     defn_options: [compiler: EXLA]
   )
@@ -185,29 +186,19 @@ documents = [
   "My favorite color is blue and I enjoy long walks on the beach."
 ]
 
-# Create query-document pairs with instruction prefix
-# Qwen3 reranker expects the format: "Instruct: {query}\nQuery: {text}"
-pairs =
-  Enum.map(documents, fn doc ->
-    "Instruct: Given a query, retrieve relevant documents\nQuery: #{query}\n#{doc}"
-  end)
+# Create query-document pairs
+pairs = Enum.map(documents, fn doc -> {query, doc} end)
 
-# Get embeddings (which represent relevance scores)
+# Get relevance scores
+%{scores: results} = Nx.Serving.batched_run(Qwen3Reranker, pairs)
+
+# Sort by score descending
 results =
-  pairs
-  |> Enum.zip(documents)
-  |> Enum.map(fn {pair, doc} ->
-    %{embedding: embedding} = Nx.Serving.batched_run(Qwen3Reranker, pair)
-    # Take the first dimension as the relevance score
-    score =
-      embedding
-      |> Nx.to_flat_list()
-      |> List.first()
-      |> then(&Float.round(&1, 4))
-
-    {score, doc}
+  results
+  |> Enum.sort_by(& &1.score, :desc)
+  |> Enum.map(fn result ->
+    {Float.round(result.score, 4), result.document}
   end)
-  |> Enum.sort_by(fn {score, _doc} -> score end, :desc)
 
 IO.puts("Query: #{query}\n")
 IO.puts("Ranked documents by relevance:\n")
