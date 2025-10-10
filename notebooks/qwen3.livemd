@@ -85,13 +85,12 @@ Qwen3 embedding models convert text into dense vector representations, useful fo
 ```elixir
 repo = {:hf, "Qwen/Qwen3-Embedding-0.6B"}
 
-{:ok, model_info} = Bumblebee.load_model(repo, type: :f32, backend: EXLA.Backend)
+{:ok, model_info} = Bumblebee.load_model(repo, type: :f32, backend: EXLA.Backend, architecture: :for_embedding)
 {:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
 
 serving =
   Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer,
     output_attribute: :embedding,
-    output_pool: :last_token,
     embedding_processor: :l2_norm,
     compile: [batch_size: 2, sequence_length: 512],
     defn_options: [compiler: EXLA]
@@ -161,13 +160,12 @@ Reranking models take a query and a list of candidate documents, then score how 
 ```elixir
 repo = {:hf, "Qwen/Qwen3-Reranker-0.6B"}
 
-{:ok, model_info} = Bumblebee.load_model(repo, type: :f32, backend: EXLA.Backend)
+{:ok, model_info} = Bumblebee.load_model(repo, type: :f32, backend: EXLA.Backend, architecture: :for_embedding)
 {:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
 
 serving =
   Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer,
     output_attribute: :embedding,
-    output_pool: :last_token,
     compile: [batch_size: 4, sequence_length: 512],
     defn_options: [compiler: EXLA]
   )

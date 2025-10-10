@@ -261,21 +261,25 @@ defmodule Bumblebee.Text.Qwen3 do
 
     outputs = core(inputs, spec)
 
-    # Pool the last token (last non-padding token) for embeddings
+    # Pool the last token using attention mask
+    # For Qwen3 embeddings, we need to find the last attended token based on
+    # the attention mask, not the pad_token_id. The EOS token (which matches
+    # pad_token_id) is actually part of the sequence and should be attended.
     pooled_state =
-      Layers.if_present inputs["input_ids"] do
+      Layers.if_present inputs["attention_mask"] do
         Axon.layer(
-          fn hidden_state, input_ids, _opts ->
+          fn hidden_state, attention_mask, _opts ->
+            # Find the last token with attention_mask = 1 (last attended token)
+            # This matches the behavior of the reference implementation
             indices =
-              input_ids
-              |> Nx.not_equal(spec.pad_token_id)
+              attention_mask
               |> Nx.sum(axes: [-1])
               |> Nx.subtract(1)
               |> Nx.as_type({:s, 64})
 
             Bumblebee.Utils.Nx.batched_take(hidden_state, indices)
           end,
-          [outputs.hidden_state, inputs["input_ids"]]
+          [outputs.hidden_state, inputs["attention_mask"]]
         )
       else
         Layers.take_token(outputs.hidden_state, axis: 1, index: -1)
@@ -387,10 +391,11 @@ defmodule Bumblebee.Text.Qwen3 do
       cache: cache,
       causal: true,
       layer_norm: &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, name: &2),
-      ffn: &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
-        name: &2,
-        activation: spec.activation
-      ),
+      ffn:
+        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
+          name: &2,
+          activation: spec.activation
+        ),
       rotary_embedding: [
         position_ids: position_ids,
         max_positions: spec.max_positions,
