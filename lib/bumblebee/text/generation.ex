@@ -387,8 +387,12 @@ defmodule Bumblebee.Text.Generation do
         end ++ logits_processors
 
     fn logits, context ->
-      for processor <- processors, processor, reduce: logits do
-        logits -> processor.(logits, context)
+      for processor <- processors, processor, reduce: {logits, context} do
+        {logits, context} ->
+          case processor.(logits, context) do
+            {logits, new_context} -> {logits, new_context}
+            logits -> {logits, context}
+          end
       end
     end
   end
@@ -551,7 +555,8 @@ defmodule Bumblebee.Text.Generation do
       length: length,
       finished_length: finished_length,
       # The ignored return value that we attach all hooks to
-      ignored: Nx.broadcast(0, {batch_size})
+      ignored: Nx.broadcast(0, {batch_size}),
+      logits_processor_states: %{}
     }
   end
 
@@ -574,7 +579,7 @@ defmodule Bumblebee.Text.Generation do
     outputs = predict_fun.(params, inputs)
 
     logits = outputs.logits[[.., -1]]
-    logits = batch_process_logits(logits_processor_fun, logits, state)
+    {logits, state} = batch_process_logits(logits_processor_fun, logits, state)
     token_id = Nx.argmax(logits, axis: -1)
 
     state = update_sequences(state, token_id, pad_token_id, eos_token_id)
@@ -632,14 +637,24 @@ defmodule Bumblebee.Text.Generation do
   end
 
   defnp batch_process_logits(logits_processor_fun, logits, state) do
-    logits
-    |> Nx.vectorize(:batch)
-    |> logits_processor_fun.(%{
-      sequence: Nx.vectorize(state.sequences, :batch),
-      length: state.length,
-      input_length: state.input_length
-    })
-    |> Nx.devectorize(keep_names: false)
+    logits = Nx.vectorize(logits, :batch)
+
+    {logits, new_context} =
+      logits_processor_fun.(logits, %{
+        sequence: Nx.vectorize(state.sequences, :batch),
+        length: state.length,
+        input_length: state.input_length,
+        logits_processor_states: state.logits_processor_states
+      })
+
+    logits = Nx.devectorize(logits, keep_names: false)
+
+    logits_processor_states =
+      Nx.devectorize(new_context.logits_processor_states, keep_names: false)
+
+    sequences = Nx.devectorize(new_context.sequence, keep_names: false)
+
+    {logits, %{state | sequences: sequences, logits_processor_states: logits_processor_states}}
   end
 
   # Contrastive search
@@ -684,7 +699,7 @@ defmodule Bumblebee.Text.Generation do
     joint_hidden_state = Nx.put_slice(joint_hidden_state, [0, 0, 0], initial_hidden_state)
 
     logits = outputs.logits[[.., -1]]
-    logits = batch_process_logits(logits_processor_fun, logits, state)
+    {logits, state} = batch_process_logits(logits_processor_fun, logits, state)
     scores = Axon.Activations.softmax(logits, axis: -1)
     {top_k_scores, top_k_token_ids} = Nx.top_k(scores, k: top_k)
 
@@ -727,7 +742,7 @@ defmodule Bumblebee.Text.Generation do
 
         logits = outputs.logits[[.., -1]]
         logits = Utils.Nx.chunked_take(logits, top_k, selected_idx)
-        logits = batch_process_logits(logits_processor_fun, logits, state)
+        {logits, state} = batch_process_logits(logits_processor_fun, logits, state)
 
         scores = Axon.Activations.softmax(logits, axis: -1)
         {top_k_scores, top_k_token_ids} = Nx.top_k(scores, k: top_k)
@@ -888,7 +903,7 @@ defmodule Bumblebee.Text.Generation do
     outputs = predict_fun.(params, inputs)
 
     logits = outputs.logits[[.., -1]]
-    logits = batch_process_logits(logits_processor_fun, logits, state)
+    {logits, state} = batch_process_logits(logits_processor_fun, logits, state)
     scores = Axon.Activations.softmax(logits)
     token_id = batched_choice(key, scores)
 
