@@ -644,6 +644,7 @@ defmodule Bumblebee.Text.Generation do
         sequence: Nx.vectorize(state.sequences, :batch),
         length: state.length,
         input_length: state.input_length,
+        # logits_processor_state: Nx.vectorize(state.logits_processor_states, :batch)
         logits_processor_states: state.logits_processor_states
       })
 
