@@ -116,10 +116,14 @@ defmodule Bumblebee.Text.GenerationTest do
 
     assert %Bumblebee.Text.Gpt2{architecture: :for_causal_language_modeling} = spec
 
+    input_ids = Nx.tensor([[0, 0, 10, 20, 30, 40, 50, 60, 70, 80]])
+    attention_mask = Nx.tensor([[0, 0, 1, 1, 1, 1, 1, 1, 1, 1]])
+    seed = Nx.tensor([0])
+
     inputs = %{
-      "input_ids" => Nx.tensor([[0, 0, 10, 20, 30, 40, 50, 60, 70, 80]]),
-      "attention_mask" => Nx.tensor([[0, 0, 1, 1, 1, 1, 1, 1, 1, 1]]),
-      "seed" => Nx.tensor([0])
+      "input_ids" => Nx.Batch.concatenate([input_ids, input_ids]),
+      "attention_mask" => Nx.Batch.concatenate([attention_mask, attention_mask]),
+      "seed" => Nx.Batch.concatenate([seed, seed])
     }
 
     generation_config = Bumblebee.configure(generation_config, max_new_tokens: 3)
@@ -128,29 +132,39 @@ defmodule Bumblebee.Text.GenerationTest do
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
         logits_processors: [
           &Bumblebee.Text.GenerationTest.StatefulLogitsProcessing.stateful_processor(&1, &2,
-            initial_suppressed_id: 79
+            initial_suppressed_id: [78, 79]
           )
         ]
       )
 
     %{token_ids: token_ids} = generate.(params, inputs)
 
-    # result without logit processor: 80, 80
+    # result without logit processor: 80, 80, 80
 
-    # first token_id still 80 as we suppress token_id 79
+    # first entry in batch
+    # first token_id still 80 as we suppress token_id 78
     assert_equal(token_ids[[0, 0]], 80)
+    # second token_id still 80 as we suppress token_id 79
+    assert_equal(token_ids[[0, 1]], 80)
     # in the next step we increment from 79 to 80 and suppress token_id 80 
-    assert_equal(token_ids[[0, 1]], 176)
+    assert_equal(token_ids[[0, 2]], 1016)
+
+    # second entry in batch
+    # first token_id still 80 as we suppress token_id 79
+    assert_equal(token_ids[[1, 0]], 80)
+    # in the next step we increment from 79 to 80 and suppress token_id 80 
+    assert_equal(token_ids[[1, 1]], 176)
   end
 
   defmodule StatefulLogitsProcessing do
     import Nx.Defn
 
     deftransform stateful_processor(logits, context, opts \\ []) do
-      initial_suppressed_id = Nx.tensor([opts[:initial_suppressed_id]])
+      initial_suppressed_ids = Enum.map(opts[:initial_suppressed_id], &List.wrap(&1))
+      initial_suppressed_id = Nx.tensor(initial_suppressed_ids) |> Nx.vectorize(:batch)
 
       suppressed_id =
-        context.logits_processor_states[:next_suppressed_id] || initial_suppressed_id
+        context.logits_processor_state[:next_suppressed_id] || initial_suppressed_id
 
       logits = suppress_id(logits, suppressed_id)
 
@@ -159,7 +173,7 @@ defmodule Bumblebee.Text.GenerationTest do
       context =
         put_in(
           context,
-          [:logits_processor_states, :next_suppressed_id],
+          [:logits_processor_state, :next_suppressed_id],
           next_suppressed_id
         )
 
@@ -167,7 +181,11 @@ defmodule Bumblebee.Text.GenerationTest do
     end
 
     defnp suppress_id(logits, id) do
-      Nx.indexed_put(logits, id, Nx.Constants.neg_infinity(Nx.type(logits)))
+      Nx.indexed_put(
+        logits,
+        id,
+        Nx.Constants.neg_infinity(Nx.type(logits))
+      )
     end
   end
 end

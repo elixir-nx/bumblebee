@@ -644,14 +644,13 @@ defmodule Bumblebee.Text.Generation do
         sequence: Nx.vectorize(state.sequences, :batch),
         length: state.length,
         input_length: state.input_length,
-        # logits_processor_state: Nx.vectorize(state.logits_processor_states, :batch)
-        logits_processor_states: state.logits_processor_states
+        logits_processor_state: Nx.vectorize(state.logits_processor_states, :batch)
       })
 
     logits = Nx.devectorize(logits, keep_names: false)
 
     logits_processor_states =
-      Nx.devectorize(new_context.logits_processor_states, keep_names: false)
+      Nx.devectorize(new_context.logits_processor_state, keep_names: false)
 
     sequences = Nx.devectorize(new_context.sequence, keep_names: false)
 
