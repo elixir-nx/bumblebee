@@ -126,10 +126,11 @@ defmodule Bumblebee.Text.GenerationTest do
 
     generate =
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
-        logits_processors:
+        logits_processors: [
           &Bumblebee.Text.GenerationTest.StatefulLogitsProcessing.stateful_processor(&1, &2,
             initial_suppressed_index: 0
           )
+        ]
       )
 
     %{token_ids: token_ids} = generate.(params, inputs)
@@ -140,18 +141,15 @@ defmodule Bumblebee.Text.GenerationTest do
   defmodule StatefulLogitsProcessing do
     import Nx.Defn
 
-    deftransform stateful_processor(logits, context, opts) do
+    deftransform stateful_processor(logits, context, opts \\ []) do
       initial_suppressed_index = Nx.tensor([opts[:initial_suppressed_index]])
 
       suppressed_index =
         context.logits_processor_states[:next_suppressed_index] || initial_suppressed_index
 
-      values =
-        Nx.broadcast(Nx.Constants.neg_infinity(Nx.type(logits)), Nx.size(suppressed_index))
+      logits = suppress_index(logits, suppressed_index)
 
-      logits = Nx.indexed_put(logits, suppressed_index, values)
-
-      next_suppressed_index = Nx.add(suppressed_index, Nx.tensor([1]))
+      next_suppressed_index = Nx.add(suppressed_index, 1)
 
       context =
         put_in(
@@ -161,6 +159,10 @@ defmodule Bumblebee.Text.GenerationTest do
         )
 
       {logits, context}
+    end
+
+    defnp suppress_index(logits, index) do
+      Nx.indexed_put(logits, index, Nx.Constants.neg_infinity(Nx.type(logits)))
     end
   end
 end
