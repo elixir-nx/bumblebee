@@ -128,41 +128,46 @@ defmodule Bumblebee.Text.GenerationTest do
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
         logits_processors: [
           &Bumblebee.Text.GenerationTest.StatefulLogitsProcessing.stateful_processor(&1, &2,
-            initial_suppressed_index: 0
+            initial_suppressed_id: 79
           )
         ]
       )
 
     %{token_ids: token_ids} = generate.(params, inputs)
 
-    assert_equal(token_ids, Nx.tensor([[80, 80, 80]]))
+    # result without logit processor: 80, 80
+
+    # first token_id still 80 as we suppress token_id 79
+    assert_equal(token_ids[[0, 0]], 80)
+    # in the next step we increment from 79 to 80 and suppress token_id 80 
+    assert_equal(token_ids[[0, 1]], 176)
   end
 
   defmodule StatefulLogitsProcessing do
     import Nx.Defn
 
     deftransform stateful_processor(logits, context, opts \\ []) do
-      initial_suppressed_index = Nx.tensor([opts[:initial_suppressed_index]])
+      initial_suppressed_id = Nx.tensor([opts[:initial_suppressed_id]])
 
-      suppressed_index =
-        context.logits_processor_states[:next_suppressed_index] || initial_suppressed_index
+      suppressed_id =
+        context.logits_processor_states[:next_suppressed_id] || initial_suppressed_id
 
-      logits = suppress_index(logits, suppressed_index)
+      logits = suppress_id(logits, suppressed_id)
 
-      next_suppressed_index = Nx.add(suppressed_index, 1)
+      next_suppressed_id = Nx.add(suppressed_id, 1)
 
       context =
         put_in(
           context,
-          [:logits_processor_states, :next_suppressed_index],
-          next_suppressed_index
+          [:logits_processor_states, :next_suppressed_id],
+          next_suppressed_id
         )
 
       {logits, context}
     end
 
-    defnp suppress_index(logits, index) do
-      Nx.indexed_put(logits, index, Nx.Constants.neg_infinity(Nx.type(logits)))
+    defnp suppress_id(logits, id) do
+      Nx.indexed_put(logits, id, Nx.Constants.neg_infinity(Nx.type(logits)))
     end
   end
 end
