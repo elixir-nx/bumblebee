@@ -13,7 +13,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessingTest do
         initial_suppressed_token_index = Nx.tensor([opts[:initial_suppressed_token_index]])
 
         suppressed_index =
-          context.logits_processor_states[:next_suppressed_token_index] || initial_suppressed_token_index
+          context.logits_processor_state[:next_suppressed_token_index] || initial_suppressed_token_index
 
         values =
           Nx.broadcast(Nx.Constants.neg_infinity(Nx.type(logits)), Nx.size(suppressed_index))
@@ -25,7 +25,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessingTest do
         context =
           put_in(
             context,
-            [:logits_processor_states, :next_suppressed_token_index],
+            [:logits_processor_state, :next_suppressed_token_index],
             next_suppressed_token_index
           )
 
@@ -42,13 +42,13 @@ defmodule Bumblebee.Text.Generation.LogitsProcessingTest do
         StatefulLogitsProcessing.stateful_processor(logits, context, initial_suppressed_token_index: 0)
 
       assert_equal(logits, Nx.tensor([:neg_infinity, 2.0, 3.0, 4.0]))
-      assert_equal(context.logits_processor_states.next_suppressed_token_index, Nx.tensor([1]))
+      assert_equal(context.logits_processor_state.next_suppressed_token_index, Nx.tensor([1]))
 
       {logits, context} =
         StatefulLogitsProcessing.stateful_processor(logits, context, initial_suppressed_token_index: 0)
 
       assert_equal(logits, Nx.tensor([:neg_infinity, :neg_infinity, 3.0, 4.0]))
-      assert_equal(context.logits_processor_states.next_suppressed_token_index, Nx.tensor([2]))
+      assert_equal(context.logits_processor_state.next_suppressed_token_index, Nx.tensor([2]))
     end
   end
 
@@ -430,7 +430,7 @@ defmodule Bumblebee.Text.Generation.LogitsProcessingTest do
       sequence: Nx.tensor(sequence),
       length: Enum.count(sequence, &(&1 != 0)),
       input_length: 1,
-      logits_processor_states: %{}
+      logits_processor_state: %{}
     }
   end
 end
