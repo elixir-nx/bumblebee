@@ -140,7 +140,7 @@ defmodule Bumblebee.Text.GenerationTest do
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
         logits_processors: [
           &Bumblebee.Text.GenerationTest.StatefulLogitsProcessing.stateful_processor(&1, &2,
-            initial_suppressed_id: [79]
+            initial_suppressed_token_id: [79]
           )
         ]
       )
@@ -185,7 +185,7 @@ defmodule Bumblebee.Text.GenerationTest do
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
         logits_processors: [
           &Bumblebee.Text.GenerationTest.StatefulLogitsProcessing.stateful_processor(&1, &2,
-            initial_suppressed_id: [78, 79]
+            initial_suppressed_token_id: [78, 79]
           )
         ]
       )
@@ -213,21 +213,21 @@ defmodule Bumblebee.Text.GenerationTest do
     import Nx.Defn
 
     deftransform stateful_processor(logits, context, opts \\ []) do
-      initial_suppressed_ids = Enum.map(opts[:initial_suppressed_id], &List.wrap(&1))
-      initial_suppressed_id = Nx.tensor(initial_suppressed_ids) |> Nx.vectorize(:batch)
+      initial_suppressed_token_ids = Enum.map(opts[:initial_suppressed_token_id], &List.wrap(&1))
+      initial_suppressed_token_id = Nx.tensor(initial_suppressed_token_ids) |> Nx.vectorize(:batch)
 
       suppressed_id =
-        context.logits_processor_state[:next_suppressed_id] || initial_suppressed_id
+        context.logits_processor_state[:next_suppressed_token_id] || initial_suppressed_token_id
 
       logits = suppress_id(logits, suppressed_id)
 
-      next_suppressed_id = Nx.add(suppressed_id, 1)
+      next_suppressed_token_id = Nx.add(suppressed_id, 1)
 
       context =
         put_in(
           context,
-          [:logits_processor_state, :next_suppressed_id],
-          next_suppressed_id
+          [:logits_processor_state, :next_suppressed_token_id],
+          next_suppressed_token_id
         )
 
       {logits, context}
