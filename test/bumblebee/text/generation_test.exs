@@ -127,12 +127,15 @@ defmodule Bumblebee.Text.GenerationTest do
       "seed" => seed
     }
 
-    # in the first decoder test above we got 80, 80, 80 consistently.
-    # we use the stateful processor below
-    # it suppresses the given initial id on the first iteration, then increments
-    #the id to be suppressed on the following iterations.
-    # So it surpresses 79, 80, ... in the iterations, demonstrating the use
-    # of the state in a processor.
+    # We demonstrate the use of the state with the following example of a
+    # stateful processor (see below). On the first iteration, it suppresses the
+    # given initial ID, then increments the token ID to be suppressed on the
+    # following iterations. The ID of the token to be suppressed is passed on
+    # between iterations using the logits_processor_state.
+    #
+    # So invoked with the initial ID of 79, it suppresses 79, 80, 81, ... in
+    # the subsequent iterations, demonstrating the use of the state in a
+    # logits processor.
 
     generation_config = Bumblebee.configure(generation_config, max_new_tokens: 2)
 
@@ -145,9 +148,16 @@ defmodule Bumblebee.Text.GenerationTest do
         ]
       )
 
+    # The result without the logits processor would be, as with the first
+    # decoder test above: 80, 80, 80.
+    #
+    # Now, with the processor below, we expect no change (suppressed token ID is
+    # 79), then a change to another random token ID (176) as the suppressed
+    # token ID is incremented from 79 to 80, disallowing the previous most
+    # likely token ID (80) from being selected.
+
     %{token_ids: token_ids} = generate.(params, inputs)
 
-    # result without logit processor: 80, 80, 80
 
     # first token_id still 80 as we suppress token_id 79
     assert_equal(token_ids[[0,0]], 80)
