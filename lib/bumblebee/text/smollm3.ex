@@ -102,6 +102,9 @@ defmodule Bumblebee.Text.SmolLM3 do
     * Long context: Trained on 64k context and supports up to 128k tokens using YARN extrapolation (not implemented in `bumblebee`)
     * Multilingual: 6 natively supported (English, French, Spanish, German, Italian, and Portuguese)
 
+  For best results, follow the [chat template](https://huggingface.co/HuggingFaceTB/SmolLM3-3B/blob/main/chat_template.jinja).
+  To disable reasoning, append `<think>\\n\\n</think>` to the prompt.
+
   For more details see: https://huggingface.co/HuggingFaceTB/SmolLM3-3B
 
   ## Architectures
