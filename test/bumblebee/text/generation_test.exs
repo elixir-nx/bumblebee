@@ -121,6 +121,9 @@ defmodule Bumblebee.Text.GenerationTest do
     attention_mask = Nx.tensor([[0, 0, 1, 1, 1, 1, 1, 1, 1, 1]])
     seed = Nx.tensor([0])
 
+    #########################################################
+    # batch size of 1
+
     inputs = %{
       "input_ids" => input_ids,
       "attention_mask" => attention_mask,
@@ -160,20 +163,9 @@ defmodule Bumblebee.Text.GenerationTest do
 
     # in the next step we increment from 79 to 80 and enforce token_id 80
     assert_equal(token_ids[[0,1]], 80)
-  end
 
-  test "with stateful logits processor with batch size of 2" do
-    assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-GPT2LMHeadModel"})
-
-    {:ok, generation_config} =
-      Bumblebee.load_generation_config({:hf, "hf-internal-testing/tiny-random-GPT2LMHeadModel"})
-
-    assert %Bumblebee.Text.Gpt2{architecture: :for_causal_language_modeling} = spec
-
-    input_ids = Nx.tensor([[0, 0, 10, 20, 30, 40, 50, 60, 70, 80]])
-    attention_mask = Nx.tensor([[0, 0, 1, 1, 1, 1, 1, 1, 1, 1]])
-    seed = Nx.tensor([0])
+    #########################################################
+    # batch size of 2
 
     inputs = %{
       "input_ids" => Nx.Batch.concatenate([input_ids, input_ids]),
@@ -222,14 +214,11 @@ defmodule Bumblebee.Text.GenerationTest do
     import Nx.Defn
 
     deftransform stateful_processor(logits, context, opts \\ []) do
-      # initial_enforced_token_ids = opts[:initial_enforced_token_ids]
       initial_enforced_token_ids = Enum.map(opts[:initial_enforced_token_ids], &List.wrap(&1))
-      # Enum.map(opts[:initial_suppressed_token_id], &List.wrap(&1))
-      # pick the actual token id from the batch
-      initial_enforced_token_id = Nx.tensor(initial_enforced_token_ids) |> Nx.vectorize(:batch)
+      initial_enforced_batch_token_id = Nx.tensor(initial_enforced_token_ids) |> Nx.vectorize(:batch)
 
       enforced_token_id =
-        context.logits_processor_state[:next_enforced_token_id] || initial_enforced_token_id
+        context.logits_processor_state[:next_enforced_token_id] || initial_enforced_batch_token_id
 
       logits = enforce_token(logits, enforced_token_id)
 
