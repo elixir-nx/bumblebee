@@ -585,21 +585,9 @@ defmodule Bumblebee.Text.SmolLM3 do
 
       case spec do
         %{architecture: :for_question_answering} ->
-          question_answering_mapping = %{
-            "output_norm" => "transformer.norm",
-            "embedder.token_embedding" => "transformer.embed_tokens",
-            "decoder.blocks.0.output_norm" => "transformer.layers.0.post_attention_layernorm",
-            "decoder.blocks.0.self_attention.key" => "transformer.layers.0.self_attn.k_proj",
-            "decoder.blocks.0.self_attention.query" => "transformer.layers.0.self_attn.q_proj",
-            "decoder.blocks.0.self_attention.value" => "transformer.layers.0.self_attn.v_proj",
-            "decoder.blocks.0.self_attention_norm" => "transformer.layers.0.input_layernorm",
-            "decoder.blocks.0.self_attention.output" => "transformer.layers.0.self_attn.o_proj",
-            "decoder.blocks.0.ffn.output" => "transformer.layers.0.mlp.down_proj",
-            "decoder.blocks.0.ffn.intermediate" => "transformer.layers.0.mlp.up_proj",
-            "decoder.blocks.0.ffn.gate" => "transformer.layers.0.mlp.gate_proj"
-          }
-
-          Map.merge(mapping, question_answering_mapping)
+          for {key, value} <- mapping, into: %{} do
+            {key, String.replace_leading(value, "model.", "transformer.")}
+          end
 
         _else ->
           mapping
