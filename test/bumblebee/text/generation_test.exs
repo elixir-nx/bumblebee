@@ -128,12 +128,12 @@ defmodule Bumblebee.Text.GenerationTest do
     }
 
     # We demonstrate the use of the state with the following example of a
-    # stateful processor (see below). On the first iteration, it suppresses the
-    # given initial ID, then increments the token ID to be suppressed on the
-    # following iterations. The ID of the token to be suppressed is passed on
+    # stateful processor (see below). On the first iteration, it enforces the
+    # given initial ID, then increments the token ID to be enforced on the
+    # following iterations. The ID of the token to be enforced is passed on
     # between iterations using the logits_processor_state.
     #
-    # So invoked with the initial ID of 79, it suppresses 79, 80, 81, ... in
+    # So invoked with the initial ID of 79, it enforces 79, 80, 81, ... in
     # the subsequent iterations, demonstrating the use of the state in a
     # logits processor.
 
@@ -143,28 +143,23 @@ defmodule Bumblebee.Text.GenerationTest do
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
         logits_processors: [
           &Bumblebee.Text.GenerationTest.StatefulLogitsProcessing.stateful_processor(&1, &2,
-            initial_suppressed_token_id: [79]
+            initial_enforced_token_ids: [79]
           )
         ]
       )
 
     # The result without the logits processor would be, as with the first
-    # decoder test above: 80, 80, 80.
+    # decoder test above, [80, 80, 80].
     #
-    # Now, with the processor below, we expect no change (suppressed token ID is
-    # 79), then a change to another random token ID (176) as the suppressed
-    # token ID is incremented from 79 to 80, disallowing the previous most
-    # likely token ID (80) from being selected.
+    # Now, with the processor below, we expect the sequence of [79, 80, 81 ..]
 
     %{token_ids: token_ids} = generate.(params, inputs)
 
+    # first token_id should be 79 as we enforce token_id 79
+    assert_equal(token_ids[[0,0]], 79)
 
-    # first token_id still 80 as we suppress token_id 79
-    assert_equal(token_ids[[0,0]], 80)
-    # in the next step we increment from 79 to 80 and suppress token_id 80, the
-    #result is 176 as that is the next likelihood in the logits.
-
-    assert_equal(token_ids[[0,1]], 176)
+    # in the next step we increment from 79 to 80 and enforce token_id 80
+    assert_equal(token_ids[[0,1]], 80)
   end
 
   test "with stateful logits processor with batch size of 2" do
@@ -195,7 +190,7 @@ defmodule Bumblebee.Text.GenerationTest do
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
         logits_processors: [
           &Bumblebee.Text.GenerationTest.StatefulLogitsProcessing.stateful_processor(&1, &2,
-            initial_suppressed_token_id: [78, 79]
+            initial_enforced_token_ids: [78, 20]
           )
         ]
       )
@@ -205,50 +200,55 @@ defmodule Bumblebee.Text.GenerationTest do
     # result without logit processor: 80, 80, 80
 
     # first entry in batch
-    # first token_id still 80 as we suppress token_id 78
-    assert_equal(token_ids[[0, 0]], 80)
-    # second token_id still 80 as we suppress token_id 79
-    assert_equal(token_ids[[0, 1]], 80)
-    # in the next step we increment from 79 to 80 and suppress token_id 80
-    assert_equal(token_ids[[0, 2]], 1016)
+    # first token_id should be 78 as we enforce token_id 78 on the first
+    # iteration
+    assert_equal(token_ids[[0, 0]], 78)
+
+    # second should be 79 as we increment the enforced token_id from 78 to 79
+    assert_equal(token_ids[[0, 1]], 79)
+
+    # in the next step we increment from 79 to 80 and enforce token_id 80
+    assert_equal(token_ids[[0, 2]], 80)
 
     # second entry in batch
-    # first token_id still 80 as we suppress token_id 79
-    assert_equal(token_ids[[1, 0]], 80)
-    # in the next step we increment from 79 to 80 and suppress token_id 80
-    assert_equal(token_ids[[1, 1]], 176)
+    # first token_id is 20 as we enforce token_id 20 on the first iteration
+    assert_equal(token_ids[[1, 0]], 20)
+
+    # in the next step we increment from 20 to 21 and enforce token_id 21
+    assert_equal(token_ids[[1, 1]], 21)
   end
 
   defmodule StatefulLogitsProcessing do
     import Nx.Defn
 
     deftransform stateful_processor(logits, context, opts \\ []) do
-      initial_suppressed_token_ids = Enum.map(opts[:initial_suppressed_token_id], &List.wrap(&1))
-      initial_suppressed_token_id = Nx.tensor(initial_suppressed_token_ids) |> Nx.vectorize(:batch)
+      # initial_enforced_token_ids = opts[:initial_enforced_token_ids]
+      initial_enforced_token_ids = Enum.map(opts[:initial_enforced_token_ids], &List.wrap(&1))
+      # Enum.map(opts[:initial_suppressed_token_id], &List.wrap(&1))
+      # pick the actual token id from the batch
+      initial_enforced_token_id = Nx.tensor(initial_enforced_token_ids) |> Nx.vectorize(:batch)
 
-      suppressed_id =
-        context.logits_processor_state[:next_suppressed_token_id] || initial_suppressed_token_id
+      enforced_token_id =
+        context.logits_processor_state[:next_enforced_token_id] || initial_enforced_token_id
 
-      logits = suppress_id(logits, suppressed_id)
+      logits = enforce_token(logits, enforced_token_id)
 
-      next_suppressed_token_id = Nx.add(suppressed_id, 1)
+      next_enforced_token_id =  Nx.add(enforced_token_id, 1)
 
       context =
         put_in(
           context,
-          [:logits_processor_state, :next_suppressed_token_id],
-          next_suppressed_token_id
+          [:logits_processor_state, :next_enforced_token_id],
+          next_enforced_token_id
         )
 
       {logits, context}
     end
 
-    defnp suppress_id(logits, id) do
-      Nx.indexed_put(
-        logits,
-        id,
-        Nx.Constants.neg_infinity(Nx.type(logits))
-      )
+    defnp enforce_token(logits, token_id) do
+      logits
+      |> Nx.fill(Nx.Constants.neg_infinity(), type: Nx.type(logits))
+      |> Nx.indexed_put(token_id, Nx.tensor(0, type: Nx.type(logits)))
     end
   end
 end
