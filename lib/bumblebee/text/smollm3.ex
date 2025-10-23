@@ -67,10 +67,12 @@ defmodule Bumblebee.Text.SmolLM3 do
         For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
         """
       ],
-      no_rope_layers: [
+      rotary_embedding_enabled: [
         default: nil,
-        doc:
-          "a list containing 0 or 1 at the corresponding index for each layer. 0 means no rope layer, 1 means rope layer."
+        doc: """
+        a list of booleans specifying whether rotary embeddings are enabled for the block that corresponds to the index.
+        Defaults to `nil` which enables rotary embeddings for all blocks.
+        """
       ],
       layer_norm_epsilon: [
         default: 1.0e-12,
@@ -406,14 +408,14 @@ defmodule Bumblebee.Text.SmolLM3 do
       scaling_strategy: spec.rotary_embedding_scaling_strategy
     ]
 
-    nope_rotary_embedding =
-      case opts[:no_rope_layers] do
+    rotary_embedding =
+      case opts[:rotary_embedding_enabled] do
         nil ->
           rotary_embedding_config
 
-        no_rope_layers ->
+        rotary_embedding_enabled ->
           fn layer_index ->
-            if Enum.at(no_rope_layers, layer_index) == 1 do
+            if Enum.at(rotary_embedding_enabled, layer_index) do
               rotary_embedding_config
             else
               nil
@@ -439,7 +441,7 @@ defmodule Bumblebee.Text.SmolLM3 do
         ),
       block_type: :norm_first,
       causal: true,
-      rotary_embedding: nope_rotary_embedding,
+      rotary_embedding: rotary_embedding,
       query_use_bias: false,
       key_use_bias: false,
       value_use_bias: false,
@@ -522,6 +524,16 @@ defmodule Bumblebee.Text.SmolLM3 do
         end
       end
 
+      rotary_embedding_enabled_converter = fn name, value ->
+        case value do
+          no_rope_layers when is_list(no_rope_layers) ->
+            {:ok, %{rotary_embedding_enabled: Enum.map(no_rope_layers, &(&1 == 1))}}
+
+          _other ->
+            {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
+        end
+      end
+
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
@@ -537,6 +549,8 @@ defmodule Bumblebee.Text.SmolLM3 do
           rotary_embedding_base: {"rope_theta", number()},
           rotary_embedding_scaling_strategy:
             {"rope_scaling", optional(scaling_strategy_converter)},
+          rotary_embedding_enabled:
+            {"no_rope_layers", optional(rotary_embedding_enabled_converter)},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()},
           tie_word_embeddings: {"tie_word_embeddings", boolean()}
@@ -568,13 +582,13 @@ defmodule Bumblebee.Text.SmolLM3 do
       }
 
       rotary_mapping =
-        case spec.no_rope_layers do
+        case spec.rotary_embedding_enabled do
           nil ->
             []
 
-          no_rope_layers ->
-            Enum.with_index(no_rope_layers, fn rope, index ->
-              if rope == 1 do
+          rotary_embedding_enabled ->
+            Enum.with_index(rotary_embedding_enabled, fn rope, index ->
+              if rope do
                 {"decoder.blocks.#{index}.self_attention.rotary_embedding",
                  "model.layers.#{index}.self_attn.rotary_emb"}
               end
