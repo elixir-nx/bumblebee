@@ -107,8 +107,7 @@ defmodule Bumblebee.Text.GenerationTest do
     assert_equal(token_ids, Nx.tensor([[80, 1023, 1023]]))
   end
 
-
-  test "with stateful logits processor with batch size of 1" do
+  test "with stateful logits processor with different batch sizes" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-GPT2LMHeadModel"})
 
@@ -144,10 +143,9 @@ defmodule Bumblebee.Text.GenerationTest do
 
     generate =
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
+        # ToDo Bumblee.configure()
         logits_processors: [
-          &Bumblebee.Text.GenerationTest.StatefulLogitsProcessing.stateful_processor(&1, &2,
-            initial_enforced_token_ids: [79]
-          )
+          Bumblebee.configure(Bumblebee.Text.GenerationTest.StatefulLogitsProcessing, initial_enforced_token_ids: [79])
         ]
       )
 
@@ -159,10 +157,10 @@ defmodule Bumblebee.Text.GenerationTest do
     %{token_ids: token_ids} = generate.(params, inputs)
 
     # first token_id should be 79 as we enforce token_id 79
-    assert_equal(token_ids[[0,0]], 79)
+    assert_equal(token_ids[[0, 0]], 79)
 
     # in the next step we increment from 79 to 80 and enforce token_id 80
-    assert_equal(token_ids[[0,1]], 80)
+    assert_equal(token_ids[[0, 1]], 80)
 
     #########################################################
     # batch size of 2
@@ -175,15 +173,12 @@ defmodule Bumblebee.Text.GenerationTest do
 
     # this is the same example as above, but with a batch size of 2.
 
-
     generation_config = Bumblebee.configure(generation_config, max_new_tokens: 3)
 
     generate =
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
         logits_processors: [
-          &Bumblebee.Text.GenerationTest.StatefulLogitsProcessing.stateful_processor(&1, &2,
-            initial_enforced_token_ids: [78, 20]
-          )
+          Bumblebee.configure(Bumblebee.Text.GenerationTest.StatefulLogitsProcessing, initial_enforced_token_ids: [78, 20])
         ]
       )
 
@@ -211,27 +206,50 @@ defmodule Bumblebee.Text.GenerationTest do
   end
 
   defmodule StatefulLogitsProcessing do
+    @moduledoc false
+
     import Nx.Defn
 
-    deftransform stateful_processor(logits, context, opts \\ []) do
-      initial_enforced_token_ids = Enum.map(opts[:initial_enforced_token_ids], &List.wrap(&1))
-      initial_enforced_batch_token_id = Nx.tensor(initial_enforced_token_ids) |> Nx.vectorize(:batch)
+    @behaviour Bumblebee.Configurable
+    @behaviour Bumblebee.LogitsProcessor
 
-      enforced_token_id =
-        context.logits_processor_state[:next_enforced_token_id] || initial_enforced_batch_token_id
+    options = [
+      initial_enforced_token_ids: [
+        default: [],
+        doc: "A list of token ids to enforce on the first iteration"
+      ]
+    ]
 
-      logits = enforce_token(logits, enforced_token_id)
+    defstruct Bumblebee.Shared.option_defaults(options)
 
-      next_enforced_token_id =  Nx.add(enforced_token_id, 1)
+    @impl Bumblebee.Configurable
+    def config(logits_processor, opts) do
+      Bumblebee.Shared.put_config_attrs(logits_processor, opts)
+    end
 
-      context =
-        put_in(
-          context,
-          [:logits_processor_state, :next_enforced_token_id],
-          next_enforced_token_id
-        )
+    @impl Bumblebee.LogitsProcessor
+    def init(logits_processor, _context) do
+      initial_enforced_token_ids =
+        Enum.map(logits_processor.initial_enforced_token_ids, &List.wrap(&1))
 
-      {logits, context}
+      initial_enforced_batch_token_id =
+        Nx.tensor(initial_enforced_token_ids)
+      %{
+        sfp_state: %{
+          next_enforced_token_id: initial_enforced_batch_token_id
+        }
+      }
+    end
+
+    @impl Bumblebee.LogitsProcessor
+    def process(_logits_processor, state, logits, _context) do
+      sfp_state = state.sfp_state
+      logits = enforce_token(logits, sfp_state.next_enforced_token_id)
+
+      sfp_state = %{sfp_state | next_enforced_token_id: Nx.add(sfp_state.next_enforced_token_id, 1)}
+      state = %{state | sfp_state: sfp_state}
+
+      {logits, state}
     end
 
     defnp enforce_token(logits, token_id) do

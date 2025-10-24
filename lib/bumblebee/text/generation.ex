@@ -164,13 +164,14 @@ defmodule Bumblebee.Text.Generation do
 
     {_init_fun, predict_fun} = Axon.build(model, global_layer_options: global_layer_options)
 
-    logits_processor_fun = get_logits_processor(min_length_fun, config, opts[:logits_processors])
+    {logits_processor_init_fun, logits_processor_process_fun} = get_logits_processor(min_length_fun, config, opts[:logits_processors])
 
     &generate_impl(
       &2,
       predict_fun,
       &1,
-      logits_processor_fun,
+      logits_processor_init_fun,
+      logits_processor_process_fun,
       prepare_inputs_fun,
       update_inputs_fun,
       traverse_cache_fun,
@@ -386,22 +387,51 @@ defmodule Bumblebee.Text.Generation do
           []
         end ++ logits_processors
 
-    fn logits, context ->
-      for processor <- processors, processor, reduce: {logits, context} do
-        {logits, context} ->
-          case processor.(logits, context) do
-            {logits, new_context} -> {logits, new_context}
-            logits -> {logits, context}
-          end
-      end
+
+    processors =
+      processors
+      |> Enum.filter(fn processor -> processor != nil end)
+      |> Enum.map(fn processor ->
+        if is_function(processor, 2) do
+          gna = %Bumblebee.Text.Generation.StatelessLogitsProcessor{fun: processor}
+          if gna.fun == nil do raise "hell" end
+          gna
+        else
+          if processor == nil do raise "heaven" end
+          processor
+        end
+      end)
+
+
+    init_fun = fn context ->
+      Enum.reduce(processors, %{}, fn processor, state_acc ->
+        state = Bumblebee.logits_processor_init(processor, context)
+        Map.merge(state_acc, state)
+      end)
     end
+
+    process_fun = fn logits, context, state ->
+      Enum.reduce(processors, {logits, state}, fn processor, {logits, state} ->
+        Bumblebee.logits_processor_process(processor, state, logits, context)
+      end)
+    end
+
+    {init_fun, process_fun}
+
+    # Technically, the :logits_processors options is public API, but we can make it backward-compatible. For example, we
+    # can define %Bumblebee.Text.Generation.StatelessLogitsProcessor{fun: fun}, where the state is always empty and
+    # process just invokes the fun. I would even use that for the built-in processors, so that we don't need to define
+    # a bunch of new modules.
+    #
+    # %Bumblebee.Text.Generation.StatelessLogitsProcessor{fun: fun}
   end
 
   defnp generate_impl(
           inputs,
           predict_fun,
           params,
-          logits_processor_fun,
+          logits_processor_init_fun,
+          logits_processor_process_fun,
           prepare_inputs_fun,
           update_inputs_fun,
           traverse_cache_fun,
@@ -431,7 +461,8 @@ defmodule Bumblebee.Text.Generation do
             padded_batch_item?,
             predict_fun,
             params,
-            logits_processor_fun,
+            logits_processor_init_fun,
+            logits_processor_process_fun,
             update_inputs_fun,
             merge_options([max_length: max_length], opts)
           )
@@ -443,7 +474,8 @@ defmodule Bumblebee.Text.Generation do
             padded_batch_item?,
             predict_fun,
             params,
-            logits_processor_fun,
+            logits_processor_init_fun,
+            logits_processor_process_fun,
             update_inputs_fun,
             traverse_cache_fun,
             merge_options(
@@ -460,7 +492,8 @@ defmodule Bumblebee.Text.Generation do
             predict_fun,
             params,
             seed,
-            logits_processor_fun,
+            logits_processor_init_fun,
+            logits_processor_process_fun,
             update_inputs_fun,
             merge_options([max_length: max_length], opts)
           )
@@ -489,7 +522,8 @@ defmodule Bumblebee.Text.Generation do
           padded_batch_item?,
           predict_fun,
           params,
-          logits_processor_fun,
+          logits_processor_init_fun,
+          logits_processor_process_fun,
           update_inputs_fun,
           opts \\ []
         ) do
@@ -497,7 +531,8 @@ defmodule Bumblebee.Text.Generation do
     pad_token_id = opts[:pad_token_id]
     eos_token_id = opts[:eos_token_id]
 
-    state = init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id)
+
+    state = init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id, logits_processor_init_fun)
 
     # The loop works with inputs of length 1, so if the initial input
     # is longer, we make the initial pass outside
@@ -508,7 +543,7 @@ defmodule Bumblebee.Text.Generation do
           inputs,
           predict_fun,
           params,
-          logits_processor_fun,
+          logits_processor_process_fun,
           update_inputs_fun,
           pad_token_id: pad_token_id,
           eos_token_id: eos_token_id
@@ -525,7 +560,7 @@ defmodule Bumblebee.Text.Generation do
             inputs,
             predict_fun,
             params,
-            logits_processor_fun,
+            logits_processor_process_fun,
             update_inputs_fun,
             pad_token_id: pad_token_id,
             eos_token_id: eos_token_id
@@ -537,7 +572,7 @@ defmodule Bumblebee.Text.Generation do
     state
   end
 
-  defnp init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id) do
+  defnp init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id, logits_processor_init_fun) do
     {batch_size, length} = Nx.shape(decoder_input_ids)
 
     sequences = Nx.broadcast(pad_token_id, {batch_size, max_length})
@@ -549,6 +584,12 @@ defmodule Bumblebee.Text.Generation do
     # they could produce arbitrary tokens until we reach max length.
     finished_length = Nx.select(padded_batch_item?, 1, 0)
 
+    context = %{
+      sequences: sequences,
+      input_length: length,
+      length: length,
+    }
+
     %{
       sequences: sequences,
       input_length: length,
@@ -556,7 +597,7 @@ defmodule Bumblebee.Text.Generation do
       finished_length: finished_length,
       # The ignored return value that we attach all hooks to
       ignored: Nx.broadcast(0, {batch_size}),
-      logits_processor_states: %{}
+      logits_processor_state: logits_processor_init_fun.(context)
     }
   end
 
@@ -569,7 +610,7 @@ defmodule Bumblebee.Text.Generation do
           inputs,
           predict_fun,
           params,
-          logits_processor_fun,
+          logits_processor_process_fun,
           update_inputs_fun,
           opts
         ) do
@@ -579,7 +620,7 @@ defmodule Bumblebee.Text.Generation do
     outputs = predict_fun.(params, inputs)
 
     logits = outputs.logits[[.., -1]]
-    {logits, state} = batch_process_logits(logits_processor_fun, logits, state)
+    {logits, state} = batch_process_logits(logits_processor_process_fun, logits, state)
     token_id = Nx.argmax(logits, axis: -1)
 
     state = update_sequences(state, token_id, pad_token_id, eos_token_id)
@@ -636,25 +677,26 @@ defmodule Bumblebee.Text.Generation do
     end
   end
 
-  defnp batch_process_logits(logits_processor_fun, logits, state) do
+  defnp batch_process_logits(logits_processor_process_fun, logits, state) do
+
     logits = Nx.vectorize(logits, :batch)
 
-    {logits, new_context} =
-      logits_processor_fun.(logits, %{
-        sequence: Nx.vectorize(state.sequences, :batch),
-        length: state.length,
-        input_length: state.input_length,
-        logits_processor_state: Nx.vectorize(state.logits_processor_states, :batch)
-      })
+    context = %{
+      sequences: Nx.vectorize(state.sequences, :batch),
+      length: state.length,
+      input_length: state.input_length
+    }
+
+    {logits, new_logits_processor_state} =
+      logits_processor_process_fun.(logits, context, Nx.vectorize(state.logits_processor_state, :batch))
 
     logits = Nx.devectorize(logits, keep_names: false)
 
-    logits_processor_states =
-      Nx.devectorize(new_context.logits_processor_state, keep_names: false)
+    logits_processor_state =
+      Nx.devectorize(new_logits_processor_state, keep_names: false)
 
-    sequences = Nx.devectorize(new_context.sequence, keep_names: false)
 
-    {logits, %{state | sequences: sequences, logits_processor_states: logits_processor_states}}
+    {logits, %{state | logits_processor_state: logits_processor_state}}
   end
 
   # Contrastive search
@@ -665,7 +707,8 @@ defmodule Bumblebee.Text.Generation do
           padded_batch_item?,
           predict_fun,
           params,
-          logits_processor_fun,
+          logits_processor_init_fun,
+          logits_processor_process_fun,
           update_inputs_fun,
           traverse_cache_fun,
           opts \\ []
@@ -676,7 +719,7 @@ defmodule Bumblebee.Text.Generation do
     top_k = opts[:top_k]
     penalty_alpha = opts[:penalty_alpha]
 
-    state = init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id)
+    state = init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id, logits_processor_init_fun)
 
     # Step (1)
     # Initial pass to obtain hidden state and expand inputs to top-k
@@ -699,7 +742,7 @@ defmodule Bumblebee.Text.Generation do
     joint_hidden_state = Nx.put_slice(joint_hidden_state, [0, 0, 0], initial_hidden_state)
 
     logits = outputs.logits[[.., -1]]
-    {logits, state} = batch_process_logits(logits_processor_fun, logits, state)
+    {logits, state} = batch_process_logits(logits_processor_process_fun, logits, state)
     scores = Axon.Activations.softmax(logits, axis: -1)
     {top_k_scores, top_k_token_ids} = Nx.top_k(scores, k: top_k)
 
@@ -742,7 +785,7 @@ defmodule Bumblebee.Text.Generation do
 
         logits = outputs.logits[[.., -1]]
         logits = Utils.Nx.chunked_take(logits, top_k, selected_idx)
-        {logits, state} = batch_process_logits(logits_processor_fun, logits, state)
+        {logits, state} = batch_process_logits(logits_processor_process_fun, logits, state)
 
         scores = Axon.Activations.softmax(logits, axis: -1)
         {top_k_scores, top_k_token_ids} = Nx.top_k(scores, k: top_k)
@@ -832,7 +875,8 @@ defmodule Bumblebee.Text.Generation do
           predict_fun,
           params,
           seed,
-          logits_processor_fun,
+          logits_processor_init_fun,
+          logits_processor_process_fun,
           update_inputs_fun,
           opts \\ []
         ) do
@@ -840,7 +884,7 @@ defmodule Bumblebee.Text.Generation do
     pad_token_id = opts[:pad_token_id]
     eos_token_id = opts[:eos_token_id]
 
-    state = init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id)
+    state = init_sequences(decoder_input_ids, padded_batch_item?, max_length, pad_token_id, logits_processor_init_fun)
 
     prng_key = seed |> Nx.vectorize(:batch) |> Nx.Random.key()
 
@@ -854,7 +898,7 @@ defmodule Bumblebee.Text.Generation do
           predict_fun,
           params,
           prng_key,
-          logits_processor_fun,
+          logits_processor_process_fun,
           update_inputs_fun,
           pad_token_id: pad_token_id,
           eos_token_id: eos_token_id
@@ -872,7 +916,7 @@ defmodule Bumblebee.Text.Generation do
             predict_fun,
             params,
             prng_key,
-            logits_processor_fun,
+            logits_processor_process_fun,
             update_inputs_fun,
             pad_token_id: pad_token_id,
             eos_token_id: eos_token_id
@@ -890,7 +934,7 @@ defmodule Bumblebee.Text.Generation do
           predict_fun,
           params,
           prng_key,
-          logits_processor_fun,
+          logits_processor_process_fun,
           update_inputs_fun,
           opts \\ []
         ) do
@@ -903,7 +947,7 @@ defmodule Bumblebee.Text.Generation do
     outputs = predict_fun.(params, inputs)
 
     logits = outputs.logits[[.., -1]]
-    {logits, state} = batch_process_logits(logits_processor_fun, logits, state)
+    {logits, state} = batch_process_logits(logits_processor_process_fun, logits, state)
     scores = Axon.Activations.softmax(logits)
     token_id = batched_choice(key, scores)
 

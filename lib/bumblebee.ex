@@ -1084,6 +1084,36 @@ defmodule Bumblebee do
   end
 
   @doc """
+  Initializes state for a new logits processor.
+
+  Returns `state`, which is an opaque `Nx.Container`, and it is then
+  passed to and returned from `process/4`.
+  """
+  @doc type: :logits_processor
+  @spec logits_processor_init(
+          Bumblebee.LogitsProcessor.t(),
+          context :: term()
+        ) :: Bumblebee.LogitsProcessor.state()
+  def logits_processor_init(%module{} = logits_processor, context) do
+    module.init(logits_processor, context)
+  end
+
+  @doc """
+  Processes logits, applying specific rules. Receives context, state and
+  logits, and returns updated logits and state.
+  """
+  @doc type: :logits_processor
+  @spec logits_processor_process(
+          Bumblebee.LogitsProcessor.t(),
+          Bumblebee.LogitsProcessor.state(),
+          logits :: Nx.Tensor.t(),
+          context :: term()
+        ) :: {Bumblebee.LogitsProcessor.state(), logits :: Nx.Tensor.t()}
+  def logits_processor_process(%module{} = logits_processor, state, logits, context) do
+    module.process(logits_processor, state, logits, context)
+  end
+
+  @doc """
   Initializes state for a new scheduler loop.
 
   Returns a pair of `{state, timesteps}`, where `state` is an opaque
