@@ -30,9 +30,7 @@ defmodule Bumblebee.Text.SmolLM3Test do
           [-0.8060, -0.1415, 0.3646],
           [-0.4071, -1.0187, -1.1379]
         ]
-      ]),
-      atol: 1.0e-3,
-      rtol: 1.0e-3
+      ])
     )
   end
 
@@ -69,8 +67,7 @@ defmodule Bumblebee.Text.SmolLM3Test do
           -0.1270,
           -0.1270
         ]
-      ]),
-      atol: 1.0e-3
+      ])
     )
   end
 
@@ -94,8 +91,7 @@ defmodule Bumblebee.Text.SmolLM3Test do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.0567, 0.0249]]),
-      rtol: 1.0e-2
+      Nx.tensor([[-0.0567, 0.0249]])
     )
   end
 
@@ -124,8 +120,7 @@ defmodule Bumblebee.Text.SmolLM3Test do
           [0.0285, 0.0493, 0.0535],
           [0.0457, 0.2303, 0.0854]
         ]
-      ]),
-      atol: 1.0e-3
+      ])
     )
   end
 
@@ -162,8 +157,7 @@ defmodule Bumblebee.Text.SmolLM3Test do
           [-0.0916, -0.0296],
           [-0.0917, -0.0293]
         ]
-      ]),
-      atol: 1.0e-3
+      ])
     )
   end
 end
