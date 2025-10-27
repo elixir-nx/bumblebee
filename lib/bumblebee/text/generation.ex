@@ -687,14 +687,14 @@ defmodule Bumblebee.Text.Generation do
       input_length: state.input_length
     }
 
-    {logits, new_logits_processor_state} =
-      logits_processor_process_fun.(logits, context, Nx.vectorize(state.logits_processor_state, :batch))
+    {logits, logits_processor_state} =
+      logits_processor_process_fun.(
+        logits,
+        context,
+        state.logits_processor_state
+      )
 
     logits = Nx.devectorize(logits, keep_names: false)
-
-    logits_processor_state =
-      Nx.devectorize(new_logits_processor_state, keep_names: false)
-
 
     {logits, %{state | logits_processor_state: logits_processor_state}}
   end
