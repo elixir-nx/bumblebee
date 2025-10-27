@@ -145,7 +145,9 @@ defmodule Bumblebee.Text.GenerationTest do
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
         # ToDo Bumblee.configure()
         logits_processors: [
-          Bumblebee.configure(Bumblebee.Text.GenerationTest.StatefulLogitsProcessing, initial_enforced_token_ids: [79])
+          Bumblebee.configure(Bumblebee.Text.GenerationTest.StatefulLogitsProcessing,
+            initial_enforced_token_ids: [79]
+          )
         ]
       )
 
@@ -178,7 +180,9 @@ defmodule Bumblebee.Text.GenerationTest do
     generate =
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
         logits_processors: [
-          Bumblebee.configure(Bumblebee.Text.GenerationTest.StatefulLogitsProcessing, initial_enforced_token_ids: [78, 20])
+          Bumblebee.configure(Bumblebee.Text.GenerationTest.StatefulLogitsProcessing,
+            initial_enforced_token_ids: [78, 20]
+          )
         ]
       )
 
@@ -234,6 +238,7 @@ defmodule Bumblebee.Text.GenerationTest do
 
       initial_enforced_batch_token_id =
         Nx.tensor(initial_enforced_token_ids)
+
       %{
         sfp_state: %{
           next_enforced_token_id: initial_enforced_batch_token_id
@@ -246,7 +251,11 @@ defmodule Bumblebee.Text.GenerationTest do
       sfp_state = state.sfp_state
       logits = enforce_token(logits, sfp_state.next_enforced_token_id)
 
-      sfp_state = %{sfp_state | next_enforced_token_id: Nx.add(sfp_state.next_enforced_token_id, 1)}
+      sfp_state = %{
+        sfp_state
+        | next_enforced_token_id: Nx.add(sfp_state.next_enforced_token_id, 1)
+      }
+
       state = %{state | sfp_state: sfp_state}
 
       {logits, state}

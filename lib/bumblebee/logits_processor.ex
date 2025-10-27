@@ -15,7 +15,6 @@ defmodule Bumblebee.LogitsProcessor do
 
   @type state :: Nx.Container.t()
 
-
   @doc """
   Initializes state for a new logits processor.
 
@@ -34,6 +33,6 @@ defmodule Bumblebee.LogitsProcessor do
               t(),
               state(),
               logits :: Nx.Tensor.t(),
-              context:: term()
+              context :: term()
             ) :: {logits :: Nx.Tensor.t(), state :: map()}
 end
