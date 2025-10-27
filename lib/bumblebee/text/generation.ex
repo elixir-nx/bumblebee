@@ -682,7 +682,7 @@ defmodule Bumblebee.Text.Generation do
     logits = Nx.vectorize(logits, :batch)
 
     context = %{
-      sequences: Nx.vectorize(state.sequences, :batch),
+      sequence: Nx.vectorize(state.sequences, :batch),
       length: state.length,
       input_length: state.input_length
     }
