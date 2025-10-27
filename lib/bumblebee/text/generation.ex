@@ -393,11 +393,8 @@ defmodule Bumblebee.Text.Generation do
       |> Enum.filter(fn processor -> processor != nil end)
       |> Enum.map(fn processor ->
         if is_function(processor, 2) do
-          gna = %Bumblebee.Text.Generation.StatelessLogitsProcessor{fun: processor}
-          if gna.fun == nil do raise "hell" end
-          gna
+          %Bumblebee.Text.Generation.StatelessLogitsProcessor{fun: processor}
         else
-          if processor == nil do raise "heaven" end
           processor
         end
       end)
@@ -417,13 +414,6 @@ defmodule Bumblebee.Text.Generation do
     end
 
     {init_fun, process_fun}
-
-    # Technically, the :logits_processors options is public API, but we can make it backward-compatible. For example, we
-    # can define %Bumblebee.Text.Generation.StatelessLogitsProcessor{fun: fun}, where the state is always empty and
-    # process just invokes the fun. I would even use that for the built-in processors, so that we don't need to define
-    # a bunch of new modules.
-    #
-    # %Bumblebee.Text.Generation.StatelessLogitsProcessor{fun: fun}
   end
 
   defnp generate_impl(
