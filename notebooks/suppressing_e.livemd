@@ -1,0 +1,158 @@
+# Suppressing e
+
+```elixir
+Mix.install([
+  {:bumblebee, "~> 0.6.0"},
+  {:nx, "~> 0.10.0"},
+  {:exla, "~> 0.10.0"},
+  {:kino, "~> 0.17.0"},
+  {:emlx, "~> 0.2.0"}
+])
+
+# EMLX is fast but seems to work only with greedy strategy
+# backend = {EMLX.Backend, device: :gpu}
+# compiler = EMLX
+
+backend = {EXLA.Backend, client: :host}
+compiler = EXLA
+
+Nx.global_default_backend(backend)
+```
+
+## Introduction
+
+In this notebook we outline the general setup for running a Large Language Model (LLM).
+
+## SmolLM2
+
+In this section we look at running the [SmolLM2](https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct) model from huggingface as it is a small and open source LLM.
+
+<!-- livebook:{"break_markdown":true} -->
+
+Let's load the model and create a serving for text generation:
+
+```elixir
+repo = {:hf, "HuggingFaceTB/SmolLM2-135M-Instruct"}
+
+{:ok, model_info} = Bumblebee.load_model(repo, type: :bf16, backend: backend)
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+{:ok, generation_config} = Bumblebee.load_generation_config(repo)
+
+:ok
+```
+
+```elixir
+generation_config =
+  Bumblebee.configure(generation_config,
+    max_new_tokens: 256,
+    # note that multinomial sampling might still pick one of the suppressed tokens
+    # depending on top_p or top_k
+    strategy: %{type: :greedy_search}
+    # strategy: %{type: :multinomial_sampling, top_k: 10}
+    # strategy: %{type: :multinomial_sampling, top_p: 0.7}
+  )
+
+serving =
+  Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+    compile: [batch_size: 1, sequence_length: 256],
+    stream: false,
+    defn_options: [compiler: compiler]
+  )
+```
+
+```elixir
+prompt = """
+<|im_start|>system
+Do NOT use the letter e.
+If you use the letter e it will have catastrophic consequences!<|im_end|>
+<|im_start|>user
+Write a poem praising the Elixir programming language.<|im_end|>
+<|im_start|>assistant
+"""
+
+Kino.Text.new(prompt)
+```
+
+```elixir
+%{results: [%{text: out}]} = Nx.Serving.run(serving, prompt)
+
+Kino.Text.new(out)
+```
+
+```elixir
+String.graphemes(out) |> Enum.count(&(&1 == "e" or &1 == "E"))
+```
+
+## Constrained Sampling
+
+First, we find all tokens in the vocabulary of our tokenizer which contain the letter `e`.
+
+```elixir
+alias Bumblebee.Tokenizer
+
+last_token_id = model_info.spec.vocab_size - 1
+
+special_tokens_ids =
+  Tokenizer.all_special_tokens(tokenizer) |> Enum.map(&Tokenizer.token_to_id(tokenizer, &1))
+
+allowed_tokens_ids =
+  special_tokens_ids ++ Enum.map(["<empty_output>"], &Tokenizer.token_to_id(tokenizer, &1))
+
+token_ids_with_e =
+  for token_id <- 0..last_token_id,
+      token_id not in allowed_tokens_ids,
+      token = Tokenizer.id_to_token(tokenizer, token_id),
+      String.contains?(token, "e") or String.contains?(token, "E") do
+    token_id
+  end
+
+Enum.map(token_ids_with_e, fn id -> {id, Tokenizer.id_to_token(tokenizer, id)} end)
+```
+
+Then, we suppress all token ids that correspond to a token containing the letter `e` during generation.
+
+This is the logits processor used when we pass the config as below.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+  deftransform suppressed_tokens_processor(logits, _context, opts \\ []) do
+    opts = Keyword.validate!(opts, [:suppressed_token_ids])
+
+    indices = opts[:suppressed_token_ids] |> Nx.tensor() |> Nx.new_axis(-1)
+    values = Nx.broadcast(Nx.Constants.neg_infinity(Nx.type(logits)), {Nx.size(indices)})
+    Nx.indexed_put(logits, indices, values)
+  end
+```
+
+```elixir
+generation_config =
+  Bumblebee.configure(generation_config,
+    suppressed_token_ids: token_ids_with_e
+  )
+
+serving =
+  Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+    compile: [batch_size: 1, sequence_length: 1024],
+    stream: false,
+    defn_options: [compiler: compiler]
+  )
+
+%{results: [%{text: out}]} = Nx.Serving.run(serving, prompt)
+
+Kino.Text.new(out)
+```
+
+```elixir
+String.contains?(out, "e") or String.contains?(out, "E")
+```
+
+```elixir
+%{"input_ids" => out_token_ids} = Bumblebee.apply_tokenizer(tokenizer, out)
+
+out_token_ids = Nx.to_flat_list(out_token_ids)
+
+ids = Enum.filter(out_token_ids, &(&1 in token_ids_with_e))
+
+Enum.map(ids, &Tokenizer.id_to_token(tokenizer, &1))
+```
