@@ -592,7 +592,7 @@ defmodule Bumblebee.Text.Generation do
     finished_length = Nx.select(padded_batch_item?, 1, 0)
 
     context = %{
-      sequences: sequences,
+      sequence: Nx.vectorize(sequences, :batch),
       input_length: length,
       length: length
     }
