@@ -14,19 +14,19 @@ jobs:
       matrix:
         include:
           - pair:
-              elixir: "1.15.4"
-              otp: "26.0.2"
+              elixir: "1.19.2"
+              otp: "28.1.1"
             lint: true
             slow: true
           - pair:
-              elixir: "1.14.5"
-              otp: "25.3.2.2"
+              elixir: "1.15.8"
+              otp: "26.2.5"
     env:
       MIX_ENV: test
       XLA_CACHE_DIR: ${{ github.workspace }}/cache/xla
       LIBTORCH_DIR: ${{ github.workspace }}/cache/torch
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           # We need the previous commit for git diff later
           fetch-depth: 2
@@ -34,7 +34,7 @@ jobs:
         with:
           otp-version: ${{ matrix.pair.otp }}
           elixir-version: ${{ matrix.pair.elixir }}
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             deps

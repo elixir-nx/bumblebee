@@ -4,8 +4,8 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch:
 env:
-  elixir: 1.14.0
-  otp: 24.0
+  elixir: "1.19.2"
+  otp: "28.1.1"
 jobs:
   test:
     name: Test all
@@ -15,12 +15,12 @@ jobs:
       XLA_CACHE_DIR: ${{ github.workspace }}/cache/xla
       LIBTORCH_DIR: ${{ github.workspace }}/cache/libtorch
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
       - uses: erlef/setup-beam@v1
         with:
           otp-version: ${{env.otp}}
           elixir-version: ${{env.elixir}}
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             deps
