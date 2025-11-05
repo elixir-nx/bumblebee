@@ -258,7 +258,7 @@ defmodule Bumblebee.Text.GenerationTest do
 
       state = put_in(state.sfp_state.next_enforced_token_id, next_enforced_token_id)
 
-      {logits, state}
+      {state, logits}
     end
 
     defnp enforce_token(logits, token_id) do

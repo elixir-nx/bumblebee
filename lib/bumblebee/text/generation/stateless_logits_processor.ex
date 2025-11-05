@@ -25,6 +25,6 @@ defmodule Bumblebee.Text.Generation.StatelessLogitsProcessor do
 
   @impl Bumblebee.LogitsProcessor
   def process(logits_processor, state, logits, context) do
-    {logits_processor.fun.(logits, context), state}
+    {state, logits_processor.fun.(logits, context)}
   end
 end

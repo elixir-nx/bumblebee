@@ -687,7 +687,7 @@ defmodule Bumblebee.Text.Generation do
       input_length: state.input_length
     }
 
-    {logits, logits_processor_state} =
+    {logits_processor_state, logits} =
       logits_processor_process_fun.(
         logits,
         context,

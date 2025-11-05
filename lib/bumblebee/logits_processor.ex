@@ -34,5 +34,5 @@ defmodule Bumblebee.LogitsProcessor do
               state(),
               logits :: Nx.Tensor.t(),
               context :: term()
-            ) :: {logits :: Nx.Tensor.t(), state :: map()}
+            ) :: {state :: map(), logits :: Nx.Tensor.t()}
 end
