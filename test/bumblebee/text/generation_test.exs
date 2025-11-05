@@ -146,7 +146,7 @@ defmodule Bumblebee.Text.GenerationTest do
         # ToDo Bumblee.configure()
         logits_processors: [
           Bumblebee.configure(Bumblebee.Text.GenerationTest.StatefulLogitsProcessing,
-            initial_enforced_token_ids: [79]
+            initial_enforced_token_id: 79
           )
         ]
       )
@@ -181,7 +181,7 @@ defmodule Bumblebee.Text.GenerationTest do
       Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
         logits_processors: [
           Bumblebee.configure(Bumblebee.Text.GenerationTest.StatefulLogitsProcessing,
-            initial_enforced_token_ids: [78, 20]
+            initial_enforced_token_id: 78
           )
         ]
       )
@@ -203,10 +203,10 @@ defmodule Bumblebee.Text.GenerationTest do
 
     # second entry in batch
     # first token_id is 20 as we enforce token_id 20 on the first iteration
-    assert_equal(token_ids[[1, 0]], 20)
+    assert_equal(token_ids[[1, 0]], 78)
 
     # in the next step we increment from 20 to 21 and enforce token_id 21
-    assert_equal(token_ids[[1, 1]], 21)
+    assert_equal(token_ids[[1, 1]], 79)
   end
 
   defmodule StatefulLogitsProcessing do
@@ -218,9 +218,9 @@ defmodule Bumblebee.Text.GenerationTest do
     @behaviour Bumblebee.LogitsProcessor
 
     options = [
-      initial_enforced_token_ids: [
+      initial_enforced_token_id: [
         default: [],
-        doc: "A list of token ids to enforce on the first iteration"
+        doc: "A token id to enforce on the first iteration"
       ]
     ]
 
@@ -232,12 +232,11 @@ defmodule Bumblebee.Text.GenerationTest do
     end
 
     @impl Bumblebee.LogitsProcessor
-    def init(logits_processor, _context) do
-      initial_enforced_token_ids =
-        Enum.map(logits_processor.initial_enforced_token_ids, &List.wrap(&1))
+    def init(logits_processor, context) do
+      batch_size = Nx.axis_size(context.sequences, 0)
 
       initial_enforced_batch_token_id =
-        Nx.tensor(initial_enforced_token_ids)
+        Nx.broadcast(logits_processor.initial_enforced_token_id, {batch_size, 1})
 
       %{
         next_enforced_token_id: initial_enforced_batch_token_id
