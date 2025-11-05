@@ -442,8 +442,6 @@ defmodule Bumblebee.Text.Phi do
         "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
         "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.dense",
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
-        "decoder.blocks.{n}.self_attention.rotary_embedding" =>
-          "model.layers.{n}.self_attn.rotary_emb",
         "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.fc1",
         "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.fc2",
         "output_norm" => "model.final_layernorm",

@@ -497,8 +497,6 @@ defmodule Bumblebee.Text.Phi3 do
           ),
         "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.o_proj",
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
-        "decoder.blocks.{n}.self_attention.rotary_embedding" =>
-          "model.layers.{n}.self_attn.rotary_emb",
         "decoder.blocks.{n}.ffn.gate" =>
           Shared.sliced_dense_params_source(
             "model.layers.{n}.mlp.gate_up_proj",
