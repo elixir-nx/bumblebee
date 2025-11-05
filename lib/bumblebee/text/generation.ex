@@ -598,7 +598,7 @@ defmodule Bumblebee.Text.Generation do
       finished_length: finished_length,
       # The ignored return value that we attach all hooks to
       ignored: Nx.broadcast(0, {batch_size}),
-      logits_processor_state: logits_processor_init_fun.(context)
+      logits_processor_states: logits_processor_init_fun.(context)
     }
   end
 
@@ -687,16 +687,16 @@ defmodule Bumblebee.Text.Generation do
       input_length: state.input_length
     }
 
-    {logits_processor_state, logits} =
+    {logits_processor_states, logits} =
       logits_processor_process_fun.(
         logits,
         context,
-        state.logits_processor_state
+        state.logits_processor_states
       )
 
     logits = Nx.devectorize(logits, keep_names: false)
 
-    {logits, %{state | logits_processor_state: logits_processor_state}}
+    {logits, %{state | logits_processor_states: logits_processor_states}}
   end
 
   # Contrastive search
