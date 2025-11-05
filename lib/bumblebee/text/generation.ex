@@ -400,16 +400,22 @@ defmodule Bumblebee.Text.Generation do
       end)
 
     init_fun = fn context ->
-      Enum.reduce(processors, %{}, fn processor, state_acc ->
-        state = Bumblebee.logits_processor_init(processor, context)
-        Map.merge(state_acc, state)
+      processors
+      |> Enum.map(fn processor ->
+        Bumblebee.logits_processor_init(processor, context)
       end)
+      |> List.to_tuple()
     end
 
-    process_fun = fn logits, context, state ->
-      Enum.reduce(processors, {logits, state}, fn processor, {logits, state} ->
-        Bumblebee.logits_processor_process(processor, state, logits, context)
-      end)
+    process_fun = fn logits, context, processor_states ->
+      {processor_states, logits} =
+        processors
+        |> Enum.zip(Tuple.to_list(processor_states))
+        |> Enum.map_reduce(logits, fn {processor, processor_state}, logits ->
+          Bumblebee.logits_processor_process(processor, processor_state, logits, context)
+        end)
+
+      {List.to_tuple(processor_states), logits}
     end
 
     {init_fun, process_fun}
