@@ -91,7 +91,8 @@ defmodule Bumblebee.Conversion.PyTorchParams do
   defp state_dict?(_other), do: false
 
   defp implements_lazy_container?(value) do
-    Nx.LazyContainer.impl_for(value) != Nx.LazyContainer.Any or Nx.Container.impl_for(value) != nil
+    Nx.LazyContainer.impl_for(value) != Nx.LazyContainer.Any or
+      Nx.Container.impl_for(value) != nil
   end
 
   defp init_params(model, params_expr, pytorch_state, params_mapping) do
