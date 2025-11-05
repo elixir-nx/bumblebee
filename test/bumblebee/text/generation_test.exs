@@ -240,15 +240,13 @@ defmodule Bumblebee.Text.GenerationTest do
         Nx.tensor(initial_enforced_token_ids)
 
       %{
-        sfp_state: %{
-          next_enforced_token_id: initial_enforced_batch_token_id
-        }
+        next_enforced_token_id: initial_enforced_batch_token_id
       }
     end
 
     @impl Bumblebee.LogitsProcessor
     def process(_logits_processor, state, logits, _context) do
-      next_enforced_token_id = Nx.vectorize(state.sfp_state.next_enforced_token_id, :batch)
+      next_enforced_token_id = Nx.vectorize(state.next_enforced_token_id, :batch)
 
       logits = enforce_token(logits, next_enforced_token_id)
 
@@ -256,7 +254,7 @@ defmodule Bumblebee.Text.GenerationTest do
         Nx.add(next_enforced_token_id, 1)
         |> Nx.devectorize(keep_names: false)
 
-      state = put_in(state.sfp_state.next_enforced_token_id, next_enforced_token_id)
+      state = put_in(state.next_enforced_token_id, next_enforced_token_id)
 
       {state, logits}
     end
