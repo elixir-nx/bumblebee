@@ -412,7 +412,7 @@ defmodule Bumblebee.Text.SmolLM3 do
     ]
 
     rotary_embedding =
-      case opts[:rotary_embedding_enabled] do
+      case spec.rotary_embedding_enabled do
         nil ->
           rotary_embedding_config
 
@@ -530,7 +530,7 @@ defmodule Bumblebee.Text.SmolLM3 do
       rotary_embedding_enabled_converter = fn name, value ->
         case value do
           no_rope_layers when is_list(no_rope_layers) ->
-            {:ok, %{rotary_embedding_enabled: Enum.map(no_rope_layers, &(&1 == 1))}}
+            {:ok, Enum.map(no_rope_layers, &(&1 == 1))}
 
           _other ->
             {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
@@ -565,7 +565,7 @@ defmodule Bumblebee.Text.SmolLM3 do
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(spec) do
-      base_mapping = %{
+      mapping = %{
         "embedder.token_embedding" => "model.embed_tokens",
         "decoder.blocks.{n}.self_attention.query" => "model.layers.{n}.self_attn.q_proj",
         "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
@@ -583,22 +583,6 @@ defmodule Bumblebee.Text.SmolLM3 do
         "token_classification_head.output" => "score",
         "question_answering_head.output" => "qa_outputs"
       }
-
-      rotary_mapping =
-        case spec.rotary_embedding_enabled do
-          nil ->
-            []
-
-          rotary_embedding_enabled ->
-            Enum.with_index(rotary_embedding_enabled, fn rope, index ->
-              if rope do
-                {"decoder.blocks.#{index}.self_attention.rotary_embedding",
-                 "model.layers.#{index}.self_attn.rotary_emb"}
-              end
-            end)
-        end
-
-      mapping = Map.merge(base_mapping, Map.new(rotary_mapping))
 
       case spec do
         %{architecture: :for_question_answering} ->
