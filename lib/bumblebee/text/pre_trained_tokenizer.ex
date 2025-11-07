@@ -202,7 +202,8 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
     },
     qwen2: %{
       special_tokens: %{
-        eos: "<|im_end|>",
+        unk: "<|endoftext|>",
+        eos: "<|endoftext|>",
         pad: "<|endoftext|>"
       }
     },

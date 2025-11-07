@@ -29,8 +29,7 @@ defmodule Bumblebee.Text.Qwen3Test do
           [-0.0767, 0.0107, 0.2657],
           [0.4693, -0.0452, 0.2521]
         ]
-      ]),
-      atol: 1.0e-3
+      ])
     )
   end
 
@@ -58,8 +57,7 @@ defmodule Bumblebee.Text.Qwen3Test do
           [1.8620, 0.6854, 2.3352],
           [0.9874, -4.0238, -0.1917]
         ]
-      ]),
-      atol: 1.0e-3
+      ])
     )
   end
 
@@ -100,8 +98,7 @@ defmodule Bumblebee.Text.Qwen3Test do
 
     assert_all_close(
       outputs.embedding[[.., 1..3]],
-      Nx.tensor([[0.2217, -0.0037, -0.1757]]),
-      atol: 1.0e-3
+      Nx.tensor([[0.2217, -0.0037, -0.1757]])
     )
   end
 end
