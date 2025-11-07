@@ -24,3 +24,6 @@ bumblebee-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Lexical Language Server
+.lexical/
