@@ -50,8 +50,7 @@ defmodule Bumblebee.Text.TextRerankingQwen3 do
 
   ## Examples
 
-      {:ok, model_info} = Bumblebee.load_model({:hf, "Qwen/Qwen3-Reranker-0.6B"},
-        architecture: :for_reranker)
+      {:ok, model_info} = Bumblebee.load_model({:hf, "Qwen/Qwen3-Reranker-0.6B"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Qwen/Qwen3-Reranker-0.6B"})
 
       serving = Bumblebee.Text.text_reranking_qwen3(model_info, tokenizer)
@@ -75,7 +74,7 @@ defmodule Bumblebee.Text.TextRerankingQwen3 do
   """
   def text_reranking_qwen3(model_info, tokenizer, opts \\ []) do
     %{model: model, params: params, spec: spec} = model_info
-    Shared.validate_architecture!(spec, :for_reranker)
+    Shared.validate_architecture!(spec, :for_causal_language_modeling)
 
     # Get yes/no token IDs
     yes_token =
@@ -134,10 +133,20 @@ defmodule Bumblebee.Text.TextRerankingQwen3 do
 
     scores_fun = fn params, input ->
       outputs = predict_fun.(params, input)
-      # outputs.logits has shape {batch_size, vocab_size}
+      # outputs.logits has shape {batch_size, sequence_length, vocab_size}
+      # Pool to last attended token position
+      attention_mask = input["attention_mask"]
+      sequence_lengths =
+        attention_mask
+        |> Nx.sum(axes: [1])
+        |> Nx.subtract(1)
+        |> Nx.as_type({:s, 64})
+
+      last_token_logits = Bumblebee.Utils.Nx.batched_take(outputs.logits, sequence_lengths)
+
       # Extract logits for yes/no tokens
-      yes_logits = outputs.logits[[.., yes_token]]
-      no_logits = outputs.logits[[.., no_token]]
+      yes_logits = last_token_logits[[.., yes_token]]
+      no_logits = last_token_logits[[.., no_token]]
 
       # Stack and apply log_softmax
       stacked = Nx.stack([no_logits, yes_logits], axis: 1)

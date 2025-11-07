@@ -104,10 +104,6 @@ defmodule Bumblebee.Text.Qwen3 do
       vector per sequence. The head pools the last attended token (based on
       attention mask) and returns it as an embedding
 
-    * `:for_reranker` - Qwen3 configured for binary relevance classification
-      (reranking). Returns logits at the last attended token position for
-      computing relevance scores between query-document pairs
-
   ## Inputs
 
     * `"input_ids"` - `{batch_size, sequence_length}`
@@ -170,8 +166,7 @@ defmodule Bumblebee.Text.Qwen3 do
       :base,
       :for_causal_language_modeling,
       :for_sequence_classification,
-      :for_embedding,
-      :for_reranker
+      :for_embedding
     ]
 
   @impl true
@@ -298,41 +293,6 @@ defmodule Bumblebee.Text.Qwen3 do
       embedding: pooled_state,
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions
-    })
-  end
-
-  def model(%__MODULE__{architecture: :for_reranker} = spec) do
-    inputs = inputs(spec)
-
-    outputs = core(inputs, spec)
-    logits = language_modeling_head(outputs.hidden_state, spec, name: "language_modeling_head")
-
-    # For reranker, we need to extract the logits at the last attended token position
-    # and return them for binary classification (relevant vs not relevant)
-    last_token_logits =
-      Layers.if_present inputs["attention_mask"] do
-        Axon.layer(
-          fn logits, attention_mask, _opts ->
-            # Find the last attended token position
-            indices =
-              attention_mask
-              |> Nx.sum(axes: [-1])
-              |> Nx.subtract(1)
-              |> Nx.as_type({:s, 64})
-
-            Bumblebee.Utils.Nx.batched_take(logits, indices)
-          end,
-          [logits, inputs["attention_mask"]]
-        )
-      else
-        Layers.take_token(logits, axis: 1, index: -1)
-      end
-
-    Layers.output(%{
-      logits: last_token_logits,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions,
-      cache: outputs.cache
     })
   end
 

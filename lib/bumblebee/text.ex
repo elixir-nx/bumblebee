@@ -464,8 +464,7 @@ defmodule Bumblebee.Text do
 
   ## Examples
 
-      {:ok, model_info} = Bumblebee.load_model({:hf, "Qwen/Qwen3-Reranker-0.6B"},
-        architecture: :for_reranker)
+      {:ok, model_info} = Bumblebee.load_model({:hf, "Qwen/Qwen3-Reranker-0.6B"})
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Qwen/Qwen3-Reranker-0.6B"})
 
       serving = Bumblebee.Text.text_reranking_qwen3(model_info, tokenizer)
