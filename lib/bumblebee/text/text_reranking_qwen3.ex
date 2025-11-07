@@ -1,10 +1,10 @@
-defmodule Bumblebee.Text.TextReranking do
+defmodule Bumblebee.Text.TextRerankingQwen3 do
   @moduledoc false
 
   alias Bumblebee.Shared
 
   @doc """
-  Creates a serving for text reranking.
+  Creates a serving for text reranking with Qwen3 reranker models.
 
   The serving expects input in one of the following formats:
 
@@ -54,7 +54,7 @@ defmodule Bumblebee.Text.TextReranking do
         architecture: :for_reranker)
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Qwen/Qwen3-Reranker-0.6B"})
 
-      serving = Bumblebee.Text.TextReranking.text_reranking(model_info, tokenizer)
+      serving = Bumblebee.Text.text_reranking_qwen3(model_info, tokenizer)
 
       query = "What is the capital of France?"
       documents = [
@@ -73,7 +73,7 @@ defmodule Bumblebee.Text.TextReranking do
       #=>   ]
       #=> }
   """
-  def text_reranking(model_info, tokenizer, opts \\ []) do
+  def text_reranking_qwen3(model_info, tokenizer, opts \\ []) do
     %{model: model, params: params, spec: spec} = model_info
     Shared.validate_architecture!(spec, :for_reranker)
 

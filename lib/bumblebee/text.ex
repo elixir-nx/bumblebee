@@ -444,12 +444,14 @@ defmodule Bumblebee.Text do
   defdelegate text_embedding(model_info, tokenizer, opts \\ []),
     to: Bumblebee.Text.TextEmbedding
 
-  @type text_reranking_input :: {String.t(), String.t()} | [{String.t(), String.t()}]
-  @type text_reranking_output :: %{scores: text_reranking_score() | list(text_reranking_score())}
-  @type text_reranking_score :: %{score: number(), query: String.t(), document: String.t()}
+  @type text_reranking_qwen3_input :: {String.t(), String.t()} | [{String.t(), String.t()}]
+  @type text_reranking_qwen3_output :: %{
+          scores: text_reranking_qwen3_score() | list(text_reranking_qwen3_score())
+        }
+  @type text_reranking_qwen3_score :: %{score: number(), query: String.t(), document: String.t()}
 
   @doc """
-  Builds a serving for text reranking.
+  Builds a serving for text reranking with Qwen3 reranker models.
 
   The serving expects input in one of the following formats:
 
@@ -458,7 +460,7 @@ defmodule Bumblebee.Text do
 
   ## Options
 
-  See `Bumblebee.Text.TextReranking.text_reranking/3` for available options.
+  See `Bumblebee.Text.TextRerankingQwen3.text_reranking_qwen3/3` for available options.
 
   ## Examples
 
@@ -466,7 +468,7 @@ defmodule Bumblebee.Text do
         architecture: :for_reranker)
       {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Qwen/Qwen3-Reranker-0.6B"})
 
-      serving = Bumblebee.Text.text_reranking(model_info, tokenizer)
+      serving = Bumblebee.Text.text_reranking_qwen3(model_info, tokenizer)
 
       query = "What is the capital of France?"
       documents = [
@@ -478,13 +480,13 @@ defmodule Bumblebee.Text do
       Nx.Serving.run(serving, pairs)
 
   """
-  @spec text_reranking(
+  @spec text_reranking_qwen3(
           Bumblebee.model_info(),
           Bumblebee.Tokenizer.t(),
           keyword()
         ) :: Nx.Serving.t()
-  defdelegate text_reranking(model_info, tokenizer, opts \\ []),
-    to: Bumblebee.Text.TextReranking
+  defdelegate text_reranking_qwen3(model_info, tokenizer, opts \\ []),
+    to: Bumblebee.Text.TextRerankingQwen3
 
   @type fill_mask_input :: String.t()
   @type fill_mask_output :: %{predictions: list(fill_mask_prediction())}
