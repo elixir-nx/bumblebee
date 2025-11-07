@@ -21,6 +21,10 @@ defmodule Bumblebee.Layers.Transformer do
       is configured, this option controls whether the bias from the
       first block is used for all other blocks. Defaults to `false`
 
+    * `:rotary_embedding` - configuration of rotary embedding. Can be:
+      - a keyword list (applied to all blocks)
+      - a function that takes the block index and returns the configuration
+
     * `:name` - the prefix for layer names
 
   For all other options (including required options) see `block/2`.
@@ -53,6 +57,7 @@ defmodule Bumblebee.Layers.Transformer do
       :rotary_embedding,
       :query_norm,
       :key_norm
+      :scale_attention_weights
     ]
 
     opts =
@@ -62,6 +67,7 @@ defmodule Bumblebee.Layers.Transformer do
           [
             :name,
             :num_blocks,
+            :rotary_embedding,
             attention_mask: Layers.none(),
             attention_head_mask: Layers.none(),
             attention_relative_bias: nil,
@@ -82,6 +88,7 @@ defmodule Bumblebee.Layers.Transformer do
     cross_attention_mask = opts[:cross_attention_mask]
     cross_attention_head_mask = opts[:cross_attention_head_mask]
     cache = opts[:cache]
+    rotary_embedding = opts[:rotary_embedding]
 
     block_opts = Keyword.take(opts, block_opts_keys)
 
@@ -111,6 +118,13 @@ defmodule Bumblebee.Layers.Transformer do
               opts[:attention_relative_bias] || Layers.none()
             end
 
+          block_rotary_embedding =
+            case rotary_embedding do
+              nil -> nil
+              fun when is_function(fun, 1) -> fun.(idx)
+              config when is_list(config) -> config
+            end
+
           {hidden_state, attention, cross_attention, block_cache, attention_relative_bias} =
             block(
               state.hidden_state,
@@ -123,6 +137,7 @@ defmodule Bumblebee.Layers.Transformer do
                 cross_attention_head_mask: block_cross_attention_head_mask,
                 block_cache: block_cache,
                 offset: offset,
+                rotary_embedding: block_rotary_embedding,
                 name: join(name, idx)
               ] ++ block_opts
             )

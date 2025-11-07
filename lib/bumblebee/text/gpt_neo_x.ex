@@ -426,8 +426,6 @@ defmodule Bumblebee.Text.GptNeoX do
           ),
         "decoder.blocks.{n}.self_attention.output" => "gpt_neox.layers.{n}.attention.dense",
         "decoder.blocks.{n}.self_attention_norm" => "gpt_neox.layers.{n}.input_layernorm",
-        "decoder.blocks.{n}.self_attention.rotary_embedding" =>
-          "gpt_neox.layers.{n}.self_attn.rotary_emb",
         "decoder.blocks.{n}.ffn.intermediate" => "gpt_neox.layers.{n}.mlp.dense_h_to_4h",
         "decoder.blocks.{n}.ffn.output" => "gpt_neox.layers.{n}.mlp.dense_4h_to_h",
         "decoder.blocks.{n}.output_norm" => "gpt_neox.layers.{n}.post_attention_layernorm",

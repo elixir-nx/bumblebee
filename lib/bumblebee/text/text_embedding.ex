@@ -42,6 +42,14 @@ defmodule Bumblebee.Text.TextEmbedding do
 
       output =
         case output do
+          %{^output_attribute => %Axon.None{}} ->
+            keys = output |> Map.keys() |> Enum.sort()
+
+            raise ArgumentError,
+                  "key #{inspect(output_attribute)} in the output map has value %Axon.None{}," <>
+                    " make sure this is the correct key and check module documentation incase it is opt-in." <>
+                    " The output map keys are: #{inspect(keys)}"
+
           %{^output_attribute => output} ->
             output
 

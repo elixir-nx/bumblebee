@@ -1,33 +1,40 @@
-defmodule Bumblebee.Text.Phi do
+defmodule Bumblebee.Text.SmolLM3 do
   alias Bumblebee.Shared
 
   options =
     [
       vocab_size: [
-        default: 51200,
+        default: 128_256,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
         """
       ],
       max_positions: [
-        default: 2048,
+        default: 65536,
         doc: """
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
         length that this model can process. Typically this is set to a large value just in case,
-        such as 512, 1024 or 2048
+        such as 512, 1024 or 2048.
         """
       ],
       hidden_size: [
-        default: 2048,
+        default: 4096,
         doc: "the dimensionality of hidden layers"
       ],
       intermediate_size: [
-        default: 8192,
+        default: 11008,
         doc: "the dimensionality of intermediate layers"
       ],
+      attention_head_size: [
+        default: nil,
+        doc: """
+        the size of the key, value, and query projection per attention head.
+        Defaults to `div(hidden_size, num_attention_heads)`
+        """
+      ],
       num_blocks: [
-        default: 24,
+        default: 32,
         doc: "the number of Transformer blocks in the model"
       ],
       num_attention_heads: [
@@ -35,25 +42,37 @@ defmodule Bumblebee.Text.Phi do
         doc: "the number of attention heads for each attention layer in the model"
       ],
       num_key_value_heads: [
-        default: nil,
-        doc: """
-        the number of key-value heads used to implement Grouped Query Attention. If
-        this value is set to the same as the number of attention heads, it will use
-        regular MHA. If it's set to 1, it will use MQA, otherwise it uses Grouped Query
-        Attention
-        """
+        default: 4,
+        doc: "the number of key value heads for each attention layer in the model"
       ],
       activation: [
-        default: :gelu_approx_tanh,
+        default: :silu,
         doc: "the activation function"
       ],
-      rotary_embedding_percentage: [
-        default: 0.5,
-        doc: "percentage of the query and keys that will have rotary embedding"
-      ],
       rotary_embedding_base: [
-        default: 10_000,
+        default: 5_000_000,
         doc: "base for computing rotary embedding frequency"
+      ],
+      rotary_embedding_scaling_strategy: [
+        default: nil,
+        doc: """
+        scaling configuration for rotary embedding. Currently the supported values are:
+
+          * `%{type: :linear, factor: number()}`
+
+          * `%{type: :dynamic, factor: number()}`
+
+          * `%{type: :llama3, factor: number(), low_frequency_factor: number(), high_frequency_factor: number(), original_max_positions: pos_integer()}`
+
+        For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
+        """
+      ],
+      rotary_embedding_enabled: [
+        default: nil,
+        doc: """
+        a list of booleans specifying whether rotary embeddings are enabled for the block that corresponds to the index.
+        Defaults to `nil` which enables rotary embeddings for all blocks.
+        """
       ],
       layer_norm_epsilon: [
         default: 1.0e-12,
@@ -63,28 +82,49 @@ defmodule Bumblebee.Text.Phi do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ],
+      tie_word_embeddings: [
+        default: true,
+        doc: "whether to tie input and output embedding weights"
       ]
     ] ++
       Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
-  Phi model family.
+  SmolLM3 is a 3B parameter language model designed to push the boundaries of small models.
+  It supports dual mode reasoning, 6 languages and long context. SmolLM3 is a fully open model
+  that offers strong performance at the 3B–4B scale.
+
+  Key features
+
+    * Instruct model optimized for hybrid reasoning
+    * Fully open model: open weights + full training details including public data mixture and training configs
+    * Long context: Trained on 64k context and supports up to 128k tokens using YARN extrapolation (not implemented in `bumblebee`)
+    * Multilingual: 6 natively supported (English, French, Spanish, German, Italian, and Portuguese)
+
+  For best results, follow the [chat template](https://huggingface.co/HuggingFaceTB/SmolLM3-3B/blob/main/chat_template.jinja).
+  To disable reasoning, append `<think>\\n\\n</think>` to the prompt.
+
+  For more details see: https://huggingface.co/HuggingFaceTB/SmolLM3-3B
 
   ## Architectures
 
-    * `:base` - plain Phi without any head on top
+    * `:base` - plain SmolLM3 without any head on top
 
-    * `:for_causal_language_modeling` - Phi with a language modeling
+    * `:for_causal_language_modeling` - SmolLM3 with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - Phi with a sequence
+    * `:for_sequence_classification` - SmolLM3 with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
-    * `:for_token_classification` - Phi with a token classification
+    * `:for_token_classification` - SmolLM3 with a token classification
       head. The head returns logits for each token in the original
       sequence
+
+    * `:for_question_answering` - SmolLM3 with a span classification head.
+      The head returns logits for the span start and end positions
 
   ## Inputs
 
@@ -148,7 +188,8 @@ defmodule Bumblebee.Text.Phi do
       :base,
       :for_causal_language_modeling,
       :for_sequence_classification,
-      :for_token_classification
+      :for_token_classification,
+      :for_question_answering
     ]
 
   @impl true
@@ -169,6 +210,7 @@ defmodule Bumblebee.Text.Phi do
   def init_cache(spec, batch_size, max_length, _inputs) do
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
+      attention_head_size: spec.attention_head_size,
       decoder_num_attention_heads: spec.num_attention_heads,
       decoder_num_blocks: spec.num_blocks
     )
@@ -243,6 +285,7 @@ defmodule Bumblebee.Text.Phi do
 
   def model(%__MODULE__{architecture: :for_token_classification} = spec) do
     inputs = inputs(spec)
+
     outputs = core(inputs, spec)
 
     logits =
@@ -258,6 +301,27 @@ defmodule Bumblebee.Text.Phi do
 
     Layers.output(%{
       logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions,
+      cache: outputs.cache
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_question_answering} = spec) do
+    inputs = inputs(spec)
+    outputs = core(inputs, spec)
+
+    logits =
+      Axon.dense(outputs.hidden_state, 2,
+        kernel_initializer: kernel_initializer(spec),
+        name: "question_answering_head.output"
+      )
+
+    {start_logits, end_logits} = Layers.split_pair(logits)
+
+    Layers.output(%{
+      start_logits: start_logits,
+      end_logits: end_logits,
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions
     })
@@ -305,7 +369,7 @@ defmodule Bumblebee.Text.Phi do
       )
 
     hidden_state =
-      Axon.layer_norm(decoder_outputs.hidden_state,
+      Layers.rms_norm(decoder_outputs.hidden_state,
         name: "output_norm",
         epsilon: spec.layer_norm_epsilon
       )
@@ -321,8 +385,6 @@ defmodule Bumblebee.Text.Phi do
   defp embedder(input_ids, input_embeddings, spec, opts) do
     name = opts[:name]
 
-    # TODO: Axon needs a way to specify ignoring pad tokens
-    # in gradient
     Layers.default input_embeddings do
       Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
@@ -342,56 +404,70 @@ defmodule Bumblebee.Text.Phi do
        ) do
     name = opts[:name]
 
+    rotary_embedding_config = [
+      position_ids: position_ids,
+      max_positions: spec.max_positions,
+      base: spec.rotary_embedding_base,
+      scaling_strategy: spec.rotary_embedding_scaling_strategy
+    ]
+
+    rotary_embedding =
+      case spec.rotary_embedding_enabled do
+        nil ->
+          rotary_embedding_config
+
+        rotary_embedding_enabled ->
+          fn layer_index ->
+            if Enum.at(rotary_embedding_enabled, layer_index) do
+              rotary_embedding_config
+            else
+              nil
+            end
+          end
+      end
+
     Layers.Transformer.blocks(hidden_state,
       attention_mask: attention_mask,
       attention_head_mask: attention_head_mask,
+      attention_head_size: spec.attention_head_size,
       cache: cache,
       num_blocks: spec.num_blocks,
       num_attention_heads: spec.num_attention_heads,
       num_key_value_heads: spec.num_key_value_heads,
       hidden_size: spec.hidden_size,
       kernel_initializer: kernel_initializer(spec),
-      layer_norm: [
-        epsilon: spec.layer_norm_epsilon
-      ],
-      ffn: [
-        intermediate_size: spec.intermediate_size,
-        activation: spec.activation
-      ],
-      block_type: &block_impl/3,
+      layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
+      ffn:
+        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
+          name: &2,
+          activation: spec.activation
+        ),
+      block_type: :norm_first,
       causal: true,
-      rotary_embedding: [
-        position_ids: position_ids,
-        max_positions: spec.max_positions,
-        base: spec.rotary_embedding_base,
-        percentage: spec.rotary_embedding_percentage
-      ],
-      query_use_bias: true,
-      key_use_bias: true,
-      value_use_bias: true,
-      output_use_bias: true,
+      rotary_embedding: rotary_embedding,
+      query_use_bias: false,
+      key_use_bias: false,
+      value_use_bias: false,
+      output_use_bias: false,
       name: join(name, "blocks")
     )
   end
 
-  # :parallel block with attention norm applied earlier and without ffn norm
-  defp block_impl(hidden_state, steps, _name) do
-    shortcut = hidden_state
+  defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
+    name = opts[:name]
+    activation = opts[:activation]
 
-    hidden_state = steps.self_attention_norm.(hidden_state)
+    intermediate =
+      Axon.dense(hidden_state, intermediate_size,
+        name: join(name, "intermediate"),
+        use_bias: false
+      )
 
-    {attention_hidden_state, attention_info} = steps.self_attention.(hidden_state)
+    gate = Axon.dense(hidden_state, intermediate_size, name: join(name, "gate"), use_bias: false)
 
-    {_hidden_state, cross_attention_info} =
-      steps.cross_attention_maybe.(hidden_state, fn _hidden_state ->
-        raise "cross attention not supported"
-      end)
+    hidden_state = Axon.multiply(intermediate, Axon.activation(gate, activation))
 
-    ffn_hidden_state = steps.ffn.(hidden_state)
-
-    hidden_state = Axon.add([shortcut, attention_hidden_state, ffn_hidden_state])
-
-    {hidden_state, attention_info, cross_attention_info}
+    Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do
@@ -400,8 +476,7 @@ defmodule Bumblebee.Text.Phi do
     # TODO: Tie lm-head to word embedding as a spec option
     Layers.dense_transposed(hidden_state, spec.vocab_size,
       kernel_initializer: kernel_initializer(spec),
-      name: join(name, "output"),
-      use_bias: true
+      name: join(name, "output")
     )
   end
 
@@ -413,20 +488,75 @@ defmodule Bumblebee.Text.Phi do
     def load(spec, data) do
       import Shared.Converters
 
+      scaling_strategy_converter = fn name, value ->
+        # "type" has been renamed to "rope_type"
+        value =
+          case Map.pop(value, "type") do
+            {nil, value} -> value
+            {type, value} -> Map.put(value, "rope_type", type)
+          end
+
+        case value do
+          %{"rope_type" => "linear", "factor" => factor} when is_number(factor) ->
+            {:ok, %{type: :linear, factor: factor}}
+
+          %{"rope_type" => "dynamic", "factor" => factor} when is_number(factor) ->
+            {:ok, %{type: :dynamic, factor: factor}}
+
+          %{
+            "rope_type" => "llama3",
+            "factor" => factor,
+            "low_freq_factor" => low_frequency_factor,
+            "high_freq_factor" => high_frequency_factor,
+            "original_max_position_embeddings" => original_max_positions
+          }
+          when is_number(factor) and is_number(low_frequency_factor) and
+                 is_number(high_frequency_factor) and
+                 is_number(original_max_positions) ->
+            {:ok,
+             %{
+               type: :llama3,
+               factor: factor,
+               low_frequency_factor: low_frequency_factor,
+               high_frequency_factor: high_frequency_factor,
+               original_max_positions: original_max_positions
+             }}
+
+          _other ->
+            {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
+        end
+      end
+
+      rotary_embedding_enabled_converter = fn name, value ->
+        case value do
+          no_rope_layers when is_list(no_rope_layers) ->
+            {:ok, Enum.map(no_rope_layers, &(&1 == 1))}
+
+          _other ->
+            {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
+        end
+      end
+
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
+          tie_word_embeddings: {"tie_word_embeddings", boolean()},
           max_positions: {"max_position_embeddings", number()},
           hidden_size: {"hidden_size", number()},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
+          attention_head_size: {"head_dim", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
           rotary_embedding_base: {"rope_theta", number()},
-          rotary_embedding_percentage: {"partial_rotary_factor", number()},
+          rotary_embedding_scaling_strategy:
+            {"rope_scaling", optional(scaling_strategy_converter)},
+          rotary_embedding_enabled:
+            {"no_rope_layers", optional(rotary_embedding_enabled_converter)},
           initializer_scale: {"initializer_range", number()},
-          layer_norm_epsilon: {"layer_norm_eps", number()}
+          layer_norm_epsilon: {"rms_norm_eps", number()},
+          tie_word_embeddings: {"tie_word_embeddings", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -434,21 +564,35 @@ defmodule Bumblebee.Text.Phi do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(_spec) do
-      %{
+    def params_mapping(spec) do
+      mapping = %{
         "embedder.token_embedding" => "model.embed_tokens",
         "decoder.blocks.{n}.self_attention.query" => "model.layers.{n}.self_attn.q_proj",
         "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
         "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
-        "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.dense",
+        "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.o_proj",
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
-        "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.fc1",
-        "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.fc2",
-        "output_norm" => "model.final_layernorm",
-        "language_modeling_head.output" => "lm_head",
+        "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
+        "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.up_proj",
+        "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",
+        "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
+        "output_norm" => "model.norm",
+        "language_modeling_head.output" =>
+          if(spec.tie_word_embeddings, do: "model.embed_tokens", else: "lm_head"),
         "sequence_classification_head.output" => "score",
-        "token_classification_head.output" => "classifier"
+        "token_classification_head.output" => "score",
+        "question_answering_head.output" => "qa_outputs"
       }
+
+      case spec do
+        %{architecture: :for_question_answering} ->
+          for {key, value} <- mapping, into: %{} do
+            {key, String.replace_leading(value, "model.", "transformer.")}
+          end
+
+        _else ->
+          mapping
+      end
     end
   end
 end

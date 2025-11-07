@@ -416,6 +416,36 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
     )
   end
 
+  test ":smollm3" do
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "HuggingFaceTB/SmolLM3-3B"})
+
+    assert %Bumblebee.Text.PreTrainedTokenizer{type: :smollm3} = tokenizer
+
+    inputs =
+      Bumblebee.apply_tokenizer(tokenizer, [
+        "Test sentence with <mask>.",
+        {"Question?", "Answer"}
+      ])
+
+    assert_equal(
+      inputs["input_ids"],
+      Nx.tensor([
+        [2323, 11914, 449, 366, 11508, 14611],
+        [14924, 30, 16533, 128_012, 128_012, 128_012]
+      ])
+    )
+
+    assert_equal(
+      inputs["attention_mask"],
+      Nx.tensor([[1, 1, 1, 1, 1, 1], [1, 1, 1, 0, 0, 0]])
+    )
+
+    assert_equal(
+      inputs["token_type_ids"],
+      Nx.tensor([[0, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]])
+    )
+  end
+
   test ":t5" do
     assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google-t5/t5-small"})
 
