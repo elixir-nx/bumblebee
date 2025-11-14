@@ -193,22 +193,14 @@ defmodule Bumblebee.Text.GenerationTest do
     # result without logit processor: 80, 80, 80
 
     # first entry in batch
-    # first token_id should be 78 as we enforce token_id 78 on the first
-    # iteration
     assert_equal(token_ids[[0, 0]], 78)
-
-    # second should be 79 as we increment the enforced token_id from 78 to 79
     assert_equal(token_ids[[0, 1]], 79)
-
-    # in the next step we increment from 79 to 80 and enforce token_id 80
     assert_equal(token_ids[[0, 2]], 80)
 
     # second entry in batch
-    # first token_id is 20 as we enforce token_id 20 on the first iteration
     assert_equal(token_ids[[1, 0]], 78)
-
-    # in the next step we increment from 20 to 21 and enforce token_id 21
     assert_equal(token_ids[[1, 1]], 79)
+    assert_equal(token_ids[[1, 2]], 80)
   end
 
   defmodule StatefulLogitsProcessing do
