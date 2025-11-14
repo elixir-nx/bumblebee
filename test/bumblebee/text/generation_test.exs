@@ -159,10 +159,7 @@ defmodule Bumblebee.Text.GenerationTest do
     %{token_ids: token_ids} =
       Nx.Defn.jit_apply(generate, [params, inputs], compiler: EXLA)
 
-    # first token_id should be 79 as we enforce token_id 79
     assert_equal(token_ids[[0, 0]], 79)
-
-    # in the next step we increment from 79 to 80 and enforce token_id 80
     assert_equal(token_ids[[0, 1]], 80)
 
     #########################################################
