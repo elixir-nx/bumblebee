@@ -15,6 +15,14 @@ defmodule Bumblebee.LogitsProcessor do
 
   @type state :: Nx.Container.t()
 
+  @type process_context :: %{
+    sequence: Nx.Tensor.t(),
+    length: Nx.Tensor.t(),
+    input_length: Nx.Tensor.t()
+  }
+
+  @type init_context :: %{}
+
   @doc """
   Initializes state for a new logits processor.
 
@@ -24,7 +32,7 @@ defmodule Bumblebee.LogitsProcessor do
   Oftentimes logits processors are stateless, in which case this
   function can return an empty container, such as `{}`.
   """
-  @callback init(t(), any()) :: state()
+  @callback init(t(), init_context()) :: state()
 
   @doc """
   Processes logits, applying specific rules.
@@ -33,6 +41,6 @@ defmodule Bumblebee.LogitsProcessor do
               t(),
               state(),
               logits :: Nx.Tensor.t(),
-              context :: term()
+              context :: process_context()
             ) :: {state :: map(), logits :: Nx.Tensor.t()}
 end

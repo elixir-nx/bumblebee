@@ -220,11 +220,11 @@ defmodule Bumblebee.Text.GenerationTest do
     end
 
     @impl Bumblebee.LogitsProcessor
-    def init(logits_processor, context) do
+    def init(logits_processor, init_context) do
       initial_enforced_token_id = Nx.tensor([logits_processor.initial_enforced_token_id])
 
       [initial_enforced_batch_token_id, _sequence] =
-        Nx.broadcast_vectors([initial_enforced_token_id, context.sequence])
+        Nx.broadcast_vectors([initial_enforced_token_id, init_context.sequence])
 
       %{
         next_enforced_token_id: initial_enforced_batch_token_id
@@ -232,7 +232,7 @@ defmodule Bumblebee.Text.GenerationTest do
     end
 
     @impl Bumblebee.LogitsProcessor
-    def process(_logits_processor, state, logits, _context) do
+    def process(_logits_processor, state, logits, _process_context) do
       next_enforced_token_id = state.next_enforced_token_id
 
       logits = enforce_token(logits, next_enforced_token_id)

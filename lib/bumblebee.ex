@@ -1092,7 +1092,7 @@ defmodule Bumblebee do
   @doc type: :logits_processor
   @spec logits_processor_init(
           Bumblebee.LogitsProcessor.t(),
-          context :: term()
+          context :: Bumblebee.LogitsProcessor.init_context()
         ) :: Bumblebee.LogitsProcessor.state()
   def logits_processor_init(%module{} = logits_processor, context) do
     module.init(logits_processor, context)
@@ -1107,7 +1107,7 @@ defmodule Bumblebee do
           Bumblebee.LogitsProcessor.t(),
           Bumblebee.LogitsProcessor.state(),
           logits :: Nx.Tensor.t(),
-          context :: term()
+          context :: Bumblebee.LogitsProcessor.process_context()
         ) :: {Bumblebee.LogitsProcessor.state(), logits :: Nx.Tensor.t()}
   def logits_processor_process(%module{} = logits_processor, state, logits, context) do
     module.process(logits_processor, state, logits, context)

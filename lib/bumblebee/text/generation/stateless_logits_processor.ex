@@ -19,12 +19,12 @@ defmodule Bumblebee.Text.Generation.StatelessLogitsProcessor do
   end
 
   @impl Bumblebee.LogitsProcessor
-  def init(_logits_processor, _context) do
+  def init(_logits_processor, _init_context) do
     %{}
   end
 
   @impl Bumblebee.LogitsProcessor
-  def process(logits_processor, state, logits, context) do
-    {state, logits_processor.fun.(logits, context)}
+  def process(logits_processor, state, logits, process_context) do
+    {state, logits_processor.fun.(logits, process_context)}
   end
 end
