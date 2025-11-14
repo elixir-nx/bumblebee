@@ -134,10 +134,6 @@ defmodule Bumblebee.Text.GenerationTest do
     # given initial ID, then increments the token ID to be enforced on the
     # following iterations. The ID of the token to be enforced is passed on
     # between iterations using the logits_processor_state.
-    #
-    # So invoked with the initial ID of 79, it enforces 79, 80, 81, ... in
-    # the subsequent iterations, demonstrating the use of the state in a
-    # logits processor.
 
     generation_config = Bumblebee.configure(generation_config, max_new_tokens: 2)
 
@@ -154,7 +150,8 @@ defmodule Bumblebee.Text.GenerationTest do
     # The result without the logits processor would be, as with the first
     # decoder test above, [80, 80, 80].
     #
-    # Now, with the processor below, we expect the sequence of [79, 80, 81 ..]
+    # Now, with the processor below, we expect the sequence of [79, 80, 81 ..],
+    # demonstrating the use of the state in a logits processor.
 
     %{token_ids: token_ids} =
       Nx.Defn.jit_apply(generate, [params, inputs], compiler: EXLA)
