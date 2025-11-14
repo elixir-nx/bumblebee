@@ -156,7 +156,8 @@ defmodule Bumblebee.Text.GenerationTest do
     #
     # Now, with the processor below, we expect the sequence of [79, 80, 81 ..]
 
-    %{token_ids: token_ids} = generate.(params, inputs)
+    %{token_ids: token_ids} =
+      Nx.Defn.jit_apply(generate, [params, inputs], compiler: EXLA)
 
     # first token_id should be 79 as we enforce token_id 79
     assert_equal(token_ids[[0, 0]], 79)
@@ -186,7 +187,8 @@ defmodule Bumblebee.Text.GenerationTest do
         ]
       )
 
-    %{token_ids: token_ids} = generate.(params, inputs)
+    %{token_ids: token_ids} =
+      Nx.Defn.jit_apply(generate, [params, inputs], compiler: EXLA)
 
     # result without logit processor: 80, 80, 80
 
