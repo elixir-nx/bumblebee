@@ -1,0 +1,203 @@
+# Printing top logits and token ids
+
+```elixir
+Mix.install([
+  {:bumblebee, "~> 0.6"},
+  {:nx, "~> 0.10.0", override: true},
+  {:exla, "~> 0.10.0"},
+  {:emlx, github: "elixir-nx/emlx"}
+])
+
+# backend = {EMLX.Backend, device: :gpu}
+# compiler = EMLX
+backend = {EXLA.Backend, client: :host}
+compiler = EXLA
+
+Nx.global_default_backend(backend)
+```
+
+## A print logits processor
+
+```elixir
+defmodule PrintLogitsProcessor do
+  import Nx.Defn
+
+  deftransform debug_processor(logits, context, opts \\ []) do
+    k = opts[:debug_limit]
+
+    print_top_k_logits_and_token_ids(logits, k, context.sequence)
+  end
+
+  defnp print_top_k_logits_and_token_ids(logits, k, sequence) do
+    token = create_token()
+
+    {top_values, top_indices} = Nx.top_k(logits, k: k)
+
+    {token, _sequence} =
+      hook_token(token, sequence, :sequence, &IO.inspect({:sequence, &1}, limit: :infinity))
+
+    {token, _top_values} =
+      hook_token(token, top_values, :top_values, &IO.inspect({:logits, &1}))
+
+    {token, _top_indices} =
+      hook_token(token, top_indices, :top_indices, &IO.inspect({:token_ids, &1}))
+
+    attach_token(token, logits)
+  end
+end
+```
+
+## Building the generate function
+
+```elixir
+repo = {:hf, "HuggingFaceTB/SmolLM2-135M-Instruct"}
+
+sequence_length = 512
+
+max_new_tokens = 32
+
+prompt = """
+<|im_start|>system
+You are a helpful AI assistant named SmolLM. You tell phantastic poems about airships.<|im_end|>
+<|im_start|>user
+Tell about airships.<|im_end|>
+<|im_start|>assistant
+"""
+
+{:ok, model_info} = Bumblebee.load_model(repo, backend: backend)
+
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+{:ok, generation_config} = Bumblebee.load_generation_config(repo)
+
+generation_config =
+  Bumblebee.configure(generation_config,
+    max_new_tokens: max_new_tokens,
+    strategy: %{type: :multinomial_sampling, top_k: 3 }
+  )
+
+%{model: model, params: params, spec: spec} = model_info
+
+generate_fun =
+  Bumblebee.Text.Generation.build_generate(model, spec, generation_config,
+    logits_processors: [ &PrintLogitsProcessor.debug_processor(&1, &2, [debug_limit: 2])]
+  )
+```
+
+## Setting up the serving
+
+This is taken from `lib/bumblebee/text/text_generation.ex`. It's basically the `Bumblebee.Text.generation` function that you usually use to create text generation servings (with some minor modifications to simplify it).
+We must use the lower level API here to be able to include `PrintLogitsProcessor` in `generate_fun`.
+
+```elixir
+alias Bumblebee.Shared
+
+batch_keys = Shared.sequence_batch_keys(sequence_length)
+batch_size = 1
+defn_options = [compiler: compiler]
+
+preallocate_params = false
+
+tokenizer =
+  Bumblebee.configure(tokenizer,
+    length: sequence_length,
+    pad_direction: :left,
+    return_token_type_ids: false,
+    return_length: true
+  )
+
+validate_input = fn text -> {:ok, %{text: text, seed: :erlang.system_time()}} end
+
+serving =
+  Nx.Serving.new(
+    fn batch_key, defn_options ->
+      params = Shared.maybe_preallocate(params, preallocate_params, defn_options)
+
+      scope = {:generate, batch_key}
+
+      generate_fun =
+        Shared.compile_or_jit(generate_fun, scope, defn_options, true, fn ->
+          {:sequence_length, sequence_length} = batch_key
+
+          inputs = %{
+            "input_ids" => Nx.template({batch_size, sequence_length}, :u32),
+            "attention_mask" => Nx.template({batch_size, sequence_length}, :u32),
+            "seed" => Nx.template({batch_size}, :s64)
+          }
+
+          [params, inputs]
+        end)
+
+      fn inputs ->
+        inputs = Shared.maybe_pad(inputs, batch_size)
+        generate_fun.(params, inputs) |> Shared.serving_post_computation()
+      end
+    end,
+    defn_options
+  )
+  |> Nx.Serving.batch_size(batch_size)
+  |> Nx.Serving.process_options(batch_keys: batch_keys)
+  |> Nx.Serving.client_preprocessing(fn input ->
+    {inputs, multi?} = Shared.validate_serving_input!(input, &validate_input.(&1))
+
+    texts = Enum.map(inputs, & &1.text)
+    seed = Enum.map(inputs, & &1.seed) |> Nx.tensor(type: :s64, backend: Nx.BinaryBackend)
+
+    inputs =
+      Nx.with_default_backend(Nx.BinaryBackend, fn ->
+        Bumblebee.apply_tokenizer(tokenizer, texts)
+      end)
+
+    {input_length, inputs} = Map.pop!(inputs, "length")
+    input_padded_length = Nx.axis_size(inputs["input_ids"], 1)
+
+    inputs = Map.put(inputs, "seed", seed)
+
+    batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
+    batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)
+
+    {batch, {multi?, input_length, input_padded_length}}
+  end)
+  |> Nx.Serving.client_postprocessing(fn {%{token_ids: token_ids, length: length}, _metadata},
+                                         {multi?, input_length, input_padded_length} ->
+    decoded = Bumblebee.Tokenizer.decode(tokenizer, token_ids)
+    output_length = Nx.to_flat_list(length)
+    input_length = Nx.to_flat_list(input_length)
+
+    Enum.zip_with(
+      [decoded, output_length, input_length],
+      fn [decoded, output_length, input_length] ->
+        token_summary =
+          %{
+            input: input_length,
+            output: output_length,
+            padding: input_padded_length - input_length
+          }
+
+        %{results: [%{text: decoded, token_summary: token_summary}]}
+      end
+    )
+    |> Shared.normalize_output(multi?)
+  end)
+```
+
+## Run the serving
+
+```elixir
+prompt = """
+Tell me about airships.
+"""
+```
+
+### Note:
+
+In the following cell, the **content of :sequence is padded** ([2, 2, ...] scroll to the right to see the content emerge):
+
+```
+     [2, 2, 2, .. (a lot of 2's later) ... 31530, 549, 563, 1512, 27322, 30, 198, ...]
+```
+
+Have a look at the [tokenizer.json file on hugging face](https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct/blob/main/tokenizer.json) to see the meaning on the tokens.
+
+```elixir
+Nx.Serving.run(serving, prompt)
+```
