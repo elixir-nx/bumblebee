@@ -57,7 +57,6 @@ defmodule Bumblebee.Layers.Transformer do
       :rotary_embedding,
       :query_norm,
       :key_norm
-      :scale_attention_weights
     ]
 
     opts =
