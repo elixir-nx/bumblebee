@@ -373,9 +373,20 @@ defmodule Bumblebee.Text.Qwen3 do
        ) do
     name = opts[:name]
 
-    # Build query and key normalization configuration for Qwen3
-    query_norm = if spec.use_qk_norm, do: [epsilon: spec.layer_norm_epsilon], else: nil
-    key_norm = if spec.use_qk_norm, do: [epsilon: spec.layer_norm_epsilon], else: nil
+    # Build query and key normalization functions for Qwen3
+    query_norm =
+      if spec.use_qk_norm do
+        &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, channel_index: -1, name: &2)
+      else
+        nil
+      end
+
+    key_norm =
+      if spec.use_qk_norm do
+        &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, channel_index: -1, name: &2)
+      else
+        nil
+      end
 
     # Use the generalized Layers.Transformer.blocks with QK normalization
     Layers.Transformer.blocks(hidden_state,
