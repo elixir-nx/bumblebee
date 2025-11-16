@@ -54,7 +54,6 @@ defmodule Bumblebee.Layers.Transformer do
       :block_type,
       :attention_window_size,
       :scale_attention_weights,
-      :rotary_embedding,
       :query_norm,
       :key_norm
     ]
