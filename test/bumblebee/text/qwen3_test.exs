@@ -41,7 +41,9 @@ defmodule Bumblebee.Text.Qwen3Test do
 
   test ":for_sequence_classification" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-Qwen3ForSequenceClassification"})
+             Bumblebee.load_model(
+               {:hf, "bumblebee-testing/tiny-random-Qwen3ForSequenceClassification"}
+             )
 
     assert %Bumblebee.Text.Qwen3{architecture: :for_sequence_classification} = spec
 
@@ -59,7 +61,9 @@ defmodule Bumblebee.Text.Qwen3Test do
 
   test ":for_embedding" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-Qwen3Model"}, architecture: :for_embedding)
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-Qwen3Model"},
+               architecture: :for_embedding
+             )
 
     assert %Bumblebee.Text.Qwen3{architecture: :for_embedding} = spec
 
