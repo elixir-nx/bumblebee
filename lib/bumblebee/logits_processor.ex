@@ -16,10 +16,10 @@ defmodule Bumblebee.LogitsProcessor do
   @type state :: Nx.Container.t()
 
   @type process_context :: %{
-    sequence: Nx.Tensor.t(),
-    length: Nx.Tensor.t(),
-    input_length: Nx.Tensor.t()
-  }
+          sequence: Nx.Tensor.t(),
+          length: Nx.Tensor.t(),
+          input_length: Nx.Tensor.t()
+        }
 
   @type init_context :: %{}
 
