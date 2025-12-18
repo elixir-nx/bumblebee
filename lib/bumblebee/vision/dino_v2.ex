@@ -322,7 +322,10 @@ defmodule Bumblebee.Vision.DinoV2 do
 
         interpolated_position_embeddings =
           input_position_embeddings
-          |> Nx.reshape({position_embeddings_batch_size, original_positions, original_positions, spec.hidden_size})
+          |> Nx.reshape(
+            {position_embeddings_batch_size, original_positions, original_positions,
+             spec.hidden_size}
+          )
           |> Axon.Layers.resize(
             size: {resized_height, resized_width},
             method: :bicubic,
