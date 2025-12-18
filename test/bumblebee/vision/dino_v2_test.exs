@@ -68,6 +68,59 @@ defmodule Bumblebee.Vision.DinoV2Test do
     )
   end
 
+  test ":base with batch size > 1 and position embedding interpolation" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-Dinov2Model"})
+
+    assert %Bumblebee.Vision.DinoV2{architecture: :base} = spec
+
+    inputs = %{
+      # simulate a batch of 2 different images
+      "pixel_values" =>
+        Nx.stack([
+          Nx.broadcast(0.5, {64, 64, 3}),
+          Nx.broadcast(-0.5, {64, 64, 3})
+        ])
+    }
+
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.hidden_state) == {2, 1025, 32}
+    assert Nx.shape(outputs.pooled_state) == {2, 32}
+
+    assert_all_close(
+      outputs.hidden_state[[0, 1..3, 1..3]],
+      Nx.tensor([
+        [-1.2287, -0.2291, -0.4323],
+        [-1.1548, -0.4430, -0.4710],
+        [-1.0547, -0.7580, -0.4654]
+      ]),
+      atol: 1.0e-1
+    )
+
+    assert_all_close(
+      outputs.pooled_state[[0, 1..3]],
+      Nx.tensor([-0.7270, -0.5913, 0.7701]),
+      atol: 1.0e-2
+    )
+
+    assert_all_close(
+      outputs.hidden_state[[1, 1..3, 1..3]],
+      Nx.tensor([
+        [0.5043, 0.9529, 0.8042],
+        [0.5555, 0.8786, 0.8492],
+        [0.6114, 0.5701, 0.9278]
+      ]),
+      atol: 1.0e-1
+    )
+
+    assert_all_close(
+      outputs.pooled_state[[1, 1..3]],
+      Nx.tensor([0.1374, -0.9757, 1.1830]),
+      atol: 1.0e-2
+    )
+  end
+
   test ":base with swiglu ffn" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(

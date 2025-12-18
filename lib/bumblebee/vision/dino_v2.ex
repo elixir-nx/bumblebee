@@ -312,22 +312,26 @@ defmodule Bumblebee.Vision.DinoV2 do
     Axon.layer(
       fn position_embeddings, pixel_values, _opts ->
         original_positions = div(spec.image_size, spec.patch_size)
-        {batch_size, height, width, _channels} = Nx.shape(pixel_values)
+        {_batch_size, height, width, _channels} = Nx.shape(pixel_values)
         resized_height = div(height, spec.patch_size)
         resized_width = div(width, spec.patch_size)
+        position_embeddings_batch_size = Nx.axis_size(position_embeddings, 0)
 
         class_position_embedding = position_embeddings[[.., 0..0//1, ..]]
         input_position_embeddings = position_embeddings[[.., 1..-1//1, ..]]
 
         interpolated_position_embeddings =
           input_position_embeddings
-          |> Nx.reshape({batch_size, original_positions, original_positions, spec.hidden_size})
+          |> Nx.reshape(
+            {position_embeddings_batch_size, original_positions, original_positions,
+             spec.hidden_size}
+          )
           |> Axon.Layers.resize(
             size: {resized_height, resized_width},
             method: :bicubic,
             antialias: false
           )
-          |> Nx.reshape({batch_size, :auto, spec.hidden_size})
+          |> Nx.reshape({position_embeddings_batch_size, :auto, spec.hidden_size})
 
         Nx.concatenate([class_position_embedding, interpolated_position_embeddings], axis: 1)
       end,
