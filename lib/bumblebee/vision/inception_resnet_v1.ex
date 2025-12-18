@@ -75,7 +75,8 @@ defmodule Bumblebee.Vision.InceptionResnetV1 do
   @impl true
   def input_template(spec) do
     %{
-      "pixel_values" => Nx.template({1, spec.image_size, spec.image_size, spec.num_channels}, :f32)
+      "pixel_values" =>
+        Nx.template({1, spec.image_size, spec.image_size, spec.num_channels}, :f32)
     }
   end
 
@@ -101,7 +102,10 @@ defmodule Bumblebee.Vision.InceptionResnetV1 do
   defp core(spec, opts \\ []) do
     name = opts[:name]
 
-    input = Axon.input("pixel_values", shape: {nil, spec.image_size, spec.image_size, spec.num_channels})
+    input =
+      Axon.input("pixel_values",
+        shape: {nil, spec.image_size, spec.image_size, spec.num_channels}
+      )
 
     pooled_state =
       input
@@ -122,7 +126,12 @@ defmodule Bumblebee.Vision.InceptionResnetV1 do
     pixel_values
     |> basic_conv2d(32, kernel_size: 3, strides: 2, name: join(name, "conv2d_1a"))
     |> basic_conv2d(32, kernel_size: 3, strides: 1, name: join(name, "conv2d_2a"))
-    |> basic_conv2d(64, kernel_size: 3, strides: 1, padding: [{1, 1}, {1, 1}], name: join(name, "conv2d_2b"))
+    |> basic_conv2d(64,
+      kernel_size: 3,
+      strides: 1,
+      padding: [{1, 1}, {1, 1}],
+      name: join(name, "conv2d_2b")
+    )
     |> Axon.max_pool(kernel_size: 3, strides: 2, name: join(name, "maxpool_3a"))
     |> basic_conv2d(80, kernel_size: 1, strides: 1, name: join(name, "conv2d_3b"))
     |> basic_conv2d(192, kernel_size: 3, strides: 1, name: join(name, "conv2d_4a"))
@@ -135,21 +144,27 @@ defmodule Bumblebee.Vision.InceptionResnetV1 do
 
     hidden_state
     # 5x Block35 (Inception-ResNet-A)
-    |> then(&Enum.reduce(0..4, &1, fn i, acc ->
-      block35(acc, 0.17, name: join(name, "repeat_1.#{i}"))
-    end))
+    |> then(
+      &Enum.reduce(0..4, &1, fn i, acc ->
+        block35(acc, 0.17, name: join(name, "repeat_1.#{i}"))
+      end)
+    )
     # Mixed 6a (Reduction-A)
     |> mixed_6a(name: join(name, "mixed_6a"))
     # 10x Block17 (Inception-ResNet-B)
-    |> then(&Enum.reduce(0..9, &1, fn i, acc ->
-      block17(acc, 0.10, name: join(name, "repeat_2.#{i}"))
-    end))
+    |> then(
+      &Enum.reduce(0..9, &1, fn i, acc ->
+        block17(acc, 0.10, name: join(name, "repeat_2.#{i}"))
+      end)
+    )
     # Mixed 7a (Reduction-B)
     |> mixed_7a(name: join(name, "mixed_7a"))
     # 5x Block8 (Inception-ResNet-C)
-    |> then(&Enum.reduce(0..4, &1, fn i, acc ->
-      block8(acc, 0.20, name: join(name, "repeat_3.#{i}"))
-    end))
+    |> then(
+      &Enum.reduce(0..4, &1, fn i, acc ->
+        block8(acc, 0.20, name: join(name, "repeat_3.#{i}"))
+      end)
+    )
     # Final Block8 (scale=1.0, no activation)
     |> block8(1.0, activation: :linear, name: join(name, "block8"))
   end
@@ -205,13 +220,28 @@ defmodule Bumblebee.Vision.InceptionResnetV1 do
     branch1 =
       x
       |> basic_conv2d(32, kernel_size: 1, strides: 1, name: join(name, "branch1.0"))
-      |> basic_conv2d(32, kernel_size: 3, strides: 1, padding: [{1, 1}, {1, 1}], name: join(name, "branch1.1"))
+      |> basic_conv2d(32,
+        kernel_size: 3,
+        strides: 1,
+        padding: [{1, 1}, {1, 1}],
+        name: join(name, "branch1.1")
+      )
 
     branch2 =
       x
       |> basic_conv2d(32, kernel_size: 1, strides: 1, name: join(name, "branch2.0"))
-      |> basic_conv2d(32, kernel_size: 3, strides: 1, padding: [{1, 1}, {1, 1}], name: join(name, "branch2.1"))
-      |> basic_conv2d(32, kernel_size: 3, strides: 1, padding: [{1, 1}, {1, 1}], name: join(name, "branch2.2"))
+      |> basic_conv2d(32,
+        kernel_size: 3,
+        strides: 1,
+        padding: [{1, 1}, {1, 1}],
+        name: join(name, "branch2.1")
+      )
+      |> basic_conv2d(32,
+        kernel_size: 3,
+        strides: 1,
+        padding: [{1, 1}, {1, 1}],
+        name: join(name, "branch2.2")
+      )
 
     Axon.concatenate([branch0, branch1, branch2], axis: 3)
     |> Axon.conv(256, kernel_size: 1, strides: 1, use_bias: true, name: join(name, "conv2d"))
@@ -229,8 +259,18 @@ defmodule Bumblebee.Vision.InceptionResnetV1 do
     branch1 =
       x
       |> basic_conv2d(128, kernel_size: 1, strides: 1, name: join(name, "branch1.0"))
-      |> basic_conv2d(128, kernel_size: {1, 7}, strides: 1, padding: [{0, 0}, {3, 3}], name: join(name, "branch1.1"))
-      |> basic_conv2d(128, kernel_size: {7, 1}, strides: 1, padding: [{3, 3}, {0, 0}], name: join(name, "branch1.2"))
+      |> basic_conv2d(128,
+        kernel_size: {1, 7},
+        strides: 1,
+        padding: [{0, 0}, {3, 3}],
+        name: join(name, "branch1.1")
+      )
+      |> basic_conv2d(128,
+        kernel_size: {7, 1},
+        strides: 1,
+        padding: [{3, 3}, {0, 0}],
+        name: join(name, "branch1.2")
+      )
 
     Axon.concatenate([branch0, branch1], axis: 3)
     |> Axon.conv(896, kernel_size: 1, strides: 1, use_bias: true, name: join(name, "conv2d"))
@@ -250,8 +290,18 @@ defmodule Bumblebee.Vision.InceptionResnetV1 do
     branch1 =
       x
       |> basic_conv2d(192, kernel_size: 1, strides: 1, name: join(name, "branch1.0"))
-      |> basic_conv2d(192, kernel_size: {1, 3}, strides: 1, padding: [{0, 0}, {1, 1}], name: join(name, "branch1.1"))
-      |> basic_conv2d(192, kernel_size: {3, 1}, strides: 1, padding: [{1, 1}, {0, 0}], name: join(name, "branch1.2"))
+      |> basic_conv2d(192,
+        kernel_size: {1, 3},
+        strides: 1,
+        padding: [{0, 0}, {1, 1}],
+        name: join(name, "branch1.1")
+      )
+      |> basic_conv2d(192,
+        kernel_size: {3, 1},
+        strides: 1,
+        padding: [{1, 1}, {0, 0}],
+        name: join(name, "branch1.2")
+      )
 
     residual =
       Axon.concatenate([branch0, branch1], axis: 3)
@@ -275,7 +325,12 @@ defmodule Bumblebee.Vision.InceptionResnetV1 do
     branch1 =
       x
       |> basic_conv2d(192, kernel_size: 1, strides: 1, name: join(name, "branch1.0"))
-      |> basic_conv2d(192, kernel_size: 3, strides: 1, padding: [{1, 1}, {1, 1}], name: join(name, "branch1.1"))
+      |> basic_conv2d(192,
+        kernel_size: 3,
+        strides: 1,
+        padding: [{1, 1}, {1, 1}],
+        name: join(name, "branch1.1")
+      )
       |> basic_conv2d(256, kernel_size: 3, strides: 2, name: join(name, "branch1.2"))
 
     branch2 = Axon.max_pool(x, kernel_size: 3, strides: 2, name: join(name, "branch2"))
@@ -300,7 +355,12 @@ defmodule Bumblebee.Vision.InceptionResnetV1 do
     branch2 =
       x
       |> basic_conv2d(256, kernel_size: 1, strides: 1, name: join(name, "branch2.0"))
-      |> basic_conv2d(256, kernel_size: 3, strides: 1, padding: [{1, 1}, {1, 1}], name: join(name, "branch2.1"))
+      |> basic_conv2d(256,
+        kernel_size: 3,
+        strides: 1,
+        padding: [{1, 1}, {1, 1}],
+        name: join(name, "branch2.1")
+      )
       |> basic_conv2d(256, kernel_size: 3, strides: 2, name: join(name, "branch2.2"))
 
     branch3 = Axon.max_pool(x, kernel_size: 3, strides: 2, name: join(name, "branch3"))
