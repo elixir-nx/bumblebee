@@ -1,21 +1,20 @@
-defmodule Bumblebee.Text.Mistral do
+defmodule Bumblebee.Text.Mistral3 do
   alias Bumblebee.Shared
 
   options =
     [
       vocab_size: [
-        default: 32000,
+        default: 131_072,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
         """
       ],
       max_positions: [
-        default: 131_072,
+        default: 262_144,
         doc: """
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
-        length that this model can process. Typically this is set to a large value just in case,
-        such as 512, 1024 or 2048
+        length that this model can process. Mistral3 supports up to 256k context length
         """
       ],
       hidden_size: [
@@ -43,30 +42,26 @@ defmodule Bumblebee.Text.Mistral do
         Attention
         """
       ],
-      attention_window_size: [
-        default: 4096,
-        doc: "window size for both sides of the sliding attention window"
-      ],
       attention_head_size: [
         default: nil,
         doc: """
         the projection size for key, value, and query states per attention head.
-        When `nil`, defaults to `hidden_size / num_attention_heads`. Ministral
+        When `nil`, defaults to `hidden_size / num_attention_heads`. Ministral 3
         models use an explicit head_dim (typically 128) that differs from this default
         """
       ],
+      attention_window_size: [
+        default: 4096,
+        doc: """
+        window size for both sides of the sliding attention window. In Mistral3,
+        this is used for odd-numbered layers (interleaved attention pattern)
+        """
+      ],
       use_interleaved_attention: [
-        default: false,
+        default: true,
         doc: """
         whether to use interleaved attention pattern. When enabled, even layers
         use global attention and odd layers use sliding window attention
-        """
-      ],
-      tie_word_embeddings: [
-        default: false,
-        doc: """
-        whether to tie the word embeddings with the language modeling head weights.
-        When true, the lm_head uses the same weights as the token embedding layer
         """
       ],
       activation: [
@@ -74,7 +69,7 @@ defmodule Bumblebee.Text.Mistral do
         doc: "the activation function"
       ],
       layer_norm_epsilon: [
-        default: 1.0e-12,
+        default: 1.0e-5,
         doc: "the epsilon used by RMS normalization layers"
       ],
       initializer_scale: [
@@ -83,26 +78,43 @@ defmodule Bumblebee.Text.Mistral do
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ],
       rotary_embedding_base: [
-        default: 10_000,
+        default: 1_000_000,
         doc: "base for computing rotary embedding frequency"
+      ],
+      tie_word_embeddings: [
+        default: true,
+        doc: """
+        whether to tie the word embeddings with the language modeling head weights.
+        When true, the lm_head uses the same weights as the token embedding layer
+        """
       ]
     ] ++
       Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
-  Mistral model family.
+  Mistral 3 model family.
 
   ## Architectures
 
-    * `:base` - plain Mistral without any head on top
+    * `:base` - plain Mistral3 without any head on top
 
-    * `:for_causal_language_modeling` - Mistral with a language modeling
+    * `:for_causal_language_modeling` - Mistral3 with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - Mistral with a sequence
+    * `:for_sequence_classification` - Mistral3 with a sequence
       classification head. The head returns logits corresponding to
       possible classes
+
+  ## Key Features
+
+    * **Interleaved Attention**: Even layers use global attention, odd layers
+      use sliding window attention for efficient processing of long sequences
+
+    * **256k Context Length**: Supports up to 262,144 tokens
+
+    * **Grouped Query Attention (GQA)**: Uses fewer key-value heads for
+      efficient inference
 
   ## Inputs
 
@@ -317,8 +329,6 @@ defmodule Bumblebee.Text.Mistral do
   defp embedder(input_ids, input_embeddings, spec, opts) do
     name = opts[:name]
 
-    # TODO: Axon needs a way to specify ignoring pad tokens
-    # in gradient
     Layers.default input_embeddings do
       Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
         kernel_initializer: kernel_initializer(spec),
@@ -339,8 +349,9 @@ defmodule Bumblebee.Text.Mistral do
     name = opts[:name]
 
     # Build attention_window_size configuration
-    # When interleaved attention is enabled, even layers use global attention
-    # and odd layers use sliding window attention
+    # Mistral3 uses interleaved attention: even layers use global attention,
+    # odd layers use sliding window attention
+    # If sliding_window is nil, use global attention for all layers
     attention_window_size =
       cond do
         # If no sliding window is configured, use global attention for all layers
@@ -438,8 +449,8 @@ defmodule Bumblebee.Text.Mistral do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
-          attention_window_size: {"sliding_window", optional(number())},
           attention_head_size: {"head_dim", optional(number())},
+          attention_window_size: {"sliding_window", optional(number())},
           use_interleaved_attention: {"use_interleaved_attention", optional(boolean())},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
