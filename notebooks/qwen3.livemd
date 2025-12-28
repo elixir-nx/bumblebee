@@ -41,7 +41,8 @@ Configure the generation parameters and create a serving:
 generation_config =
   Bumblebee.configure(generation_config,
     max_new_tokens: 256,
-    strategy: %{type: :multinomial_sampling, top_p: 0.8, top_k: 20, temperature: 0.7}
+    temperature: 0.7,
+    strategy: %{type: :multinomial_sampling, top_p: 0.8, top_k: 20}
   )
 
 serving =
