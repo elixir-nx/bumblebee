@@ -210,7 +210,7 @@ results
 end)
 ```
 
-The reranker correctly identifies that documents about machine learning and deep learning are most relevant to the query, while the unrelated documents receive lower scores.
+The reranker correctly identifies that the document directly answering "What is machine learning?" is most relevant, while documents about unrelated topics (weather, personal preferences) receive near-zero scores. The deep learning document, while topically related, doesn't directly answer the query and thus receives a lower score.
 
 ## Summary
 
