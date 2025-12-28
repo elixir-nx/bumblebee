@@ -25,6 +25,13 @@ defmodule Bumblebee.Layers.Transformer do
       - a keyword list (applied to all blocks)
       - a function that takes the block index and returns the configuration
 
+    * `:attention_window_size` - sliding window attention configuration. Can be:
+      - `nil` for global attention (default)
+      - a `{left, right}` tuple (applied to all blocks)
+      - a function that takes the block index and returns `nil` or `{left, right}`.
+        This enables per-layer attention patterns like Gemma 3's alternating
+        local/global attention (5 local layers followed by 1 global layer)
+
     * `:name` - the prefix for layer names
 
   For all other options (including required options) see `block/2`.
@@ -52,7 +59,6 @@ defmodule Bumblebee.Layers.Transformer do
       :output_use_bias,
       :layer_norm,
       :block_type,
-      :attention_window_size,
       :scale_attention_weights
     ]
 
@@ -64,6 +70,7 @@ defmodule Bumblebee.Layers.Transformer do
             :name,
             :num_blocks,
             :rotary_embedding,
+            :attention_window_size,
             attention_mask: Layers.none(),
             attention_head_mask: Layers.none(),
             attention_relative_bias: nil,
@@ -85,6 +92,7 @@ defmodule Bumblebee.Layers.Transformer do
     cross_attention_head_mask = opts[:cross_attention_head_mask]
     cache = opts[:cache]
     rotary_embedding = opts[:rotary_embedding]
+    attention_window_size = opts[:attention_window_size]
 
     block_opts = Keyword.take(opts, block_opts_keys)
 
@@ -121,6 +129,15 @@ defmodule Bumblebee.Layers.Transformer do
               config when is_list(config) -> config
             end
 
+          # Support per-layer attention window size for models like Gemma 3
+          # that alternate between local (sliding window) and global attention
+          block_attention_window_size =
+            case attention_window_size do
+              nil -> nil
+              fun when is_function(fun, 1) -> fun.(idx)
+              size -> size
+            end
+
           {hidden_state, attention, cross_attention, block_cache, attention_relative_bias} =
             block(
               state.hidden_state,
@@ -134,6 +151,7 @@ defmodule Bumblebee.Layers.Transformer do
                 block_cache: block_cache,
                 offset: offset,
                 rotary_embedding: block_rotary_embedding,
+                attention_window_size: block_attention_window_size,
                 name: join(name, idx)
               ] ++ block_opts
             )
