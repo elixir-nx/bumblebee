@@ -100,10 +100,6 @@ defmodule Bumblebee.Text.Qwen3 do
       classification head. The head returns logits corresponding to
       possible classes
 
-    * `:for_embedding` - Qwen3 with pooling to produce a single embedding
-      vector per sequence. The head pools the last attended token (based on
-      attention mask) and returns it as an embedding
-
   ## Inputs
 
     * `"input_ids"` - `{batch_size, sequence_length}`
@@ -165,8 +161,7 @@ defmodule Bumblebee.Text.Qwen3 do
     do: [
       :base,
       :for_causal_language_modeling,
-      :for_sequence_classification,
-      :for_embedding
+      :for_sequence_classification
     ]
 
   @impl true
@@ -257,42 +252,6 @@ defmodule Bumblebee.Text.Qwen3 do
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions,
       cache: outputs.cache
-    })
-  end
-
-  def model(%__MODULE__{architecture: :for_embedding} = spec) do
-    inputs = inputs(spec)
-
-    outputs = core(inputs, spec)
-
-    # Pool the last token using attention mask
-    # For Qwen3 embeddings, we need to find the last attended token based on
-    # the attention mask, not the pad_token_id. The EOS token (which matches
-    # pad_token_id) is actually part of the sequence and should be attended.
-    pooled_state =
-      Layers.if_present inputs["attention_mask"] do
-        Axon.layer(
-          fn hidden_state, attention_mask, _opts ->
-            # Find the last token with attention_mask = 1 (last attended token)
-            # This matches the behavior of the reference implementation
-            indices =
-              attention_mask
-              |> Nx.sum(axes: [-1])
-              |> Nx.subtract(1)
-              |> Nx.as_type({:s, 64})
-
-            Bumblebee.Utils.Nx.batched_take(hidden_state, indices)
-          end,
-          [outputs.hidden_state, inputs["attention_mask"]]
-        )
-      else
-        Layers.take_token(outputs.hidden_state, axis: 1, index: -1)
-      end
-
-    Layers.output(%{
-      embedding: pooled_state,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
     })
   end
 
@@ -507,8 +466,6 @@ defmodule Bumblebee.Text.Qwen3 do
         "decoder.blocks.{n}.self_attention.query_norm" => "model.layers.{n}.self_attn.q_norm",
         "decoder.blocks.{n}.self_attention.key_norm" => "model.layers.{n}.self_attn.k_norm",
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
-        "decoder.blocks.{n}.self_attention.rotary_embedding" =>
-          "model.layers.{n}.self_attn.rotary_emb",
         "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
         "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.up_proj",
         "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",

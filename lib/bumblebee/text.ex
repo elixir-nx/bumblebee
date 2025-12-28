@@ -463,7 +463,40 @@ defmodule Bumblebee.Text do
 
   ## Options
 
-  See `Bumblebee.Text.TextRerankingQwen3.text_reranking_qwen3/3` for available options.
+    * `:yes_token` - the token ID corresponding to "yes" for relevance scoring.
+      If not provided, will be inferred from the tokenizer
+
+    * `:no_token` - the token ID corresponding to "no" for relevance scoring.
+      If not provided, will be inferred from the tokenizer
+
+    * `:instruction_prefix` - the instruction prefix to use. Defaults to the
+      Qwen3 reranker format
+
+    * `:instruction_suffix` - the instruction suffix to use. Defaults to the
+      Qwen3 reranker format
+
+    * `:task_description` - the task description to include in prompts. Defaults
+      to "Given a web search query, retrieve relevant passages that answer the query"
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured in `:defn_options`. You may want to set
+      this option when using partitioned models on the GPU. Defaults to `false`
 
   ## Examples
 

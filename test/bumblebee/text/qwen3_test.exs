@@ -20,6 +20,13 @@ defmodule Bumblebee.Text.Qwen3Test do
     outputs = Axon.predict(model, params, inputs)
 
     assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
+
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[0.0461, -1.5811, 1.5504], [0.1340, -1.3477, 0.8047], [-0.5821, -0.4164, 0.9769]]
+      ])
+    )
   end
 
   test ":for_causal_language_modeling" do
@@ -37,6 +44,13 @@ defmodule Bumblebee.Text.Qwen3Test do
     outputs = Axon.predict(model, params, inputs)
 
     assert Nx.shape(outputs.logits) == {1, 10, 1024}
+
+    assert_all_close(
+      outputs.logits[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[0.1457, 0.0313, -0.0651], [0.1718, -0.0265, -0.0186], [0.2281, -0.0124, -0.0147]]
+      ])
+    )
   end
 
   test ":for_sequence_classification" do
@@ -54,26 +68,11 @@ defmodule Bumblebee.Text.Qwen3Test do
 
     outputs = Axon.predict(model, params, inputs)
 
-    # Note: tiny-random model is missing sequence_classification_head parameters,
-    # so it uses random initialization. We only verify the shape is correct.
     assert Nx.shape(outputs.logits) == {1, 2}
-  end
 
-  test ":for_embedding" do
-    assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-Qwen3Model"},
-               architecture: :for_embedding
-             )
-
-    assert %Bumblebee.Text.Qwen3{architecture: :for_embedding} = spec
-
-    inputs = %{
-      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
-      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
-    }
-
-    outputs = Axon.predict(model, params, inputs)
-
-    assert Nx.shape(outputs.embedding) == {1, 32}
+    assert_all_close(
+      outputs.logits,
+      Nx.tensor([[-0.1487, -0.0071]])
+    )
   end
 end
