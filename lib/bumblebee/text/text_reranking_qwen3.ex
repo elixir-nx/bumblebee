@@ -136,6 +136,7 @@ defmodule Bumblebee.Text.TextRerankingQwen3 do
       # outputs.logits has shape {batch_size, sequence_length, vocab_size}
       # Pool to last attended token position
       attention_mask = input["attention_mask"]
+
       sequence_lengths =
         attention_mask
         |> Nx.sum(axes: [1])
