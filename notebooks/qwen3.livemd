@@ -86,7 +86,7 @@ Qwen3 embedding models convert text into dense vector representations, useful fo
 ```elixir
 repo = {:hf, "Qwen/Qwen3-Embedding-0.6B"}
 
-{:ok, model_info} = Bumblebee.load_model(repo, type: :f32, backend: EXLA.Backend)
+{:ok, model_info} = Bumblebee.load_model(repo, type: :f32, backend: EXLA.Backend, architecture: :base)
 {:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
 
 serving =
