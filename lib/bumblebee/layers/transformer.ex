@@ -43,6 +43,8 @@ defmodule Bumblebee.Layers.Transformer do
   def blocks(hidden_state, opts) do
     validate_required_keys!(opts, [:num_blocks, :num_attention_heads, :hidden_size, :ffn])
 
+    # Note: :attention_window_size is NOT in block_opts_keys because it's handled
+    # specially (supports per-layer function) and passed explicitly to block/2
     block_opts_keys = [
       :num_attention_heads,
       :num_key_value_heads,
@@ -59,7 +61,6 @@ defmodule Bumblebee.Layers.Transformer do
       :output_use_bias,
       :layer_norm,
       :block_type,
-      :attention_window_size,
       :scale_attention_weights,
       :query_norm,
       :key_norm

@@ -362,103 +362,79 @@ defmodule Bumblebee.Text.Gemma3 do
        ) do
     name = opts[:name]
 
-    # Use cached attention mask
-    {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
-    offset = Layers.Decoder.get_cache_offset(cache)
+    # QK-norm functions for Gemma 3 (uses shift: 1.0 for (1+weight) formula)
+    query_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
+    key_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
 
-    state = %{
-      hidden_state: hidden_state,
-      hidden_states: Axon.container({hidden_state}),
-      attentions: Axon.container({}),
-      cache: cache
-    }
-
-    outputs =
-      for idx <- 0..(spec.num_blocks - 1), reduce: state do
-        state ->
-          block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
-          block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
-
-          # Gemma 3 alternates between local (sliding window) and global attention
-          # Every global_attention_layer_interval-th layer uses global attention
-          attention_window_size =
-            if rem(idx + 1, spec.global_attention_layer_interval) == 0 do
-              # Global attention (no window)
-              nil
-            else
-              # Local attention with sliding window
-              {spec.sliding_window, spec.sliding_window}
-            end
-
-          {hidden_state, attention, block_cache} =
-            gemma3_block(state.hidden_state,
-              attention_mask: attention_mask,
-              attention_head_mask: block_attention_head_mask,
-              block_cache: block_cache,
-              offset: offset,
-              position_ids: position_ids,
-              attention_window_size: attention_window_size,
-              spec: spec,
-              name: join(name, "blocks.#{idx}")
-            )
-
-          cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
-
-          %{
-            hidden_state: hidden_state,
-            hidden_states: Layers.append(state.hidden_states, hidden_state),
-            attentions: Layers.append(state.attentions, attention),
-            cache: cache
-          }
+    # Per-layer attention window size for alternating local/global attention
+    # Every global_attention_layer_interval-th layer uses global attention
+    attention_window_size = fn idx ->
+      if rem(idx + 1, spec.global_attention_layer_interval) == 0 do
+        nil
+      else
+        {spec.sliding_window, spec.sliding_window}
       end
+    end
 
-    outputs = update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, hidden_state))
+    # Custom block_type function for Gemma 3's unique block structure
+    block_type = fn hidden_state, steps, block_name ->
+      gemma3_block_impl(hidden_state, steps, block_name, spec)
+    end
 
-    %{
-      hidden_state: outputs.hidden_state,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions,
-      cache: outputs.cache
-    }
+    Layers.Transformer.blocks(hidden_state,
+      attention_mask: attention_mask,
+      attention_head_mask: attention_head_mask,
+      cache: cache,
+      num_blocks: spec.num_blocks,
+      num_attention_heads: spec.num_attention_heads,
+      num_key_value_heads: spec.num_key_value_heads,
+      hidden_size: spec.hidden_size,
+      attention_head_size: spec.attention_head_size,
+      kernel_initializer: kernel_initializer(spec),
+      layer_norm:
+        &Layers.rms_norm(&1,
+          shift: 1.0,
+          name: &2,
+          epsilon: spec.layer_norm_epsilon,
+          upcast: :all
+        ),
+      ffn:
+        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
+          name: &2,
+          activation: spec.activation
+        ),
+      block_type: block_type,
+      causal: true,
+      rotary_embedding: [
+        position_ids: position_ids,
+        max_positions: spec.max_positions,
+        base: spec.rotary_embedding_base,
+        scaling_strategy: spec.rotary_embedding_scaling_strategy
+      ],
+      attention_window_size: attention_window_size,
+      query_norm: query_norm,
+      key_norm: key_norm,
+      query_use_bias: spec.use_attention_bias,
+      key_use_bias: spec.use_attention_bias,
+      value_use_bias: spec.use_attention_bias,
+      output_use_bias: spec.use_attention_bias,
+      name: join(name, "blocks")
+    )
   end
 
-  defp gemma3_block(hidden_state, opts) do
-    attention_mask = opts[:attention_mask]
-    attention_head_mask = opts[:attention_head_mask]
-    block_cache = opts[:block_cache]
-    offset = opts[:offset]
-    position_ids = opts[:position_ids]
-    attention_window_size = opts[:attention_window_size]
-    spec = opts[:spec]
-    name = opts[:name]
-
-    {self_attention_cache, cross_attention_cache} =
-      Layers.Decoder.get_attention_caches(block_cache)
-
-    # Self-attention with pre-norm (input_layernorm)
+  # Custom block implementation for Gemma 3's unique normalization structure:
+  # - Post-attention norm BEFORE residual add
+  # - Pre/post FFN norms
+  defp gemma3_block_impl(hidden_state, steps, name, spec) do
+    # Pre-attention norm + attention (using provided steps)
     shortcut = hidden_state
 
-    hidden_state =
-      Layers.rms_norm(hidden_state,
-        shift: 1.0,
-        name: join(name, "self_attention_norm"),
-        epsilon: spec.layer_norm_epsilon,
-        upcast: :all
-      )
+    {hidden_state, attention_info} =
+      hidden_state
+      |> steps.self_attention_norm.()
+      |> steps.self_attention.()
 
-    {hidden_state, attention, self_attention_cache} =
-      gemma3_attention(hidden_state, hidden_state, hidden_state,
-        attention_mask: attention_mask,
-        attention_head_mask: attention_head_mask,
-        attention_cache: self_attention_cache,
-        offset: offset,
-        position_ids: position_ids,
-        attention_window_size: attention_window_size,
-        spec: spec,
-        name: join(name, "self_attention")
-      )
-
-    # Post-attention norm BEFORE residual add (Gemma 3 specific)
+    # Post-attention norm BEFORE residual (Gemma 3 specific)
     hidden_state =
       Layers.rms_norm(hidden_state,
         shift: 1.0,
@@ -467,7 +443,6 @@ defmodule Bumblebee.Text.Gemma3 do
         upcast: :all
       )
 
-    # Residual add AFTER post_attention_norm
     hidden_state = Axon.add(shortcut, hidden_state)
 
     # FFN with pre/post norms (Gemma 3 specific)
@@ -481,11 +456,7 @@ defmodule Bumblebee.Text.Gemma3 do
         upcast: :all
       )
 
-    hidden_state =
-      gated_ffn(hidden_state, spec.intermediate_size, spec.hidden_size,
-        name: join(name, "ffn"),
-        activation: spec.activation
-      )
+    hidden_state = steps.ffn.(hidden_state)
 
     hidden_state =
       Layers.rms_norm(hidden_state,
@@ -497,126 +468,13 @@ defmodule Bumblebee.Text.Gemma3 do
 
     hidden_state = Axon.add(shortcut, hidden_state)
 
-    block_cache =
-      Layers.Decoder.put_attention_caches(
-        block_cache,
-        self_attention_cache,
-        cross_attention_cache
-      )
+    # Handle cross-attention (required by block interface but not used by Gemma 3)
+    {_hidden_state, cross_attention_info} =
+      steps.cross_attention_maybe.(hidden_state, fn _ ->
+        raise "cross attention not supported"
+      end)
 
-    {hidden_state, attention, block_cache}
-  end
-
-  defp gemma3_attention(query, key, value, opts) do
-    attention_mask = opts[:attention_mask]
-    attention_head_mask = opts[:attention_head_mask]
-    attention_cache = opts[:attention_cache]
-    offset = opts[:offset]
-    position_ids = opts[:position_ids]
-    attention_window_size = opts[:attention_window_size]
-    spec = opts[:spec]
-    name = opts[:name]
-
-    num_heads = spec.num_attention_heads
-    num_key_value_heads = spec.num_key_value_heads
-    attention_head_size = spec.attention_head_size
-    inner_size = num_heads * attention_head_size
-    inner_kv_size = num_key_value_heads * attention_head_size
-
-    # Project Q, K, V
-    query =
-      query
-      |> Axon.dense(inner_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "query"),
-        use_bias: spec.use_attention_bias
-      )
-      |> Layers.split_heads(num_heads)
-
-    key =
-      key
-      |> Axon.dense(inner_kv_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "key"),
-        use_bias: spec.use_attention_bias
-      )
-      |> Layers.split_heads(num_key_value_heads)
-
-    value =
-      value
-      |> Axon.dense(inner_kv_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "value"),
-        use_bias: spec.use_attention_bias
-      )
-      |> Layers.split_heads(num_key_value_heads)
-
-    # Apply QK-norm (Gemma 3 specific) - uses (1+weight) formula like other norms
-    query =
-      Layers.rms_norm(query,
-        shift: 1.0,
-        name: join(name, "q_norm"),
-        epsilon: spec.layer_norm_epsilon
-      )
-
-    key =
-      Layers.rms_norm(key,
-        shift: 1.0,
-        name: join(name, "k_norm"),
-        epsilon: spec.layer_norm_epsilon
-      )
-
-    # Apply rotary embeddings
-    {query, key} =
-      Layers.rotary_embedding(query, key, position_ids, attention_mask, attention_head_size,
-        max_positions: spec.max_positions,
-        base: spec.rotary_embedding_base,
-        scaling_strategy: spec.rotary_embedding_scaling_strategy
-      )
-
-    # Replicate K/V heads for GQA
-    num_key_value_groups = div(num_heads, num_key_value_heads)
-    key = repeat_states(key, num_key_value_groups)
-    value = repeat_states(value, num_key_value_groups)
-
-    # Update cache
-    {key, value, attention_cache} =
-      Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset)
-
-    # Compute attention
-    # Layers.attention signature: (query, key, value, key_mask, head_mask, bias, offset, opts)
-    {attention_output, attention_weights} =
-      Layers.attention(
-        query,
-        key,
-        value,
-        attention_mask,
-        attention_head_mask,
-        Layers.none(),
-        offset,
-        scale: true,
-        causal: true,
-        window_size: attention_window_size,
-        dropout_rate: 0.0
-      )
-
-    # Output projection
-    hidden_state =
-      attention_output
-      |> Layers.flatten_trailing()
-      |> Axon.dense(spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        name: join(name, "output"),
-        use_bias: spec.use_attention_bias
-      )
-
-    {hidden_state, attention_weights, attention_cache}
-  end
-
-  defp repeat_states(state, 1), do: state
-
-  defp repeat_states(state, times) do
-    Layers.repeat_interleave(state, times, axis: 2)
+    {hidden_state, attention_info, cross_attention_info}
   end
 
   defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
@@ -702,9 +560,9 @@ defmodule Bumblebee.Text.Gemma3 do
         "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
         "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
         "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.o_proj",
-        # QK-norm (Gemma 3 specific)
-        "decoder.blocks.{n}.self_attention.q_norm" => "model.layers.{n}.self_attn.q_norm",
-        "decoder.blocks.{n}.self_attention.k_norm" => "model.layers.{n}.self_attn.k_norm",
+        # QK-norm (Gemma 3 specific) - uses query_norm/key_norm from shared infrastructure
+        "decoder.blocks.{n}.self_attention.query_norm" => "model.layers.{n}.self_attn.q_norm",
+        "decoder.blocks.{n}.self_attention.key_norm" => "model.layers.{n}.self_attn.k_norm",
         # Layer norms
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
         "decoder.blocks.{n}.post_attention_norm" => "model.layers.{n}.post_attention_layernorm",
