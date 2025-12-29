@@ -551,4 +551,9 @@ Here are some practical applications for FunctionGemma:
 - **Integrate** with your actual APIs and services
 - **Deploy** as a Phoenix LiveView application
 
-For fine-tuning, check out [Google's FunctionGemma documentation](https://huggingface.co/google/functiongemma-270m-it) and the Bumblebee fine-tuning notebook.
+## Fine-tuning FunctionGemma
+
+Want to fine-tune FunctionGemma on your own function schemas? Check out these resources:
+
+- [FunctionGemma Fine-tuning Notebook (Colab)](https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/FunctionGemma_(270M)-Mobile-Actions.ipynb) - Step-by-step guide using Unsloth for efficient fine-tuning on Google Colab T4
+- [Google's FunctionGemma documentation](https://huggingface.co/google/functiongemma-270m-it) - Official model card and usage instructions
