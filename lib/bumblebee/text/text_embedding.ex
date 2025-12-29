@@ -86,9 +86,19 @@ defmodule Bumblebee.Text.TextEmbedding do
             |> Nx.sum(axes: [1])
             |> Nx.divide(Nx.sum(input_mask_expanded, axes: [1]))
 
+          :last_token_pooling ->
+            # Take the last non-padding token for each sequence
+            sequence_lengths =
+              inputs["attention_mask"]
+              |> Nx.sum(axes: [1])
+              |> Nx.subtract(1)
+              |> Nx.as_type({:s, 64})
+
+            Bumblebee.Utils.Nx.batched_take(output, sequence_lengths)
+
           other ->
             raise ArgumentError,
-                  "expected :output_pool to be one of :cls_token_pooling, :mean_pooling or nil, got: #{inspect(other)}"
+                  "expected :output_pool to be one of :cls_token_pooling, :mean_pooling, :last_token_pooling or nil, got: #{inspect(other)}"
         end
 
       output =

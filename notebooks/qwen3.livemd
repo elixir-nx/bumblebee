@@ -1,0 +1,223 @@
+# Qwen3
+
+```elixir
+Mix.install([
+  {:bumblebee, "~> 0.6.0"},
+  {:nx, "~> 0.10.0"},
+  {:exla, "~> 0.10.0"},
+  {:kino, "~> 0.14.0"}
+])
+
+Nx.global_default_backend(EXLA.Backend)
+```
+
+## Introduction
+
+In this notebook we explore the [Qwen3](https://qwenlm.github.io/blog/qwen3/) model family from Alibaba Cloud. Qwen3 is a series of large language models that includes:
+
+* **Text Generation** - Instruction-tuned models for conversational AI
+* **Embeddings** - Dense vector representations for semantic search
+* **Rerankers** - Models to rerank search results for better relevance
+
+<!-- livebook:{"branch_parent_index":0} -->
+
+## Text Generation
+
+Let's start with the Qwen3 instruction model for conversational text generation.
+
+```elixir
+repo = {:hf, "Qwen/Qwen3-4B-Instruct-2507"}
+
+{:ok, model_info} = Bumblebee.load_model(repo, type: :bf16, backend: EXLA.Backend)
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+{:ok, generation_config} = Bumblebee.load_generation_config(repo)
+
+:ok
+```
+
+Configure the generation parameters and create a serving:
+
+```elixir
+generation_config =
+  Bumblebee.configure(generation_config,
+    max_new_tokens: 256,
+    temperature: 0.7,
+    strategy: %{type: :multinomial_sampling, top_p: 0.8, top_k: 20}
+  )
+
+serving =
+  Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+    compile: [batch_size: 1, sequence_length: 1024],
+    stream: true,
+    defn_options: [compiler: EXLA]
+  )
+
+# Should be supervised
+Kino.start_child({Nx.Serving, name: Qwen3, serving: serving})
+```
+
+Create an input field and test the model:
+
+```elixir
+user_input = Kino.Input.textarea("User prompt", default: "Explain quantum computing in simple terms")
+```
+
+```elixir
+user = Kino.Input.read(user_input)
+
+# Qwen3 uses the <|im_start|> and <|im_end|> chat template format
+prompt = """
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+#{user}<|im_end|>
+<|im_start|>assistant
+"""
+
+Nx.Serving.batched_run(Qwen3, prompt) |> Enum.each(&IO.write/1)
+```
+
+<!-- livebook:{"branch_parent_index":0} -->
+
+## Embeddings
+
+Qwen3 embedding models convert text into dense vector representations, useful for semantic search and similarity tasks.
+
+```elixir
+repo = {:hf, "Qwen/Qwen3-Embedding-0.6B"}
+
+{:ok, model_info} = Bumblebee.load_model(repo, type: :f32, backend: EXLA.Backend, architecture: :base)
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+
+serving =
+  Bumblebee.Text.text_embedding(model_info, tokenizer,
+    output_attribute: :hidden_state,
+    output_pool: :last_token_pooling,
+    embedding_processor: :l2_norm,
+    compile: [batch_size: 2, sequence_length: 512],
+    defn_options: [compiler: EXLA]
+  )
+
+Kino.start_child({Nx.Serving, name: Qwen3Embedding, serving: serving})
+```
+
+Test the embedding model with some example texts. The Qwen3 embedding model uses an instruction format for better results:
+
+```elixir
+query = "animals"
+
+texts = [
+  "The quick brown fox jumps over the lazy dog",
+  "A fast auburn canine leaps above an idle hound",
+  "Python is a programming language"
+]
+
+# Format texts with instruction prefix for Qwen3 embeddings
+# Format: "Instruct: Given a query, retrieve relevant documents\nQuery: {query}\n{text}"
+formatted_texts =
+  texts
+  |> Enum.map(fn text ->
+    "Instruct: Given a query, retrieve relevant documents\nQuery: #{query}\n#{text}"
+  end)
+
+# Get embeddings for all texts
+embeddings =
+  formatted_texts
+  |> Enum.zip(texts)
+  |> Enum.map(fn {formatted_text, original_text} ->
+    %{embedding: embedding} = Nx.Serving.batched_run(Qwen3Embedding, formatted_text)
+    {original_text, embedding}
+  end)
+
+# Calculate cosine similarity between first two texts (similar meaning)
+[{text1, emb1}, {text2, emb2}, {text3, emb3}] = embeddings
+
+similarity_1_2 =
+  Nx.dot(emb1, emb2)
+  |> Nx.to_number()
+  |> then(&Float.round(&1, 4))
+
+similarity_1_3 =
+  Nx.dot(emb1, emb3)
+  |> Nx.to_number()
+  |> then(&Float.round(&1, 4))
+
+IO.puts("Text 1: #{text1}")
+IO.puts("Text 2: #{text2}")
+IO.puts("Similarity: #{similarity_1_2}\n")
+
+IO.puts("Text 1: #{text1}")
+IO.puts("Text 3: #{text3}")
+IO.puts("Similarity: #{similarity_1_3}")
+```
+
+As expected, texts with similar meanings (sentences 1 and 2) have higher cosine similarity than texts with different meanings (sentences 1 and 3).
+
+<!-- livebook:{"branch_parent_index":0} -->
+
+## Reranking
+
+Reranking models take a query and a list of candidate documents, then score how relevant each document is to the query. This is useful for improving search results.
+
+```elixir
+repo = {:hf, "Qwen/Qwen3-Reranker-0.6B"}
+
+{:ok, model_info} = Bumblebee.load_model(repo, type: :f32, backend: EXLA.Backend)
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+
+serving =
+  Bumblebee.Text.text_reranking_qwen3(model_info, tokenizer,
+    compile: [batch_size: 4, sequence_length: 512],
+    defn_options: [compiler: EXLA]
+  )
+
+Kino.start_child({Nx.Serving, name: Qwen3Reranker, serving: serving})
+```
+
+Test the reranker with a query and multiple candidate documents:
+
+```elixir
+query = "What is machine learning?"
+
+documents = [
+  "Machine learning is a subset of artificial intelligence that enables computers to learn from data.",
+  "The weather today is sunny with a high of 75 degrees.",
+  "Deep learning uses neural networks with multiple layers to learn complex patterns.",
+  "My favorite color is blue and I enjoy long walks on the beach."
+]
+
+# Create query-document pairs
+pairs = Enum.map(documents, fn doc -> {query, doc} end)
+
+# Get relevance scores
+%{scores: results} = Nx.Serving.batched_run(Qwen3Reranker, pairs)
+
+# Sort by score descending
+results =
+  results
+  |> Enum.sort_by(& &1.score, :desc)
+  |> Enum.map(fn result ->
+    {Float.round(result.score, 4), result.document}
+  end)
+
+IO.puts("Query: #{query}\n")
+IO.puts("Ranked documents by relevance:\n")
+
+results
+|> Enum.with_index(1)
+|> Enum.each(fn {{score, doc}, idx} ->
+  IO.puts("#{idx}. [Score: #{score}] #{doc}")
+end)
+```
+
+The reranker correctly identifies that the document directly answering "What is machine learning?" is most relevant, while documents about unrelated topics (weather, personal preferences) receive near-zero scores. The deep learning document, while topically related, doesn't directly answer the query and thus receives a lower score.
+
+## Summary
+
+This notebook demonstrated three key capabilities of the Qwen3 model family:
+
+1. **Text Generation** - Conversational AI using instruction-tuned models
+2. **Embeddings** - Creating semantic vector representations for similarity search
+3. **Reranking** - Scoring and ranking documents by relevance to a query
+
+All three models work seamlessly with Bumblebee and can be used for various NLP applications.

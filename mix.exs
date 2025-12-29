@@ -63,6 +63,7 @@ defmodule Bumblebee.MixProject do
         "notebooks/stable_diffusion.livemd",
         "notebooks/llms.livemd",
         "notebooks/llms_rag.livemd",
+        "notebooks/qwen3.livemd",
         "notebooks/fine_tuning.livemd",
         "examples/phoenix/README.md"
       ],
