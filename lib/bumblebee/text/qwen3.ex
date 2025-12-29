@@ -336,18 +336,13 @@ defmodule Bumblebee.Text.Qwen3 do
     query_norm =
       if spec.use_qk_norm do
         &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, channel_index: -1, name: &2)
-      else
-        nil
       end
 
     key_norm =
       if spec.use_qk_norm do
         &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, channel_index: -1, name: &2)
-      else
-        nil
       end
 
-    # Use the generalized Layers.Transformer.blocks with QK normalization
     Layers.Transformer.blocks(hidden_state,
       num_blocks: spec.num_blocks,
       num_attention_heads: spec.num_attention_heads,
