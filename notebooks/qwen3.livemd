@@ -8,7 +8,7 @@ Mix.install([
   {:kino, "~> 0.14.0"}
 ])
 
-Nx.global_default_backend({EXLA.Backend, client: :host})
+Nx.global_default_backend(EXLA.Backend)
 ```
 
 ## Introduction
