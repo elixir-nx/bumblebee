@@ -385,6 +385,9 @@ defmodule Bumblebee.Text do
           Note that we currently assume that the CLS token is the first token
           in the sequence
 
+        * `:last_token_pooling` - takes the embedding for the last non-padding
+          token in each sequence
+
       By default no pooling is applied
 
     * `:embedding_processor` - a post-processing step to apply to the
@@ -443,6 +446,82 @@ defmodule Bumblebee.Text do
         ) :: Nx.Serving.t()
   defdelegate text_embedding(model_info, tokenizer, opts \\ []),
     to: Bumblebee.Text.TextEmbedding
+
+  @type text_reranking_qwen3_input :: {String.t(), String.t()} | [{String.t(), String.t()}]
+  @type text_reranking_qwen3_output :: %{
+          scores: text_reranking_qwen3_score() | list(text_reranking_qwen3_score())
+        }
+  @type text_reranking_qwen3_score :: %{score: number(), query: String.t(), document: String.t()}
+
+  @doc """
+  Builds a serving for text reranking with Qwen3 reranker models.
+
+  The serving expects input in one of the following formats:
+
+    * `{query, document}` - a tuple with query and document text
+    * `[{query1, doc1}, {query2, doc2}, ...]` - a list of query-document pairs
+
+  ## Options
+
+    * `:yes_token` - the token ID corresponding to "yes" for relevance scoring.
+      If not provided, will be inferred from the tokenizer
+
+    * `:no_token` - the token ID corresponding to "no" for relevance scoring.
+      If not provided, will be inferred from the tokenizer
+
+    * `:instruction_prefix` - the instruction prefix to use. Defaults to the
+      Qwen3 reranker format
+
+    * `:instruction_suffix` - the instruction suffix to use. Defaults to the
+      Qwen3 reranker format
+
+    * `:task_description` - the task description to include in prompts. Defaults
+      to "Given a web search query, retrieve relevant passages that answer the query"
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured in `:defn_options`. You may want to set
+      this option when using partitioned models on the GPU. Defaults to `false`
+
+  ## Examples
+
+      {:ok, model_info} = Bumblebee.load_model({:hf, "Qwen/Qwen3-Reranker-0.6B"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "Qwen/Qwen3-Reranker-0.6B"})
+
+      serving = Bumblebee.Text.text_reranking_qwen3(model_info, tokenizer)
+
+      query = "What is the capital of France?"
+      documents = [
+        "Paris is the capital of France.",
+        "Berlin is the capital of Germany."
+      ]
+
+      pairs = Enum.map(documents, &{query, &1})
+      Nx.Serving.run(serving, pairs)
+
+  """
+  @spec text_reranking_qwen3(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate text_reranking_qwen3(model_info, tokenizer, opts \\ []),
+    to: Bumblebee.Text.TextRerankingQwen3
 
   @type fill_mask_input :: String.t()
   @type fill_mask_output :: %{predictions: list(fill_mask_prediction())}
