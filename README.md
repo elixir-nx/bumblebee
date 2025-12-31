@@ -93,19 +93,19 @@ A repository in the Transformers format does not store an actual model, only the
 
 Here is a list of files commonly found in a repository following the Transformers format.
 
-  * `config.json` - model configuration, specifies the model type and model-specific options. You can think of this as a blueprint for how the model should be constructed
+- `config.json` - model configuration, specifies the model type and model-specific options. You can think of this as a blueprint for how the model should be constructed
 
-  * `pytorch_model.bin` - raw model parameters (tensors) serialized from a PyTorch model using [PyTorch format](https://pytorch.org/docs/stable/generated/torch.save.html) (supported by Bumblebee)
+- `pytorch_model.bin` - raw model parameters (tensors) serialized from a PyTorch model using [PyTorch format](https://pytorch.org/docs/stable/generated/torch.save.html) (supported by Bumblebee)
 
-  * `model.safetensors` - raw model parameters (tensors) serialized from a PyTorch model using [Safetensors](https://github.com/huggingface/safetensors) (supported by Bumblebee)
+- `model.safetensors` - raw model parameters (tensors) serialized from a PyTorch model using [Safetensors](https://github.com/huggingface/safetensors) (supported by Bumblebee)
 
-  * `flax_model.msgpack`, `tf_model.h5` - raw model parameters (tensors) serialized from Flax and Tensorflow models respectively (not supported by Bumblebee)
+- `flax_model.msgpack`, `tf_model.h5` - raw model parameters (tensors) serialized from Flax and Tensorflow models respectively (not supported by Bumblebee)
 
-  * `tokenizer.json`, `tokenizer_config.json` - tokenizer configuration, describes how to convert text input to model inputs (tensors). See [Tokenizer support](#tokenizer-support)
+- `tokenizer.json`, `tokenizer_config.json` - tokenizer configuration, describes how to convert text input to model inputs (tensors). See [Tokenizer support](#tokenizer-support)
 
-  * `preprocessor_config.json` - featurizer configuration, describes how to convert real-world input (image, audio) to model inputs (tensors)
+- `preprocessor_config.json` - featurizer configuration, describes how to convert real-world input (image, audio) to model inputs (tensors)
 
-  * `generation_config.json` - a set of configuration options specific to text generation, such as token sampling strategy and various constraints
+- `generation_config.json` - a set of configuration options specific to text generation, such as token sampling strategy and various constraints
 
 ### Model support
 
@@ -119,9 +119,9 @@ Also note that certain repositories include multiple models in separate reposito
 
 The Transformers library distinguishes two types of tokenizer implementations:
 
-  * "slow tokenizer" - a tokenizer implemented in Python and stored as `tokenizer_config.json` and a couple extra files
+- "slow tokenizer" - a tokenizer implemented in Python and stored as `tokenizer_config.json` and a couple extra files
 
-  * "fast tokenizer" - a tokenizer implemented in Rust and stored in a single file - `tokenizer.json`
+- "fast tokenizer" - a tokenizer implemented in Rust and stored in a single file - `tokenizer.json`
 
 Bumblebee relies on the Rust implementations (through bindings to [Tokenizers](https://github.com/huggingface/tokenizers)) and therefore always requires the `tokenizer.json` file. Many repositories only include files for a "slow tokenizer". When you stumble upon such repository, there are two options you can try.
 
@@ -130,6 +130,84 @@ First, if the repository is clearly a fine-tuned version of another model, you c
 Otherwise, the Transformers library includes conversion rules to load a "slow tokenizer" and convert it to a corresponding "fast tokenizer", which is possible in most cases. You can generate the `tokenizer.json` file using [this tool](https://jonatanklosko-bumblebee-tools.hf.space/apps/tokenizer-generator). Once successful, you can follow the steps to submit a PR adding `tokenizer.json` to the model repository. Note that you do not have to wait for the PR to be merged, instead you can copy commit SHA from the PR and load the tokenizer with `Bumblebee.load_tokenizer({:hf, "model-repo", revision: "..."})`.
 
 <!-- Docs -->
+
+## Contributing
+
+> **Note on AI usage**
+>
+> If you contribute a model implementation using a coding agent, you are still expected to read, understand and verify the model implementation, such that you are able to answer questions during code review. If the majority of the code is LLM-generated, contributors are expected to disclose that fact.
+
+We welcome contributions of new models to the project.
+
+For reference, you can look at an example complete PR adding SmolLM3 LLM [here](https://github.com/elixir-nx/bumblebee/pull/422/files), and another one adding Swin image classification model [here](https://github.com/elixir-nx/bumblebee/pull/394/files).
+
+The main steps of adding a new model are the following:
+
+1. Find the Python implementation and configuration files for the model in the `huggingface/transformers` project, for example [modeling_smollm3.py](https://github.com/huggingface/transformers/blob/v5.0.0rc1/src/transformers/models/smollm3/modeling_smollm3.py) and [configuration_smollm3.py](https://github.com/huggingface/transformers/blob/v5.0.0rc1/src/transformers/models/smollm3/configuration_smollm3.py).
+
+2. Look at some existing model implementations in Bumblebee. In case of LLMs, copying an existing LLM implementation is typically a good starting point.
+
+3. Implement the model code.
+   - Whenever possible, reuse existing primitives, most notably `Layers.Transformer.blocks/2`, which is shared for most LLM implementations. Sometimes models introduce novelties to the transformer design, in which case it may be necessary to add a new option to `Layers.Transformer.blocks/2`.
+   - Include relevant options from Python model configuration as Bumblebee model options (with matching defaults).
+   - Make sure the `params_mapping/1` maps to correct Python layer names. You can use `Bumblebee.load_model(..., log_params_diff: true)` to get all logs related to params loading.
+
+4. Add tests for each of the model architectures. Look at existing tests for reference. The tests should verify a slice of model output matches **reference values obtained from running the Python model**. The values can be obtained using a Python script like this:
+
+   ```python
+   from transformers import BertModel
+   import torch
+
+   model = BertModel.from_pretrained("hf-internal-testing/tiny-random-BertModel")
+
+   inputs = {
+     "input_ids": torch.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+     "attention_mask": torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+   }
+
+   outputs = model(**inputs)
+
+   print(outputs.last_hidden_state.shape)
+   print(outputs.last_hidden_state[:, 1:4, 1:4])
+
+   #=> torch.Size([1, 10, 32])
+   #=> tensor([[[-0.2331,  1.7817,  1.1736],
+   #=>          [-1.1001,  1.3922, -0.3391],
+   #=>          [ 0.0408,  0.8677, -0.0779]]], grad_fn=<SliceBackward0>)
+   ```
+
+   For the tests, try finding model repositories in the [hf-internal-testing](https://huggingface.co/hf-internal-testing) organization. If there is no repository for the given model, you can use any other repository or local checkpoint - once you open the PR we will create a repository under [bumblebee-testing](https://huggingface.co/bumblebee-testing). To generate a checkpoint locally, you can use a Python script like this:
+
+   ```python
+   from transformers import SmolLM3Config, SmolLM3Model, SmolLM3ForCausalLM, SmolLM3ForQuestionAnswering, SmolLM3ForSequenceClassification, SmolLM3ForTokenClassification
+
+   config = SmolLM3Config(
+     vocab_size=1024,
+     hidden_size=32,
+     num_hidden_layers=2,
+     num_attention_heads=4,
+     intermediate_size=37,
+     hidden_act="gelu",
+     hidden_dropout_prob=0.1,
+     attention_probs_dropout_prob=0.1,
+     max_position_embeddings=512,
+     type_vocab_size=16,
+     is_decoder=False,
+     initializer_range=0.02,
+     pad_token_id=0,
+     no_rope_layers=[0, 1]
+   )
+
+   for c in [SmolLM3Model, SmolLM3ForCausalLM, SmolLM3ForQuestionAnswering, SmolLM3ForSequenceClassification, SmolLM3ForTokenClassification]:
+     name = c.__name__
+     c(config).save_pretrained(f"bumblebee-testing/tiny-random-{name}", repo_id=f"bumblebee-testing/tiny-random-{name}")
+   ```
+
+   You may need to adjust the configuration for the new model accordingly.
+
+5. If the model uses a new type of tokenizer, you may need to add a new tokenizer mapping to `@tokenizer_types` in `lib/bumblebee/text/pre_trained_tokenizer.ex`, and a corresponding test in `test/bumblebee/text/pre_trained_tokenizer_test.exs`.
+
+6. Finally, it is highly advisable to try the model end-to-end with a real-world model checkpoint from [HuggingFace Hub](https://huggingface.co/models), to make sure it produces expected output. Given that models can have different configuration, it is possible to miss some relevant code path or option when testing solely against a tiny-random checkpoint.
 
 ## License
 
