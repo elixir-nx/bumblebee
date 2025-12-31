@@ -544,7 +544,7 @@ defmodule Bumblebee.Text.Gemma3Text do
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
           attention_head_size: {"head_dim", number()},
-          attention_scale_base: {"query_pre_attn_scalar", optional(number())},
+          attention_scale_base: {"query_pre_attn_scalar", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_activation", activation()},
           use_attention_bias: {"attention_bias", boolean()},
