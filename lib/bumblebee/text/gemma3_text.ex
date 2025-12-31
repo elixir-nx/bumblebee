@@ -31,10 +31,10 @@ defmodule Bumblebee.Text.Gemma3Text do
         doc: "the size of the key, value, and query projection per attention head"
       ],
       attention_scale_base: [
-        default: nil,
+        default: 256,
         doc: """
         base value for computing attention scale. The attention scale is computed as
-        `attention_scale_base ** -0.5`. When `nil`, defaults to `:attention_head_size`
+        `attention_scale_base ** -0.5`.
         """
       ],
       num_blocks: [
