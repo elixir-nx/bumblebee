@@ -61,7 +61,6 @@ defmodule Bumblebee.Layers.Transformer do
       :output_use_bias,
       :layer_norm,
       :block_type,
-      :attention_window_size,
       :attention_scale,
       :query_norm,
       :key_norm

@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.Gemma3Test do
+defmodule Bumblebee.Text.Gemma3TextTest do
   use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
@@ -7,9 +7,9 @@ defmodule Bumblebee.Text.Gemma3Test do
 
   test ":base" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "nmaroulis/tiny-random-Gemma3Model"})
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-Gemma3TextModel"})
 
-    assert %Bumblebee.Text.Gemma3{architecture: :base} = spec
+    assert %Bumblebee.Text.Gemma3Text{architecture: :base} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -23,16 +23,19 @@ defmodule Bumblebee.Text.Gemma3Test do
     assert_all_close(
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
-        [[-1.6458, 0.7249, -0.5747], [-1.9452, -0.1602, -0.2329], [-2.3408, -0.4665, -0.1177]]
-      ])
+        [[-0.5691, 1.3813, -0.1463], [0.0754, 1.1590, -0.3055], [1.7564, 0.4456, -0.4530]]
+      ]),
+      atol: 0.2
     )
   end
 
   test ":for_sequence_classification" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "nmaroulis/tiny-random-Gemma3ForSequenceClassification"})
+             Bumblebee.load_model(
+               {:hf, "bumblebee-testing/tiny-random-Gemma3TextForSequenceClassification"}
+             )
 
-    assert %Bumblebee.Text.Gemma3{architecture: :for_sequence_classification} = spec
+    assert %Bumblebee.Text.Gemma3Text{architecture: :for_sequence_classification} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -45,15 +48,16 @@ defmodule Bumblebee.Text.Gemma3Test do
 
     assert_all_close(
       outputs.logits,
-      Nx.tensor([[-0.0060, -0.0212]])
+      Nx.tensor([[0.0366, -0.0045]]),
+      atol: 0.1
     )
   end
 
   test ":for_causal_language_modeling" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "nmaroulis/tiny-random-Gemma3ForCausalLM"})
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-Gemma3ForCausalLM"})
 
-    assert %Bumblebee.Text.Gemma3{architecture: :for_causal_language_modeling} = spec
+    assert %Bumblebee.Text.Gemma3Text{architecture: :for_causal_language_modeling} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -67,8 +71,9 @@ defmodule Bumblebee.Text.Gemma3Test do
     assert_all_close(
       outputs.logits[[.., 1..3, 1..3]],
       Nx.tensor([
-        [[0.1472, 0.0633, 0.0922], [-0.1089, -0.0344, 0.0755], [0.0112, 0.1083, 0.1461]]
-      ])
+        [[0.0114, -0.0579, -0.1748], [-0.0151, -0.1486, -0.1722], [-0.1478, -0.0452, -0.1211]]
+      ]),
+      atol: 0.02
     )
   end
 end

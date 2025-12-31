@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.Gemma3 do
+defmodule Bumblebee.Text.Gemma3Text do
   alias Bumblebee.Shared
 
   options =
@@ -29,6 +29,13 @@ defmodule Bumblebee.Text.Gemma3 do
       attention_head_size: [
         default: 256,
         doc: "the size of the key, value, and query projection per attention head"
+      ],
+      attention_scale_base: [
+        default: nil,
+        doc: """
+        base value for computing attention scale. The attention scale is computed as
+        `attention_scale_base ** -0.5`. When `nil`, defaults to `:attention_head_size`
+        """
       ],
       num_blocks: [
         default: 26,
@@ -381,6 +388,10 @@ defmodule Bumblebee.Text.Gemma3 do
       gemma3_block_impl(hidden_state, steps, block_name, spec)
     end
 
+    # Compute attention scale from attention_scale_base (defaults to attention_head_size)
+    attention_scale_base = spec.attention_scale_base || spec.attention_head_size
+    attention_scale = :math.pow(attention_scale_base, -0.5)
+
     Layers.Transformer.blocks(hidden_state,
       attention_mask: attention_mask,
       attention_head_mask: attention_head_mask,
@@ -390,6 +401,7 @@ defmodule Bumblebee.Text.Gemma3 do
       num_key_value_heads: spec.num_key_value_heads,
       hidden_size: spec.hidden_size,
       attention_head_size: spec.attention_head_size,
+      attention_scale: attention_scale,
       kernel_initializer: kernel_initializer(spec),
       layer_norm:
         &Layers.rms_norm(&1,
@@ -534,6 +546,7 @@ defmodule Bumblebee.Text.Gemma3 do
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
           attention_head_size: {"head_dim", number()},
+          attention_scale_base: {"query_pre_attn_scalar", optional(number())},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_activation", activation()},
           use_attention_bias: {"attention_bias", boolean()},
