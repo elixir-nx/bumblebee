@@ -219,8 +219,8 @@ defmodule Bumblebee.Layers do
     * `:window_size` - when set, enables sliding window attention.
       Should be a `{left, right}` tuple with window size on each side
 
-    * `:scale` - whether to scale attention weights by $\frac{1}{\sqrt{d}}$.
-      Defaults to `true`
+    * `:scale` - the scaling factor applied to the attention weights.
+      Defaults to $\frac{1}{\sqrt{d}}$
 
     * `:dropout_rate` - the dropout rate for attention weights dropout.
       Defaults to `0.0`
@@ -231,7 +231,7 @@ defmodule Bumblebee.Layers do
 
   """
   def attention(query, key, value, key_mask, head_mask, bias, offset, opts \\ []) do
-    opts = Keyword.validate!(opts, [:window_size, causal: false, scale: true, dropout_rate: 0.0])
+    opts = Keyword.validate!(opts, [:window_size, :scale, causal: false, dropout_rate: 0.0])
 
     weights =
       Axon.layer(
@@ -263,13 +263,17 @@ defmodule Bumblebee.Layers do
 
     weights = Nx.dot(query, [3], [0, 1], key, [3], [0, 1])
 
-    weights =
-      if opts[:scale] do
-        depth = Nx.axis_size(query, -1)
-        weights / Nx.as_type(Nx.sqrt(depth), Nx.type(query))
-      else
-        weights
+    scale =
+      case opts[:scale] do
+        nil ->
+          depth = Nx.axis_size(query, -1)
+          1 / Nx.as_type(Nx.sqrt(depth), Nx.type(query))
+
+        scale ->
+          scale
       end
+
+    weights = weights * scale
 
     key_mask =
       case key_mask do

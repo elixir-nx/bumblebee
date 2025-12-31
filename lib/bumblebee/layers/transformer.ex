@@ -53,7 +53,7 @@ defmodule Bumblebee.Layers.Transformer do
       :layer_norm,
       :block_type,
       :attention_window_size,
-      :scale_attention_weights,
+      :attention_scale,
       :query_norm,
       :key_norm
     ]
@@ -276,8 +276,8 @@ defmodule Bumblebee.Layers.Transformer do
     * `:attention_window_size` - when set, enables sliding window attention.
       Should be a `{left, right}` tuple with window size on each side
 
-    * `:scale_attention_weights` - whether to scale query in the traditional style of
-      multi-headed attention. Defaults to `true`
+    * `:attention_scale` - the scaling factor applied to the attention weights.
+      Defaults to $\frac{1}{\sqrt{d}}$.
 
     * `:rotary_embedding` - configuration of rotary embedding. If set,
       will apply rotary position embedding with the given options. Valid
@@ -331,7 +331,7 @@ defmodule Bumblebee.Layers.Transformer do
         block_type: :standard,
         layer_norm: [],
         attention_window_size: nil,
-        scale_attention_weights: true,
+        attention_scale: nil,
         rotary_embedding: nil,
         query_norm: nil,
         key_norm: nil
@@ -362,7 +362,7 @@ defmodule Bumblebee.Layers.Transformer do
     layer_norm = opts[:layer_norm]
     block_type = opts[:block_type]
     attention_window_size = opts[:attention_window_size]
-    scale_attention_weights = opts[:scale_attention_weights]
+    attention_scale = opts[:attention_scale]
     rotary_embedding = opts[:rotary_embedding]
     query_norm = opts[:query_norm]
     key_norm = opts[:key_norm]
@@ -422,7 +422,7 @@ defmodule Bumblebee.Layers.Transformer do
           value_use_bias: value_use_bias,
           output_use_bias: output_use_bias,
           attention_window_size: attention_window_size,
-          scale_attention_weights: scale_attention_weights,
+          attention_scale: attention_scale,
           rotary_embedding: rotary_embedding,
           query_norm: query_norm,
           key_norm: key_norm,
@@ -469,7 +469,7 @@ defmodule Bumblebee.Layers.Transformer do
           value_use_bias: value_use_bias,
           output_use_bias: output_use_bias,
           attention_window_size: attention_window_size,
-          scale_attention_weights: scale_attention_weights,
+          attention_scale: attention_scale,
           rotary_embedding: rotary_embedding,
           name: join(name, "cross_attention")
         )
@@ -699,8 +699,8 @@ defmodule Bumblebee.Layers.Transformer do
     * `:attention_window_size` - when set, enables sliding window attention.
       Should be a `{left, right}` tuple with window size on each side
 
-    * `:scale_attention_weights` - whether to scale query in the traditional style of
-      multi-headed attention. Defaults to `true`
+    * `:attention_scale` - the scaling factor applied to the attention weights.
+      Defaults to $\frac{1}{\sqrt{d}}$
 
     * `:rotary_embedding` - configuration of rotary embedding. If set,
       will apply rotary position embedding with the given options. Valid
@@ -742,7 +742,7 @@ defmodule Bumblebee.Layers.Transformer do
         offset: Layers.none(),
         causal: false,
         attention_window_size: nil,
-        scale_attention_weights: true,
+        attention_scale: nil,
         kernel_initializer: :glorot_uniform,
         dropout_rate: 0.0,
         attention_head_size: nil,
@@ -767,7 +767,7 @@ defmodule Bumblebee.Layers.Transformer do
     kernel_initializer = opts[:kernel_initializer]
     causal = opts[:causal]
     attention_window_size = opts[:attention_window_size]
-    scale_attention_weights = opts[:scale_attention_weights]
+    attention_scale = opts[:attention_scale]
     dropout_rate = opts[:dropout_rate]
     rotary_embedding = opts[:rotary_embedding]
     query_norm = opts[:query_norm]
@@ -908,7 +908,7 @@ defmodule Bumblebee.Layers.Transformer do
         attention_head_mask,
         attention_relative_bias,
         offset,
-        scale: scale_attention_weights,
+        scale: attention_scale,
         causal: causal,
         window_size: attention_window_size,
         dropout_rate: dropout_rate

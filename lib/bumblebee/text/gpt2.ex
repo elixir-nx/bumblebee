@@ -412,7 +412,7 @@ defmodule Bumblebee.Text.Gpt2 do
           activation: spec.activation
         ],
         block_type: :norm_first,
-        scale_attention_weights: spec.scale_attention_weights,
+        attention_scale: if(not spec.scale_attention_weights, do: 1),
         name: join(name, "blocks")
       ] ++
         if(spec.use_cross_attention,

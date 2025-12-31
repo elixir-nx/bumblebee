@@ -412,7 +412,7 @@ defmodule Bumblebee.Text.T5 do
           max_distance: spec.relative_attention_max_distance
         ],
         share_attention_relative_bias: true,
-        scale_attention_weights: false,
+        attention_scale: 1,
         name: join(name, "blocks")
       )
 
@@ -469,7 +469,7 @@ defmodule Bumblebee.Text.T5 do
           max_distance: spec.relative_attention_max_distance
         ],
         share_attention_relative_bias: true,
-        scale_attention_weights: false,
+        attention_scale: 1,
         name: join(name, "blocks")
       )
 
