@@ -413,7 +413,7 @@ defmodule Bumblebee.Text.Gemma3Text do
           name: &2,
           activation: spec.activation
         ),
-      block_type: block_type,
+      block_type: &gemma3_block_impl(&1, &2, &3, spec),
       causal: true,
       rotary_embedding: [
         position_ids: position_ids,
