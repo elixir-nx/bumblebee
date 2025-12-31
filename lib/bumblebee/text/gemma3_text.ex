@@ -388,9 +388,7 @@ defmodule Bumblebee.Text.Gemma3Text do
       gemma3_block_impl(hidden_state, steps, block_name, spec)
     end
 
-    # Compute attention scale from attention_scale_base (defaults to attention_head_size)
-    attention_scale_base = spec.attention_scale_base || spec.attention_head_size
-    attention_scale = :math.pow(attention_scale_base, -0.5)
+    attention_scale = :math.pow(spec.attention_scale_base, -0.5)
 
     Layers.Transformer.blocks(hidden_state,
       attention_mask: attention_mask,
