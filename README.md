@@ -207,7 +207,7 @@ The main steps of adding a new model are the following:
 
 5. If the model uses a new type of tokenizer, you may need to add a new tokenizer mapping to `@tokenizer_types` in `lib/bumblebee/text/pre_trained_tokenizer.ex`, and a corresponding test in `test/bumblebee/text/pre_trained_tokenizer_test.exs`.
 
-6. Finally, it is highly advisable to try the model end-to-end with a real-world model checkpoint from [HuggingFace Hub](https://huggingface.co/models), to make sure it produces expected output. Given that models can have different configuration, it is possible to miss some relevant code path or option when testing solely against a tiny-random checkpoint may work.
+6. Finally, it is highly advisable to try the model end-to-end with a real-world model checkpoint from [HuggingFace Hub](https://huggingface.co/models), to make sure it produces expected output. Given that models can have different configuration, it is possible to miss some relevant code path or option when testing solely against a tiny-random checkpoint.
 
 ## License
 
