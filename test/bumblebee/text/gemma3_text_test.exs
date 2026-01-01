@@ -20,14 +20,12 @@ defmodule Bumblebee.Text.Gemma3TextTest do
 
     assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
 
-    # TODO: Larger tolerance needed for base model - investigate discrepancy
-    # First position matches well (~0.003), but positions 2-3 diverge more (~0.2-0.3)
     assert_all_close(
       outputs.hidden_state[[.., 1..3, 1..3]],
       Nx.tensor([
         [[-0.2461, 1.2074, 0.7663], [0.0675, 0.3987, 1.6659], [-0.3021, 0.8062, 1.0309]]
       ]),
-      atol: 0.35
+      atol: 1.0e-4
     )
   end
 
@@ -51,7 +49,7 @@ defmodule Bumblebee.Text.Gemma3TextTest do
     assert_all_close(
       outputs.logits,
       Nx.tensor([[-0.0145, 0.1376]]),
-      atol: 0.02
+      atol: 1.0e-4
     )
   end
 
@@ -75,7 +73,7 @@ defmodule Bumblebee.Text.Gemma3TextTest do
       Nx.tensor([
         [[-0.0488, 0.0432, -0.0531], [-0.1553, -0.0812, 0.1153], [-0.0272, 0.1216, 0.0129]]
       ]),
-      atol: 0.025
+      atol: 1.0e-4
     )
   end
 end

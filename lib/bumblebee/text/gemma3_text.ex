@@ -54,8 +54,12 @@ defmodule Bumblebee.Text.Gemma3Text do
         doc: "the activation function"
       ],
       rotary_embedding_base: [
+        default: 1_000_000,
+        doc: "base for computing rotary embedding frequency for global attention layers"
+      ],
+      rotary_embedding_base_local: [
         default: 10_000,
-        doc: "base for computing rotary embedding frequency"
+        doc: "base for computing rotary embedding frequency for local (sliding) attention layers"
       ],
       rotary_embedding_scaling_strategy: [
         default: nil,
@@ -385,6 +389,23 @@ defmodule Bumblebee.Text.Gemma3Text do
       end
     end
 
+    # Per-layer rotary embedding base: local layers use rotary_embedding_base_local,
+    # global layers use rotary_embedding_base
+    rotary_embedding = fn idx ->
+      base =
+        case Enum.at(layer_types, idx, :sliding_attention) do
+          :full_attention -> spec.rotary_embedding_base
+          :sliding_attention -> spec.rotary_embedding_base_local
+        end
+
+      [
+        position_ids: position_ids,
+        max_positions: spec.max_positions,
+        base: base,
+        scaling_strategy: spec.rotary_embedding_scaling_strategy
+      ]
+    end
+
     attention_scale = :math.pow(spec.attention_scale_base, -0.5)
 
     Layers.Transformer.blocks(hidden_state,
@@ -412,12 +433,7 @@ defmodule Bumblebee.Text.Gemma3Text do
         ),
       block_type: &gemma3_block_impl(&1, &2, &3, spec),
       causal: true,
-      rotary_embedding: [
-        position_ids: position_ids,
-        max_positions: spec.max_positions,
-        base: spec.rotary_embedding_base,
-        scaling_strategy: spec.rotary_embedding_scaling_strategy
-      ],
+      rotary_embedding: rotary_embedding,
       attention_window_size: attention_window_size,
       query_norm: query_norm,
       key_norm: key_norm,
@@ -584,6 +600,7 @@ defmodule Bumblebee.Text.Gemma3Text do
           activation: {"hidden_activation", activation()},
           use_attention_bias: {"attention_bias", boolean()},
           rotary_embedding_base: {"rope_theta", number()},
+          rotary_embedding_base_local: {"rope_local_base_freq", number()},
           rotary_embedding_scaling_strategy:
             {"rope_scaling", optional(scaling_strategy_converter)},
           initializer_scale: {"initializer_range", number()},
