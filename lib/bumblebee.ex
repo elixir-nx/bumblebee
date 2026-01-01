@@ -170,6 +170,14 @@ defmodule Bumblebee do
     "MistralModel" => {Bumblebee.Text.Mistral, :base},
     "MistralForCausalLM" => {Bumblebee.Text.Mistral, :for_causal_language_modeling},
     "MistralForSequenceClassification" => {Bumblebee.Text.Mistral, :for_sequence_classification},
+    "ModernBertModel" => {Bumblebee.Text.ModernBert, :base},
+    "ModernBertForMaskedLM" => {Bumblebee.Text.ModernBert, :for_masked_language_modeling},
+    "ModernBertForSequenceClassification" =>
+      {Bumblebee.Text.ModernBert, :for_sequence_classification},
+    "ModernBertForTokenClassification" => {Bumblebee.Text.ModernBert, :for_token_classification},
+    "ModernBertDecoderModel" => {Bumblebee.Text.ModernBertDecoder, :base},
+    "ModernBertDecoderForCausalLM" =>
+      {Bumblebee.Text.ModernBertDecoder, :for_causal_language_modeling},
     "MPNetModel" => {Bumblebee.Text.MpNet, :base},
     "MPNetForMaskedLM" => {Bumblebee.Text.MpNet, :for_masked_language_modeling},
     "MPNetForSequenceClassification" => {Bumblebee.Text.MpNet, :for_sequence_classification},
@@ -265,6 +273,8 @@ defmodule Bumblebee do
     "llama" => :llama,
     "mistral" => :llama,
     "mbart" => :mbart,
+    "modernbert" => :modernbert,
+    "modernbert-decoder" => :modernbert,
     "mpnet" => :mpnet,
     "phi" => :code_gen,
     "phi3" => :llama,
