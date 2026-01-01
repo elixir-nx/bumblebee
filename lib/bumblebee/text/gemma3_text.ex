@@ -87,12 +87,12 @@ defmodule Bumblebee.Text.Gemma3Text do
         default: 4096,
         doc: "the sliding window size for local attention layers"
       ],
-      global_attention_layer_interval: [
-        default: 6,
+      layer_types: [
+        default: nil,
         doc: """
-        the interval for global attention layers. In Gemma 3, every Nth layer uses global
-        attention while others use local (sliding window) attention. A value of 6 means
-        layers 5, 11, 17, 23... use global attention (5:1 local/global ratio)
+        a list of layer types for each layer, where each element is either `:sliding_attention`
+        (local attention with sliding window) or `:full_attention` (global attention).
+        If not provided, will be computed from `sliding_window_pattern`.
         """
       ],
       tie_word_embeddings: [
@@ -373,19 +373,16 @@ defmodule Bumblebee.Text.Gemma3Text do
     query_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
     key_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
 
-    # Per-layer attention window size for alternating local/global attention
-    # Every global_attention_layer_interval-th layer uses global attention
-    attention_window_size = fn idx ->
-      if rem(idx + 1, spec.global_attention_layer_interval) == 0 do
-        nil
-      else
-        {spec.sliding_window, spec.sliding_window}
-      end
-    end
+    # Per-layer attention window size based on layer_types
+    # :sliding_attention uses local (sliding window) attention
+    # :full_attention uses global attention (nil window size)
+    layer_types = spec.layer_types || generate_layer_types(spec.num_blocks)
 
-    # Custom block_type function for Gemma 3's unique block structure
-    block_type = fn hidden_state, steps, block_name ->
-      gemma3_block_impl(hidden_state, steps, block_name, spec)
+    attention_window_size = fn idx ->
+      case Enum.at(layer_types, idx, :sliding_attention) do
+        :full_attention -> nil
+        :sliding_attention -> {spec.sliding_window, spec.sliding_window}
+      end
     end
 
     attention_scale = :math.pow(spec.attention_scale_base, -0.5)
@@ -518,6 +515,18 @@ defmodule Bumblebee.Text.Gemma3Text do
     Axon.Initializers.normal(scale: spec.initializer_scale)
   end
 
+  # Generate layer_types from sliding_window_pattern (default 6)
+  # Pattern: every Nth layer uses full attention, others use sliding attention
+  defp generate_layer_types(num_blocks, sliding_window_pattern \\ 6) do
+    Enum.map(0..(num_blocks - 1), fn i ->
+      if rem(i + 1, sliding_window_pattern) == 0 do
+        :full_attention
+      else
+        :sliding_attention
+      end
+    end)
+  end
+
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(spec, data) do
       import Shared.Converters
@@ -533,6 +542,32 @@ defmodule Bumblebee.Text.Gemma3Text do
           _other ->
             {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
         end
+      end
+
+      # Support sliding_window_pattern for backward compatibility
+      # see https://github.com/huggingface/transformers/blob/v5.0.0rc1/src/transformers/models/gemma3/configuration_gemma3.py#L188-L195
+      data =
+        Map.put_new_lazy(data, "layer_types", fn ->
+          pattern = data["sliding_window_pattern"] || 6
+          num_blocks = data["num_hidden_layers"] || 26
+
+          Enum.map(0..(num_blocks - 1), fn i ->
+            if rem(i + 1, pattern) == 0 do
+              "full_attention"
+            else
+              "sliding_attention"
+            end
+          end)
+        end)
+
+      layer_types_converter = fn _name, value ->
+        types =
+          Enum.map(value, fn
+            "sliding_attention" -> :sliding_attention
+            "full_attention" -> :full_attention
+          end)
+
+        {:ok, types}
       end
 
       opts =
@@ -554,6 +589,7 @@ defmodule Bumblebee.Text.Gemma3Text do
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()},
           sliding_window: {"sliding_window", optional(number())},
+          layer_types: {"layer_types", layer_types_converter},
           tie_word_embeddings: {"tie_word_embeddings", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
