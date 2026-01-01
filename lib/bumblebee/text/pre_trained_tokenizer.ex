@@ -189,6 +189,17 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
         mask: "<mask>"
       }
     },
+    mpnet: %{
+      special_tokens: %{
+        bos: "<s>",
+        eos: "</s>",
+        unk: "[UNK]",
+        sep: "</s>",
+        pad: "<pad>",
+        cls: "<s>",
+        mask: "<mask>"
+      }
+    },
     nllb: %{
       special_tokens: %{
         eos: "</s>",
