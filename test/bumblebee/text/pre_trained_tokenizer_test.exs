@@ -380,6 +380,34 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
     )
   end
 
+  test ":mpnet" do
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "microsoft/mpnet-base"})
+
+    assert %Bumblebee.Text.PreTrainedTokenizer{type: :mpnet} = tokenizer
+
+    inputs =
+      Bumblebee.apply_tokenizer(tokenizer, [
+        "Test sentence with <mask>.",
+        {"Question?", "Answer"}
+      ])
+
+    assert_equal(
+      inputs["input_ids"],
+      Nx.tensor([
+        [0, 3235, 6255, 2011, 30526, 1016, 2],
+        [0, 3164, 1033, 2, 2, 3441, 2]
+      ])
+    )
+
+    assert_equal(
+      inputs["attention_mask"],
+      Nx.tensor([
+        [1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1]
+      ])
+    )
+  end
+
   test ":roberta" do
     assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "FacebookAI/roberta-base"})
 
