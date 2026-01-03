@@ -82,6 +82,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Multimodal.Blip,
           Bumblebee.Multimodal.Clip,
           Bumblebee.Multimodal.LayoutLm,
+          Bumblebee.Multimodal.Siglip,
           Bumblebee.Text.Albert,
           Bumblebee.Text.Bart,
           Bumblebee.Text.Bert,
@@ -107,6 +108,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.Phi3,
           Bumblebee.Text.Qwen3,
           Bumblebee.Text.Roberta,
+          Bumblebee.Text.SiglipText,
           Bumblebee.Text.SmolLm3,
           Bumblebee.Text.T5,
           Bumblebee.Vision.BlipVision,
@@ -115,6 +117,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Vision.Deit,
           Bumblebee.Vision.DinoV2,
           Bumblebee.Vision.ResNet,
+          Bumblebee.Vision.SiglipVision,
           Bumblebee.Vision.Swin,
           Bumblebee.Vision.Vit
         ],
