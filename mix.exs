@@ -100,6 +100,8 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.M2m100,
           Bumblebee.Text.Mbart,
           Bumblebee.Text.Mistral,
+          Bumblebee.Text.ModernBert,
+          Bumblebee.Text.ModernBertDecoder,
           Bumblebee.Text.MpNet,
           Bumblebee.Text.Phi,
           Bumblebee.Text.Phi3,

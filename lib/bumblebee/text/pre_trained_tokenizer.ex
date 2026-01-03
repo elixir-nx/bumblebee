@@ -189,6 +189,15 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
         mask: "<mask>"
       }
     },
+    modernbert: %{
+      special_tokens: %{
+        unk: "[UNK]",
+        sep: "[SEP]",
+        pad: "[PAD]",
+        cls: "[CLS]",
+        mask: "[MASK]"
+      }
+    },
     mpnet: %{
       special_tokens: %{
         bos: "<s>",
