@@ -67,6 +67,10 @@ defmodule Bumblebee.Text.Bert do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ],
+      embedding_size: [
+        default: 128,
+        doc: "the dimensionality of the output embedding for ColBERT"
       ]
     ] ++ Shared.common_options([:use_cross_attention, :num_labels, :id_to_label])
 
@@ -107,6 +111,9 @@ defmodule Bumblebee.Text.Bert do
     * `:for_causal_language_modeling` - BERT working as a decoder with
       a language modeling head. The head returns logits for each token
       in the original sequence
+
+    * `:for_colbert` - BERT with a linear projection head for ColBERT-style
+      retrieval. The head projects token embeddings to a lower dimension
 
   ## Inputs
 
@@ -179,7 +186,8 @@ defmodule Bumblebee.Text.Bert do
       :for_multiple_choice,
       :for_next_sentence_prediction,
       :for_pre_training,
-      :for_causal_language_modeling
+      :for_causal_language_modeling,
+      :for_colbert
     ]
 
   @impl true
@@ -370,6 +378,24 @@ defmodule Bumblebee.Text.Bert do
       attentions: outputs.attentions,
       cross_attentions: outputs.cross_attentions,
       cache: outputs.cache
+    })
+  end
+
+  def model(%__MODULE__{architecture: :for_colbert} = spec) do
+    inputs = inputs(spec)
+    outputs = core(inputs, spec)
+
+    embeddings =
+      Axon.dense(outputs.hidden_state, spec.embedding_size,
+        use_bias: false,
+        kernel_initializer: kernel_initializer(spec),
+        name: "colbert_head.output"
+      )
+
+    Layers.output(%{
+      embeddings: embeddings,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
     })
   end
 
@@ -606,7 +632,8 @@ defmodule Bumblebee.Text.Bert do
           attention_dropout_rate: {"attention_probs_dropout_prob", number()},
           classifier_dropout_rate: {"classifier_dropout", optional(number())},
           layer_norm_epsilon: {"layer_norm_eps", number()},
-          initializer_scale: {"initializer_range", number()}
+          initializer_scale: {"initializer_range", number()},
+          embedding_size: {"dim", optional(number())}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -651,7 +678,8 @@ defmodule Bumblebee.Text.Bert do
         "sequence_classification_head.output" => "classifier",
         "token_classification_head.output" => "classifier",
         "multiple_choice_head.output" => "classifier",
-        "question_answering_head.output" => "qa_outputs"
+        "question_answering_head.output" => "qa_outputs",
+        "colbert_head.output" => "linear"
       }
     end
   end
