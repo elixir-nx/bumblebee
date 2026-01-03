@@ -1,4 +1,4 @@
-defmodule Bumblebee.Vision.SiglipVision do
+defmodule Bumblebee.Vision.SigLipVision do
   alias Bumblebee.Shared
 
   options =
@@ -29,7 +29,7 @@ defmodule Bumblebee.Vision.SiglipVision do
       ],
       intermediate_size: [
         default: 3072,
-        docs:
+        doc:
           "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
       ],
       activation: [

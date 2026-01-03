@@ -1,4 +1,4 @@
-defmodule Bumblebee.Multimodal.SiglipTest do
+defmodule Bumblebee.Multimodal.SigLipTest do
   use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
@@ -9,7 +9,7 @@ defmodule Bumblebee.Multimodal.SiglipTest do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model({:hf, "katuni4ka/tiny-random-SiglipModel"})
 
-    assert %Bumblebee.Multimodal.Siglip{architecture: :base} = spec
+    assert %Bumblebee.Multimodal.SigLip{architecture: :base} = spec
 
     # Image size is 30x30 for this tiny model
     inputs = %{
