@@ -195,4 +195,35 @@ defmodule Bumblebee.Text.BertTest do
       ])
     )
   end
+
+  @tag :slow
+  test ":for_colbert" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "colbert-ir/colbertv2.0"})
+
+    assert %Bumblebee.Text.Bert{architecture: :for_colbert} = spec
+    assert spec.embedding_size == 128
+
+    inputs = %{
+      "input_ids" => Nx.tensor([[101, 7592, 2088, 102]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1]])
+    }
+
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.embeddings) == {1, 4, 128}
+
+    # Values verified against Python transformers
+    assert_all_close(
+      outputs.embeddings[[.., 0..2, 0..4]],
+      Nx.tensor([
+        [
+          [0.2045, 0.2541, -0.0945, 0.2049, 0.1241],
+          [-0.0900, -0.2112, -0.00002, 1.0579, 0.8351],
+          [0.3216, -0.0376, 0.0518, 0.0764, -0.4550]
+        ]
+      ]),
+      atol: 1.0e-3
+    )
+  end
 end
