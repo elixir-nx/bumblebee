@@ -116,6 +116,9 @@ defmodule Bumblebee do
     "CLIPModel" => {Bumblebee.Multimodal.Clip, :base},
     "CLIPTextModel" => {Bumblebee.Text.ClipText, :base},
     "CLIPVisionModel" => {Bumblebee.Vision.ClipVision, :base},
+    "SiglipModel" => {Bumblebee.Multimodal.Siglip, :base},
+    "SiglipTextModel" => {Bumblebee.Text.SiglipText, :base},
+    "SiglipVisionModel" => {Bumblebee.Vision.SiglipVision, :base},
     "ControlNetModel" => {Bumblebee.Diffusion.ControlNet, :base},
     "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification},
     "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
@@ -229,6 +232,8 @@ defmodule Bumblebee do
 
   @transformers_class_to_featurizer %{
     "CLIPFeatureExtractor" => Bumblebee.Vision.ClipFeaturizer,
+    "SiglipImageProcessor" => Bumblebee.Vision.ClipFeaturizer,
+    "Siglip2ImageProcessor" => Bumblebee.Vision.ClipFeaturizer,
     "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer,
     "DeiTFeatureExtractor" => Bumblebee.Vision.DeitFeaturizer,
     "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer,
@@ -257,6 +262,7 @@ defmodule Bumblebee do
     "distilbert" => :distilbert,
     "camembert" => :camembert,
     "clip" => :clip,
+    "siglip" => :siglip,
     "gemma" => :gemma,
     "gpt_neox" => :gpt_neo_x,
     "gpt2" => :gpt2,
