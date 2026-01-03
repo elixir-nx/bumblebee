@@ -1,16 +1,16 @@
-defmodule Bumblebee.Multimodal.Siglip do
+defmodule Bumblebee.Multimodal.SigLip do
   alias Bumblebee.Shared
 
   options =
     [
       text_spec: [
         default: nil,
-        doc: "the specification of the text model. See `Bumblebee.Text.SiglipText` for details"
+        doc: "the specification of the text model. See `Bumblebee.Text.SigLipText` for details"
       ],
       vision_spec: [
         default: nil,
         doc:
-          "the specification of the vision model. See `Bumblebee.Vision.SiglipVision` for details"
+          "the specification of the vision model. See `Bumblebee.Vision.SigLipVision` for details"
       ],
       logit_scale_initial_value: [
         default: 2.6592,
@@ -202,12 +202,12 @@ defmodule Bumblebee.Multimodal.Siglip do
       {vision_data, data} = Map.pop(data, "vision_config", %{})
 
       text_spec =
-        Bumblebee.Text.SiglipText
+        Bumblebee.Text.SigLipText
         |> Bumblebee.configure()
         |> Bumblebee.HuggingFace.Transformers.Config.load(text_data)
 
       vision_spec =
-        Bumblebee.Vision.SiglipVision
+        Bumblebee.Vision.SigLipVision
         |> Bumblebee.configure()
         |> Bumblebee.HuggingFace.Transformers.Config.load(vision_data)
 

@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.SiglipText do
+defmodule Bumblebee.Text.SigLipText do
   alias Bumblebee.Shared
 
   options =
