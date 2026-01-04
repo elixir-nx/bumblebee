@@ -42,6 +42,16 @@ config :nx, default_backend: EXLA.Backend
 
 To use GPUs, you must [set the `XLA_TARGET` environment variable accordingly](https://github.com/elixir-nx/xla#usage).
 
+You can also configure the progress bar displayed during model downloads:
+
+```elixir
+# Update every 10% - useful for CI environments
+config :bumblebee, :progress_bar_step, 10
+
+# Disable progress bar entirely
+config :bumblebee, :progress_bar_enabled, false
+```
+
 In notebooks and scripts, use the following `Mix.install/2` call to both install and configure dependencies:
 
 ```elixir

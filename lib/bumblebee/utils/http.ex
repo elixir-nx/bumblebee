@@ -49,7 +49,14 @@ defmodule Bumblebee.Utils.HTTP do
           opts = [stream: :self, sync: false, receiver: receiver]
 
           {:ok, request_id} = :httpc.request(:get, request, http_opts, opts, :bumblebee)
-          download_loop(%{request_id: request_id, file: file, total_size: nil, size: nil})
+
+          download_loop(%{
+            request_id: request_id,
+            file: file,
+            total_size: nil,
+            size: nil,
+            last_percent: 0
+          })
         after
           File.close(file)
         end
@@ -80,7 +87,7 @@ defmodule Bumblebee.Utils.HTTP do
 
   defp download_receive(state, {_, :stream_start, headers}) do
     total_size = total_size(headers)
-    download_loop(%{state | total_size: total_size, size: 0})
+    download_loop(%{state | total_size: total_size, size: 0, last_percent: 0})
   end
 
   defp download_receive(state, {_, :stream, body_part}) do
@@ -88,12 +95,7 @@ defmodule Bumblebee.Utils.HTTP do
       :ok ->
         part_size = byte_size(body_part)
         state = update_in(state.size, &(&1 + part_size))
-
-        if Bumblebee.Utils.progress_bar_enabled?() &&
-             state.total_size && part_size != state.total_size do
-          ProgressBar.render(state.size, state.total_size, suffix: :bytes)
-        end
-
+        state = maybe_render_progress(state, part_size)
         download_loop(state)
 
       {:error, error} ->
@@ -104,6 +106,28 @@ defmodule Bumblebee.Utils.HTTP do
 
   defp download_receive(_state, {_, :stream_end, _headers}) do
     :ok
+  end
+
+  defp maybe_render_progress(state, part_size)
+       when is_nil(state.total_size) or part_size == state.total_size do
+    state
+  end
+
+  defp maybe_render_progress(state, _part_size) do
+    if Bumblebee.Utils.progress_bar_enabled?() do
+      step = Bumblebee.Utils.progress_bar_step()
+      percent = trunc(state.size / state.total_size * 100)
+      step_bucket = if step, do: div(percent, step), else: percent
+
+      if step_bucket > state.last_percent or percent == 100 do
+        ProgressBar.render(state.size, state.total_size, suffix: :bytes)
+        %{state | last_percent: step_bucket}
+      else
+        state
+      end
+    else
+      state
+    end
   end
 
   defp total_size(headers) do
