@@ -13,9 +13,8 @@ defmodule Bumblebee.Text.NomicBert do
       max_positions: [
         default: 8192,
         doc: """
-        the vocabulary size of the position embedding. This corresponds to the maximum sequence
-        length that this model can process. Typically this is set to a large value just in case,
-        such as 512, 1024 or 2048
+        the maximum sequence length that this model can process. Typically this is set to a large
+        value just in case, such as 512, 1024 or 2048
         """
       ],
       max_token_types: [
@@ -47,7 +46,7 @@ defmodule Bumblebee.Text.NomicBert do
         doc: "the activation function"
       ],
       rotary_embedding_base: [
-        default: 10_000,
+        default: 1000,
         doc: "base for computing rotary embedding frequency"
       ],
       rotary_embedding_percentage: [
@@ -71,7 +70,7 @@ defmodule Bumblebee.Text.NomicBert do
   This is a variant of BERT that uses:
   - Rotary position embeddings (RoPE) instead of absolute position embeddings
   - SwiGLU activation in the feed-forward network
-  - Pre-normalization (like GPT) instead of post-normalization
+  - Post-normalization (like original BERT)
   - No biases in attention and feed-forward layers
 
   ## Architectures
@@ -92,8 +91,8 @@ defmodule Bumblebee.Text.NomicBert do
 
     * `"position_ids"` - `{batch_size, sequence_length}`
 
-      Indices of positions of each input sequence tokens in the position
-      embeddings.
+      Indices of positions of each input sequence token used when applying
+      rotary position embeddings (RoPE).
 
   ## Global layer options
 
