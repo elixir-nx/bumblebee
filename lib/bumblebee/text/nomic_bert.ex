@@ -227,88 +227,33 @@ defmodule Bumblebee.Text.NomicBert do
   defp encoder(hidden_state, position_ids, attention_mask, attention_head_mask, spec, opts) do
     name = opts[:name]
 
-    # Nomic BERT uses postnorm (like standard BERT):
-    # Each block:
-    #   attn_output = attention(hidden_states)
-    #   hidden_states = norm1(attn_output + hidden_states)
-    #   ffn_output = ffn(hidden_states)
-    #   hidden_states = norm2(ffn_output + hidden_states)
-
-    initial_state = %{
-      hidden_state: hidden_state,
-      hidden_states: Axon.container({hidden_state}),
-      attentions: Axon.container({})
-    }
-
-    final_state =
-      Enum.reduce(0..(spec.num_blocks - 1), initial_state, fn idx, state ->
-        block_name = join(name, "blocks.#{idx}")
-
-        # Self-attention (no prenorm)
-        {attention_output, attention_weights, _cache, _bias} =
-          Layers.Transformer.multi_head_attention(
-            state.hidden_state,
-            state.hidden_state,
-            state.hidden_state,
-            attention_mask: attention_mask,
-            attention_head_mask:
-              Layers.if_present attention_head_mask do
-                Axon.nx(attention_head_mask, & &1[idx])
-              end,
-            num_heads: spec.num_attention_heads,
-            hidden_size: spec.hidden_size,
-            kernel_initializer: kernel_initializer(spec),
-            causal: false,
-            query_use_bias: false,
-            key_use_bias: false,
-            value_use_bias: false,
-            output_use_bias: false,
-            rotary_embedding: [
-              position_ids: position_ids,
-              max_positions: spec.max_positions,
-              base: spec.rotary_embedding_base,
-              percentage: spec.rotary_embedding_percentage
-            ],
-            name: join(block_name, "self_attention")
-          )
-
-        # Residual + Norm after attention (postnorm)
-        hidden_state = Axon.add(attention_output, state.hidden_state)
-
-        hidden_state =
-          Axon.layer_norm(hidden_state,
-            epsilon: spec.layer_norm_epsilon,
-            name: join(block_name, "self_attention_norm")
-          )
-
-        # FFN
-        ffn_output =
-          gated_ffn(hidden_state, spec.intermediate_size, spec.hidden_size,
-            name: join(block_name, "ffn"),
-            activation: spec.activation
-          )
-
-        # Residual + Norm after FFN (postnorm)
-        hidden_state = Axon.add(ffn_output, hidden_state)
-
-        hidden_state =
-          Axon.layer_norm(hidden_state,
-            epsilon: spec.layer_norm_epsilon,
-            name: join(block_name, "output_norm")
-          )
-
-        %{
-          hidden_state: hidden_state,
-          hidden_states: Layers.append(state.hidden_states, hidden_state),
-          attentions: Layers.append(state.attentions, attention_weights)
-        }
-      end)
-
-    %{
-      hidden_state: final_state.hidden_state,
-      hidden_states: final_state.hidden_states,
-      attentions: final_state.attentions
-    }
+    Layers.Transformer.blocks(hidden_state,
+      attention_mask: attention_mask,
+      attention_head_mask: attention_head_mask,
+      num_blocks: spec.num_blocks,
+      num_attention_heads: spec.num_attention_heads,
+      hidden_size: spec.hidden_size,
+      kernel_initializer: kernel_initializer(spec),
+      layer_norm: [epsilon: spec.layer_norm_epsilon],
+      ffn:
+        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
+          name: &2,
+          activation: spec.activation
+        ),
+      block_type: :standard,
+      causal: false,
+      rotary_embedding: [
+        position_ids: position_ids,
+        max_positions: spec.max_positions,
+        base: spec.rotary_embedding_base,
+        percentage: spec.rotary_embedding_percentage
+      ],
+      query_use_bias: false,
+      key_use_bias: false,
+      value_use_bias: false,
+      output_use_bias: false,
+      name: join(name, "blocks")
+    )
   end
 
   defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
