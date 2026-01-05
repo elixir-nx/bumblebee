@@ -54,8 +54,7 @@ defmodule Bumblebee.Utils.HTTP do
             request_id: request_id,
             file: file,
             total_size: nil,
-            size: nil,
-            last_percent: 0
+            size: nil
           })
         after
           File.close(file)
@@ -87,7 +86,7 @@ defmodule Bumblebee.Utils.HTTP do
 
   defp download_receive(state, {_, :stream_start, headers}) do
     total_size = total_size(headers)
-    download_loop(%{state | total_size: total_size, size: 0, last_percent: 0})
+    download_loop(%{state | total_size: total_size, size: 0})
   end
 
   defp download_receive(state, {_, :stream, body_part}) do
@@ -113,21 +112,20 @@ defmodule Bumblebee.Utils.HTTP do
     state
   end
 
-  defp maybe_render_progress(state, _part_size) do
+  defp maybe_render_progress(state, part_size) do
     if Bumblebee.Utils.progress_bar_enabled?() do
       step = Bumblebee.Utils.progress_bar_step()
       percent = trunc(state.size / state.total_size * 100)
+      last_percent = trunc((state.size - part_size) / state.total_size * 100)
       step_bucket = if step, do: div(percent, step), else: percent
+      last_step_bucket = if step, do: div(last_percent, step), else: last_percent
 
-      if step_bucket > state.last_percent or percent == 100 do
+      if step_bucket > last_step_bucket or percent == 100 do
         ProgressBar.render(state.size, state.total_size, suffix: :bytes)
-        %{state | last_percent: step_bucket}
-      else
-        state
       end
-    else
-      state
     end
+
+    state
   end
 
   defp total_size(headers) do
