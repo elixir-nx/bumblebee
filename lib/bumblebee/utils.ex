@@ -12,11 +12,11 @@ defmodule Bumblebee.Utils do
   @doc """
   Returns the progress bar update step in percent.
 
-  When set, progress updates only when crossing step boundaries (e.g., 10%, 20%, ...).
-  Defaults to `nil`, which updates on every chunk.
+  Progress updates only when crossing step boundaries (e.g., every 1%).
+  Defaults to `1`. Set to `nil` for updates on every chunk.
   """
   @spec progress_bar_step :: non_neg_integer() | nil
   def progress_bar_step() do
-    Application.get_env(:bumblebee, :progress_bar_step)
+    Application.get_env(:bumblebee, :progress_bar_step, 1)
   end
 end
