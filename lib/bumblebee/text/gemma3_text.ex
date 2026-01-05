@@ -87,9 +87,10 @@ defmodule Bumblebee.Text.Gemma3Text do
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ],
-      sliding_window: [
+      attention_window_size: [
         default: 4096,
-        doc: "the sliding window size for local attention layers"
+        doc:
+          "window size for both sides of the sliding attention window (used for `:sliding_attention` layers)"
       ],
       layer_types: [
         default: nil,
@@ -377,14 +378,14 @@ defmodule Bumblebee.Text.Gemma3Text do
     key_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
 
     # Per-layer attention window size based on layer_types
-    # :sliding_attention uses local (sliding window) attention
+    # :attention_window_size uses local (sliding window) attention
     # :full_attention uses global attention (nil window size)
     layer_types = spec.layer_types || generate_layer_types(spec.num_blocks)
 
     attention_window_size = fn idx ->
       case Enum.at(layer_types, idx, :sliding_attention) do
         :full_attention -> nil
-        :sliding_attention -> {spec.sliding_window, spec.sliding_window}
+        :sliding_attention -> {spec.attention_window_size, spec.attention_window_size}
       end
     end
 
@@ -596,7 +597,7 @@ defmodule Bumblebee.Text.Gemma3Text do
             {"rope_scaling", optional(scaling_strategy_converter)},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()},
-          sliding_window: {"sliding_window", optional(number())},
+          attention_window_size: {"sliding_window", optional(number())},
           layer_types:
             {"layer_types",
              list(
