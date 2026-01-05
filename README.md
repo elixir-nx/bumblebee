@@ -42,16 +42,6 @@ config :nx, default_backend: EXLA.Backend
 
 To use GPUs, you must [set the `XLA_TARGET` environment variable accordingly](https://github.com/elixir-nx/xla#usage).
 
-You can also configure the progress bar displayed during model downloads:
-
-```elixir
-# Update every 10% - useful for CI environments
-config :bumblebee, :progress_bar_step, 10
-
-# Disable progress bar entirely
-config :bumblebee, :progress_bar_enabled, false
-```
-
 In notebooks and scripts, use the following `Mix.install/2` call to both install and configure dependencies:
 
 ```elixir
@@ -138,6 +128,18 @@ Bumblebee relies on the Rust implementations (through bindings to [Tokenizers](h
 First, if the repository is clearly a fine-tuned version of another model, you can look for `tokenizer.json` in the original model repository. For example, [`textattack/bert-base-uncased-yelp-polarity`](https://huggingface.co/textattack/bert-base-uncased-yelp-polarity) only includes `tokenizer_config.json`, but it is a fine-tuned version of [`bert-base-uncased`](https://huggingface.co/bert-base-uncased), which does include `tokenizer.json`. Consequently, you can safely load the model from `textattack/bert-base-uncased-yelp-polarity` and tokenizer from `bert-base-uncased`.
 
 Otherwise, the Transformers library includes conversion rules to load a "slow tokenizer" and convert it to a corresponding "fast tokenizer", which is possible in most cases. You can generate the `tokenizer.json` file using [this tool](https://jonatanklosko-bumblebee-tools.hf.space/apps/tokenizer-generator). Once successful, you can follow the steps to submit a PR adding `tokenizer.json` to the model repository. Note that you do not have to wait for the PR to be merged, instead you can copy commit SHA from the PR and load the tokenizer with `Bumblebee.load_tokenizer({:hf, "model-repo", revision: "..."})`.
+
+## Global configuration
+
+You can configure the progress bar displayed during model downloads:
+
+```elixir
+# Update every 10% instead of every 1%
+config :bumblebee, :progress_bar_step, 10
+
+# Disable progress bar entirely
+config :bumblebee, :progress_bar_enabled, false
+```
 
 <!-- Docs -->
 
