@@ -129,6 +129,18 @@ First, if the repository is clearly a fine-tuned version of another model, you c
 
 Otherwise, the Transformers library includes conversion rules to load a "slow tokenizer" and convert it to a corresponding "fast tokenizer", which is possible in most cases. You can generate the `tokenizer.json` file using [this tool](https://jonatanklosko-bumblebee-tools.hf.space/apps/tokenizer-generator). Once successful, you can follow the steps to submit a PR adding `tokenizer.json` to the model repository. Note that you do not have to wait for the PR to be merged, instead you can copy commit SHA from the PR and load the tokenizer with `Bumblebee.load_tokenizer({:hf, "model-repo", revision: "..."})`.
 
+## Global configuration
+
+You can configure the progress bar displayed during model downloads:
+
+```elixir
+# Update every 10% instead of every 1%
+config :bumblebee, :progress_bar_step, 10
+
+# Disable progress bar entirely
+config :bumblebee, :progress_bar_enabled, false
+```
+
 <!-- Docs -->
 
 ## Contributing
