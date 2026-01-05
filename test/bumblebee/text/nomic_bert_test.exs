@@ -17,24 +17,26 @@ defmodule Bumblebee.Text.NomicBertTest do
     assert spec.rotary_embedding_base == 1000
 
     inputs = %{
-      "input_ids" => Nx.tensor([[101, 2023, 2003, 1037, 3231, 102]]),
-      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1]])
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
     }
 
     outputs = Axon.predict(model, params, inputs)
 
-    assert Nx.shape(outputs.hidden_state) == {1, 6, 768}
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 768}
     assert Nx.shape(outputs.pooled_state) == {1, 768}
 
     # Values verified against Python transformers
     assert_all_close(
-      outputs.hidden_state[[.., 0, 0..4]],
-      Nx.tensor([[1.3752, 0.7431, -4.6988, -0.6574, 2.1887]])
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([[[0.0315, -5.2254, 0.0180],
+                  [0.0877, -5.3772, 0.1800],
+                  [-0.0546, -4.8813, 0.2614]]])
     )
 
     assert_all_close(
-      outputs.pooled_state[[.., 0..4]],
-      Nx.tensor([[1.0917, 0.5968, -3.9347, -0.6988, 1.5423]])
+      outputs.pooled_state[[.., 1..3]],
+      Nx.tensor([[0.0340, -5.2018, 0.1686]])
     )
   end
 end
