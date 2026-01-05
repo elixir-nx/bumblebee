@@ -95,8 +95,7 @@ defmodule Bumblebee.Text.Gemma3Text do
         default: nil,
         doc: """
         a list of layer types for each layer, where each element is either `:sliding_attention`
-        (local attention with sliding window) or `:full_attention` (global attention).
-        If not provided, will be computed from `sliding_window_pattern`.
+        (local attention with sliding window) or `:full_attention` (global attention)
         """
       ],
       tie_word_embeddings: [
@@ -533,7 +532,9 @@ defmodule Bumblebee.Text.Gemma3Text do
 
   # Generate layer_types from sliding_window_pattern (default 6)
   # Pattern: every Nth layer uses full attention, others use sliding attention
-  defp generate_layer_types(num_blocks, sliding_window_pattern \\ 6) do
+  defp generate_layer_types(num_blocks) do
+    sliding_window_pattern = 6
+
     Enum.map(0..(num_blocks - 1), fn i ->
       if rem(i + 1, sliding_window_pattern) == 0 do
         :full_attention
@@ -576,16 +577,6 @@ defmodule Bumblebee.Text.Gemma3Text do
           end)
         end)
 
-      layer_types_converter = fn _name, value ->
-        types =
-          Enum.map(value, fn
-            "sliding_attention" -> :sliding_attention
-            "full_attention" -> :full_attention
-          end)
-
-        {:ok, types}
-      end
-
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
@@ -606,7 +597,14 @@ defmodule Bumblebee.Text.Gemma3Text do
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()},
           sliding_window: {"sliding_window", optional(number())},
-          layer_types: {"layer_types", layer_types_converter},
+          layer_types:
+            {"layer_types",
+             list(
+               mapping(%{
+                 "sliding_attention" => :sliding_attention,
+                 "full_attention" => :full_attention
+               })
+             )},
           tie_word_embeddings: {"tie_word_embeddings", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 

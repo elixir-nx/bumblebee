@@ -1,4 +1,4 @@
-# Function Calling with FunctionGemma
+# Function calling with FunctionGemma
 
 ```elixir
 Mix.install([
@@ -8,36 +8,12 @@ Mix.install([
   {:kino, "~> 0.14.0"}
 ])
 
-Nx.global_default_backend({EXLA.Backend, client: :host})
+Nx.global_default_backend(EXLA.Backend)
 ```
 
 ## Why FunctionGemma?
 
-[FunctionGemma](https://huggingface.co/google/functiongemma-270m-it) is a compact 270M parameter model from Google, specifically designed for function calling tasks. Here's why it's a great choice:
-
-### Lightweight & Fast
-
-- **Only 270M parameters** - runs efficiently on CPU or modest GPU hardware
-- **Quick inference** - ideal for real-time applications
-- **Low memory footprint** - can run alongside other models
-
-### Perfect for Edge & IoT
-
-- **Home Assistants** - control smart home devices with natural language
-- **Voice Interfaces** - parse voice commands into structured function calls
-- **Embedded Systems** - fits on devices with limited resources
-
-### Easy to Fine-tune
-
-- **Train on Google Colab T4** - the small size makes fine-tuning accessible
-- **Custom function schemas** - adapt to your specific API or tool set
-- **Fast iteration** - experiment and deploy quickly
-
-### Structured Output
-
-- **Reliable function call format** - consistent `<start_function_call>` / `<end_function_call>` markers
-- **Easy to parse** - extract function name and arguments programmatically
-- **Multi-turn support** - handles function responses and follow-up calls
+[FunctionGemma](https://huggingface.co/google/functiongemma-270m-it) is a compact 270M parameter model from Google, specifically designed for function calling tasks.
 
 ## Loading the Model
 
@@ -531,18 +507,6 @@ Kino.Shorts.data_table(
 IO.puts("=== Final Smart Home State ===")
 SmartHome.get_status() |> IO.inspect(pretty: true)
 ```
-
-## Use Cases
-
-Here are some practical applications for FunctionGemma:
-
-| Use Case | Example Functions |
-|----------|-------------------|
-| **Smart Home** | control_light, set_thermostat, lock_door, play_music |
-| **Calendar** | create_event, list_events, reschedule_meeting |
-| **E-commerce** | search_products, add_to_cart, check_order_status |
-| **Database** | query_users, update_record, generate_report |
-| **DevOps** | deploy_service, check_status, scale_instances |
 
 ## Next Steps
 
