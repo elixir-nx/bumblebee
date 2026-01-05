@@ -61,6 +61,14 @@ defmodule Bumblebee.Text.NomicBert do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ],
+      ffn_gate_bias: [
+        default: true,
+        doc: "whether to use bias in the up and gate projections of the FFN"
+      ],
+      ffn_output_bias: [
+        default: true,
+        doc: "whether to use bias in the output projection of the FFN"
       ]
     ] ++ Shared.common_options([:num_labels, :id_to_label])
 
@@ -238,7 +246,9 @@ defmodule Bumblebee.Text.NomicBert do
       ffn:
         &gated_ffn(&1, spec.intermediate_size || 4 * spec.hidden_size, spec.hidden_size,
           name: &2,
-          activation: spec.activation
+          activation: spec.activation,
+          gate_use_bias: spec.ffn_gate_bias,
+          output_use_bias: spec.ffn_output_bias
         ),
       block_type: :standard,
       causal: false,
@@ -259,25 +269,27 @@ defmodule Bumblebee.Text.NomicBert do
   defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
     name = opts[:name]
     activation = opts[:activation]
+    gate_use_bias = opts[:gate_use_bias]
+    output_use_bias = opts[:output_use_bias]
 
     # Nomic MLP: y = fc11(x) * activation(fc12(x)), then fc2
     # fc11 is "up", fc12 is "gate", fc2 is "down"
     up =
       Axon.dense(hidden_state, intermediate_size,
         name: join(name, "up"),
-        use_bias: false
+        use_bias: gate_use_bias
       )
 
     gate =
       Axon.dense(hidden_state, intermediate_size,
         name: join(name, "gate"),
-        use_bias: false
+        use_bias: gate_use_bias
       )
 
     # Nomic applies activation to gate, not up: up * activation(gate)
     hidden_state = Axon.multiply(up, Axon.activation(gate, activation))
 
-    Axon.dense(hidden_state, output_size, name: join(name, "down"), use_bias: false)
+    Axon.dense(hidden_state, output_size, name: join(name, "down"), use_bias: output_use_bias)
   end
 
   defp kernel_initializer(spec) do
@@ -300,7 +312,9 @@ defmodule Bumblebee.Text.NomicBert do
           rotary_embedding_base: {"rotary_emb_base", number()},
           rotary_embedding_percentage: {"rotary_emb_fraction", optional(number())},
           layer_norm_epsilon: {"layer_norm_epsilon", number()},
-          initializer_scale: {"initializer_range", number()}
+          initializer_scale: {"initializer_range", number()},
+          ffn_gate_bias: {"mlp_fc1_bias", boolean()},
+          ffn_output_bias: {"mlp_fc2_bias", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
