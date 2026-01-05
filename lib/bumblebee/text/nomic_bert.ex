@@ -37,9 +37,9 @@ defmodule Bumblebee.Text.NomicBert do
         doc: "the number of attention heads for each attention layer in the encoder"
       ],
       intermediate_size: [
-        default: 3072,
+        default: nil,
         doc:
-          "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder"
+          "the dimensionality of the intermediate layer in the transformer feed-forward network (FFN) in the encoder. Defaults to 4 * hidden_size"
       ],
       activation: [
         default: :silu,
@@ -236,7 +236,7 @@ defmodule Bumblebee.Text.NomicBert do
       kernel_initializer: kernel_initializer(spec),
       layer_norm: [epsilon: spec.layer_norm_epsilon],
       ffn:
-        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
+        &gated_ffn(&1, spec.intermediate_size || 4 * spec.hidden_size, spec.hidden_size,
           name: &2,
           activation: spec.activation
         ),
@@ -302,15 +302,6 @@ defmodule Bumblebee.Text.NomicBert do
           layer_norm_epsilon: {"layer_norm_epsilon", number()},
           initializer_scale: {"initializer_range", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
-
-      # Nomic uses 4 * n_embd for intermediate size if not specified
-      opts =
-        if opts[:intermediate_size] do
-          opts
-        else
-          hidden_size = opts[:hidden_size] || spec.hidden_size
-          Keyword.put(opts, :intermediate_size, 4 * hidden_size)
-        end
 
       @for.config(spec, opts)
     end
