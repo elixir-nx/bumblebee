@@ -1,0 +1,523 @@
+# Function calling with FunctionGemma
+
+```elixir
+Mix.install([
+  {:bumblebee, "~> 0.6.0"},
+  {:nx, "~> 0.9.0"},
+  {:exla, "~> 0.9.0"},
+  {:kino, "~> 0.14.0"}
+])
+
+Nx.global_default_backend(EXLA.Backend)
+```
+
+## Why FunctionGemma?
+
+[FunctionGemma](https://huggingface.co/google/functiongemma-270m-it) is a compact 270M parameter model from Google, specifically designed for function calling tasks.
+
+## Loading the Model
+
+FunctionGemma requires accepting Google's license on HuggingFace. Visit [google/functiongemma-270m-it](https://huggingface.co/google/functiongemma-270m-it) to request access, then create a [HuggingFace auth token](https://huggingface.co/settings/tokens) and add it as a `HF_TOKEN` Livebook secret.
+
+```elixir
+hf_token = System.fetch_env!("LB_HF_TOKEN")
+repo = {:hf, "google/functiongemma-270m-it", auth_token: hf_token}
+
+{:ok, model_info} = Bumblebee.load_model(repo)
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+{:ok, generation_config} = Bumblebee.load_generation_config(repo)
+
+:ok
+```
+
+## Creating the Serving
+
+```elixir
+serving =
+  Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+    compile: [batch_size: 1, sequence_length: 512],
+    defn_options: [compiler: EXLA]
+  )
+
+Kino.start_child({Nx.Serving, name: FunctionGemma, serving: serving})
+```
+
+## Function Schema Builder
+
+FunctionGemma uses a specific prompt format. Here's a complete module to build function declarations:
+
+```elixir
+defmodule FunctionGemma.Schema do
+  @moduledoc """
+  Builds FunctionGemma-compatible function declarations.
+
+  ## Example
+
+      FunctionGemma.Schema.declare("get_weather", "Get current weather", [
+        location: [type: :string, description: "City name", required: true],
+        units: [type: :string, description: "celsius or fahrenheit"]
+      ])
+  """
+
+  @type param_opts :: [
+          type: :string | :number | :boolean | :array,
+          description: String.t(),
+          required: boolean()
+        ]
+
+  @doc """
+  Declares a function with its name, description, and parameters.
+
+  ## Parameters
+
+    - `name` - The function name (e.g., "get_weather")
+    - `description` - What the function does
+    - `parameters` - Keyword list of `{param_name, options}`
+
+  ## Parameter Options
+
+    - `:type` - One of `:string`, `:number`, `:boolean`, `:array` (default: `:string`)
+    - `:description` - Description of the parameter
+    - `:required` - Whether the parameter is required (default: `false`)
+  """
+  @spec declare(String.t(), String.t(), keyword(param_opts())) :: String.t()
+  def declare(name, description, parameters \\ []) do
+    params_schema = build_parameters_schema(parameters)
+
+    "<start_function_declaration>" <>
+      "declaration:#{name}{" <>
+      "description:<escape>#{description}<escape>," <>
+      "parameters:#{params_schema}" <>
+      "}<end_function_declaration>"
+  end
+
+  @doc """
+  Builds a complete prompt with system message, functions, and user query.
+  """
+  @spec build_prompt(String.t(), [String.t()], String.t()) :: String.t()
+  def build_prompt(system_message, function_declarations, user_message) do
+    functions = Enum.join(function_declarations, "")
+
+    """
+    <start_of_turn>developer
+    #{system_message}
+    #{functions}<end_of_turn>
+    <start_of_turn>user
+    #{user_message}<end_of_turn>
+    <start_of_turn>model
+    """
+  end
+
+  # Private helpers
+
+  defp build_parameters_schema(parameters) do
+    properties = build_properties(parameters)
+    required = build_required(parameters)
+
+    "{properties:{#{properties}},required:[#{required}],type:<escape>OBJECT<escape>}"
+  end
+
+  defp build_properties(parameters) do
+    parameters
+    |> Enum.map(fn {name, opts} ->
+      type = opts |> Keyword.get(:type, :string) |> type_to_string()
+      desc = Keyword.get(opts, :description)
+
+      prop =
+        if desc do
+          "#{name}:{description:<escape>#{desc}<escape>,type:<escape>#{type}<escape>}"
+        else
+          "#{name}:{type:<escape>#{type}<escape>}"
+        end
+
+      prop
+    end)
+    |> Enum.join(",")
+  end
+
+  defp build_required(parameters) do
+    parameters
+    |> Enum.filter(fn {_, opts} -> Keyword.get(opts, :required, false) end)
+    |> Enum.map(fn {name, _} -> "<escape>#{name}<escape>" end)
+    |> Enum.join(",")
+  end
+
+  defp type_to_string(:string), do: "STRING"
+  defp type_to_string(:number), do: "NUMBER"
+  defp type_to_string(:boolean), do: "BOOLEAN"
+  defp type_to_string(:array), do: "ARRAY"
+  defp type_to_string(other), do: String.upcase(to_string(other))
+end
+```
+
+## Function Call Parser
+
+Parse the model's function call output into structured data:
+
+```elixir
+defmodule FunctionGemma.Parser do
+  @moduledoc """
+  Parses FunctionGemma function call responses.
+  """
+
+  @type function_call :: %{
+          function: String.t(),
+          arguments: map()
+        }
+
+  @doc """
+  Parses a FunctionGemma response into a function call struct.
+
+  ## Examples
+
+      iex> parse("<start_function_call>call:get_weather{location:<escape>Paris<escape>}<end_function_call>")
+      {:ok, %{function: "get_weather", arguments: %{"location" => "Paris"}}}
+
+      iex> parse("I don't know")
+      {:error, :no_function_call}
+  """
+  @spec parse(String.t()) :: {:ok, function_call()} | {:error, atom()}
+  def parse(response) do
+    pattern = ~r/<start_function_call>call:(\w+)\{(.*?)\}<end_function_call>/
+
+    case Regex.run(pattern, response) do
+      [_, function_name, args_str] ->
+        arguments = parse_arguments(args_str)
+        {:ok, %{function: function_name, arguments: arguments}}
+
+      nil ->
+        {:error, :no_function_call}
+    end
+  end
+
+  @doc """
+  Same as `parse/1` but raises on error.
+  """
+  @spec parse!(String.t()) :: function_call()
+  def parse!(response) do
+    case parse(response) do
+      {:ok, result} -> result
+      {:error, reason} -> raise "Failed to parse function call: #{reason}"
+    end
+  end
+
+  # Parse key:<escape>value<escape> pairs
+  defp parse_arguments(""), do: %{}
+
+  defp parse_arguments(args_str) do
+    ~r/(\w+):<escape>([^<]*)<escape>/
+    |> Regex.scan(args_str)
+    |> Enum.map(fn [_, key, value] -> {key, value} end)
+    |> Map.new()
+  end
+end
+```
+
+## Mock Functions (Smart Home Example)
+
+Let's create actual mock functions that simulate a smart home system:
+
+```elixir
+defmodule SmartHome do
+  @moduledoc """
+  Mock smart home functions that FunctionGemma can call.
+  """
+
+  # Simulated device states
+  use Agent
+
+  def start_link do
+    Agent.start_link(
+      fn ->
+        %{
+          lights: %{
+            "living room" => false,
+            "bedroom" => false,
+            "kitchen" => false
+          },
+          thermostat: 20,
+          weather_cache: %{}
+        }
+      end,
+      name: __MODULE__
+    )
+  end
+
+  @doc """
+  Controls a light in a specific room.
+
+  ## Parameters
+    - room: The room name (living room, bedroom, kitchen)
+    - action: "on" or "off"
+  """
+  def control_light(%{"room" => room, "action" => action}) do
+    room = String.downcase(room)
+    state = action == "on"
+
+    Agent.update(__MODULE__, fn data ->
+      put_in(data, [:lights, room], state)
+    end)
+
+    current = Agent.get(__MODULE__, & &1.lights)
+
+    %{
+      success: true,
+      message: "Turned #{action} the #{room} light",
+      current_states: current
+    }
+  end
+
+  def control_light(_), do: %{success: false, message: "Missing room or action parameter"}
+
+  @doc """
+  Gets the current weather for a location (mocked with random data).
+
+  ## Parameters
+    - location: The city name
+  """
+  def get_weather(%{"location" => location}) do
+    # Simulate weather data
+    conditions = ["sunny", "cloudy", "rainy", "partly cloudy", "windy"]
+    temp = Enum.random(15..30)
+    humidity = Enum.random(40..80)
+    condition = Enum.random(conditions)
+
+    %{
+      success: true,
+      location: location,
+      temperature: temp,
+      humidity: humidity,
+      condition: condition,
+      message: "Weather in #{location}: #{temp}C, #{condition}, #{humidity}% humidity"
+    }
+  end
+
+  def get_weather(_), do: %{success: false, message: "Missing location parameter"}
+
+  @doc """
+  Sets the thermostat temperature.
+
+  ## Parameters
+    - temperature: Temperature in Celsius (number as string)
+  """
+  def set_thermostat(%{"temperature" => temp_str}) do
+    temp =
+      case Integer.parse(temp_str) do
+        {t, _} -> t
+        :error -> 20
+      end
+
+    Agent.update(__MODULE__, fn data ->
+      Map.put(data, :thermostat, temp)
+    end)
+
+    %{
+      success: true,
+      message: "Thermostat set to #{temp}C",
+      temperature: temp
+    }
+  end
+
+  def set_thermostat(_), do: %{success: false, message: "Missing temperature parameter"}
+
+  @doc """
+  Returns current state of all devices.
+  """
+  def get_status do
+    Agent.get(__MODULE__, & &1)
+  end
+end
+
+# Start the mock smart home
+SmartHome.start_link()
+IO.puts("Smart Home system initialized!")
+IO.inspect(SmartHome.get_status(), label: "Initial state")
+```
+
+## Function Executor
+
+Now let's create an executor that connects FunctionGemma to our mock functions:
+
+```elixir
+defmodule FunctionGemma.Executor do
+  @moduledoc """
+  Executes function calls from FunctionGemma using registered handlers.
+  """
+
+  @doc """
+  Executes a parsed function call against registered handlers.
+  """
+  def execute(%{function: function, arguments: args}, handlers) do
+    case Map.get(handlers, function) do
+      nil ->
+        {:error, "Unknown function: #{function}"}
+
+      handler when is_function(handler, 1) ->
+        result = handler.(args)
+        {:ok, result}
+    end
+  end
+
+  @doc """
+  Complete pipeline: send prompt to model, parse response, execute function.
+  """
+  def run(serving_name, prompt, handlers) do
+    # Get model response
+    %{results: [%{text: response}]} = Nx.Serving.batched_run(serving_name, prompt)
+
+    IO.puts("Model response: #{response}")
+
+    # Parse function call
+    case FunctionGemma.Parser.parse(response) do
+      {:ok, function_call} ->
+        IO.puts("Parsed: #{function_call.function}(#{inspect(function_call.arguments)})")
+
+        # Execute function
+        case execute(function_call, handlers) do
+          {:ok, result} ->
+            {:ok, function_call, result}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+end
+```
+
+## Putting It All Together
+
+Let's define our function schema and handlers, then run the complete pipeline:
+
+```elixir
+# Define function declarations for the model
+function_declarations = [
+  FunctionGemma.Schema.declare(
+    "control_light",
+    "Turn a light on or off in a specific room",
+    room: [type: :string, description: "The room name (living room, bedroom, kitchen)", required: true],
+    action: [type: :string, description: "on or off", required: true]
+  ),
+  FunctionGemma.Schema.declare(
+    "get_weather",
+    "Get the current weather for a location",
+    location: [type: :string, description: "The city name", required: true]
+  ),
+  FunctionGemma.Schema.declare(
+    "set_thermostat",
+    "Set the thermostat temperature",
+    temperature: [type: :number, description: "Temperature in Celsius", required: true]
+  )
+]
+
+# Map function names to their implementations
+function_handlers = %{
+  "control_light" => &SmartHome.control_light/1,
+  "get_weather" => &SmartHome.get_weather/1,
+  "set_thermostat" => &SmartHome.set_thermostat/1
+}
+
+IO.puts("Registered #{length(function_declarations)} functions")
+:ok
+```
+
+## Interactive Demo
+
+Try sending commands to the smart home assistant:
+
+```elixir
+user_input = Kino.Input.textarea("Command",
+  default: "Turn on the lights in the living room"
+)
+```
+
+```elixir
+user_message = Kino.Input.read(user_input)
+
+prompt =
+  FunctionGemma.Schema.build_prompt(
+    "You are a smart home assistant that controls devices and provides information.",
+    function_declarations,
+    user_message
+  )
+
+IO.puts("=== Sending to FunctionGemma ===")
+IO.puts("User: #{user_message}\n")
+
+case FunctionGemma.Executor.run(FunctionGemma, prompt, function_handlers) do
+  {:ok, function_call, result} ->
+    IO.puts("\n=== Function Executed ===")
+    IO.puts("Function: #{function_call.function}")
+    IO.puts("Arguments: #{inspect(function_call.arguments)}")
+    IO.puts("\n=== Result ===")
+    IO.inspect(result, pretty: true)
+
+  {:error, reason} ->
+    IO.puts("Error: #{inspect(reason)}")
+end
+```
+
+## Batch Demo - Multiple Commands
+
+Watch the smart home respond to multiple commands:
+
+```elixir
+commands = [
+  "What's the weather in Tokyo?",
+  "Turn on the bedroom lights",
+  "Set the temperature to 22 degrees",
+  "Turn off the kitchen light"
+]
+
+Kino.Shorts.data_table(
+  for command <- commands do
+    prompt =
+      FunctionGemma.Schema.build_prompt(
+        "You are a smart home assistant.",
+        function_declarations,
+        command
+      )
+
+    result =
+      case FunctionGemma.Executor.run(FunctionGemma, prompt, function_handlers) do
+        {:ok, fc, res} ->
+          %{
+            command: command,
+            function: fc.function,
+            args: inspect(fc.arguments),
+            result: res.message
+          }
+
+        {:error, reason} ->
+          %{command: command, function: "ERROR", args: "", result: inspect(reason)}
+      end
+
+    IO.puts("---")
+    result
+  end
+)
+```
+
+## Check Final Smart Home State
+
+```elixir
+IO.puts("=== Final Smart Home State ===")
+SmartHome.get_status() |> IO.inspect(pretty: true)
+```
+
+## Next Steps
+
+- **Fine-tune** on your specific function schemas for better accuracy
+- **Add function responses** for multi-turn conversations
+- **Integrate** with your actual APIs and services
+- **Deploy** as a Phoenix LiveView application
+
+## Fine-tuning FunctionGemma
+
+Want to fine-tune FunctionGemma on your own function schemas? Check out these resources:
+
+- [FunctionGemma Fine-tuning Notebook (Colab)](https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/FunctionGemma_(270M)-Mobile-Actions.ipynb) - Step-by-step guide using Unsloth for efficient fine-tuning on Google Colab T4
+- [Google's FunctionGemma documentation](https://huggingface.co/google/functiongemma-270m-it) - Official model card and usage instructions
