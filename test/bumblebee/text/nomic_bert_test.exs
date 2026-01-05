@@ -29,9 +29,9 @@ defmodule Bumblebee.Text.NomicBertTest do
     # Values verified against Python transformers
     assert_all_close(
       outputs.hidden_state[[.., 1..3, 1..3]],
-      Nx.tensor([[[0.0315, -5.2254, 0.0180],
-                  [0.0877, -5.3772, 0.1800],
-                  [-0.0546, -4.8813, 0.2614]]])
+      Nx.tensor([
+        [[0.0315, -5.2254, 0.0180], [0.0877, -5.3772, 0.1800], [-0.0546, -4.8813, 0.2614]]
+      ])
     )
 
     assert_all_close(
