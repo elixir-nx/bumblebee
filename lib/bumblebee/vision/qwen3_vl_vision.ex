@@ -698,10 +698,9 @@ defmodule Bumblebee.Vision.Qwen3VLVision do
     def load(spec, data) do
       import Shared.Converters
 
-      # Vision config uses embed_dim for hidden_size
+      # Vision config uses embed_dim (Qwen2-VL) or hidden_size (Qwen3-VL)
       opts =
         convert!(data,
-          hidden_size: {"embed_dim", number()},
           num_blocks: {"depth", number()},
           num_attention_heads: {"num_heads", number()},
           num_channels: {"in_channels", number()},
@@ -712,11 +711,14 @@ defmodule Bumblebee.Vision.Qwen3VLVision do
           initializer_scale: {"initializer_range", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
+      # Handle both embed_dim (Qwen2-VL) and hidden_size (Qwen3-VL)
+      hidden_size = data["hidden_size"] || data["embed_dim"] || spec.hidden_size
+      opts = Keyword.put(opts, :hidden_size, hidden_size)
+
       # Compute derived values
-      # intermediate_size = hidden_size * mlp_ratio (default mlp_ratio = 4)
+      # intermediate_size from config or computed as hidden_size * mlp_ratio (default mlp_ratio = 4)
       mlp_ratio = Map.get(data, "mlp_ratio", 4)
-      hidden_size = opts[:hidden_size] || spec.hidden_size
-      intermediate_size = hidden_size * mlp_ratio
+      intermediate_size = data["intermediate_size"] || hidden_size * mlp_ratio
 
       # out_hidden_size is typically the text model's hidden_size
       # If not specified, it comes from the parent config or defaults
