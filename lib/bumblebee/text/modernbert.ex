@@ -64,9 +64,12 @@ defmodule Bumblebee.Text.ModernBert do
         default: 128,
         doc: "the window size for local attention layers"
       ],
-      global_attention_every_n_layers: [
-        default: 3,
-        doc: "apply global attention every N layers (1 means every layer is global)"
+      layer_types: [
+        default: nil,
+        doc: """
+        a list of layer types for each layer, where each element is either `:sliding_attention`
+        (local attention with sliding window) or `:full_attention` (global attention)
+        """
       ],
       rotary_embedding_base_local: [
         default: 10_000.0,
@@ -322,27 +325,35 @@ defmodule Bumblebee.Text.ModernBert do
       attentions: Axon.container({})
     }
 
+    layer_types = spec.layer_types || generate_layer_types(spec.num_blocks)
+
+    attention_window_size = fn idx ->
+      case Enum.at(layer_types, idx, :sliding_attention) do
+        :full_attention -> nil
+        :sliding_attention ->
+          half_window = div(spec.local_attention_window, 2)
+          {half_window, half_window}
+      end
+    end
+
+    rotary_embedding = fn idx ->
+      base =
+        case Enum.at(layer_types, idx, :sliding_attention) do
+          :full_attention -> spec.rotary_embedding_base
+          :sliding_attention -> spec.rotary_embedding_base_local
+        end
+
+      [
+        position_ids: position_ids,
+        max_positions: spec.max_positions,
+        base: base
+      ]
+    end
+
     outputs =
       for idx <- 0..(spec.num_blocks - 1), reduce: state do
         state ->
           block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
-
-          is_global = rem(idx, spec.global_attention_every_n_layers) == 0
-          rope_theta = if is_global, do: spec.rotary_embedding_base, else: spec.rotary_embedding_base_local
-
-          rotary_embedding = [
-            position_ids: position_ids,
-            max_positions: spec.max_positions,
-            base: rope_theta
-          ]
-
-          attention_window_size =
-            if is_global do
-              nil
-            else
-              half_window = div(spec.local_attention_window, 2)
-              {half_window, half_window}
-            end
 
           # First layer uses the embedding norm for attention, so we skip self_attention_norm
           block_type =
@@ -368,8 +379,8 @@ defmodule Bumblebee.Text.ModernBert do
               block_type: block_type,
               layer_norm: &layer_norm(&1, epsilon: spec.layer_norm_epsilon, name: &2),
               ffn: ffn_fun,
-              rotary_embedding: rotary_embedding,
-              attention_window_size: attention_window_size,
+              rotary_embedding: rotary_embedding.(idx),
+              attention_window_size: attention_window_size.(idx),
               name: join(name, "blocks.#{idx}")
             )
 
@@ -492,9 +503,25 @@ defmodule Bumblebee.Text.ModernBert do
     )
   end
 
+  defp generate_layer_types(num_blocks, global_attn_every_n_layers \\ 3) do
+    for i <- 0..(num_blocks - 1) do
+      if rem(i, global_attn_every_n_layers) == 0, do: :full_attention, else: :sliding_attention
+    end
+  end
+
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(spec, data) do
       import Shared.Converters
+
+      data =
+        Map.put_new_lazy(data, "layer_types", fn ->
+          pattern = data["global_attn_every_n_layers"] || 3
+          num_blocks = data["num_hidden_layers"] || 22
+
+          for i <- 0..(num_blocks - 1) do
+            if rem(i, pattern) == 0, do: "full_attention", else: "sliding_attention"
+          end
+        end)
 
       opts =
         convert!(data,
@@ -511,7 +538,14 @@ defmodule Bumblebee.Text.ModernBert do
           layer_norm_epsilon: {"layer_norm_eps", optional(number())},
           initializer_scale: {"initializer_range", optional(number())},
           local_attention_window: {"local_attention", number()},
-          global_attention_every_n_layers: {"global_attn_every_n_layers", number()},
+          layer_types:
+            {"layer_types",
+             list(
+               mapping(%{
+                 "sliding_attention" => :sliding_attention,
+                 "full_attention" => :full_attention
+               })
+             )},
           rotary_embedding_base_local: {"local_rope_theta", optional(number())},
           rotary_embedding_base: {"global_rope_theta", optional(number())}
         ) ++ Shared.common_options_from_transformers(data, spec)

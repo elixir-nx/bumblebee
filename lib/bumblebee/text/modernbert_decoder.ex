@@ -59,9 +59,12 @@ defmodule Bumblebee.Text.ModernBertDecoder do
         default: 128,
         doc: "the window size for local attention layers"
       ],
-      global_attention_every_n_layers: [
-        default: 3,
-        doc: "apply global attention every N layers (1 means every layer is global)"
+      layer_types: [
+        default: nil,
+        doc: """
+        a list of layer types for each layer, where each element is either `:sliding_attention`
+        (local attention with sliding window) or `:full_attention` (global attention)
+        """
       ],
       rotary_embedding_base_local: [
         default: 10_000.0,
@@ -432,6 +435,16 @@ defmodule Bumblebee.Text.ModernBertDecoder do
     def load(spec, data) do
       import Shared.Converters
 
+      data =
+        Map.put_new_lazy(data, "layer_types", fn ->
+          pattern = data["global_attn_every_n_layers"] || 3
+          num_blocks = data["num_hidden_layers"] || 22
+
+          for i <- 0..(num_blocks - 1) do
+            if rem(i, pattern) == 0, do: "full_attention", else: "sliding_attention"
+          end
+        end)
+
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
@@ -446,7 +459,14 @@ defmodule Bumblebee.Text.ModernBertDecoder do
           layer_norm_epsilon: {"norm_eps", optional(number())},
           initializer_scale: {"initializer_range", optional(number())},
           local_attention_window: {"sliding_window", number()},
-          global_attention_every_n_layers: {"global_attn_every_n_layers", number()},
+          layer_types:
+            {"layer_types",
+             list(
+               mapping(%{
+                 "sliding_attention" => :sliding_attention,
+                 "full_attention" => :full_attention
+               })
+             )},
           rotary_embedding_base_local: {"local_rope_theta", optional(number())},
           rotary_embedding_base: {"global_rope_theta", optional(number())}
         ) ++ Shared.common_options_from_transformers(data, spec)
