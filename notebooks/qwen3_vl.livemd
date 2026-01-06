@@ -1,0 +1,300 @@
+# Qwen3-VL Vision-Language Model
+
+```elixir
+Mix.install([
+  {:bumblebee, path: "."},
+  {:nx, "~> 0.9"},
+  {:exla, "~> 0.9"},
+  {:kino, "~> 0.14"},
+  {:stb_image, "~> 0.6"}
+])
+
+Nx.global_default_backend(EXLA.Backend)
+```
+
+## Introduction
+
+Qwen3-VL is a multimodal vision-language model from Alibaba that can understand images and generate text descriptions. This notebook demonstrates how to use Qwen3-VL with Bumblebee.
+
+## Model Architecture
+
+Qwen3-VL combines:
+- **Vision Encoder**: Processes images using 2D spatial rotary position embeddings
+- **Text Decoder**: Qwen3-based transformer with MRoPE (Multi-axis Rotary Position Embedding)
+
+Key features:
+- 3D convolution patch embedding (supports video temporal dimension)
+- 2D spatial rotary embeddings for accurate spatial understanding
+- Patch merger for spatial reduction
+
+## Load the Model
+
+```elixir
+# Load the model, tokenizer, and featurizer
+repo = "Qwen/Qwen3-VL-2B-Instruct"
+
+{:ok, model_info} = Bumblebee.load_model({:hf, repo})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, repo})
+{:ok, featurizer} = Bumblebee.load_featurizer({:hf, repo})
+
+:ok
+```
+
+## Process an Image
+
+```elixir
+# Upload an image
+image_input = Kino.Input.image("Upload an image", format: :rgb)
+```
+
+```elixir
+# Get the uploaded image
+image_data = Kino.Input.read(image_input)
+
+image =
+  if image_data do
+    # Convert Kino image to tensor
+    image_data.file_ref
+    |> Kino.Input.file_path()
+    |> StbImage.read_file!()
+  else
+    # Use a sample image if none uploaded
+    {:ok, %{body: body}} =
+      Req.get("https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png")
+    StbImage.read_binary!(body)
+  end
+
+Kino.Image.new(image)
+```
+
+## Generate Image Description
+
+```elixir
+# Build the prompt for image description
+prompt = "<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|>Describe this image in detail.<|im_end|>
+<|im_start|>assistant
+"
+
+# Tokenize the prompt
+inputs = Bumblebee.apply_tokenizer(tokenizer, prompt)
+
+# Process the image
+image_inputs = Bumblebee.apply_featurizer(featurizer, image)
+
+# Combine inputs
+combined_inputs = Map.merge(inputs, image_inputs)
+
+# Run inference
+outputs = Axon.predict(model_info.model, model_info.params, combined_inputs)
+
+# Decode the output (greedy decoding for simplicity)
+# For better results, use Bumblebee.Text.generation/4 serving
+logits = outputs.logits
+predicted_ids = Nx.argmax(logits, axis: -1)
+
+Bumblebee.Tokenizer.decode(tokenizer, predicted_ids)
+```
+
+## Using the Generation Serving (Recommended)
+
+For better text generation with proper sampling, use the generation serving:
+
+```elixir
+serving =
+  Bumblebee.Text.generation(model_info, tokenizer,
+    max_new_tokens: 256,
+    compile: [batch_size: 1, sequence_length: 2048]
+  )
+
+# Create the prompt with image placeholder
+prompt = "<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|>What do you see in this image? Describe it in detail.<|im_end|>
+<|im_start|>assistant
+"
+
+# Process image
+image_inputs = Bumblebee.apply_featurizer(featurizer, image)
+
+# Combine prompt with image inputs
+generation_input = %{
+  prompt: prompt,
+  images: image_inputs
+}
+
+# Generate
+Nx.Serving.run(serving, generation_input)
+```
+
+---
+
+## Appendix: Test Model Generation
+
+This section documents how the tiny test model was created for CI testing.
+
+### Python Code to Generate Test Model
+
+```python
+#!/usr/bin/env python3
+"""
+Create tiny-random Qwen3VL model for testing.
+Requires: transformers >= 4.57.3
+"""
+
+import torch
+from transformers import AutoConfig, Qwen3VLForConditionalGeneration
+
+print("Loading config from Qwen3-VL-2B-Instruct...")
+config = AutoConfig.from_pretrained("Qwen/Qwen3-VL-2B-Instruct")
+
+# Modify text config for tiny model
+config.text_config.vocab_size = 1024
+config.text_config.hidden_size = 64
+config.text_config.num_hidden_layers = 2
+config.text_config.num_attention_heads = 4
+config.text_config.num_key_value_heads = 2
+config.text_config.intermediate_size = 128
+config.text_config.head_dim = 16  # 64 / 4 = 16
+
+# Modify vision config for tiny model
+config.vision_config.depth = 2
+config.vision_config.hidden_size = 32
+config.vision_config.num_heads = 4
+config.vision_config.intermediate_size = 64
+config.vision_config.out_hidden_size = 64
+config.vision_config.patch_size = 14
+config.vision_config.spatial_merge_size = 2
+config.vision_config.deepstack_visual_indexes = [1, 1, 1]
+
+print(f"Tiny config:")
+print(f"  Text: hidden_size={config.text_config.hidden_size}, layers={config.text_config.num_hidden_layers}")
+print(f"  Vision: hidden_size={config.vision_config.hidden_size}, depth={config.vision_config.depth}")
+
+# Create model with random weights
+model = Qwen3VLForConditionalGeneration(config)
+
+total_params = sum(p.numel() for p in model.parameters())
+print(f"Total parameters: {total_params:,}")  # 368,032
+
+# Save the model
+output_dir = "roulis/tiny-random-Qwen3VLForConditionalGeneration"
+model.save_pretrained(output_dir)
+print(f"Model saved to {output_dir}")
+```
+
+### Python Code to Generate Reference Values
+
+```python
+#!/usr/bin/env python3
+"""
+Generate reference values from tiny-random Qwen3VL model.
+"""
+
+import torch
+import numpy as np
+from transformers import Qwen3VLForConditionalGeneration
+
+# Set seed for reproducibility
+torch.manual_seed(0)
+np.random.seed(0)
+
+model_path = "roulis/tiny-random-Qwen3VLForConditionalGeneration"
+model = Qwen3VLForConditionalGeneration.from_pretrained(model_path)
+model.eval()
+
+# Test input (text-only)
+input_ids = torch.tensor([[10, 20, 30, 40, 50, 60, 0, 0]])
+attention_mask = torch.tensor([[1, 1, 1, 1, 1, 1, 0, 0]])
+
+with torch.no_grad():
+    outputs = model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+    )
+
+logits = outputs.logits
+print(f"Logits shape: {logits.shape}")  # [1, 8, 1024]
+
+# Extract reference values
+ref_slice = logits[0, 0:3, 0:5].numpy()
+print(f"\nReference values for outputs.logits[0, 0:3, 0:5]:")
+for row in ref_slice:
+    print([f"{v:.4f}" for v in row])
+```
+
+### Reference Values Comparison
+
+| Position | Python (transformers 4.57.3) | Elixir (Bumblebee) | Abs Diff |
+|----------|------------------------------|---------------------|----------|
+| [0,0] | 0.0410 | 0.0410 | 3.2e-5 |
+| [0,1] | 0.0745 | 0.0745 | 6.4e-6 |
+| [0,2] | -0.0977 | -0.0977 | 8.2e-6 |
+| [0,3] | 0.0099 | 0.0099 | 7.5e-6 |
+| [0,4] | 0.2705 | 0.2705 | 3.1e-5 |
+| [1,0] | -0.0504 | -0.0504 | 1.1e-5 |
+| [1,1] | 0.1776 | 0.1776 | 4.5e-5 |
+| [1,2] | -0.0481 | -0.0481 | 3.6e-5 |
+| [1,3] | -0.0269 | -0.0269 | 2.2e-5 |
+| [1,4] | 0.1630 | 0.1630 | 4.5e-5 |
+| [2,0] | -0.1887 | -0.1887 | 3.9e-5 |
+| [2,1] | 0.0889 | 0.0889 | 3.6e-5 |
+| [2,2] | -0.1113 | -0.1113 | 2.6e-5 |
+| [2,3] | -0.1756 | -0.1756 | 2.8e-5 |
+| [2,4] | 0.0805 | 0.0805 | 3.2e-5 |
+
+**Maximum absolute difference: 4.5e-5** (well within 1e-4 tolerance)
+
+### Elixir Test Code
+
+```elixir
+# Test with tiny model
+{:ok, model_info} =
+  Bumblebee.load_model({:hf, "roulis/tiny-random-Qwen3VLForConditionalGeneration"})
+
+inputs = %{
+  "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 0, 0]]),
+  "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 0, 0]])
+}
+
+outputs = Axon.predict(model_info.model, model_info.params, inputs)
+
+# Verify shape
+{1, 8, 1024} = Nx.shape(outputs.logits)
+
+# Compare with Python reference
+slice = outputs.logits[[.., 0..2, 0..4]]
+
+expected = Nx.tensor([
+  [
+    [0.0410, 0.0745, -0.0977, 0.0099, 0.2705],
+    [-0.0504, 0.1776, -0.0481, -0.0269, 0.1630],
+    [-0.1887, 0.0889, -0.1113, -0.1756, 0.0805]
+  ]
+])
+
+max_diff = Nx.subtract(slice, expected) |> Nx.abs() |> Nx.reduce_max() |> Nx.to_number()
+IO.puts("Max absolute difference: #{max_diff}")
+# Output: Max absolute difference: 4.522502422332764e-5
+```
+
+## Implementation Notes
+
+### 2D Spatial Rotary Position Embedding
+
+Unlike standard transformers that use 1D sequential positions, Qwen3-VL's vision encoder uses 2D spatial coordinates (row, col) for each image patch:
+
+```elixir
+# For each patch in raster scan order
+positions = Nx.iota({seq_len})
+row_positions = Nx.quotient(positions, grid_size)
+col_positions = Nx.remainder(positions, grid_size)
+
+# Separate frequencies for rows and columns
+row_angles = Nx.outer(row_positions, inv_freq)
+col_angles = Nx.outer(col_positions, inv_freq)
+
+# Concatenate for full rotary embedding
+angles = Nx.concatenate([row_angles, col_angles], axis: -1)
+```
+
+This is critical for correct spatial understanding - using 1D positions produces incorrect image descriptions.
