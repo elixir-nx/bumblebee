@@ -420,10 +420,7 @@ defmodule Bumblebee.Text.ModernBertDecoder do
 
     Axon.layer(
       fn x, gamma, _opts ->
-        mean = Nx.mean(x, axes: [-1], keep_axes: true)
-        variance = Nx.variance(x, axes: [-1], keep_axes: true)
-        normalized = Nx.divide(Nx.subtract(x, mean), Nx.sqrt(Nx.add(variance, epsilon)))
-        Nx.multiply(normalized, gamma)
+        Axon.Layers.layer_norm(x, gamma, Nx.broadcast(0.0, gamma), epsilon: epsilon)
       end,
       [x, Axon.param("weight", fn shape -> {elem(shape, tuple_size(shape) - 1)} end)],
       name: name,
