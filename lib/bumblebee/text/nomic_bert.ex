@@ -244,7 +244,7 @@ defmodule Bumblebee.Text.NomicBert do
       kernel_initializer: kernel_initializer(spec),
       layer_norm: [epsilon: spec.layer_norm_epsilon],
       ffn:
-        &gated_ffn(&1, spec.intermediate_size || 4 * spec.hidden_size, spec.hidden_size,
+        &gated_ffn(&1, intermediate_size(spec), spec.hidden_size,
           name: &2,
           activation: spec.activation,
           gate_use_bias: spec.ffn_gate_bias,
@@ -294,6 +294,13 @@ defmodule Bumblebee.Text.NomicBert do
 
   defp kernel_initializer(spec) do
     Axon.Initializers.normal(scale: spec.initializer_scale)
+  end
+
+  # NomicBERT rounds intermediate_size to nearest multiple of 256 for hardware efficiency
+  defp intermediate_size(spec) do
+    size = spec.intermediate_size || div(8 * spec.hidden_size, 3)
+    multiple_of = 256
+    div(size + multiple_of - 1, multiple_of) * multiple_of
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
