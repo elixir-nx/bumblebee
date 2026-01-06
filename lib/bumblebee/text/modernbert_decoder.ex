@@ -63,13 +63,13 @@ defmodule Bumblebee.Text.ModernBertDecoder do
         default: 3,
         doc: "apply global attention every N layers (1 means every layer is global)"
       ],
-      local_rope_theta: [
+      rotary_embedding_base_local: [
         default: 10_000.0,
-        doc: "the base for computing rotary embedding frequency for local attention layers"
+        doc: "base for computing rotary embedding frequency for local (sliding) attention layers"
       ],
-      global_rope_theta: [
+      rotary_embedding_base: [
         default: 160_000.0,
-        doc: "the base for computing rotary embedding frequency for global attention layers"
+        doc: "base for computing rotary embedding frequency for global attention layers"
       ]
     ] ++
       Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
@@ -293,7 +293,7 @@ defmodule Bumblebee.Text.ModernBertDecoder do
     rotary_embedding = [
       position_ids: position_ids,
       max_positions: spec.max_positions,
-      base: spec.global_rope_theta
+      base: spec.rotary_embedding_base
     ]
 
     state = %{
@@ -447,8 +447,8 @@ defmodule Bumblebee.Text.ModernBertDecoder do
           initializer_scale: {"initializer_range", optional(number())},
           local_attention_window: {"sliding_window", number()},
           global_attention_every_n_layers: {"global_attn_every_n_layers", number()},
-          local_rope_theta: {"local_rope_theta", optional(number())},
-          global_rope_theta: {"global_rope_theta", optional(number())}
+          rotary_embedding_base_local: {"local_rope_theta", optional(number())},
+          rotary_embedding_base: {"global_rope_theta", optional(number())}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)

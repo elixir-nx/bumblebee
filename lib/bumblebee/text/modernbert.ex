@@ -68,13 +68,13 @@ defmodule Bumblebee.Text.ModernBert do
         default: 3,
         doc: "apply global attention every N layers (1 means every layer is global)"
       ],
-      local_rope_theta: [
+      rotary_embedding_base_local: [
         default: 10_000.0,
-        doc: "the base for computing rotary embedding frequency for local attention layers"
+        doc: "base for computing rotary embedding frequency for local (sliding) attention layers"
       ],
-      global_rope_theta: [
+      rotary_embedding_base: [
         default: 160_000.0,
-        doc: "the base for computing rotary embedding frequency for global attention layers"
+        doc: "base for computing rotary embedding frequency for global attention layers"
       ]
     ] ++ Shared.common_options([:num_labels, :id_to_label])
 
@@ -328,7 +328,7 @@ defmodule Bumblebee.Text.ModernBert do
           block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
 
           is_global = rem(idx, spec.global_attention_every_n_layers) == 0
-          rope_theta = if is_global, do: spec.global_rope_theta, else: spec.local_rope_theta
+          rope_theta = if is_global, do: spec.rotary_embedding_base, else: spec.rotary_embedding_base_local
 
           rotary_embedding = [
             position_ids: position_ids,
@@ -512,8 +512,8 @@ defmodule Bumblebee.Text.ModernBert do
           initializer_scale: {"initializer_range", optional(number())},
           local_attention_window: {"local_attention", number()},
           global_attention_every_n_layers: {"global_attn_every_n_layers", number()},
-          local_rope_theta: {"local_rope_theta", optional(number())},
-          global_rope_theta: {"global_rope_theta", optional(number())}
+          rotary_embedding_base_local: {"local_rope_theta", optional(number())},
+          rotary_embedding_base: {"global_rope_theta", optional(number())}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
