@@ -390,12 +390,12 @@ defmodule Bumblebee.Vision.Qwen3VLVision do
           ),
         "blocks.{n}.self_attention.output" => "visual.blocks.{n}.attn.proj",
         "blocks.{n}.output_norm" => "visual.blocks.{n}.norm2",
-        "blocks.{n}.ffn.intermediate" => "visual.blocks.{n}.mlp.fc1",
-        "blocks.{n}.ffn.output" => "visual.blocks.{n}.mlp.fc2",
-        # Patch merger
-        "merger.ln_q" => "visual.merger.ln_q",
-        "merger.mlp.0" => "visual.merger.mlp.0",
-        "merger.mlp.2" => "visual.merger.mlp.2"
+        "blocks.{n}.ffn.intermediate" => "visual.blocks.{n}.mlp.linear_fc1",
+        "blocks.{n}.ffn.output" => "visual.blocks.{n}.mlp.linear_fc2",
+        # Patch merger - Qwen3VL uses linear_fc1/fc2/norm naming
+        "merger.ln_q" => "visual.merger.norm",
+        "merger.mlp.0" => "visual.merger.linear_fc1",
+        "merger.mlp.2" => "visual.merger.linear_fc2"
       }
     end
   end

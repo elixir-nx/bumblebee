@@ -240,11 +240,10 @@ defmodule Bumblebee.Multimodal.Qwen3VL do
       # Load text spec from text_config first to get hidden_size
       text_data = Map.get(data, "text_config", data)
 
-      # Qwen2VL doesn't use QK-norm in the text model (unlike standalone Qwen3)
+      # Qwen3-VL uses QK-norm in the text model (same as standalone Qwen3)
       text_spec =
         Bumblebee.configure(Bumblebee.Text.Qwen3,
-          architecture: :for_causal_language_modeling,
-          use_qk_norm: false
+          architecture: :for_causal_language_modeling
         )
         |> Bumblebee.HuggingFace.Transformers.Config.load(text_data)
 
@@ -274,10 +273,38 @@ defmodule Bumblebee.Multimodal.Qwen3VL do
         |> Enum.map(fn {bumblebee, hf} -> {"vision_model.#{bumblebee}", hf} end)
         |> Map.new()
 
-      text_mapping =
-        Bumblebee.HuggingFace.Transformers.Model.params_mapping(spec.text_spec)
-        |> Enum.map(fn {bumblebee, hf} -> {"text_model.#{bumblebee}", hf} end)
-        |> Map.new()
+      # Qwen3-VL text model uses `model.language_model.*` paths instead of Qwen3's `model.*`
+      # The loader infers a "model." prefix from PyTorch state, so we use "language_model.*"
+      # paths (the loader will prepend "model." automatically)
+      text_mapping = %{
+        "text_model.embedder.token_embedding" => "language_model.embed_tokens",
+        "text_model.decoder.blocks.{n}.self_attention.query" =>
+          "language_model.layers.{n}.self_attn.q_proj",
+        "text_model.decoder.blocks.{n}.self_attention.key" =>
+          "language_model.layers.{n}.self_attn.k_proj",
+        "text_model.decoder.blocks.{n}.self_attention.value" =>
+          "language_model.layers.{n}.self_attn.v_proj",
+        "text_model.decoder.blocks.{n}.self_attention.output" =>
+          "language_model.layers.{n}.self_attn.o_proj",
+        "text_model.decoder.blocks.{n}.self_attention.query_norm" =>
+          "language_model.layers.{n}.self_attn.q_norm",
+        "text_model.decoder.blocks.{n}.self_attention.key_norm" =>
+          "language_model.layers.{n}.self_attn.k_norm",
+        "text_model.decoder.blocks.{n}.self_attention_norm" =>
+          "language_model.layers.{n}.input_layernorm",
+        "text_model.decoder.blocks.{n}.ffn.gate" => "language_model.layers.{n}.mlp.gate_proj",
+        "text_model.decoder.blocks.{n}.ffn.intermediate" =>
+          "language_model.layers.{n}.mlp.up_proj",
+        "text_model.decoder.blocks.{n}.ffn.output" => "language_model.layers.{n}.mlp.down_proj",
+        "text_model.decoder.blocks.{n}.output_norm" =>
+          "language_model.layers.{n}.post_attention_layernorm",
+        "text_model.output_norm" => "language_model.norm",
+        "text_model.language_modeling_head.output" =>
+          if(spec.text_spec.tie_word_embeddings,
+            do: "language_model.embed_tokens",
+            else: "language_model.lm_head"
+          )
+      }
 
       Map.merge(vision_mapping, text_mapping)
     end
