@@ -31,9 +31,11 @@ defmodule Bumblebee.Multimodal.Qwen3VL do
 
   ## Inputs
 
-    * `"pixel_values"` - `{batch_size, num_channels, temporal, height, width}`
+    * `"pixel_values"` - `{num_patches, flattened_patch_size}`
 
-      Featurized image/video pixel values. For images, temporal=1.
+      Pre-extracted image/video patches from the featurizer. The shape is
+      `{num_patches, channels * temporal_patch_size * patch_size * patch_size}`.
+      For a 384x384 image with default settings, this is `{576, 1536}`.
 
     * `"input_ids"` - `{batch_size, sequence_length}`
 
@@ -77,9 +79,19 @@ defmodule Bumblebee.Multimodal.Qwen3VL do
 
   @impl true
   def input_template(%{vision_spec: vision_spec}) do
+    # Vision input is pre-extracted patches: {num_patches, flattened_patch_size}
+    # flattened_patch_size = channels * temporal_patch_size * patch_size * patch_size
+    patch_size = vision_spec.patch_size
+    temporal_patch_size = vision_spec.temporal_patch_size
+
+    flattened_patch_size =
+      vision_spec.num_channels * temporal_patch_size * patch_size * patch_size
+
+    # Use 196 patches as template (14x14 grid from 224x224 image)
+    num_patches = 196
+
     %{
-      # Vision input: {batch, channels, temporal, height, width}
-      "pixel_values" => Nx.template({1, vision_spec.num_channels, 1, 224, 224}, :f32),
+      "pixel_values" => Nx.template({num_patches, flattened_patch_size}, :f32),
       "input_ids" => Nx.template({1, 1}, :u32)
     }
   end
@@ -146,8 +158,16 @@ defmodule Bumblebee.Multimodal.Qwen3VL do
   end
 
   defp inputs(spec) do
-    # Vision inputs
-    vision_shape = {nil, spec.vision_spec.num_channels, nil, nil, nil}
+    # Vision inputs - pre-extracted patches from featurizer
+    # Shape: {num_patches, flattened_patch_size} where
+    # flattened_patch_size = channels * temporal_patch_size * patch_size * patch_size
+    patch_size = spec.vision_spec.patch_size
+    temporal_patch_size = spec.vision_spec.temporal_patch_size
+
+    flattened_patch_size =
+      spec.vision_spec.num_channels * temporal_patch_size * patch_size * patch_size
+
+    vision_shape = {nil, flattened_patch_size}
 
     # Text inputs
     text_shape = {nil, nil}
@@ -198,31 +218,49 @@ defmodule Bumblebee.Multimodal.Qwen3VL do
   defp substitute_at_mask(token_embeds, visual_embeds, mask) do
     # token_embeds: {batch, seq_len, hidden}
     # visual_embeds: {batch, num_visual, hidden}
-    # mask: {batch, seq_len} - boolean mask
+    # mask: {batch, seq_len} - boolean mask where image tokens are
     {batch_size, seq_len, hidden_size} = Nx.shape(token_embeds)
     {_, num_visual, _} = Nx.shape(visual_embeds)
 
-    # For each batch, find the positions where mask is true and substitute
-    # This is a simplified version - we assume visual tokens are contiguous
-    # and in the same order as visual_embeds
+    # We need to scatter visual_embeds into positions where mask is true
+    # Create indices for where to place visual embeddings
+    # mask_indices gives us which positions in seq_len are image tokens
 
-    # Expand mask for broadcasting
+    # Convert mask to indices - find positions where mask is true
+    # For each position in the sequence, if it's an image token,
+    # we need to know which visual embedding to use
+
+    # Create a cumulative sum of the mask to get visual embedding indices
+    # mask: [0, 0, 1, 1, 1, 0, 0] -> cumsum: [0, 0, 1, 2, 3, 3, 3]
+    # Then subtract 1 where mask is true to get 0-indexed: [-, -, 0, 1, 2, -, -]
+    mask_int = Nx.as_type(mask, :s32)
+    cumsum = Nx.cumulative_sum(mask_int, axis: 1)
+    # visual_indices gives the index into visual_embeds for each position
+    # For non-image positions, this will be garbage but we'll mask it out
+    visual_indices = Nx.subtract(cumsum, 1)
+    # Clamp to valid range
+    visual_indices = Nx.clip(visual_indices, 0, num_visual - 1)
+
+    # Gather visual embeddings according to indices
+    # visual_indices shape: {batch, seq_len}
+    # We need to gather from visual_embeds {batch, num_visual, hidden}
+    # Result should be {batch, seq_len, hidden}
+
+    # Expand indices to match hidden dimension for gathering
+    # {batch, seq_len} -> {batch, seq_len, hidden}
+    visual_indices_expanded = Nx.new_axis(visual_indices, -1)
+
+    visual_indices_expanded =
+      Nx.broadcast(visual_indices_expanded, {batch_size, seq_len, hidden_size})
+
+    visual_gathered = Nx.take_along_axis(visual_embeds, visual_indices_expanded, axis: 1)
+
+    # Expand mask for broadcasting with hidden dimension
     mask_expanded = Nx.new_axis(mask, -1)
     mask_expanded = Nx.broadcast(mask_expanded, {batch_size, seq_len, hidden_size})
 
-    # Pad or truncate visual_embeds to match seq_len
-    visual_padded =
-      if num_visual < seq_len do
-        # Pad with zeros
-        padding = Nx.broadcast(0.0, {batch_size, seq_len - num_visual, hidden_size})
-        Nx.concatenate([visual_embeds, padding], axis: 1)
-      else
-        # Truncate
-        Nx.slice(visual_embeds, [0, 0, 0], [batch_size, seq_len, hidden_size])
-      end
-
-    # Use scatter-like operation: where mask is true, use visual; else use token
-    Nx.select(mask_expanded, visual_padded, token_embeds)
+    # Select: where mask is true, use visual; else use token
+    Nx.select(mask_expanded, visual_gathered, token_embeds)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do

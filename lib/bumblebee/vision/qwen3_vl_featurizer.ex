@@ -164,10 +164,57 @@ defmodule Bumblebee.Vision.Qwen3VLFeaturizer do
         images
       end
 
-    # Convert to {batch, channels, temporal, height, width} for model
-    images = Nx.transpose(images, axes: [0, 4, 1, 2, 3])
+    # Extract patches like Python processor
+    # Python format: {num_patches, channels * temporal * patch_h * patch_w}
+    {batch, temporal, height, width, channels} = Nx.shape(images)
 
-    %{"pixel_values" => images}
+    patch_size = featurizer.patch_size
+    temporal_patch_size = featurizer.temporal_patch_size
+
+    # For single images (temporal=1), Python duplicates the frame to match temporal_patch_size
+    {images, temporal} =
+      if temporal < temporal_patch_size do
+        # Repeat the frame to match temporal_patch_size
+        repeated = Nx.tile(images, [1, temporal_patch_size, 1, 1, 1])
+        {repeated, temporal_patch_size}
+      else
+        {images, temporal}
+      end
+
+    patches_h = div(height, patch_size)
+    patches_w = div(width, patch_size)
+    patches_t = div(temporal, temporal_patch_size)
+
+    # Reshape to extract patches
+    # {batch, temporal, height, width, channels}
+    # -> {batch, patches_t, temporal_patch_size, patches_h, patch_size, patches_w, patch_size, channels}
+    images =
+      images
+      |> Nx.reshape(
+        {batch, patches_t, temporal_patch_size, patches_h, patch_size, patches_w, patch_size,
+         channels}
+      )
+      # Reorder for Python format: patches, then [channels, temporal, h, w]
+      # -> {batch, patches_t, patches_h, patches_w, channels, temporal_patch_size, patch_size, patch_size}
+      |> Nx.transpose(axes: [0, 1, 3, 5, 7, 2, 4, 6])
+      # Flatten patches: {batch, num_patches, channels * temporal * patch_h * patch_w}
+      |> Nx.reshape(
+        {batch, patches_t * patches_h * patches_w,
+         channels * temporal_patch_size * patch_size * patch_size}
+      )
+
+    # For a single batch item, flatten to {num_patches, flattened_patch_size}
+    # This matches Python's format
+    {_batch, num_patches, patch_values} = Nx.shape(images)
+    pixel_values = Nx.reshape(images, {num_patches, patch_values})
+
+    # Generate grid_thw (temporal, height_patches, width_patches) per image
+    image_grid_thw = Nx.tensor([[patches_t, patches_h, patches_w]])
+
+    %{
+      "pixel_values" => pixel_values,
+      "image_grid_thw" => image_grid_thw
+    }
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
