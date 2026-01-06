@@ -686,19 +686,14 @@ defmodule Bumblebee.Vision.Qwen3VLVision do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    # Support loading from the entire Qwen3VL/Qwen2VL configuration
+    # Support loading from the entire Qwen3VL configuration
     def load(spec, %{"model_type" => "qwen3_vl", "vision_config" => data}) do
-      load(spec, data)
-    end
-
-    def load(spec, %{"model_type" => "qwen2_vl", "vision_config" => data}) do
       load(spec, data)
     end
 
     def load(spec, data) do
       import Shared.Converters
 
-      # Vision config uses embed_dim (Qwen2-VL) or hidden_size (Qwen3-VL)
       opts =
         convert!(data,
           num_blocks: {"depth", number()},

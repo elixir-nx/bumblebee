@@ -192,8 +192,6 @@ defmodule Bumblebee do
     "Qwen3Model" => {Bumblebee.Text.Qwen3, :base},
     "Qwen3ForCausalLM" => {Bumblebee.Text.Qwen3, :for_causal_language_modeling},
     "Qwen3ForSequenceClassification" => {Bumblebee.Text.Qwen3, :for_sequence_classification},
-    "Qwen2VLForConditionalGeneration" =>
-      {Bumblebee.Multimodal.Qwen3VL, :for_conditional_generation},
     "Qwen3VLForConditionalGeneration" =>
       {Bumblebee.Multimodal.Qwen3VL, :for_conditional_generation},
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
@@ -247,13 +245,12 @@ defmodule Bumblebee do
   @transformers_image_processor_type_to_featurizer %{
     "BlipImageProcessor" => Bumblebee.Vision.BlipFeaturizer,
     "BitImageProcessor" => Bumblebee.Vision.BitFeaturizer,
-    "Qwen2VLImageProcessorFast" => Bumblebee.Vision.Qwen3VLFeaturizer
+    "Qwen3VLImageProcessor" => Bumblebee.Vision.Qwen3VLFeaturizer
   }
 
   @model_type_to_featurizer %{
     "convnext" => Bumblebee.Vision.ConvNextFeaturizer,
     "deit" => Bumblebee.Vision.DeitFeaturizer,
-    "qwen2_vl" => Bumblebee.Vision.Qwen3VLFeaturizer,
     "qwen3_vl" => Bumblebee.Vision.Qwen3VLFeaturizer,
     "resnet" => Bumblebee.Vision.ConvNextFeaturizer,
     "vit" => Bumblebee.Vision.VitFeaturizer,
