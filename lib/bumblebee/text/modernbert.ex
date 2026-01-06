@@ -329,7 +329,9 @@ defmodule Bumblebee.Text.ModernBert do
 
     attention_window_size = fn idx ->
       case Enum.at(layer_types, idx, :sliding_attention) do
-        :full_attention -> nil
+        :full_attention ->
+          nil
+
         :sliding_attention ->
           half_window = div(spec.local_attention_window, 2)
           {half_window, half_window}
