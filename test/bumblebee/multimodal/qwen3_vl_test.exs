@@ -5,7 +5,6 @@ defmodule Bumblebee.Multimodal.Qwen3VLTest do
 
   @moduletag model_test_tags()
 
-  @tag :skip
   test ":for_conditional_generation" do
     # Tiny model created with /tmp/create_tiny_qwen3vl_v4.py (transformers 4.57.3):
     # - text_config: vocab_size=1024, hidden_size=64, num_hidden_layers=2,
@@ -22,9 +21,7 @@ defmodule Bumblebee.Multimodal.Qwen3VLTest do
     # outputs.logits[0, 0:3, 0:5].numpy()
 
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model(
-               {:hf, "bumblebee-testing/tiny-random-Qwen3VLForConditionalGeneration"}
-             )
+             Bumblebee.load_model({:hf, "roulis/tiny-random-Qwen3VLForConditionalGeneration"})
 
     assert %Bumblebee.Multimodal.Qwen3VL{architecture: :for_conditional_generation} = spec
 
