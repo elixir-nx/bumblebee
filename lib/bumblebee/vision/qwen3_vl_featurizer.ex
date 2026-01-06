@@ -103,24 +103,43 @@ defmodule Bumblebee.Vision.Qwen3VLFeaturizer do
     process_single_input(featurizer, %{image: image})
   end
 
-  defp process_frame(featurizer, frame) do
+  defp process_frame(frame, featurizer) do
     frame =
       frame
       |> Image.to_batched_tensor()
       |> Nx.as_type(:f32)
       |> Image.normalize_channels(length(featurizer.image_mean))
 
-    if featurizer.resize do
-      %{height: height, width: width} = featurizer.size
-      NxImage.resize(frame, {height, width}, method: featurizer.resize_method)
-    else
-      frame
-    end
+    # Qwen3VL requires image dimensions to be divisible by patch_size * merge_size
+    factor = featurizer.patch_size * featurizer.merge_size
+
+    {_, h, w, _} = Nx.shape(frame)
+
+    # Compute target size - round to nearest multiple of factor
+    target_h = round_to_multiple(h, factor)
+    target_w = round_to_multiple(w, factor)
+
+    # Ensure minimum size
+    target_h = max(target_h, factor)
+    target_w = max(target_w, factor)
+
+    NxImage.resize(frame, {target_h, target_w}, method: featurizer.resize_method)
+  end
+
+  defp round_to_multiple(value, factor) do
+    div(value + div(factor, 2), factor) * factor
   end
 
   @impl true
   def batch_template(featurizer, batch_size) do
-    %{height: height, width: width} = featurizer.size
+    # Get height/width from size config, defaulting to 224 if not specified
+    {height, width} =
+      case featurizer.size do
+        %{height: h, width: w} -> {h, w}
+        %{shortest_edge: edge} when edge < 10000 -> {edge, edge}
+        _ -> {224, 224}
+      end
+
     num_channels = length(featurizer.image_mean)
     # Output shape includes temporal dimension: {batch, channels, temporal, height, width}
     # For template, we use temporal=1 (single image case)
