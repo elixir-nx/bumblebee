@@ -482,24 +482,72 @@ defmodule Bumblebee.Vision.Qwen3VLVision do
         {hidden_state, hidden_states, attentions}
       end)
 
-    # Extract deepstack hidden states
-    deepstack_hidden_states =
+    # Extract and merge deepstack hidden states
+    # Each deepstack feature is passed through a separate merger (same structure as main merger)
+    deepstack_merged_features =
       deepstack_indexes
       |> Enum.sort()
-      |> Enum.map(fn idx ->
-        if idx < length(hidden_states) do
-          Enum.at(hidden_states, idx)
-        else
-          List.last(hidden_states)
-        end
+      |> Enum.with_index()
+      |> Enum.map(fn {layer_idx, merger_idx} ->
+        hidden_state_at_layer =
+          if layer_idx < length(hidden_states) do
+            Enum.at(hidden_states, layer_idx)
+          else
+            List.last(hidden_states)
+          end
+
+        # Apply deepstack merger (same spatial merge + MLP as main merger)
+        deepstack_merger(hidden_state_at_layer, spec, merger_idx, "deepstack_merger_list")
       end)
 
     %{
       hidden_state: hidden_state,
       hidden_states: Axon.container(List.to_tuple(hidden_states)),
       attentions: Axon.container(List.to_tuple(attentions)),
-      deepstack_hidden_states: Axon.container(List.to_tuple(deepstack_hidden_states))
+      deepstack_hidden_states: Axon.container(List.to_tuple(deepstack_merged_features))
     }
+  end
+
+  # DeepStack merger - uses postshuffle norm (norm AFTER spatial merge)
+  # This differs from main merger which uses norm BEFORE spatial merge
+  defp deepstack_merger(hidden_state, spec, index, name) do
+    merger_name = join(name, index)
+
+    merge_size = spec.spatial_merge_size * spec.spatial_merge_size
+    mlp_input_size = spec.hidden_size * merge_size
+
+    hidden_state
+    # First, reshape to group spatial patches for merging (BEFORE norm)
+    |> Axon.nx(fn x ->
+      {batch, num_patches, hidden} = Nx.shape(x)
+      # Compute grid dimensions (assuming square grid)
+      grid_size = :math.sqrt(num_patches) |> trunc()
+      merged_grid = div(grid_size, spec.spatial_merge_size)
+
+      # Reshape and merge spatial patches
+      x
+      |> Nx.reshape(
+        {batch, merged_grid, spec.spatial_merge_size, merged_grid, spec.spatial_merge_size,
+         hidden}
+      )
+      |> Nx.transpose(axes: [0, 1, 3, 2, 4, 5])
+      |> Nx.reshape({batch, merged_grid * merged_grid, merge_size * hidden})
+    end)
+    # Layer norm on merged dimension (postshuffle_norm=True)
+    |> Axon.layer_norm(
+      epsilon: spec.layer_norm_epsilon,
+      name: join(merger_name, "norm")
+    )
+    # MLP: linear_fc1 -> activation -> linear_fc2
+    |> Axon.dense(mlp_input_size,
+      kernel_initializer: kernel_initializer(spec),
+      name: join(merger_name, "linear_fc1")
+    )
+    |> Layers.activation(spec.activation)
+    |> Axon.dense(spec.out_hidden_size,
+      kernel_initializer: kernel_initializer(spec),
+      name: join(merger_name, "linear_fc2")
+    )
   end
 
   # Vision attention with 2D rotary embedding
@@ -759,7 +807,11 @@ defmodule Bumblebee.Vision.Qwen3VLVision do
         # Patch merger - Qwen3VL uses linear_fc1/fc2/norm naming
         "merger.ln_q" => "visual.merger.norm",
         "merger.mlp.0" => "visual.merger.linear_fc1",
-        "merger.mlp.2" => "visual.merger.linear_fc2"
+        "merger.mlp.2" => "visual.merger.linear_fc2",
+        # DeepStack mergers - same structure as main merger
+        "deepstack_merger_list.{n}.norm" => "visual.deepstack_merger_list.{n}.norm",
+        "deepstack_merger_list.{n}.linear_fc1" => "visual.deepstack_merger_list.{n}.linear_fc1",
+        "deepstack_merger_list.{n}.linear_fc2" => "visual.deepstack_merger_list.{n}.linear_fc2"
       }
     end
   end

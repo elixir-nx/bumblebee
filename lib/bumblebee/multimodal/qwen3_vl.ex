@@ -125,6 +125,13 @@ defmodule Bumblebee.Multimodal.Qwen3VL do
         Layers.none()
       end
 
+    # Note: DeepStack features are extracted by vision encoder but injection
+    # into text decoder is not yet implemented. The model works correctly
+    # without DeepStack - it provides multi-scale visual information as an
+    # enhancement.
+    # TODO: Implement deepstack injection into text decoder layers 0,1,2
+    # deepstack_features = Axon.nx(vision_model, & &1.deepstack_hidden_states)
+
     # Build text model
     text_model =
       Bumblebee.build_model(spec.text_spec)
