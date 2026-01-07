@@ -125,17 +125,14 @@ defmodule Bumblebee.Multimodal.Qwen3VL do
         Layers.none()
       end
 
-    # Note: DeepStack features are extracted by vision encoder but injection
-    # into text decoder is not yet implemented. The model works correctly
-    # without DeepStack - it provides multi-scale visual information as an
-    # enhancement.
-    # TODO: Implement deepstack injection into text decoder layers 0,1,2
-    # deepstack_features = Axon.nx(vision_model, & &1.deepstack_hidden_states)
-
-    # Build text model
-    text_model =
-      Bumblebee.build_model(spec.text_spec)
-      |> Bumblebee.Utils.Axon.prefix_names("text_model.")
+    # Extract DeepStack features from vision encoder
+    # These are hidden states from intermediate layers passed through mergers
+    deepstack_features =
+      Layers.if_present inputs["pixel_values"] do
+        Axon.nx(vision_model, & &1.deepstack_hidden_states)
+      else
+        Layers.none()
+      end
 
     # Substitute visual embeddings into text input
     input_embeddings =
@@ -146,21 +143,36 @@ defmodule Bumblebee.Multimodal.Qwen3VL do
         name: "embed_substitute"
       )
 
-    # Run text model with substituted embeddings
+    # Create visual position mask for DeepStack injection
+    visual_mask =
+      Layers.if_present inputs["pixel_values"] do
+        Axon.nx(inputs["input_ids"], fn ids ->
+          image_mask = Nx.equal(ids, spec.image_token_id)
+          video_mask = Nx.equal(ids, spec.video_token_id)
+          Nx.logical_or(image_mask, video_mask)
+        end)
+      else
+        Layers.none()
+      end
+
+    # Build text decoder with DeepStack injection hook
     text_outputs =
-      text_model
-      |> Bumblebee.Utils.Axon.plug_inputs(%{
-        "input_embeddings" => input_embeddings,
-        "attention_mask" => inputs["attention_mask"],
-        "position_ids" => inputs["position_ids"],
-        "cache" => inputs["cache"]
-      })
+      text_decoder_with_deepstack(
+        input_embeddings,
+        inputs["attention_mask"],
+        inputs["position_ids"],
+        inputs["cache"],
+        deepstack_features,
+        visual_mask,
+        spec,
+        name: "text_model"
+      )
 
     Layers.output(%{
-      logits: Axon.nx(text_outputs, & &1.logits),
-      cache: Axon.nx(text_outputs, & &1.cache),
-      hidden_states: Axon.nx(text_outputs, & &1.hidden_states),
-      attentions: Axon.nx(text_outputs, & &1.attentions)
+      logits: text_outputs.logits,
+      cache: text_outputs.cache,
+      hidden_states: text_outputs.hidden_states,
+      attentions: text_outputs.attentions
     })
   end
 
@@ -268,6 +280,193 @@ defmodule Bumblebee.Multimodal.Qwen3VL do
 
     # Select: where mask is true, use visual; else use token
     Nx.select(mask_expanded, visual_gathered, token_embeds)
+  end
+
+  # Build text decoder with DeepStack feature injection
+  # This builds the decoder directly so we can use post_block_hook for injection
+  defp text_decoder_with_deepstack(
+         embeddings,
+         attention_mask,
+         position_ids,
+         cache,
+         deepstack_features,
+         visual_mask,
+         spec,
+         opts
+       ) do
+    name = opts[:name]
+    text_spec = spec.text_spec
+
+    import Bumblebee.Utils.Model, only: [join: 2]
+
+    # Default position_ids if not provided
+    position_ids =
+      Layers.default position_ids do
+        Layers.default_position_ids(embeddings)
+      end
+
+    # Build query and key normalization functions for Qwen3
+    query_norm =
+      if text_spec.use_qk_norm do
+        &Layers.rms_norm(&1, epsilon: text_spec.layer_norm_epsilon, channel_index: -1, name: &2)
+      end
+
+    key_norm =
+      if text_spec.use_qk_norm do
+        &Layers.rms_norm(&1, epsilon: text_spec.layer_norm_epsilon, channel_index: -1, name: &2)
+      end
+
+    # DeepStack injection layers (0, 1, 2 in Python)
+    # The vision encoder extracts features from layers [5, 11, 17] (1-indexed)
+    # These are injected into decoder layers [0, 1, 2]
+    deepstack_injection_layers = MapSet.new([0, 1, 2])
+
+    # Build post_block_hook for DeepStack injection
+    # The hook is always defined, but only applies injection at layers 0, 1, 2
+    # when deepstack_features and visual_mask are present
+    post_block_hook = fn layer_idx, hidden_state ->
+      if MapSet.member?(deepstack_injection_layers, layer_idx) do
+        # Conditionally inject deepstack features at visual token positions
+        Layers.if_present deepstack_features do
+          Axon.layer(
+            fn hidden, ds_features, mask, _opts ->
+              inject_deepstack_features(hidden, ds_features, mask, layer_idx)
+            end,
+            [hidden_state, deepstack_features, visual_mask],
+            name: join(name, "deepstack_inject.#{layer_idx}")
+          )
+        else
+          hidden_state
+        end
+      else
+        hidden_state
+      end
+    end
+
+    # Run decoder blocks with hook
+    decoder_outputs =
+      Layers.Transformer.blocks(embeddings,
+        num_blocks: text_spec.num_blocks,
+        num_attention_heads: text_spec.num_attention_heads,
+        num_key_value_heads: text_spec.num_key_value_heads,
+        hidden_size: text_spec.hidden_size,
+        attention_head_size: text_spec.attention_head_size,
+        kernel_initializer: Axon.Initializers.normal(scale: text_spec.initializer_scale),
+        query_use_bias: false,
+        key_use_bias: false,
+        value_use_bias: false,
+        output_use_bias: false,
+        block_type: :norm_first,
+        attention_mask: attention_mask,
+        cache: cache,
+        causal: true,
+        layer_norm: &Layers.rms_norm(&1, epsilon: text_spec.layer_norm_epsilon, name: &2),
+        ffn:
+          &gated_ffn(&1, text_spec.intermediate_size, text_spec.hidden_size,
+            name: &2,
+            activation: text_spec.activation,
+            initializer_scale: text_spec.initializer_scale
+          ),
+        rotary_embedding: [
+          position_ids: position_ids,
+          max_positions: text_spec.max_positions,
+          base: text_spec.rotary_embedding_base,
+          scaling_strategy: text_spec.rotary_embedding_scaling_strategy
+        ],
+        query_norm: query_norm,
+        key_norm: key_norm,
+        post_block_hook: post_block_hook,
+        name: join(name, "decoder.blocks")
+      )
+
+    # Final layer norm
+    hidden_state =
+      Layers.rms_norm(decoder_outputs.hidden_state,
+        name: join(name, "output_norm"),
+        epsilon: text_spec.layer_norm_epsilon
+      )
+
+    # Language modeling head
+    logits =
+      Layers.dense_transposed(hidden_state, text_spec.vocab_size,
+        kernel_initializer: Axon.Initializers.normal(scale: text_spec.initializer_scale),
+        name: join(name, "language_modeling_head.output")
+      )
+
+    %{
+      logits: logits,
+      hidden_states: Layers.append(decoder_outputs.hidden_states, hidden_state),
+      attentions: decoder_outputs.attentions,
+      cache: decoder_outputs.cache
+    }
+  end
+
+  # Inject DeepStack features at visual token positions
+  # Formula: hidden_states[visual_mask] += deepstack_features[layer_idx]
+  defp inject_deepstack_features(hidden_state, deepstack_features_tuple, visual_mask, layer_idx) do
+    # deepstack_features_tuple is a tuple of {feature_0, feature_1, feature_2}
+    # Each feature has shape {batch, num_visual_tokens, hidden_size}
+    deepstack_feature = elem(deepstack_features_tuple, layer_idx)
+
+    # hidden_state: {batch, seq_len, hidden}
+    # visual_mask: {batch, seq_len}
+    # deepstack_feature: {batch, num_visual, hidden}
+    {batch_size, seq_len, hidden_size} = Nx.shape(hidden_state)
+    {_, num_visual, _} = Nx.shape(deepstack_feature)
+
+    # Create indices to gather deepstack features for each position
+    mask_int = Nx.as_type(visual_mask, :s32)
+    cumsum = Nx.cumulative_sum(mask_int, axis: 1)
+    visual_indices = Nx.subtract(cumsum, 1)
+    visual_indices = Nx.clip(visual_indices, 0, num_visual - 1)
+
+    # Expand indices for gathering
+    visual_indices_expanded = Nx.new_axis(visual_indices, -1)
+
+    visual_indices_expanded =
+      Nx.broadcast(visual_indices_expanded, {batch_size, seq_len, hidden_size})
+
+    # Gather features according to position
+    gathered_features = Nx.take_along_axis(deepstack_feature, visual_indices_expanded, axis: 1)
+
+    # Create additive mask - only add at visual positions
+    mask_expanded = Nx.new_axis(visual_mask, -1)
+    mask_expanded = Nx.broadcast(mask_expanded, {batch_size, seq_len, hidden_size})
+
+    # Add features at visual positions (zero elsewhere)
+    addition = Nx.select(mask_expanded, gathered_features, Nx.tensor(0.0))
+    Nx.add(hidden_state, addition)
+  end
+
+  # Gated FFN for Qwen3 text decoder
+  defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
+    import Bumblebee.Utils.Model, only: [join: 2]
+    name = opts[:name]
+    activation = opts[:activation]
+    initializer_scale = opts[:initializer_scale]
+    kernel_initializer = Axon.Initializers.normal(scale: initializer_scale)
+
+    intermediate =
+      Axon.dense(hidden_state, intermediate_size,
+        kernel_initializer: kernel_initializer,
+        name: join(name, "intermediate"),
+        use_bias: false
+      )
+
+    gate =
+      Axon.dense(hidden_state, intermediate_size,
+        kernel_initializer: kernel_initializer,
+        name: join(name, "gate"),
+        use_bias: false
+      )
+
+    hidden_state = Axon.multiply(intermediate, Axon.activation(gate, activation))
+
+    Axon.dense(hidden_state, output_size,
+      kernel_initializer: kernel_initializer,
+      name: join(name, "output"),
+      use_bias: false
+    )
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
