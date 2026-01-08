@@ -607,7 +607,8 @@ defmodule Bumblebee do
         :params_filename,
         :log_params_diff,
         :backend,
-        :type
+        :type,
+        :preserve_source_types
       ])
 
     with {:ok, repo_files} <- get_repo_files(repository),
@@ -654,7 +655,7 @@ defmodule Bumblebee do
         [
           params_mapping: params_mapping,
           loader_fun: loader_fun
-        ] ++ Keyword.take(opts, [:backend, :log_params_diff])
+        ] ++ Keyword.take(opts, [:backend, :log_params_diff, :preserve_source_types])
 
       params = Bumblebee.Conversion.PyTorchParams.load_params!(model, input_template, paths, opts)
       {:ok, params}
