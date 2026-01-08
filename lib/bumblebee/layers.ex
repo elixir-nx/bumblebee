@@ -439,6 +439,128 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  Adds an FP8-aware dense layer to the network.
+
+  This layer supports optional scale_inv parameter for FP8 quantized weights.
+  When scale_inv is provided, it's applied to the matmul output to account
+  for FP8 quantization scaling.
+
+  The kernel parameter uses standard dense layout (transposed from PyTorch).
+
+  ## Options
+
+    * `:name` - layer name
+
+    * `:kernel_initializer` - initializer for `kernel` weights.
+      Defaults to `:glorot_uniform`
+
+    * `:use_bias` - whether the layer should add bias to the output.
+      Defaults to `false`
+
+    * `:block_size` - the block size used for FP8 quantization.
+      Defaults to 128
+
+  """
+  def fp8_aware_dense(%Axon{} = x, units, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [
+        :name,
+        kernel_initializer: :glorot_uniform,
+        use_bias: false,
+        block_size: 128
+      ])
+
+    name = opts[:name]
+    block_size = opts[:block_size]
+
+    kernel_shape = &Axon.Shape.dense_kernel(&1, units)
+    bias_shape = &Axon.Shape.dense_bias(&1, units)
+
+    # Scale shape: [input_blocks, output_blocks] where block_size is typically 128
+    # This matches the transposed layout from PyTorch (kernel is transposed, so is scale)
+    # For non-FP8 models, scale_inv will be initialized to 1.0
+    scale_shape = fn input_shape ->
+      in_features = elem(input_shape, tuple_size(input_shape) - 1)
+      out_features = units
+      # Round up to handle cases where dimensions aren't exact multiples of block_size
+      out_blocks = div(out_features + block_size - 1, block_size)
+      in_blocks = div(in_features + block_size - 1, block_size)
+      # Note: [in_blocks, out_blocks] to match transposed scale_inv from PyTorch
+      {in_blocks, out_blocks}
+    end
+
+    kernel = Axon.param("kernel", kernel_shape, initializer: opts[:kernel_initializer])
+
+    # scale_inv is initialized to 1.0 (identity) for non-FP8 models
+    # For FP8 models, it will be loaded from the checkpoint
+    scale_inv = Axon.param("scale_inv", scale_shape, initializer: :ones)
+
+    {inputs, op} =
+      if opts[:use_bias] do
+        bias = Axon.param("bias", bias_shape, initializer: :zeros)
+        {[x, kernel, scale_inv, bias], &fp8_aware_dense_impl(&1, &2, &3, &4, &5, block_size)}
+      else
+        {[x, kernel, scale_inv], &fp8_aware_dense_impl(&1, &2, &3, nil, &4, block_size)}
+      end
+
+    Axon.layer(op, inputs, name: name, op_name: :fp8_aware_dense)
+  end
+
+  deftransformp fp8_aware_dense_impl(x, kernel, scale_inv, bias, _opts, block_size) do
+    # Dequantize the kernel using scale_inv before matmul
+    # kernel: [in_features, out_features]
+    # scale_inv: [in_blocks, out_blocks] (transposed from PyTorch layout)
+    # Each 128x128 block of the kernel should be multiplied by its scale
+    kernel_dequant = dequantize_kernel(kernel, scale_inv, block_size)
+
+    # Do the matmul with dequantized kernel
+    # x: [batch, seq_len, in_features]
+    # kernel_dequant: [in_features, out_features]
+    # result: [batch, seq_len, out_features]
+    result = Nx.dot(x, [-1], kernel_dequant, [0])
+
+    # Add bias if present
+    if bias do
+      Nx.add(result, bias)
+    else
+      result
+    end
+  end
+
+  defp dequantize_kernel(kernel, scale_inv, block_size) do
+    # kernel: [in_features, out_features]
+    # scale_inv: [in_blocks, out_blocks] where in_blocks = ceil(in_features/128)
+    #
+    # To dequantize: for each element kernel[i,o], multiply by scale_inv[i/128, o/128]
+    # This is done by expanding scale_inv to match kernel shape
+
+    {in_features, out_features} = Nx.shape(kernel)
+    {in_blocks, out_blocks} = Nx.shape(scale_inv)
+
+    # Expand scale_inv to [in_features, out_features]
+    # Each scale value is replicated block_size times in both dimensions
+    scale_expanded =
+      scale_inv
+      # Replicate along input dimension: [in_blocks, out_blocks] -> [in_blocks * block_size, out_blocks]
+      |> Nx.reshape({in_blocks, 1, out_blocks})
+      |> Nx.broadcast({in_blocks, block_size, out_blocks})
+      |> Nx.reshape({in_blocks * block_size, out_blocks})
+      # Replicate along output dimension: [..., out_blocks] -> [..., out_blocks * block_size]
+      |> Nx.reshape({in_blocks * block_size, out_blocks, 1})
+      |> Nx.broadcast({in_blocks * block_size, out_blocks, block_size})
+      |> Nx.reshape({in_blocks * block_size, out_blocks * block_size})
+
+    # Slice to exact kernel dimensions (in case they're not exact multiples of block_size)
+    scale_expanded =
+      scale_expanded
+      |> Nx.slice([0, 0], [in_features, out_features])
+
+    # Convert kernel to higher precision for dequantization, then multiply by scale
+    kernel_f32 = Nx.as_type(kernel, {:f, 32})
+    Nx.multiply(kernel_f32, scale_expanded)
+  end
+
+  @doc """
   Adds a 1-dimensional convolution layer to the network.
 
   ## Options

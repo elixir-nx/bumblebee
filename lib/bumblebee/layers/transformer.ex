@@ -63,7 +63,8 @@ defmodule Bumblebee.Layers.Transformer do
       :block_type,
       :attention_scale,
       :query_norm,
-      :key_norm
+      :key_norm,
+      :attention_dense
     ]
 
     opts =
@@ -354,7 +355,8 @@ defmodule Bumblebee.Layers.Transformer do
         attention_scale: nil,
         rotary_embedding: nil,
         query_norm: nil,
-        key_norm: nil
+        key_norm: nil,
+        attention_dense: nil
       ])
 
     name = opts[:name]
@@ -386,6 +388,7 @@ defmodule Bumblebee.Layers.Transformer do
     rotary_embedding = opts[:rotary_embedding]
     query_norm = opts[:query_norm]
     key_norm = opts[:key_norm]
+    attention_dense = opts[:attention_dense]
 
     ffn_fun =
       case ffn do
@@ -446,6 +449,7 @@ defmodule Bumblebee.Layers.Transformer do
           rotary_embedding: rotary_embedding,
           query_norm: query_norm,
           key_norm: key_norm,
+          attention_dense: attention_dense,
           name: join(name, "self_attention")
         )
 
@@ -491,6 +495,7 @@ defmodule Bumblebee.Layers.Transformer do
           attention_window_size: attention_window_size,
           attention_scale: attention_scale,
           rotary_embedding: rotary_embedding,
+          attention_dense: attention_dense,
           name: join(name, "cross_attention")
         )
 
@@ -772,7 +777,8 @@ defmodule Bumblebee.Layers.Transformer do
         output_use_bias: true,
         rotary_embedding: nil,
         query_norm: nil,
-        key_norm: nil
+        key_norm: nil,
+        attention_dense: nil
       ])
 
     attention_mask = opts[:attention_mask]
@@ -792,6 +798,7 @@ defmodule Bumblebee.Layers.Transformer do
     rotary_embedding = opts[:rotary_embedding]
     query_norm = opts[:query_norm]
     key_norm = opts[:key_norm]
+    attention_dense = opts[:attention_dense]
 
     query_use_bias = opts[:query_use_bias]
     key_use_bias = opts[:key_use_bias]
@@ -804,9 +811,18 @@ defmodule Bumblebee.Layers.Transformer do
     inner_size = num_heads * attention_head_size
     inner_kv_size = num_key_value_heads * attention_head_size
 
+    # Helper to create dense layer, using custom attention_dense if provided
+    dense_fn = fn input, units, dense_opts ->
+      if attention_dense do
+        attention_dense.(input, units, dense_opts)
+      else
+        Axon.dense(input, units, dense_opts)
+      end
+    end
+
     query =
       query
-      |> Axon.dense(inner_size,
+      |> dense_fn.(inner_size,
         kernel_initializer: kernel_initializer,
         name: join(name, "query"),
         use_bias: query_use_bias
@@ -815,7 +831,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     key =
       key
-      |> Axon.dense(inner_kv_size,
+      |> dense_fn.(inner_kv_size,
         kernel_initializer: kernel_initializer,
         name: join(name, "key"),
         use_bias: key_use_bias
@@ -824,7 +840,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     value =
       value
-      |> Axon.dense(inner_kv_size,
+      |> dense_fn.(inner_kv_size,
         kernel_initializer: kernel_initializer,
         name: join(name, "value"),
         use_bias: value_use_bias
@@ -937,7 +953,7 @@ defmodule Bumblebee.Layers.Transformer do
     attention_output =
       attention_output
       |> Layers.flatten_trailing()
-      |> Axon.dense(hidden_size,
+      |> dense_fn.(hidden_size,
         kernel_initializer: kernel_initializer,
         name: join(name, "output"),
         use_bias: output_use_bias
