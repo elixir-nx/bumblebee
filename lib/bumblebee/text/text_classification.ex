@@ -32,7 +32,7 @@ defmodule Bumblebee.Text.TextClassification do
     sequence_length = compile[:sequence_length]
 
     tokenizer =
-      Bumblebee.configure(tokenizer, length: sequence_length, return_token_type_ids: false)
+      Bumblebee.configure(tokenizer, length: sequence_length)
 
     {_init_fun, predict_fun} = Axon.build(model)
 
@@ -58,7 +58,8 @@ defmodule Bumblebee.Text.TextClassification do
 
             inputs = %{
               "input_ids" => Nx.template({batch_size, sequence_length}, :u32),
-              "attention_mask" => Nx.template({batch_size, sequence_length}, :u32)
+              "attention_mask" => Nx.template({batch_size, sequence_length}, :u32),
+              "token_type_ids" => Nx.template({batch_size, sequence_length}, :u32)
             }
 
             [params, inputs]
