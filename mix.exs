@@ -102,6 +102,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.Mbart,
           Bumblebee.Text.Mistral,
           Bumblebee.Text.MpNet,
+          Bumblebee.Text.NomicBert,
           Bumblebee.Text.Phi,
           Bumblebee.Text.Phi3,
           Bumblebee.Text.Roberta,
