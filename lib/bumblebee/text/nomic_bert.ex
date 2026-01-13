@@ -180,30 +180,7 @@ defmodule Bumblebee.Text.NomicBert do
         name: "encoder"
       )
 
-    # Mean pooling over non-masked tokens
-    pooled_state =
-      Layers.if_present inputs["attention_mask"] do
-        Axon.layer(
-          fn hidden_state, attention_mask, _opts ->
-            # Expand mask for broadcasting with hidden_size
-            mask = Nx.new_axis(attention_mask, -1)
-            # Mask out padding tokens
-            masked = Nx.multiply(hidden_state, mask)
-            # Sum and normalize by actual sequence length
-            sum = Nx.sum(masked, axes: [1])
-            count = Nx.sum(mask, axes: [1])
-            Nx.divide(sum, Nx.max(count, 1.0e-9))
-          end,
-          [encoder_outputs.hidden_state, inputs["attention_mask"]]
-        )
-      else
-        Axon.layer(
-          fn hidden_state, _opts ->
-            Nx.mean(hidden_state, axes: [1])
-          end,
-          [encoder_outputs.hidden_state]
-        )
-      end
+    pooled_state = pooler(encoder_outputs.hidden_state, spec, name: "pooler")
 
     %{
       hidden_state: encoder_outputs.hidden_state,
@@ -264,6 +241,18 @@ defmodule Bumblebee.Text.NomicBert do
       output_use_bias: false,
       name: join(name, "blocks")
     )
+  end
+
+  defp pooler(hidden_state, spec, opts) do
+    name = opts[:name]
+
+    hidden_state
+    |> Layers.take_token(index: 0, axis: 1)
+    |> Axon.dense(spec.hidden_size,
+      kernel_initializer: kernel_initializer(spec),
+      name: join(name, "output")
+    )
+    |> Axon.tanh()
   end
 
   defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
@@ -342,7 +331,8 @@ defmodule Bumblebee.Text.NomicBert do
         "encoder.blocks.{n}.ffn.up" => "encoder.layers.{n}.mlp.fc11",
         "encoder.blocks.{n}.ffn.gate" => "encoder.layers.{n}.mlp.fc12",
         "encoder.blocks.{n}.ffn.down" => "encoder.layers.{n}.mlp.fc2",
-        "encoder.blocks.{n}.output_norm" => "encoder.layers.{n}.norm2"
+        "encoder.blocks.{n}.output_norm" => "encoder.layers.{n}.norm2",
+        "pooler.output" => "pooler.dense"
       }
     end
 

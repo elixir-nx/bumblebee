@@ -30,7 +30,7 @@ defmodule Bumblebee.Text.NomicBertTest do
 
     assert_all_close(
       outputs.pooled_state[[.., 1..3]],
-      Nx.tensor([[0.5064, -0.6647, -0.9303]])
+      Nx.tensor([[0.0197, -0.2129, -0.0071]])
     )
   end
 end
