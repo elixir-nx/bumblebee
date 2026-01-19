@@ -361,6 +361,68 @@ defmodule Bumblebee.Text do
   defdelegate text_classification(model_info, tokenizer, opts \\ []),
     to: Bumblebee.Text.TextClassification
 
+  @type cross_encoding_input :: {String.t(), String.t()}
+  @type cross_encoding_output :: %{score: number()}
+
+  @doc """
+  Builds serving for cross-encoder models.
+
+  Cross-encoders score text pairs by encoding them jointly through a
+  transformer with full cross-attention. This is commonly used for
+  reranking search results, semantic similarity, and natural language
+  inference tasks.
+
+  The serving accepts `t:cross_encoding_input/0` and returns
+  `t:cross_encoding_output/0`. A list of inputs is also supported.
+
+  ## Options
+
+    * `:compile` - compiles all computations for predefined input shapes
+      during serving initialization. Should be a keyword list with the
+      following keys:
+
+        * `:batch_size` - the maximum batch size of the input. Inputs
+          are optionally padded to always match this batch size
+
+        * `:sequence_length` - the maximum input sequence length. Input
+          sequences are always padded/truncated to match that length.
+          A list can be given, in which case the serving compiles
+          a separate computation for each length and then inputs are
+          matched to the smallest bounding length
+
+      It is advised to set this option in production and also configure
+      a defn compiler using `:defn_options` to maximally reduce inference
+      time.
+
+    * `:defn_options` - the options for JIT compilation. Defaults to `[]`
+
+    * `:preallocate_params` - when `true`, explicitly allocates params
+      on the device configured by `:defn_options`. You may want to set
+      this option when using partitioned serving, to allocate params
+      on each of the devices. When using this option, you should first
+      load the parameters into the host. This can be done by passing
+      `backend: {EXLA.Backend, client: :host}` to `load_model/1` and friends.
+      Defaults to `false`
+
+  ## Examples
+
+      {:ok, model_info} = Bumblebee.load_model({:hf, "cross-encoder/ms-marco-MiniLM-L-6-v2"})
+      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "cross-encoder/ms-marco-MiniLM-L-6-v2"})
+
+      serving = Bumblebee.Text.cross_encoding(model_info, tokenizer)
+
+      Nx.Serving.run(serving, {"How many people live in Berlin?", "Berlin has a population of 3.5 million."})
+      #=> %{score: 8.761}
+
+  """
+  @spec cross_encoding(
+          Bumblebee.model_info(),
+          Bumblebee.Tokenizer.t(),
+          keyword()
+        ) :: Nx.Serving.t()
+  defdelegate cross_encoding(model_info, tokenizer, opts \\ []),
+    to: Bumblebee.Text.CrossEncoding
+
   @type text_embedding_input :: String.t()
   @type text_embedding_output :: %{embedding: Nx.Tensor.t()}
 

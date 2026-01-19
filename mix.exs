@@ -64,6 +64,7 @@ defmodule Bumblebee.MixProject do
         "notebooks/llms.livemd",
         "notebooks/llms_rag.livemd",
         "notebooks/qwen3.livemd",
+        "notebooks/function_calling.livemd",
         "notebooks/fine_tuning.livemd",
         "examples/phoenix/README.md"
       ],
@@ -103,6 +104,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.ModernBert,
           Bumblebee.Text.ModernBertDecoder,
           Bumblebee.Text.MpNet,
+          Bumblebee.Text.NomicBert,
           Bumblebee.Text.Phi,
           Bumblebee.Text.Phi3,
           Bumblebee.Text.Roberta,
