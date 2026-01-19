@@ -313,18 +313,6 @@ defmodule Bumblebee.Text.ModernBert do
         Layers.default_position_ids(hidden_state)
       end
 
-    ffn_fun =
-      &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
-        activation: spec.activation,
-        name: &2
-      )
-
-    state = %{
-      hidden_state: hidden_state,
-      hidden_states: Axon.container({hidden_state}),
-      attentions: Axon.container({})
-    }
-
     layer_types = spec.layer_types || generate_layer_types(spec.num_blocks)
 
     attention_window_size = fn idx ->
@@ -352,46 +340,40 @@ defmodule Bumblebee.Text.ModernBert do
       ]
     end
 
-    outputs =
-      for idx <- 0..(spec.num_blocks - 1), reduce: state do
-        state ->
-          block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
-
-          # First layer uses the embedding norm for attention, so we skip self_attention_norm
-          block_type =
-            if idx == 0 do
-              &block_without_self_attention_norm/3
-            else
-              :norm_first
-            end
-
-          {hidden_state, attention, _cross_attention, _block_cache, _attention_relative_bias} =
-            Layers.Transformer.block(state.hidden_state,
-              attention_mask: attention_mask,
-              attention_head_mask: block_attention_head_mask,
-              num_attention_heads: spec.num_attention_heads,
-              hidden_size: spec.hidden_size,
-              kernel_initializer: kernel_initializer(spec),
-              dropout_rate: spec.dropout_rate,
-              attention_dropout_rate: spec.attention_dropout_rate,
-              query_use_bias: false,
-              key_use_bias: false,
-              value_use_bias: false,
-              output_use_bias: false,
-              block_type: block_type,
-              layer_norm: &layer_norm(&1, epsilon: spec.layer_norm_epsilon, name: &2),
-              ffn: ffn_fun,
-              rotary_embedding: rotary_embedding.(idx),
-              attention_window_size: attention_window_size.(idx),
-              name: join(name, "blocks.#{idx}")
-            )
-
-          %{
-            hidden_state: hidden_state,
-            hidden_states: Layers.append(state.hidden_states, hidden_state),
-            attentions: Layers.append(state.attentions, attention)
-          }
+    layer_norm = fn input, name ->
+      if String.ends_with?(name, "encoder.blocks.0.self_attention_norm") do
+        # The first self-attention norm is skipped.
+        input
+      else
+        layer_norm(input, epsilon: spec.layer_norm_epsilon, name: name)
       end
+    end
+
+    outputs =
+      Layers.Transformer.blocks(hidden_state,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        num_blocks: spec.num_blocks,
+        num_attention_heads: spec.num_attention_heads,
+        hidden_size: spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
+        dropout_rate: spec.dropout_rate,
+        attention_dropout_rate: spec.attention_dropout_rate,
+        layer_norm: layer_norm,
+        ffn:
+          &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            name: &2
+          ),
+        block_type: :norm_first,
+        rotary_embedding: rotary_embedding,
+        attention_window_size: attention_window_size,
+        query_use_bias: false,
+        key_use_bias: false,
+        value_use_bias: false,
+        output_use_bias: false,
+        name: join(name, "blocks")
+      )
 
     hidden_state =
       layer_norm(outputs.hidden_state,
@@ -404,34 +386,6 @@ defmodule Bumblebee.Text.ModernBert do
       hidden_states: outputs.hidden_states,
       attentions: outputs.attentions
     }
-  end
-
-  defp block_without_self_attention_norm(hidden_state, steps, _name) do
-    shortcut = hidden_state
-    {hidden_state, attention_info} = steps.self_attention.(hidden_state)
-    hidden_state = Axon.add(hidden_state, shortcut)
-
-    {hidden_state, cross_attention_info} =
-      steps.cross_attention_maybe.(hidden_state, fn hidden_state ->
-        shortcut = hidden_state
-
-        {hidden_state, cross_attention_info} =
-          hidden_state
-          |> steps.cross_attention_norm.()
-          |> steps.cross_attention.()
-
-        {Axon.add(hidden_state, shortcut), cross_attention_info}
-      end)
-
-    shortcut = hidden_state
-
-    hidden_state =
-      hidden_state
-      |> steps.output_norm.()
-      |> steps.ffn.()
-      |> Axon.add(shortcut)
-
-    {hidden_state, attention_info, cross_attention_info}
   end
 
   defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do

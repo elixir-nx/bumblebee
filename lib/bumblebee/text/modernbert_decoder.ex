@@ -287,94 +287,44 @@ defmodule Bumblebee.Text.ModernBertDecoder do
        ) do
     name = opts[:name]
 
-    ffn_fun =
-      &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
-        activation: spec.activation,
-        name: &2
-      )
-
-    rotary_embedding = [
-      position_ids: position_ids,
-      max_positions: spec.max_positions,
-      base: spec.rotary_embedding_base
-    ]
-
-    state = %{
-      hidden_state: hidden_state,
-      hidden_states: Axon.container({hidden_state}),
-      attentions: Axon.container({}),
-      cache: cache
-    }
-
-    for idx <- 0..(spec.num_blocks - 1), reduce: state do
-      state ->
-        block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
-        block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
-
-        block_type =
-          if idx == 0 do
-            &block_without_self_attention_norm/3
-          else
-            :norm_first
-          end
-
-        {hidden_state, attention, _cross_attention, block_cache, _attention_relative_bias} =
-          Layers.Transformer.block(state.hidden_state,
-            attention_mask: attention_mask,
-            attention_head_mask: block_attention_head_mask,
-            block_cache: block_cache,
-            num_attention_heads: spec.num_attention_heads,
-            hidden_size: spec.hidden_size,
-            kernel_initializer: kernel_initializer(spec),
-            dropout_rate: spec.dropout_rate,
-            attention_dropout_rate: spec.attention_dropout_rate,
-            query_use_bias: false,
-            key_use_bias: false,
-            value_use_bias: false,
-            output_use_bias: false,
-            block_type: block_type,
-            layer_norm: &layer_norm(&1, epsilon: spec.layer_norm_epsilon, name: &2),
-            ffn: ffn_fun,
-            causal: true,
-            rotary_embedding: rotary_embedding,
-            name: join(name, "blocks.#{idx}")
-          )
-
-        %{
-          hidden_state: hidden_state,
-          hidden_states: Layers.append(state.hidden_states, hidden_state),
-          attentions: Layers.append(state.attentions, attention),
-          cache: Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
-        }
+    layer_norm = fn input, name ->
+      if String.ends_with?(name, "decoder.blocks.0.self_attention_norm") do
+        # The first self-attention norm is skipped.
+        input
+      else
+        layer_norm(input, epsilon: spec.layer_norm_epsilon, name: name)
+      end
     end
-  end
 
-  defp block_without_self_attention_norm(hidden_state, steps, _name) do
-    shortcut = hidden_state
-    {hidden_state, attention_info} = steps.self_attention.(hidden_state)
-    hidden_state = Axon.add(hidden_state, shortcut)
-
-    {hidden_state, cross_attention_info} =
-      steps.cross_attention_maybe.(hidden_state, fn hidden_state ->
-        shortcut = hidden_state
-
-        {hidden_state, cross_attention_info} =
-          hidden_state
-          |> steps.cross_attention_norm.()
-          |> steps.cross_attention.()
-
-        {Axon.add(hidden_state, shortcut), cross_attention_info}
-      end)
-
-    shortcut = hidden_state
-
-    hidden_state =
-      hidden_state
-      |> steps.output_norm.()
-      |> steps.ffn.()
-      |> Axon.add(shortcut)
-
-    {hidden_state, attention_info, cross_attention_info}
+    Layers.Transformer.blocks(hidden_state,
+      attention_mask: attention_mask,
+      attention_head_mask: attention_head_mask,
+      cache: cache,
+      num_blocks: spec.num_blocks,
+      num_attention_heads: spec.num_attention_heads,
+      hidden_size: spec.hidden_size,
+      kernel_initializer: kernel_initializer(spec),
+      dropout_rate: spec.dropout_rate,
+      attention_dropout_rate: spec.attention_dropout_rate,
+      layer_norm: layer_norm,
+      ffn:
+        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
+          activation: spec.activation,
+          name: &2
+        ),
+      block_type: :norm_first,
+      causal: true,
+      rotary_embedding: [
+        position_ids: position_ids,
+        max_positions: spec.max_positions,
+        base: spec.rotary_embedding_base
+      ],
+      query_use_bias: false,
+      key_use_bias: false,
+      value_use_bias: false,
+      output_use_bias: false,
+      name: join(name, "blocks")
+    )
   end
 
   defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
