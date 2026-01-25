@@ -163,7 +163,252 @@ defmodule Bumblebee.Text.TextGenerationTest do
              " man",
              " of",
              " light.",
-             {:done, %{token_summary: %{input: 2, output: 8, padding: 8}}}
+             {:done,
+              %{token_summary: %{input: 2, output: 8, padding: 8}, finish_reason: "length"}}
            ]
+  end
+
+  test "timing metrics" do
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
+
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
+
+    serving =
+      Bumblebee.Text.generation(model_info, tokenizer, generation_config, include_timing: true)
+
+    result = Nx.Serving.run(serving, "Hello darkness")
+
+    assert %{
+             results: [
+               %{
+                 text: _,
+                 token_summary: %{input: _, output: _, padding: _},
+                 generation_time_us: generation_time_us,
+                 tokens_per_second: tokens_per_second
+               }
+             ]
+           } = result
+
+    assert is_integer(generation_time_us) and generation_time_us > 0
+    assert is_float(tokens_per_second) and tokens_per_second > 0
+  end
+
+  test "timing metrics in streaming mode" do
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
+
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
+
+    serving =
+      Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+        compile: [batch_size: 1, sequence_length: 10],
+        stream: true,
+        stream_done: true,
+        include_timing: true
+      )
+
+    stream = Nx.Serving.run(serving, "Hello darkness")
+    items = Enum.to_list(stream)
+
+    # The last item should be the :done event with timing
+    {:done, done_result} = List.last(items)
+
+    assert %{
+             token_summary: %{input: _, output: _, padding: _},
+             finish_reason: _,
+             generation_time_us: generation_time_us,
+             time_to_first_token_us: time_to_first_token_us,
+             tokens_per_second: tokens_per_second
+           } = done_result
+
+    assert is_integer(generation_time_us) and generation_time_us > 0
+    assert is_integer(time_to_first_token_us) and time_to_first_token_us > 0
+    assert is_float(tokens_per_second) and tokens_per_second > 0
+  end
+
+  test "openai format output" do
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
+
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
+
+    serving =
+      Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+        output_format: :openai,
+        model_name: "gpt2"
+      )
+
+    result = Nx.Serving.run(serving, "Hello darkness")
+
+    assert %{
+             id: "cmpl-" <> _,
+             object: "text_completion",
+             created: created,
+             model: "gpt2",
+             choices: [
+               %{
+                 index: 0,
+                 text: text,
+                 finish_reason: "length"
+               }
+             ],
+             usage: %{
+               prompt_tokens: prompt_tokens,
+               completion_tokens: completion_tokens,
+               total_tokens: total_tokens
+             }
+           } = result
+
+    assert is_integer(created)
+    assert is_binary(text)
+    assert prompt_tokens == 2
+    assert completion_tokens == 8
+    assert total_tokens == prompt_tokens + completion_tokens
+  end
+
+  test "openai chat format output" do
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
+
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
+
+    serving =
+      Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+        output_format: :openai_chat,
+        model_name: "gpt2"
+      )
+
+    result = Nx.Serving.run(serving, "Hello darkness")
+
+    assert %{
+             id: "chatcmpl-" <> _,
+             object: "chat.completion",
+             created: created,
+             model: "gpt2",
+             choices: [
+               %{
+                 index: 0,
+                 message: %{
+                   role: "assistant",
+                   content: content
+                 },
+                 finish_reason: "length"
+               }
+             ],
+             usage: %{
+               prompt_tokens: prompt_tokens,
+               completion_tokens: completion_tokens,
+               total_tokens: total_tokens
+             }
+           } = result
+
+    assert is_integer(created)
+    assert is_binary(content)
+    assert prompt_tokens == 2
+    assert completion_tokens == 8
+    assert total_tokens == prompt_tokens + completion_tokens
+  end
+
+  test "openai format with timing" do
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
+
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
+
+    serving =
+      Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+        output_format: :openai,
+        model_name: "gpt2",
+        include_timing: true
+      )
+
+    result = Nx.Serving.run(serving, "Hello darkness")
+
+    assert %{
+             usage: %{
+               prompt_tokens: _,
+               completion_tokens: _,
+               total_tokens: _,
+               generation_time_us: generation_time_us,
+               tokens_per_second: tokens_per_second
+             }
+           } = result
+
+    assert is_integer(generation_time_us) and generation_time_us > 0
+    assert is_float(tokens_per_second) and tokens_per_second > 0
+  end
+
+  test "openai streaming format" do
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
+
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
+
+    serving =
+      Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+        compile: [batch_size: 1, sequence_length: 10],
+        stream: true,
+        output_format: :openai,
+        model_name: "gpt2"
+      )
+
+    stream = Nx.Serving.run(serving, "Hello darkness")
+    chunks = Enum.to_list(stream)
+
+    # All chunks should be OpenAI formatted
+    for chunk <- chunks do
+      assert %{
+               id: "cmpl-" <> _,
+               object: "text_completion",
+               created: _,
+               model: "gpt2",
+               choices: [%{index: 0, text: _, finish_reason: nil}]
+             } = chunk
+    end
+
+    # All chunks should share the same id
+    ids = Enum.map(chunks, & &1.id)
+    assert Enum.uniq(ids) == [hd(ids)]
+  end
+
+  test "openai_chat streaming format" do
+    {:ok, model_info} = Bumblebee.load_model({:hf, "openai-community/gpt2"})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai-community/gpt2"})
+    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai-community/gpt2"})
+
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 8)
+
+    serving =
+      Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+        compile: [batch_size: 1, sequence_length: 10],
+        stream: true,
+        output_format: :openai_chat,
+        model_name: "gpt2"
+      )
+
+    stream = Nx.Serving.run(serving, "Hello darkness")
+    chunks = Enum.to_list(stream)
+
+    # All chunks should be OpenAI chat formatted
+    for chunk <- chunks do
+      assert %{
+               id: "chatcmpl-" <> _,
+               object: "chat.completion.chunk",
+               created: _,
+               model: "gpt2",
+               choices: [%{index: 0, delta: %{content: _}, finish_reason: nil}]
+             } = chunk
+    end
+
+    # All chunks should share the same id
+    ids = Enum.map(chunks, & &1.id)
+    assert Enum.uniq(ids) == [hd(ids)]
   end
 end

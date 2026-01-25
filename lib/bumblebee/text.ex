@@ -129,11 +129,62 @@ defmodule Bumblebee.Text do
   @type generation_input ::
           String.t() | %{:text => String.t(), optional(:seed) => integer() | nil}
   @type generation_output :: %{results: list(generation_result())}
-  @type generation_result :: %{text: String.t(), token_summary: token_summary()}
+  @typedoc """
+  A single generation result.
+
+  When `include_timing: true` is passed to `generation/4`, the result also
+  includes `:generation_time_us` and `:tokens_per_second` fields.
+  """
+  @type generation_result :: %{
+          text: String.t(),
+          token_summary: token_summary()
+        }
   @type token_summary :: %{
           input: pos_integer(),
-          outout: pos_integer(),
+          output: pos_integer(),
           padding: non_neg_integer()
+        }
+
+  @type openai_completion :: %{
+          id: String.t(),
+          object: String.t(),
+          created: non_neg_integer(),
+          model: String.t(),
+          choices: list(openai_completion_choice()),
+          usage: openai_usage()
+        }
+
+  @type openai_chat_completion :: %{
+          id: String.t(),
+          object: String.t(),
+          created: non_neg_integer(),
+          model: String.t(),
+          choices: list(openai_chat_choice()),
+          usage: openai_usage()
+        }
+
+  @type openai_completion_choice :: %{
+          index: non_neg_integer(),
+          text: String.t(),
+          finish_reason: String.t() | nil
+        }
+
+  @type openai_chat_choice :: %{
+          index: non_neg_integer(),
+          message: %{role: String.t(), content: String.t()},
+          finish_reason: String.t() | nil
+        }
+
+  @typedoc """
+  OpenAI usage information.
+
+  When `include_timing: true` is passed to `generation/4`, the usage also
+  includes `:generation_time_us` and `:tokens_per_second` fields.
+  """
+  @type openai_usage :: %{
+          prompt_tokens: non_neg_integer(),
+          completion_tokens: non_neg_integer(),
+          total_tokens: non_neg_integer()
         }
 
   @doc """
@@ -182,6 +233,22 @@ defmodule Bumblebee.Text do
       shape `{:done, result}`, where `result` includes the same fields
       as `t:generation_result/0`, except for `:text`, which has been
       already streamed. Defaults to `false`
+
+    * `:include_timing` - when `true`, includes timing metrics in the
+      output. For non-streaming, adds `:generation_time_us` and
+      `:tokens_per_second` to each result. For streaming with
+      `:stream_done`, also adds `:time_to_first_token_us`. Defaults
+      to `false`
+
+    * `:output_format` - the format of the output. Can be one of:
+
+        * `:bumblebee` (default) - returns `t:generation_output/0`
+        * `:openai` - returns `t:openai_completion/0` (text completions format)
+        * `:openai_chat` - returns `t:openai_chat_completion/0` (chat completions format)
+
+    * `:model_name` - the model name to include in OpenAI-format responses.
+      Only used when `:output_format` is `:openai` or `:openai_chat`.
+      Defaults to `"unknown"`
 
   ## Examples
 
