@@ -65,7 +65,16 @@ defmodule Bumblebee.Conversion.PyTorchParams do
 
       params_expr = model_state.data
       preserve_source_types = opts[:preserve_source_types] || false
-      {params, diff} = init_params(model, params_expr, pytorch_state, opts[:params_mapping], preserve_source_types)
+
+      {params, diff} =
+        init_params(
+          model,
+          params_expr,
+          pytorch_state,
+          opts[:params_mapping],
+          preserve_source_types
+        )
+
       model_state = %{model_state | data: params}
 
       params_complete? = diff.missing == [] and diff.mismatched == []
@@ -110,7 +119,12 @@ defmodule Bumblebee.Conversion.PyTorchParams do
 
     prefixes = infer_prefixes(layers, pytorch_state, params_mapping)
 
-    diff = %{missing: [], mismatched: [], used_keys: [], preserve_source_types: preserve_source_types}
+    diff = %{
+      missing: [],
+      mismatched: [],
+      used_keys: [],
+      preserve_source_types: preserve_source_types
+    }
 
     {params, diff} =
       layers
