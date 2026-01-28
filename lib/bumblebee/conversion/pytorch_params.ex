@@ -514,12 +514,12 @@ defmodule Bumblebee.Conversion.PyTorchParams do
     Utils.Nx.map(expr, &Nx.shape/1)
   end
 
-  defp ensure_type(param_expr, value, preserve_source_types \\ false) do
+  defp ensure_type(param_expr, value, preserve_source_types) do
     Utils.Nx.zip_with(param_expr, value, fn expr, tensor ->
       case {Nx.type(expr), Nx.type(tensor), preserve_source_types} do
         {type, type, _} -> tensor
-        # Preserve FP8 types when preserve_source_types is enabled
-        {_expected, {:f, 8, _format}, true} -> tensor
+        # Preserve FP8 E4M3FN types when preserve_source_types is enabled
+        {_expected, {:f8_e4m3fn, 8}, true} -> tensor
         {expected, _actual, _} -> Nx.as_type(tensor, expected)
       end
     end)
