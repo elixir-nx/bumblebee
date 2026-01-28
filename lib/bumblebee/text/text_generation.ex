@@ -11,7 +11,10 @@ defmodule Bumblebee.Text.TextGeneration do
         defn_options: [],
         preallocate_params: false,
         stream: false,
-        stream_done: false
+        stream_done: false,
+        include_timing: false,
+        output_format: :bumblebee,
+        model_name: nil
       ])
 
     %{model: model, params: params, spec: spec} = model_info
@@ -82,6 +85,9 @@ defmodule Bumblebee.Text.TextGeneration do
         Shared.validate_input_for_stream!(input)
       end
 
+      start_time =
+        if opts[:include_timing], do: System.monotonic_time(:microsecond), else: nil
+
       {inputs, multi?} = Shared.validate_serving_input!(input, &validate_input/1)
 
       texts = Enum.map(inputs, & &1.text)
@@ -100,9 +106,15 @@ defmodule Bumblebee.Text.TextGeneration do
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
       batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)
 
-      {batch, {multi?, input_length, input_padded_length}}
+      {batch, {multi?, input_length, input_padded_length, start_time}}
     end)
-    |> add_postprocessing(opts[:stream], opts[:stream_done], tokenizer)
+    |> add_postprocessing(tokenizer,
+      stream: opts[:stream],
+      stream_done: opts[:stream_done],
+      include_timing: opts[:include_timing],
+      output_format: opts[:output_format],
+      model_name: opts[:model_name]
+    )
   end
 
   defp validate_input(text) when is_binary(text), do: validate_input(%{text: text})
@@ -120,45 +132,124 @@ defmodule Bumblebee.Text.TextGeneration do
   end
 
   @doc false
-  def add_postprocessing(serving, stream, stream_done, tokenizer)
+  def add_postprocessing(serving, tokenizer, opts) do
+    if opts[:stream] do
+      add_streaming_postprocessing(serving, tokenizer, opts)
+    else
+      add_non_streaming_postprocessing(serving, tokenizer, opts)
+    end
+  end
 
-  def add_postprocessing(serving, false, _stream_done, tokenizer) do
+  defp add_non_streaming_postprocessing(serving, tokenizer, opts) do
+    include_timing = opts[:include_timing]
+    output_format = opts[:output_format] || :bumblebee
+    model_name = opts[:model_name]
+
     Nx.Serving.client_postprocessing(
       serving,
-      fn {%{token_ids: token_ids, length: length}, _metadata},
-         {multi?, input_length, input_padded_length} ->
-        decoded = Bumblebee.Tokenizer.decode(tokenizer, token_ids)
-        output_length = Nx.to_flat_list(length)
-        input_length = Nx.to_flat_list(input_length)
+      fn {%{token_ids: token_ids, length: length, finish_reason: finish_reason}, _metadata},
+         {multi?, input_length, input_padded_length, start_time} ->
+        end_time =
+          if include_timing, do: System.monotonic_time(:microsecond), else: nil
 
-        Enum.zip_with(
-          [decoded, output_length, input_length],
-          fn [decoded, output_length, input_length] ->
-            token_summary = token_summary(input_length, input_padded_length, output_length)
-            %{results: [%{text: decoded, token_summary: token_summary}]}
+        decoded = Bumblebee.Tokenizer.decode(tokenizer, token_ids)
+        output_length_list = Nx.to_flat_list(length)
+        input_length_list = Nx.to_flat_list(input_length)
+        finish_reason_list = Nx.to_flat_list(finish_reason)
+
+        results =
+          Enum.zip_with(
+            [decoded, output_length_list, input_length_list],
+            fn [decoded, output_length, input_length] ->
+              token_summary = token_summary(input_length, input_padded_length, output_length)
+              result = %{text: decoded, token_summary: token_summary}
+
+              if include_timing && start_time do
+                duration_us = end_time - start_time
+                tokens_per_second = output_length / (duration_us / 1_000_000)
+
+                Map.merge(result, %{
+                  generation_time_us: duration_us,
+                  tokens_per_second: tokens_per_second
+                })
+              else
+                result
+              end
+            end
+          )
+
+        timing =
+          if include_timing && start_time do
+            total_output = Enum.sum(output_length_list)
+            duration_us = end_time - start_time
+
+            %{
+              duration_us: duration_us,
+              tokens_per_second: total_output / (duration_us / 1_000_000)
+            }
+          else
+            nil
           end
-        )
-        |> Shared.normalize_output(multi?)
+
+        format_output(results, finish_reason_list, output_format, model_name, timing, multi?)
       end
     )
   end
 
-  def add_postprocessing(serving, true, stream_done, tokenizer) do
+  defp add_streaming_postprocessing(serving, tokenizer, opts) do
+    stream_done = opts[:stream_done]
+    include_timing = opts[:include_timing]
+    output_format = opts[:output_format] || :bumblebee
+    model_name = opts[:model_name]
+
     serving
     |> Nx.Serving.streaming(hooks: [:token])
     |> Nx.Serving.client_postprocessing(fn stream,
-                                           {false = _multi?, input_length, input_padded_length} ->
+                                           {false = _multi?, input_length, input_padded_length,
+                                            start_time} ->
       [input_length] = Nx.to_flat_list(input_length)
 
-      Stream.transform(stream, %{tokens: [], consumed_size: 0, finished?: false}, fn
+      # Generate stream ID for OpenAI formats
+      stream_id = generate_stream_id(output_format)
+
+      initial_state = %{
+        tokens: [],
+        consumed_size: 0,
+        finished?: false,
+        first_token_time: nil,
+        stream_id: stream_id
+      }
+
+      Stream.transform(stream, initial_state, fn
         _event, %{finished?: true} = state ->
           {:halt, state}
 
-        {:token, %{token_id: token_id, finished?: finished?, length: output_length}}, state ->
+        {:token,
+         %{
+           token_id: token_id,
+           finished?: finished?,
+           length: output_length,
+           finish_reason: finish_reason
+         }},
+        state ->
           token_id = Nx.to_number(token_id[0])
           finished? = Nx.to_number(finished?[0]) == 1
+          finish_reason_val = Nx.to_number(finish_reason[0])
 
-          state = %{state | tokens: state.tokens ++ [token_id], finished?: finished?}
+          # Track first token time
+          first_token_time =
+            if state.first_token_time == nil && include_timing do
+              System.monotonic_time(:microsecond)
+            else
+              state.first_token_time
+            end
+
+          state = %{
+            state
+            | tokens: state.tokens ++ [token_id],
+              finished?: finished?,
+              first_token_time: first_token_time
+          }
 
           chunk = pending_chunk(tokenizer, state)
 
@@ -191,10 +282,40 @@ defmodule Bumblebee.Text.TextGeneration do
                 {[], state}
             end
 
+          # Format items for OpenAI streaming if needed
+          items = format_stream_chunks(items, output_format, state.stream_id, model_name)
+
           if finished? and stream_done do
             output_length = Nx.to_number(output_length[0])
             token_summary = token_summary(input_length, input_padded_length, output_length)
-            done = {:done, %{token_summary: token_summary}}
+
+            done_result = %{
+              token_summary: token_summary,
+              finish_reason: map_finish_reason(finish_reason_val)
+            }
+
+            done_result =
+              if include_timing && start_time do
+                end_time = System.monotonic_time(:microsecond)
+                duration_us = end_time - start_time
+
+                time_to_first_token_us =
+                  if state.first_token_time,
+                    do: state.first_token_time - start_time,
+                    else: nil
+
+                tokens_per_second = output_length / (duration_us / 1_000_000)
+
+                Map.merge(done_result, %{
+                  generation_time_us: duration_us,
+                  time_to_first_token_us: time_to_first_token_us,
+                  tokens_per_second: tokens_per_second
+                })
+              else
+                done_result
+              end
+
+            done = {:done, done_result}
             {items ++ [done], state}
           else
             {items, state}
@@ -241,5 +362,118 @@ defmodule Bumblebee.Text.TextGeneration do
       codepoint in 0x2B820..0x2CEAF or
       codepoint in 0xF900..0xFAFF or
       codepoint in 0x2F800..0x2FA1F
+  end
+
+  # Output format helpers
+
+  defp format_output(results, _finish_reasons, :bumblebee, _model_name, _timing, multi?) do
+    results
+    |> Enum.map(fn result -> %{results: [result]} end)
+    |> Shared.normalize_output(multi?)
+  end
+
+  defp format_output(results, finish_reasons, :openai, model_name, timing, _multi?) do
+    to_openai_completion_format(results, model_name, finish_reasons, timing)
+  end
+
+  defp format_output(results, finish_reasons, :openai_chat, model_name, timing, _multi?) do
+    to_openai_chat_format(results, model_name, finish_reasons, timing)
+  end
+
+  defp to_openai_completion_format(results, model_name, finish_reasons, timing) do
+    %{
+      id: "cmpl-" <> Base.encode16(:crypto.strong_rand_bytes(12), case: :lower),
+      object: "text_completion",
+      created: System.system_time(:second),
+      model: model_name || "unknown",
+      choices:
+        Enum.with_index(results, fn result, i ->
+          %{
+            index: i,
+            text: result.text,
+            finish_reason: map_finish_reason(Enum.at(finish_reasons, i))
+          }
+        end),
+      usage: build_usage(results, timing)
+    }
+  end
+
+  defp to_openai_chat_format(results, model_name, finish_reasons, timing) do
+    %{
+      id: "chatcmpl-" <> Base.encode16(:crypto.strong_rand_bytes(12), case: :lower),
+      object: "chat.completion",
+      created: System.system_time(:second),
+      model: model_name || "unknown",
+      choices:
+        Enum.with_index(results, fn result, i ->
+          %{
+            index: i,
+            message: %{
+              role: "assistant",
+              content: result.text
+            },
+            finish_reason: map_finish_reason(Enum.at(finish_reasons, i))
+          }
+        end),
+      usage: build_usage(results, timing)
+    }
+  end
+
+  defp build_usage(results, timing) do
+    usage = %{
+      prompt_tokens: Enum.sum(Enum.map(results, & &1.token_summary.input)),
+      completion_tokens: Enum.sum(Enum.map(results, & &1.token_summary.output)),
+      total_tokens:
+        Enum.sum(Enum.map(results, &(&1.token_summary.input + &1.token_summary.output)))
+    }
+
+    if timing do
+      Map.merge(usage, %{
+        generation_time_us: timing.duration_us,
+        tokens_per_second: timing.tokens_per_second
+      })
+    else
+      usage
+    end
+  end
+
+  defp map_finish_reason(1), do: "stop"
+  defp map_finish_reason(2), do: "length"
+  defp map_finish_reason(_), do: nil
+
+  # Streaming format helpers
+
+  defp generate_stream_id(:openai),
+    do: "cmpl-" <> Base.encode16(:crypto.strong_rand_bytes(12), case: :lower)
+
+  defp generate_stream_id(:openai_chat),
+    do: "chatcmpl-" <> Base.encode16(:crypto.strong_rand_bytes(12), case: :lower)
+
+  defp generate_stream_id(_), do: nil
+
+  defp format_stream_chunks(chunks, :bumblebee, _stream_id, _model_name), do: chunks
+
+  defp format_stream_chunks(chunks, :openai, stream_id, model_name) do
+    Enum.map(chunks, fn chunk ->
+      %{
+        id: stream_id,
+        object: "text_completion",
+        created: System.system_time(:second),
+        model: model_name || "unknown",
+        choices: [%{index: 0, text: chunk, finish_reason: nil}]
+      }
+    end)
+  end
+
+  defp format_stream_chunks(chunks, :openai_chat, stream_id, model_name) do
+    Enum.map(chunks, fn chunk ->
+      %{
+        id: stream_id,
+        object: "chat.completion.chunk",
+        created: System.system_time(:second),
+        model: model_name || "unknown",
+        choices: [%{index: 0, delta: %{content: chunk}, finish_reason: nil}]
+      }
+    end)
   end
 end

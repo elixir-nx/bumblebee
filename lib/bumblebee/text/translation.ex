@@ -121,9 +121,13 @@ defmodule Bumblebee.Text.Translation do
       batch_key = Shared.sequence_batch_key_for_inputs(inputs, sequence_length)
       batch = [inputs] |> Nx.Batch.concatenate() |> Nx.Batch.key(batch_key)
 
-      {batch, {multi?, input_length, input_padded_length}}
+      # Translation doesn't support timing, so start_time is nil
+      {batch, {multi?, input_length, input_padded_length, nil}}
     end)
-    |> Text.TextGeneration.add_postprocessing(opts[:stream], opts[:stream_done], tokenizer)
+    |> Text.TextGeneration.add_postprocessing(tokenizer,
+      stream: opts[:stream],
+      stream_done: opts[:stream_done]
+    )
   end
 
   defp validate_input(

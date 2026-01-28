@@ -500,7 +500,8 @@ defmodule Bumblebee.Text.Generation do
       %{
         # Output only the newly generated tokens
         token_ids: state.sequences[[.., length..-1//1]],
-        length: state.finished_length - length
+        length: state.finished_length - length,
+        finish_reason: state.finish_reason
       }
     end
   end
@@ -591,6 +592,9 @@ defmodule Bumblebee.Text.Generation do
     # they could produce arbitrary tokens until we reach max length.
     finished_length = Nx.select(padded_batch_item?, 1, 0)
 
+    # Track finish reason per sequence: 0 = not finished, 1 = EOS token, 2 = max length
+    finish_reason = Nx.broadcast(Nx.u8(0), {batch_size})
+
     context = %{
       sequence: Nx.vectorize(sequences, :batch),
       input_length: length,
@@ -602,6 +606,7 @@ defmodule Bumblebee.Text.Generation do
       input_length: length,
       length: length,
       finished_length: finished_length,
+      finish_reason: finish_reason,
       # The ignored return value that we attach all hooks to
       ignored: Nx.broadcast(0, {batch_size}),
       logits_processor_states: logits_processor_init_fun.(context)
@@ -642,7 +647,8 @@ defmodule Bumblebee.Text.Generation do
       sequences: sequences,
       length: length,
       input_length: input_length,
-      finished_length: finished_length
+      finished_length: finished_length,
+      finish_reason: finish_reason
     } = state
 
     token_id = Nx.select(finished_length > 0, pad_token_id, token_id)
@@ -653,20 +659,41 @@ defmodule Bumblebee.Text.Generation do
 
     {batch_size, max_length} = Nx.shape(sequences)
 
-    finished_length =
+    is_eos = eos_token?(token_id, eos_token_id)
+    is_max_length = length == max_length
+    just_finished = finished_length == 0 and (is_eos or is_max_length)
+
+    finished_length = Nx.select(just_finished, length, finished_length)
+
+    # Set finish reason: 1 = EOS token, 2 = max length (only when first finishing)
+    finish_reason =
       Nx.select(
-        finished_length == 0 and (eos_token?(token_id, eos_token_id) or length == max_length),
-        length,
-        finished_length
+        just_finished,
+        Nx.select(is_eos, Nx.u8(1), Nx.u8(2)),
+        finish_reason
       )
 
     finished? = finished_length > 0
     output_length = Nx.broadcast(length - input_length, {batch_size})
-    data = %{token_id: token_id, finished?: finished?, length: output_length}
+
+    data = %{
+      token_id: token_id,
+      finished?: finished?,
+      length: output_length,
+      finish_reason: finish_reason
+    }
+
     token = create_token()
     {token, _} = hook_token(token, data, :token)
 
-    state = %{state | sequences: sequences, length: length, finished_length: finished_length}
+    state = %{
+      state
+      | sequences: sequences,
+        length: length,
+        finished_length: finished_length,
+        finish_reason: finish_reason
+    }
+
     attach_token(token, state)
   end
 
