@@ -28,6 +28,11 @@ defmodule Bumblebee.Conversion.PyTorchParams do
       and loads the params file. Defaults to
       `Bumblebee.Conversion.PyTorchLoader.load!/1`
 
+    * `:preserve_source_types` - when `true`, preserves FP8 types from the
+      source file instead of converting them to the model's expected type.
+      This is useful for loading quantized models that use FP8 weights.
+      Defaults to `false`
+
   """
   @spec load_params!(Axon.t(), map(), Path.t() | list(Path.t()), keyword()) :: %Axon.ModelState{}
   def load_params!(model, input_template, path, opts \\ []) do
@@ -36,6 +41,7 @@ defmodule Bumblebee.Conversion.PyTorchParams do
       |> Keyword.validate!([
         :log_params_diff,
         :backend,
+        :preserve_source_types,
         params_mapping: %{},
         loader_fun: &Bumblebee.Conversion.PyTorchLoader.load!/1
       ])
@@ -58,7 +64,17 @@ defmodule Bumblebee.Conversion.PyTorchParams do
       model_state = Axon.trace_init(model, input_template)
 
       params_expr = model_state.data
-      {params, diff} = init_params(model, params_expr, pytorch_state, opts[:params_mapping])
+      preserve_source_types = opts[:preserve_source_types] || false
+
+      {params, diff} =
+        init_params(
+          model,
+          params_expr,
+          pytorch_state,
+          opts[:params_mapping],
+          preserve_source_types
+        )
+
       model_state = %{model_state | data: params}
 
       params_complete? = diff.missing == [] and diff.mismatched == []
@@ -95,7 +111,7 @@ defmodule Bumblebee.Conversion.PyTorchParams do
       Nx.Container.impl_for(value) != nil
   end
 
-  defp init_params(model, params_expr, pytorch_state, params_mapping) do
+  defp init_params(model, params_expr, pytorch_state, params_mapping, preserve_source_types) do
     layers =
       model
       |> Utils.Axon.nodes_with_names()
@@ -103,7 +119,12 @@ defmodule Bumblebee.Conversion.PyTorchParams do
 
     prefixes = infer_prefixes(layers, pytorch_state, params_mapping)
 
-    diff = %{missing: [], mismatched: [], used_keys: []}
+    diff = %{
+      missing: [],
+      mismatched: [],
+      used_keys: [],
+      preserve_source_types: preserve_source_types
+    }
 
     {params, diff} =
       layers
@@ -155,7 +176,7 @@ defmodule Bumblebee.Conversion.PyTorchParams do
 
                 case verify_param_shape(param_expr, value) do
                   :ok ->
-                    value = ensure_type(param_expr, value)
+                    value = ensure_type(param_expr, value, diff.preserve_source_types)
                     {value, diff}
 
                   {:error, expected, actual} ->
@@ -507,11 +528,13 @@ defmodule Bumblebee.Conversion.PyTorchParams do
     Utils.Nx.map(expr, &Nx.shape/1)
   end
 
-  defp ensure_type(param_expr, value) do
+  defp ensure_type(param_expr, value, preserve_source_types) do
     Utils.Nx.zip_with(param_expr, value, fn expr, tensor ->
-      case {Nx.type(expr), Nx.type(tensor)} do
-        {type, type} -> tensor
-        {expected, _actual} -> Nx.as_type(tensor, expected)
+      case {Nx.type(expr), Nx.type(tensor), preserve_source_types} do
+        {type, type, _} -> tensor
+        # Preserve FP8 E4M3FN types when preserve_source_types is enabled
+        {_expected, {:f8_e4m3fn, 8}, true} -> tensor
+        {expected, _actual, _} -> Nx.as_type(tensor, expected)
       end
     end)
   end

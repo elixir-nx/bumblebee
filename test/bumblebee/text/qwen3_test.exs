@@ -75,4 +75,33 @@ defmodule Bumblebee.Text.Qwen3Test do
       Nx.tensor([[-0.1487, -0.0071]])
     )
   end
+
+  test ":for_causal_language_modeling with FP8 weights" do
+    assert {:ok,
+            %{model: model, params: %Axon.ModelState{data: params_data} = params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "roulis/tiny-fp8-qwen3"},
+               preserve_source_types: true
+             )
+
+    assert %Bumblebee.Text.Qwen3{architecture: :for_causal_language_modeling} = spec
+
+    # Verify FP8 weights are preserved
+    q_proj_kernel = params_data["decoder.blocks.0.self_attention.query"]["kernel"]
+    assert Nx.type(q_proj_kernel) == {:f8_e4m3fn, 8}
+
+    # Verify scale_inv is loaded
+    q_proj_scale = params_data["decoder.blocks.0.self_attention.query"]["scale_inv"]
+    assert Nx.type(q_proj_scale) == {:f, 32}
+
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
+
+    # Model should run without error (dequantization happens internally)
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.logits) == {1, 10, 1024}
+  end
 end

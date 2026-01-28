@@ -16,6 +16,7 @@ Nx.global_default_backend(EXLA.Backend)
 In this notebook we explore the [Qwen3](https://qwenlm.github.io/blog/qwen3/) model family from Alibaba Cloud. Qwen3 is a series of large language models that includes:
 
 * **Text Generation** - Instruction-tuned models for conversational AI
+* **FP8 Quantization** - Memory-efficient 8-bit floating point models
 * **Embeddings** - Dense vector representations for semantic search
 * **Rerankers** - Models to rerank search results for better relevance
 
@@ -75,6 +76,67 @@ You are a helpful assistant.<|im_end|>
 """
 
 Nx.Serving.batched_run(Qwen3, prompt) |> Enum.each(&IO.write/1)
+```
+
+<!-- livebook:{"branch_parent_index":0} -->
+
+## Text Generation with FP8 Quantization
+
+Qwen3 models are also available in FP8 (8-bit floating point) quantized format, which significantly reduces memory usage while maintaining good quality. FP8 models use approximately half the memory of BF16 models.
+
+```elixir
+repo = {:hf, "Qwen/Qwen3-4B-Instruct-2507-FP8"}
+
+{:ok, model_info} = Bumblebee.load_model(repo,
+  backend: EXLA.Backend,
+  preserve_source_types: true
+)
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+{:ok, generation_config} = Bumblebee.load_generation_config(repo)
+
+:ok
+```
+
+The key option here is `preserve_source_types: true`, which keeps the FP8 weights in their native format instead of converting them to the model's default type. The model will automatically dequantize the weights during inference.
+
+Configure generation and create a serving:
+
+```elixir
+generation_config =
+  Bumblebee.configure(generation_config,
+    max_new_tokens: 256,
+    temperature: 0.7,
+    strategy: %{type: :multinomial_sampling, top_p: 0.8, top_k: 20}
+  )
+
+serving =
+  Bumblebee.Text.generation(model_info, tokenizer, generation_config,
+    compile: [batch_size: 1, sequence_length: 1024],
+    stream: true,
+    defn_options: [compiler: EXLA]
+  )
+
+Kino.start_child({Nx.Serving, name: Qwen3FP8, serving: serving})
+```
+
+Test the FP8 model with the same chat template:
+
+```elixir
+user_input_fp8 = Kino.Input.textarea("User prompt (FP8)", default: "What are the benefits of quantized models?")
+```
+
+```elixir
+user = Kino.Input.read(user_input_fp8)
+
+prompt = """
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+#{user}<|im_end|>
+<|im_start|>assistant
+"""
+
+Nx.Serving.batched_run(Qwen3FP8, prompt) |> Enum.each(&IO.write/1)
 ```
 
 <!-- livebook:{"branch_parent_index":0} -->
@@ -214,10 +276,11 @@ The reranker correctly identifies that the document directly answering "What is 
 
 ## Summary
 
-This notebook demonstrated three key capabilities of the Qwen3 model family:
+This notebook demonstrated four key capabilities of the Qwen3 model family:
 
 1. **Text Generation** - Conversational AI using instruction-tuned models
-2. **Embeddings** - Creating semantic vector representations for similarity search
-3. **Reranking** - Scoring and ranking documents by relevance to a query
+2. **FP8 Quantization** - Memory-efficient inference using 8-bit floating point weights
+3. **Embeddings** - Creating semantic vector representations for similarity search
+4. **Reranking** - Scoring and ranking documents by relevance to a query
 
-All three models work seamlessly with Bumblebee and can be used for various NLP applications.
+All models work seamlessly with Bumblebee and can be used for various NLP applications.
