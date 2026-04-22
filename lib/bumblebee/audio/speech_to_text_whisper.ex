@@ -318,8 +318,12 @@ defmodule Bumblebee.Audio.SpeechToTextWhisper do
         buffer = buffer ++ [chunk]
         full_chunks([], {buffer, buffer_size}, chunk_length, step)
       end,
-      fn {buffer, buffer_size} ->
-        {[Nx.concatenate(buffer)], {buffer, buffer_size}}
+      fn
+        {[], buffer_size} ->
+          {[], {[], buffer_size}}
+
+        {buffer, buffer_size} ->
+          {[Nx.concatenate(buffer)], {buffer, buffer_size}}
       end,
       fn _ -> :ok end
     )
