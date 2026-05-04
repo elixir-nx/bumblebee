@@ -184,6 +184,7 @@ defmodule Bumblebee.Text.Phi3 do
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
       decoder_num_attention_heads: spec.num_attention_heads,
+      decoder_num_key_value_heads: spec.num_key_value_heads,
       decoder_num_blocks: spec.num_blocks
     )
   end

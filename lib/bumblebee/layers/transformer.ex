@@ -32,6 +32,12 @@ defmodule Bumblebee.Layers.Transformer do
         This enables per-layer attention patterns like Gemma 3's alternating
         local/global attention (5 local layers followed by 1 global layer)
 
+    * `:output_hidden_states` - whether to accumulate hidden states from all blocks.
+      Defaults to `true`
+
+    * `:output_attentions` - whether to accumulate attention weights from all blocks.
+      Defaults to `true`
+
     * `:name` - the prefix for layer names
 
   For all other options (including required options) see `block/2`.
@@ -82,7 +88,9 @@ defmodule Bumblebee.Layers.Transformer do
             cross_hidden_state: nil,
             cross_attention_mask: Layers.none(),
             cross_attention_head_mask: Layers.none(),
-            cache: Layers.none()
+            cache: Layers.none(),
+            output_hidden_states: true,
+            output_attentions: true
           ]
       )
 
@@ -97,6 +105,8 @@ defmodule Bumblebee.Layers.Transformer do
     cache = opts[:cache]
     rotary_embedding = opts[:rotary_embedding]
     attention_window_size = opts[:attention_window_size]
+    output_hidden_states = opts[:output_hidden_states]
+    output_attentions = opts[:output_attentions]
 
     block_opts = Keyword.take(opts, block_opts_keys)
 
@@ -164,9 +174,24 @@ defmodule Bumblebee.Layers.Transformer do
 
           %{
             hidden_state: hidden_state,
-            hidden_states: Layers.append(state.hidden_states, hidden_state),
-            attentions: Layers.append(state.attentions, attention),
-            cross_attentions: Layers.append(state.cross_attentions, cross_attention),
+            hidden_states:
+              if output_hidden_states do
+                Layers.append(state.hidden_states, hidden_state)
+              else
+                state.hidden_states
+              end,
+            attentions:
+              if output_attentions do
+                Layers.append(state.attentions, attention)
+              else
+                state.attentions
+              end,
+            cross_attentions:
+              if output_attentions do
+                Layers.append(state.cross_attentions, cross_attention)
+              else
+                state.cross_attentions
+              end,
             attention_relative_bias: attention_relative_bias,
             cache: cache
           }
@@ -416,7 +441,11 @@ defmodule Bumblebee.Layers.Transformer do
       end
 
     {self_attention_cache, cross_attention_cache} =
-      Layers.Decoder.get_attention_caches(block_cache)
+      if is_nil(cross_hidden_state) do
+        {Layers.Decoder.get_self_attention_cache(block_cache), %Axon.None{}}
+      else
+        Layers.Decoder.get_attention_caches(block_cache)
+      end
 
     # Self-attention, shortcut connection, normalization and dropout
 

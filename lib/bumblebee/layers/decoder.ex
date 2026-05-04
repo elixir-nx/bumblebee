@@ -42,6 +42,12 @@ defmodule Bumblebee.Layers.Decoder do
 
     * `:decoder_num_attention_heads` - the number of decoder attention heads
 
+    * `:decoder_num_key_value_heads` - the number of decoder key-value
+      attention heads. Defaults to `:decoder_num_attention_heads`
+
+    * `:attention_cache_type` - the type of the key-value cache tensors.
+      Defaults to `{:bf, 16}`
+
     * `:encoder_num_attention_heads` - the number of encoder attention heads
       (for cross attention)
 
@@ -52,6 +58,12 @@ defmodule Bumblebee.Layers.Decoder do
   def init_cache(batch_size, max_length, opts \\ []) do
     hidden_size = Keyword.fetch!(opts, :hidden_size)
     decoder_num_attention_heads = Keyword.fetch!(opts, :decoder_num_attention_heads)
+
+    decoder_num_key_value_heads =
+      opts[:decoder_num_key_value_heads] || decoder_num_attention_heads
+
+    attention_cache_type = opts[:attention_cache_type] || {:bf, 16}
+
     decoder_num_blocks = Keyword.fetch!(opts, :decoder_num_blocks)
     encoder_num_attention_heads = opts[:encoder_num_attention_heads]
     encoder_sequence_length = opts[:encoder_sequence_length]
@@ -60,7 +72,13 @@ defmodule Bumblebee.Layers.Decoder do
       opts[:attention_head_size] || div(hidden_size, decoder_num_attention_heads)
 
     self_attention =
-      attention_cache(batch_size, max_length, decoder_num_attention_heads, decoder_head_size)
+      attention_cache(
+        batch_size,
+        max_length,
+        decoder_num_key_value_heads,
+        decoder_head_size,
+        attention_cache_type
+      )
 
     cross_attention =
       if encoder_sequence_length do
@@ -71,7 +89,8 @@ defmodule Bumblebee.Layers.Decoder do
           batch_size,
           encoder_sequence_length,
           encoder_num_attention_heads,
-          encoder_head_size
+          encoder_head_size,
+          attention_cache_type
         )
       else
         %Axon.None{}
@@ -89,9 +108,9 @@ defmodule Bumblebee.Layers.Decoder do
     %{blocks: blocks, offset: offset, attention_mask: attention_mask}
   end
 
-  defp attention_cache(batch_size, sequence_length, num_heads, head_size) do
+  defp attention_cache(batch_size, sequence_length, num_heads, head_size, type) do
     shape = {batch_size, sequence_length, num_heads, head_size}
-    zeros = Nx.broadcast(0.0, shape)
+    zeros = Nx.broadcast(Nx.tensor(0, type: type), shape)
     %{key: zeros, value: zeros}
   end
 
@@ -205,9 +224,25 @@ defmodule Bumblebee.Layers.Decoder do
   end
 
   @doc """
+  Retrieves self-attention cache from a block cache.
+  """
+  def get_self_attention_cache(block_cache) do
+    Axon.nx(block_cache, & &1.self_attention)
+  end
+
+  @doc """
   Puts updated self-attention and cross-attention cache entries for
   in the decoder block cache.
   """
+  def put_attention_caches(block_cache, self_attention_cache, %Axon.None{}) do
+    Axon.layer(
+      fn block_cache, self_attention_cache, _opts ->
+        %{block_cache | self_attention: self_attention_cache}
+      end,
+      [block_cache, self_attention_cache]
+    )
+  end
+
   def put_attention_caches(block_cache, self_attention_cache, cross_attention_cache) do
     Axon.layer(
       fn block_cache, self_attention_cache, cross_attention_cache, _opts ->

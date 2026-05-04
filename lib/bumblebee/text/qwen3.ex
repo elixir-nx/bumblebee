@@ -184,6 +184,7 @@ defmodule Bumblebee.Text.Qwen3 do
       hidden_size: spec.hidden_size,
       attention_head_size: spec.attention_head_size,
       decoder_num_attention_heads: spec.num_attention_heads,
+      decoder_num_key_value_heads: spec.num_key_value_heads,
       decoder_num_blocks: spec.num_blocks
     )
   end
@@ -373,6 +374,8 @@ defmodule Bumblebee.Text.Qwen3 do
       ],
       query_norm: query_norm,
       key_norm: key_norm,
+      output_hidden_states: false,
+      output_attentions: false,
       name: join(name, "blocks")
     )
   end
