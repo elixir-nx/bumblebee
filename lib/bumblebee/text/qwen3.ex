@@ -343,6 +343,11 @@ defmodule Bumblebee.Text.Qwen3 do
         &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, channel_index: -1, name: &2)
       end
 
+    # Attention dense function using fp8_aware_dense for FP8 model support
+    attention_dense_fn = fn input, units, dense_opts ->
+      Layers.fp8_aware_dense(input, units, dense_opts)
+    end
+
     Layers.Transformer.blocks(hidden_state,
       num_blocks: spec.num_blocks,
       num_attention_heads: spec.num_attention_heads,
@@ -373,6 +378,7 @@ defmodule Bumblebee.Text.Qwen3 do
       ],
       query_norm: query_norm,
       key_norm: key_norm,
+      attention_dense: attention_dense_fn,
       name: join(name, "blocks")
     )
   end
@@ -381,17 +387,26 @@ defmodule Bumblebee.Text.Qwen3 do
     name = opts[:name]
     activation = opts[:activation]
 
+    # Use fp8_aware_dense for FP8 model support
+    # For non-FP8 models, scale_inv will be initialized to 1.0 (identity)
     intermediate =
-      Axon.dense(hidden_state, intermediate_size,
+      Layers.fp8_aware_dense(hidden_state, intermediate_size,
         name: join(name, "intermediate"),
         use_bias: false
       )
 
-    gate = Axon.dense(hidden_state, intermediate_size, name: join(name, "gate"), use_bias: false)
+    gate =
+      Layers.fp8_aware_dense(hidden_state, intermediate_size,
+        name: join(name, "gate"),
+        use_bias: false
+      )
 
     hidden_state = Axon.multiply(intermediate, Axon.activation(gate, activation))
 
-    Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
+    Layers.fp8_aware_dense(hidden_state, output_size,
+      name: join(name, "output"),
+      use_bias: false
+    )
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do
@@ -454,16 +469,83 @@ defmodule Bumblebee.Text.Qwen3 do
     def params_mapping(spec) do
       %{
         "embedder.token_embedding" => "model.embed_tokens",
-        "decoder.blocks.{n}.self_attention.query" => "model.layers.{n}.self_attn.q_proj",
-        "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
-        "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
-        "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.o_proj",
+        # Attention layers with FP8 scale_inv support
+        # Note: Both kernel and scale_inv need to be transposed to match Axon layout
+        "decoder.blocks.{n}.self_attention.query" => %{
+          "kernel" => {
+            [{"model.layers.{n}.self_attn.q_proj", "weight"}],
+            fn [kernel] -> Nx.transpose(kernel) end
+          },
+          "scale_inv" => {
+            [{"model.layers.{n}.self_attn.q_proj", "weight_scale_inv"}],
+            fn [scale] -> Nx.transpose(scale) end
+          }
+        },
+        "decoder.blocks.{n}.self_attention.key" => %{
+          "kernel" => {
+            [{"model.layers.{n}.self_attn.k_proj", "weight"}],
+            fn [kernel] -> Nx.transpose(kernel) end
+          },
+          "scale_inv" => {
+            [{"model.layers.{n}.self_attn.k_proj", "weight_scale_inv"}],
+            fn [scale] -> Nx.transpose(scale) end
+          }
+        },
+        "decoder.blocks.{n}.self_attention.value" => %{
+          "kernel" => {
+            [{"model.layers.{n}.self_attn.v_proj", "weight"}],
+            fn [kernel] -> Nx.transpose(kernel) end
+          },
+          "scale_inv" => {
+            [{"model.layers.{n}.self_attn.v_proj", "weight_scale_inv"}],
+            fn [scale] -> Nx.transpose(scale) end
+          }
+        },
+        "decoder.blocks.{n}.self_attention.output" => %{
+          "kernel" => {
+            [{"model.layers.{n}.self_attn.o_proj", "weight"}],
+            fn [kernel] -> Nx.transpose(kernel) end
+          },
+          "scale_inv" => {
+            [{"model.layers.{n}.self_attn.o_proj", "weight_scale_inv"}],
+            fn [scale] -> Nx.transpose(scale) end
+          }
+        },
         "decoder.blocks.{n}.self_attention.query_norm" => "model.layers.{n}.self_attn.q_norm",
         "decoder.blocks.{n}.self_attention.key_norm" => "model.layers.{n}.self_attn.k_norm",
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
-        "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
-        "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.up_proj",
-        "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",
+        # FFN layers with FP8 scale_inv support
+        # Note: Both kernel and scale_inv need to be transposed to match Axon layout
+        "decoder.blocks.{n}.ffn.gate" => %{
+          "kernel" => {
+            [{"model.layers.{n}.mlp.gate_proj", "weight"}],
+            fn [kernel] -> Nx.transpose(kernel) end
+          },
+          "scale_inv" => {
+            [{"model.layers.{n}.mlp.gate_proj", "weight_scale_inv"}],
+            fn [scale] -> Nx.transpose(scale) end
+          }
+        },
+        "decoder.blocks.{n}.ffn.intermediate" => %{
+          "kernel" => {
+            [{"model.layers.{n}.mlp.up_proj", "weight"}],
+            fn [kernel] -> Nx.transpose(kernel) end
+          },
+          "scale_inv" => {
+            [{"model.layers.{n}.mlp.up_proj", "weight_scale_inv"}],
+            fn [scale] -> Nx.transpose(scale) end
+          }
+        },
+        "decoder.blocks.{n}.ffn.output" => %{
+          "kernel" => {
+            [{"model.layers.{n}.mlp.down_proj", "weight"}],
+            fn [kernel] -> Nx.transpose(kernel) end
+          },
+          "scale_inv" => {
+            [{"model.layers.{n}.mlp.down_proj", "weight_scale_inv"}],
+            fn [scale] -> Nx.transpose(scale) end
+          }
+        },
         "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
         "output_norm" => "model.norm",
         "language_modeling_head.output" =>
