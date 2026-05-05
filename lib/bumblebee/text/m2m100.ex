@@ -268,7 +268,7 @@ defmodule Bumblebee.Text.M2m100 do
   end
 
   @impl true
-  def init_cache(spec, batch_size, max_length, inputs) do
+  def init_cache(spec, batch_size, max_length, inputs, opts \\ []) do
     encoder_sequence_length =
       if encoder_hidden_state = inputs["encoder_hidden_state"] do
         Nx.axis_size(encoder_hidden_state, 1)
@@ -279,7 +279,8 @@ defmodule Bumblebee.Text.M2m100 do
       decoder_num_attention_heads: spec.decoder_num_attention_heads,
       encoder_num_attention_heads: spec.encoder_num_attention_heads,
       decoder_num_blocks: spec.decoder_num_blocks,
-      encoder_sequence_length: encoder_sequence_length
+      encoder_sequence_length: encoder_sequence_length,
+      attention_cache_type: opts[:cache_type]
     )
   end
 

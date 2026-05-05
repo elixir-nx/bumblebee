@@ -178,7 +178,8 @@ defmodule Bumblebee.Multimodal.Blip do
         %{vision_spec: vision_spec, text_spec: text_spec},
         batch_size,
         max_length,
-        inputs
+        inputs,
+        opts \\ []
       ) do
     num_patches = div(vision_spec.image_size, vision_spec.patch_size) ** 2
     encoder_sequence_length = num_patches + 1
@@ -193,7 +194,7 @@ defmodule Bumblebee.Multimodal.Blip do
       }
       |> Map.reject(&match?({_, nil}, &1))
 
-    text_spec.__struct__.init_cache(text_spec, batch_size, max_length, inputs)
+    text_spec.__struct__.init_cache(text_spec, batch_size, max_length, inputs, opts)
   end
 
   @impl true

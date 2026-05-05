@@ -159,11 +159,12 @@ defmodule Bumblebee.Text.GptNeoX do
   end
 
   @impl true
-  def init_cache(spec, batch_size, max_length, _inputs) do
+  def init_cache(spec, batch_size, max_length, _inputs, opts \\ []) do
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
       decoder_num_attention_heads: spec.num_attention_heads,
-      decoder_num_blocks: spec.num_blocks
+      decoder_num_blocks: spec.num_blocks,
+      attention_cache_type: opts[:cache_type]
     )
   end
 

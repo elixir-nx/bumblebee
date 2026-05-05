@@ -12,7 +12,8 @@ defmodule Bumblebee.Text.Generation do
               spec :: Bumblebee.ModelSpec.t(),
               batch_size :: pos_integer(),
               max_length :: pos_integer(),
-              inputs :: map()
+              inputs :: map(),
+              opts :: keyword()
             ) :: cache()
 
   @doc """
@@ -42,9 +43,10 @@ defmodule Bumblebee.Text.Generation do
   @doc """
   Initializes an opaque cache input for iterative inference.
   """
-  @spec init_cache(Bumblebee.ModelSpec.t(), pos_integer(), pos_integer(), map()) :: cache()
-  def init_cache(%module{} = spec, batch_size, max_length, inputs) do
-    module.init_cache(spec, batch_size, max_length, inputs)
+  @spec init_cache(Bumblebee.ModelSpec.t(), pos_integer(), pos_integer(), map(), keyword()) ::
+          cache()
+  def init_cache(%module{} = spec, batch_size, max_length, inputs, opts \\ []) do
+    module.init_cache(spec, batch_size, max_length, inputs, opts)
   end
 
   @doc """
@@ -313,17 +315,13 @@ defmodule Bumblebee.Text.Generation do
       |> Map.put(prefix <> "position_ids", position_ids)
 
     batch_size = Nx.axis_size(input_ids, 0)
-    cache = init_cache(spec, batch_size, max_length, inputs)
 
     output_policy = model_output_policy(model)
-
-    # Cast all float cache tensors to match the model output. This way
-    # we make sure the cache we pass as input has the same types as
-    # the updated cache returned from the model
-    cache =
-      Bumblebee.Utils.Nx.map(cache, fn tensor ->
-        Axon.MixedPrecision.cast(output_policy, tensor, :output)
-      end)
+    # Use the compute precision as the cache type. The key/value tensors are
+    # produced by projection layers running in compute precision, so this
+    # matches what the model will actually return for the cache.
+    cache_type = output_policy.compute || {:f, 32}
+    cache = init_cache(spec, batch_size, max_length, inputs, cache_type: cache_type)
 
     Map.put(inputs, "cache", cache)
   end
