@@ -367,7 +367,7 @@ defmodule Bumblebee.Audio.SpeechToTextWhisperTest do
 
   defp binary_chunk_every(binary, size, acc) do
     case binary do
-      <<chunk::binary-size(size), rest::binary>> ->
+      <<chunk::binary-size(^size), rest::binary>> ->
         binary_chunk_every(rest, size, [chunk | acc])
 
       <<>> ->
