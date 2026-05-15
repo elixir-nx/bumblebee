@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.0](https://github.com/elixir-nx/bumblebee/tree/v0.7.0) (2026-05-16)
+
+### Added
+
+* SmolLM3 model (#422)
+* Qwen3 model (#423)
+* Add contributing guidelines (#437)
+* MPNet model (#434)
+* Gemma3Text model (#436)
+* Added `:progress_bar_step` config option (#441)
+* Added `Bumblebee.Text.cross_encoding/3` serving (#444)
+* NomicBERT model (#440)
+* ModernBERT model (#435)
+
+### Changed
+
+* Bumped version requirements to Nx 0.12 and Axon 0.8
+
+### Fixed
+
+* DinoV2 crash when batch_size > 1 (#429)
+* Fix `Bumblebee.Text.text_classification/3` to work with text pairs (#444)
+* Allow ffmpeg media path to contain SPACE (#453)
+* Fix crash when creating tensor from empty buffer in whisper (#454)
+
 ## [v0.6.3](https://github.com/elixir-nx/bumblebee/tree/v0.6.3) (2025-07-14)
 
 ### Added
