@@ -9,15 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* SmolLM3 model (#422)
-* Qwen3 model (#423)
-* Add contributing guidelines (#437)
-* MPNet model (#434)
-* Gemma3Text model (#436)
-* Added `:progress_bar_step` config option (#441)
-* Added `Bumblebee.Text.cross_encoding/3` serving (#444)
-* NomicBERT model (#440)
-* ModernBERT model (#435)
+* SmolLM3 model ([#422](https://github.com/elixir-nx/bumblebee/pull/422))
+* Qwen3 model ([#423](https://github.com/elixir-nx/bumblebee/pull/423))
+* Add contributing guidelines ([#437](https://github.com/elixir-nx/bumblebee/pull/437))
+* MPNet model ([#434](https://github.com/elixir-nx/bumblebee/pull/434))
+* Gemma3Text model ([#436](https://github.com/elixir-nx/bumblebee/pull/436))
+* Added `:progress_bar_step` config option ([#441](https://github.com/elixir-nx/bumblebee/pull/441))
+* Added `Bumblebee.Text.cross_encoding/3` serving ([#444](https://github.com/elixir-nx/bumblebee/pull/444))
+* NomicBERT model ([#440](https://github.com/elixir-nx/bumblebee/pull/440))
+* ModernBERT model ([#435](https://github.com/elixir-nx/bumblebee/pull/435))
 
 ### Changed
 
@@ -25,10 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* DinoV2 crash when batch_size > 1 (#429)
-* Fix `Bumblebee.Text.text_classification/3` to work with text pairs (#444)
-* Allow ffmpeg media path to contain SPACE (#453)
-* Fix crash when creating tensor from empty buffer in whisper (#454)
+* DinoV2 crash when batch_size > 1 ([#429](https://github.com/elixir-nx/bumblebee/pull/429))
+* Fix `Bumblebee.Text.text_classification/3` to work with text pairs ([#444](https://github.com/elixir-nx/bumblebee/pull/444))
+* Allow ffmpeg media path to contain SPACE ([#453](https://github.com/elixir-nx/bumblebee/pull/453))
+* Fix crash when creating tensor from empty buffer in whisper ([#454](https://github.com/elixir-nx/bumblebee/pull/454))
 
 ## [v0.6.3](https://github.com/elixir-nx/bumblebee/tree/v0.6.3) (2025-07-14)
 
