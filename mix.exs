@@ -94,6 +94,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.ClipText,
           Bumblebee.Text.Distilbert,
           Bumblebee.Text.Gemma,
+          Bumblebee.Text.Gemma3Text,
           Bumblebee.Text.Gpt2,
           Bumblebee.Text.GptBigCode,
           Bumblebee.Text.GptNeoX,
@@ -107,6 +108,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.NomicBert,
           Bumblebee.Text.Phi,
           Bumblebee.Text.Phi3,
+          Bumblebee.Text.Qwen3,
           Bumblebee.Text.Roberta,
           Bumblebee.Text.SmolLm3,
           Bumblebee.Text.T5,
@@ -136,6 +138,7 @@ defmodule Bumblebee.MixProject do
         ],
         Interfaces: [
           Bumblebee.Configurable,
+          Bumblebee.LogitsProcessor,
           Bumblebee.ModelSpec,
           Bumblebee.Featurizer,
           Bumblebee.Tokenizer,
