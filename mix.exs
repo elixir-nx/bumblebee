@@ -108,7 +108,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.Phi,
           Bumblebee.Text.Phi3,
           Bumblebee.Text.Roberta,
-          Bumblebee.Text.SmolLM3,
+          Bumblebee.Text.SmolLm3,
           Bumblebee.Text.T5,
           Bumblebee.Vision.BlipVision,
           Bumblebee.Vision.ClipVision,

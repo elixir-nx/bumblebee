@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.SmolLM3Test do
+defmodule Bumblebee.Text.SmolLm3Test do
   use ExUnit.Case, async: true
 
   import Bumblebee.TestHelpers
@@ -11,7 +11,7 @@ defmodule Bumblebee.Text.SmolLM3Test do
                architecture: :base
              )
 
-    assert %Bumblebee.Text.SmolLM3{architecture: :base} = spec
+    assert %Bumblebee.Text.SmolLm3{architecture: :base} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -41,7 +41,7 @@ defmodule Bumblebee.Text.SmolLM3Test do
                architecture: :for_question_answering
              )
 
-    assert %Bumblebee.Text.SmolLM3{architecture: :for_question_answering} = spec
+    assert %Bumblebee.Text.SmolLm3{architecture: :for_question_answering} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -78,7 +78,7 @@ defmodule Bumblebee.Text.SmolLM3Test do
                architecture: :for_sequence_classification
              )
 
-    assert %Bumblebee.Text.SmolLM3{architecture: :for_sequence_classification} = spec
+    assert %Bumblebee.Text.SmolLm3{architecture: :for_sequence_classification} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -101,7 +101,7 @@ defmodule Bumblebee.Text.SmolLM3Test do
                architecture: :for_causal_language_modeling
              )
 
-    assert %Bumblebee.Text.SmolLM3{architecture: :for_causal_language_modeling} = spec
+    assert %Bumblebee.Text.SmolLm3{architecture: :for_causal_language_modeling} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
@@ -131,7 +131,7 @@ defmodule Bumblebee.Text.SmolLM3Test do
                architecture: :for_token_classification
              )
 
-    assert %Bumblebee.Text.SmolLM3{architecture: :for_token_classification} = spec
+    assert %Bumblebee.Text.SmolLm3{architecture: :for_token_classification} = spec
 
     inputs = %{
       "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),

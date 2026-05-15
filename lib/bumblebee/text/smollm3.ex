@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.SmolLM3 do
+defmodule Bumblebee.Text.SmolLm3 do
   alias Bumblebee.Shared
 
   options =
