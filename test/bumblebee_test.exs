@@ -84,5 +84,30 @@ defmodule BumblebeeTest do
       assert Nx.type(params["decoder.blocks.0.ffn.output"]["kernel"]) == {:f, 16}
       assert Nx.type(params["decoder.blocks.0.ffn.output"]["bias"]) == {:f, 16}
     end
+
+    test "uses :safetensors_reader to read .safetensors files" do
+      test_pid = self()
+
+      reader = fn path ->
+        send(test_pid, {:reader_called, path})
+        Safetensors.read!(path, lazy: true)
+      end
+
+      assert {:ok, %{params: params}} =
+               Bumblebee.load_model(
+                 {:hf, "bumblebee-testing/tiny-random-GPT2Model-safetensors-only"},
+                 safetensors_reader: reader
+               )
+
+      assert_received {:reader_called, path}
+      assert File.exists?(path)
+
+      assert {:ok, %{params: default_params}} =
+               Bumblebee.load_model(
+                 {:hf, "bumblebee-testing/tiny-random-GPT2Model-safetensors-only"}
+               )
+
+      assert Enum.sort(Map.keys(params.data)) == Enum.sort(Map.keys(default_params.data))
+    end
   end
 end
