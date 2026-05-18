@@ -201,6 +201,8 @@ defmodule Bumblebee do
     "Qwen3Model" => {Bumblebee.Text.Qwen3, :base},
     "Qwen3ForCausalLM" => {Bumblebee.Text.Qwen3, :for_causal_language_modeling},
     "Qwen3ForSequenceClassification" => {Bumblebee.Text.Qwen3, :for_sequence_classification},
+    "Qwen3VLForConditionalGeneration" =>
+      {Bumblebee.Multimodal.Qwen3VL, :for_conditional_generation},
     "ResNetForImageClassification" => {Bumblebee.Vision.ResNet, :for_image_classification},
     "ResNetModel" => {Bumblebee.Vision.ResNet, :base},
     "RobertaForMaskedLM" => {Bumblebee.Text.Roberta, :for_masked_language_modeling},
@@ -251,12 +253,14 @@ defmodule Bumblebee do
 
   @transformers_image_processor_type_to_featurizer %{
     "BlipImageProcessor" => Bumblebee.Vision.BlipFeaturizer,
-    "BitImageProcessor" => Bumblebee.Vision.BitFeaturizer
+    "BitImageProcessor" => Bumblebee.Vision.BitFeaturizer,
+    "Qwen3VLImageProcessor" => Bumblebee.Vision.Qwen3VLFeaturizer
   }
 
   @model_type_to_featurizer %{
     "convnext" => Bumblebee.Vision.ConvNextFeaturizer,
     "deit" => Bumblebee.Vision.DeitFeaturizer,
+    "qwen3_vl" => Bumblebee.Vision.Qwen3VLFeaturizer,
     "resnet" => Bumblebee.Vision.ConvNextFeaturizer,
     "vit" => Bumblebee.Vision.VitFeaturizer,
     "whisper" => Bumblebee.Audio.WhisperFeaturizer
@@ -286,7 +290,9 @@ defmodule Bumblebee do
     "nomic_bert" => :bert,
     "phi" => :code_gen,
     "phi3" => :llama,
+    "qwen2_vl" => :qwen2,
     "qwen3" => :qwen2,
+    "qwen3_vl" => :qwen2,
     "roberta" => :roberta,
     "smollm3" => :smollm3,
     "t5" => :t5,

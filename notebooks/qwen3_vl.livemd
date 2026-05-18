@@ -1,0 +1,127 @@
+# Qwen3-VL Vision-Language Model
+
+```elixir
+Mix.install([
+  {:bumblebee, path: "."},
+  {:nx, "~> 0.9"},
+  {:exla, "~> 0.9"},
+  {:kino, "~> 0.14"},
+  {:stb_image, "~> 0.6"}
+])
+
+Nx.global_default_backend(EXLA.Backend)
+```
+
+## Introduction
+
+Qwen3-VL is a multimodal vision-language model from Alibaba that can understand images and generate text descriptions. This notebook demonstrates how to use Qwen3-VL with Bumblebee.
+
+## Model Architecture
+
+Qwen3-VL combines:
+- **Vision Encoder**: Processes images using 2D spatial rotary position embeddings
+- **Text Decoder**: Qwen3-based transformer with MRoPE (Multi-axis Rotary Position Embedding)
+
+Key features:
+- 3D convolution patch embedding (supports video temporal dimension)
+- 2D spatial rotary embeddings for accurate spatial understanding
+- Patch merger for spatial reduction
+
+## Load the Model
+
+```elixir
+# Load the model, tokenizer, and featurizer
+repo = "Qwen/Qwen3-VL-2B-Instruct"
+
+{:ok, model_info} = Bumblebee.load_model({:hf, repo})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, repo})
+{:ok, featurizer} = Bumblebee.load_featurizer({:hf, repo})
+
+:ok
+```
+
+## Process an Image
+
+```elixir
+# Upload an image
+image_input = Kino.Input.image("Upload an image", format: :rgb)
+```
+
+```elixir
+# Get the uploaded image
+image_data = Kino.Input.read(image_input)
+
+image =
+  if image_data do
+    # Convert Kino image to tensor
+    image_data.file_ref
+    |> Kino.Input.file_path()
+    |> StbImage.read_file!()
+  else
+    # Use a sample image if none uploaded
+    {:ok, %{body: body}} =
+      Req.get("https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png")
+    StbImage.read_binary!(body)
+  end
+
+Kino.Image.new(image)
+```
+
+## Generate Image Description
+
+```elixir
+# Build the prompt for image description
+prompt = "<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|>Describe this image in detail.<|im_end|>
+<|im_start|>assistant
+"
+
+# Tokenize the prompt
+inputs = Bumblebee.apply_tokenizer(tokenizer, prompt)
+
+# Process the image
+image_inputs = Bumblebee.apply_featurizer(featurizer, image)
+
+# Combine inputs
+combined_inputs = Map.merge(inputs, image_inputs)
+
+# Run inference
+outputs = Axon.predict(model_info.model, model_info.params, combined_inputs)
+
+# Decode the output (greedy decoding for simplicity)
+# For better results, use Bumblebee.Text.generation/4 serving
+logits = outputs.logits
+predicted_ids = Nx.argmax(logits, axis: -1)
+
+Bumblebee.Tokenizer.decode(tokenizer, predicted_ids)
+```
+
+## Using the Generation Serving (Recommended)
+
+For better text generation with proper sampling, use the generation serving:
+
+```elixir
+serving =
+  Bumblebee.Text.generation(model_info, tokenizer,
+    max_new_tokens: 256,
+    compile: [batch_size: 1, sequence_length: 2048]
+  )
+
+# Create the prompt with image placeholder
+prompt = "<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|>What do you see in this image? Describe it in detail.<|im_end|>
+<|im_start|>assistant
+"
+
+# Process image
+image_inputs = Bumblebee.apply_featurizer(featurizer, image)
+
+# Combine prompt with image inputs
+generation_input = %{
+  prompt: prompt,
+  images: image_inputs
+}
+
+# Generate
+Nx.Serving.run(serving, generation_input)
+```
