@@ -305,6 +305,14 @@ defmodule Bumblebee.Text.Gemma4Text do
         Layers.default_position_ids(embeddings)
       end
 
+    # PLE: compute per-layer inputs
+    per_layer_inputs =
+      if spec.hidden_size_per_layer_input do
+        compute_per_layer_inputs(inputs["input_ids"], embeddings, spec)
+      else
+        nil
+      end
+
     decoder_outputs =
       decoder(
         embeddings,
@@ -313,6 +321,7 @@ defmodule Bumblebee.Text.Gemma4Text do
         inputs["attention_head_mask"],
         inputs["cache"],
         spec,
+        per_layer_inputs: per_layer_inputs,
         name: "decoder"
       )
 
@@ -330,6 +339,60 @@ defmodule Bumblebee.Text.Gemma4Text do
       attentions: decoder_outputs.attentions,
       cache: decoder_outputs.cache
     }
+  end
+
+  defp compute_per_layer_inputs(input_ids, embeddings, spec) do
+    ple_dim = spec.hidden_size_per_layer_input
+    num_layers = spec.num_blocks
+    total_ple_dim = num_layers * ple_dim
+
+    # Token-identity: lookup in per-layer embedding table
+    token_identity =
+      Axon.embedding(input_ids, spec.vocab_size_per_layer_input, total_ple_dim,
+        name: "embedder.token_embedding_per_layer"
+      )
+      |> Axon.nx(fn x ->
+        # Scale by sqrt(ple_dim)
+        scale = Nx.tensor(ple_dim, type: Nx.type(x)) |> Nx.sqrt()
+        x = Nx.multiply(x, scale)
+        # Reshape from [B, S, num_layers * ple_dim] to [B, S, num_layers, ple_dim]
+        shape = Nx.shape(x)
+        batch = elem(shape, 0)
+        seq = elem(shape, 1)
+        Nx.reshape(x, {batch, seq, num_layers, ple_dim})
+      end)
+
+    # Context-aware: project main embeddings
+    # Norm is applied before reshape so its weight has shape [num_layers * ple_dim],
+    # matching HuggingFace's per_layer_projection_norm weight.
+    context_aware =
+      Axon.dense(embeddings, total_ple_dim,
+        name: "per_layer_model_projection",
+        use_bias: false
+      )
+      |> Layers.rms_norm(
+        name: "per_layer_projection_norm",
+        epsilon: spec.layer_norm_epsilon
+      )
+      |> Axon.nx(fn x ->
+        # Scale by 1/sqrt(hidden_size)
+        scale = Nx.divide(1.0, Nx.sqrt(Nx.tensor(spec.hidden_size, type: Nx.type(x))))
+        x = Nx.multiply(x, scale)
+        # Reshape to [B, S, num_layers, ple_dim]
+        shape = Nx.shape(x)
+        batch = elem(shape, 0)
+        seq = elem(shape, 1)
+        Nx.reshape(x, {batch, seq, num_layers, ple_dim})
+      end)
+
+    # Combine: (token_identity + context_aware) * (1/sqrt(2))
+    Axon.layer(
+      fn token_id, context, _opts ->
+        inv_sqrt2 = Nx.tensor(1.0 / :math.sqrt(2), type: Nx.type(token_id))
+        Nx.multiply(Nx.add(token_id, context), inv_sqrt2)
+      end,
+      [token_identity, context_aware]
+    )
   end
 
   defp embedder(input_ids, input_embeddings, spec, opts) do
@@ -361,6 +424,7 @@ defmodule Bumblebee.Text.Gemma4Text do
          opts
        ) do
     name = opts[:name]
+    per_layer_inputs = opts[:per_layer_inputs]
 
     query_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
     key_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
@@ -433,7 +497,7 @@ defmodule Bumblebee.Text.Gemma4Text do
           activation: spec.activation
         )
       end,
-      block_type: &gemma4_block_impl(&1, &2, &3, spec),
+      block_type: &gemma4_block_impl(&1, &2, &3, spec, per_layer_inputs),
       causal: true,
       rotary_embedding: rotary_embedding,
       attention_window_size: attention_window_size,
@@ -450,7 +514,54 @@ defmodule Bumblebee.Text.Gemma4Text do
   # Custom block implementation for Gemma 4's normalization structure:
   # - Post-attention norm BEFORE residual add
   # - Pre/post FFN norms
-  defp gemma4_block_impl(hidden_state, steps, name, spec) do
+  defp gemma4_block_impl(hidden_state, steps, name, spec, per_layer_inputs) do
+    # PLE: add per-layer input to hidden state
+    hidden_state =
+      if per_layer_inputs do
+        # Extract layer index from name like "decoder.blocks.5"
+        idx =
+          name
+          |> String.split(".")
+          |> Enum.at(2)
+          |> String.to_integer()
+
+        ple_slice =
+          Axon.nx(per_layer_inputs, fn x ->
+            x[[.., .., idx, ..]]
+          end)
+
+        # Gate: sigmoid(gate(ple_slice))
+        gate =
+          Axon.dense(ple_slice, spec.hidden_size,
+            name: join(name, "per_layer_input_gate"),
+            use_bias: false
+          )
+          |> Axon.sigmoid()
+
+        # Projection: project ple_slice to hidden_size
+        projection =
+          Axon.dense(ple_slice, spec.hidden_size,
+            name: join(name, "per_layer_projection"),
+            use_bias: false
+          )
+
+        # Gated projection
+        gated = Axon.multiply(gate, projection)
+
+        # Normalize
+        gated =
+          Layers.rms_norm(gated,
+            name: join(name, "post_per_layer_input_norm"),
+            epsilon: spec.layer_norm_epsilon
+          )
+
+        # Scale by layer_scalar
+        Axon.add(hidden_state, gated)
+      else
+        hidden_state
+      end
+
+    # Rest of the block stays the same
     shortcut = hidden_state
 
     {hidden_state, attention_info} =
@@ -490,7 +601,6 @@ defmodule Bumblebee.Text.Gemma4Text do
 
     hidden_state = Axon.add(shortcut, hidden_state)
 
-    # Handle cross-attention (required by block interface but not used by Gemma 4)
     {_hidden_state, cross_attention_info} =
       steps.cross_attention_maybe.(hidden_state, fn _ ->
         raise "cross attention not supported"
@@ -621,7 +731,6 @@ defmodule Bumblebee.Text.Gemma4Text do
         "per_layer_model_projection" => "model.language_model.per_layer_model_projection",
         "per_layer_projection_norm" => "model.language_model.per_layer_projection_norm",
         # PLE per-layer weights
-        "decoder.blocks.{n}.layer_scalar" => "model.language_model.layers.{n}.layer_scalar",
         "decoder.blocks.{n}.per_layer_input_gate" =>
           "model.language_model.layers.{n}.per_layer_input_gate",
         "decoder.blocks.{n}.per_layer_projection" =>

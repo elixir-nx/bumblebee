@@ -780,10 +780,14 @@ defmodule Bumblebee do
   end
 
   defp params_file_loader_fun(".safetensors", opts) do
-    opts[:safetensors_reader] || (&Safetensors.read!(&1, lazy: true))
+    opts[:safetensors_reader] || (&read_safetensors_chunked/1)
   end
 
   defp params_file_loader_fun(_, _opts), do: &Bumblebee.Conversion.PyTorchLoader.load!/1
+
+  defp read_safetensors_chunked(path) do
+    Safetensors.read!(path, lazy: true)
+  end
 
   @doc """
   Featurizes `input` with the given featurizer.
