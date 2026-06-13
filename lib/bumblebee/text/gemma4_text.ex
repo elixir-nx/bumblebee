@@ -185,12 +185,27 @@ defmodule Bumblebee.Text.Gemma4Text do
 
   @impl true
   def init_cache(spec, batch_size, max_length, _inputs) do
-    Layers.Decoder.init_cache(batch_size, max_length,
-      hidden_size: spec.hidden_size,
-      attention_head_size: spec.attention_head_size,
-      decoder_num_attention_heads: spec.num_attention_heads,
-      decoder_num_blocks: spec.num_blocks
-    )
+    layer_types = spec.layer_types || generate_layer_types(spec.num_blocks)
+
+    blocks =
+      Enum.map(0..(spec.num_blocks - 1), fn idx ->
+        head_size =
+          case Enum.at(layer_types, idx, :sliding_attention) do
+            :full_attention -> spec.global_attention_head_size
+            :sliding_attention -> spec.attention_head_size
+          end
+
+        shape = {batch_size, max_length, spec.num_attention_heads, head_size}
+        zeros = Nx.broadcast(0.0, shape)
+        self_attention = %{key: zeros, value: zeros}
+
+        %{self_attention: self_attention, cross_attention: %Axon.None{}}
+      end)
+      |> List.to_tuple()
+
+    offset = Nx.tensor(0)
+    attention_mask = Nx.broadcast(0, {batch_size, max_length})
+    %{blocks: blocks, offset: offset, attention_mask: attention_mask}
   end
 
   @impl true
@@ -374,6 +389,7 @@ defmodule Bumblebee.Text.Gemma4Text do
     end
 
     attention_scale = :math.pow(spec.attention_head_size, -0.5)
+    non_double_wide_count = spec.num_blocks - spec.num_kv_shared_layers
 
     Layers.Transformer.blocks(hidden_state,
       attention_mask: attention_mask,
@@ -383,7 +399,12 @@ defmodule Bumblebee.Text.Gemma4Text do
       num_attention_heads: spec.num_attention_heads,
       num_key_value_heads: spec.num_key_value_heads,
       hidden_size: spec.hidden_size,
-      attention_head_size: spec.attention_head_size,
+      attention_head_size: fn idx ->
+        case Enum.at(layer_types, idx, :sliding_attention) do
+          :full_attention -> spec.global_attention_head_size
+          :sliding_attention -> spec.attention_head_size
+        end
+      end,
       attention_scale: attention_scale,
       kernel_initializer: kernel_initializer(spec),
       layer_norm:
@@ -393,11 +414,25 @@ defmodule Bumblebee.Text.Gemma4Text do
           epsilon: spec.layer_norm_epsilon,
           upcast: :all
         ),
-      ffn:
-        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
-          name: &2,
+      ffn: fn hidden_state, ffn_name ->
+        idx =
+          ffn_name
+          |> String.split(".")
+          |> Enum.at(2)
+          |> String.to_integer()
+
+        intermediate_size =
+          if spec.use_double_wide_mlp and idx >= non_double_wide_count do
+            spec.intermediate_size * 2
+          else
+            spec.intermediate_size
+          end
+
+        gated_ffn(hidden_state, intermediate_size, spec.hidden_size,
+          name: ffn_name,
           activation: spec.activation
-        ),
+        )
+      end,
       block_type: &gemma4_block_impl(&1, &2, &3, spec),
       causal: true,
       rotary_embedding: rotary_embedding,
@@ -484,10 +519,24 @@ defmodule Bumblebee.Text.Gemma4Text do
   defp language_modeling_head(hidden_state, spec, opts) do
     name = opts[:name]
 
-    Layers.dense_transposed(hidden_state, spec.vocab_size,
-      kernel_initializer: kernel_initializer(spec),
-      name: join(name, "output")
-    )
+    logits =
+      Layers.dense_transposed(hidden_state, spec.vocab_size,
+        kernel_initializer: kernel_initializer(spec),
+        name: join(name, "output")
+      )
+
+    cap = spec.final_logit_softcapping
+
+    if cap do
+      Axon.nx(logits, fn x ->
+        x
+        |> Nx.divide(cap)
+        |> Nx.tanh()
+        |> Nx.multiply(cap)
+      end)
+    else
+      logits
+    end
   end
 
   defp kernel_initializer(spec) do
