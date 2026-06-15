@@ -450,8 +450,10 @@ defmodule Bumblebee.Text.Gemma4Text do
           [
             position_ids: position_ids,
             max_positions: spec.max_positions,
-            base: :math.pow(spec.rotary_embedding_base, spec.partial_rotary_factor),
-            percentage: spec.partial_rotary_factor
+            base: spec.rotary_embedding_base,
+            percentage: 1.0,
+            rotary_dim:
+              trunc(spec.global_attention_head_size * spec.partial_rotary_factor)
           ]
 
         :sliding_attention ->

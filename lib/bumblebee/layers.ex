@@ -1237,7 +1237,7 @@ defmodule Bumblebee.Layers do
   Adds a rotary embedding layer to the network.
   """
   def rotary_embedding(query, key, position_ids, attention_mask, size, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, :scaling_strategy, max_positions: 2048, base: 10_000])
+    opts = Keyword.validate!(opts, [:name, :scaling_strategy, :rotary_dim, max_positions: 2048, base: 10_000])
 
     output =
       Axon.layer(
@@ -1254,15 +1254,24 @@ defmodule Bumblebee.Layers do
                   max_positions,
                   size,
                   base,
-                  scaling_strategy
+                  scaling_strategy,
+                  rotary_dim \\ nil
                 ) do
     position = Nx.iota({sequence_length})
 
-    range = Nx.iota({div(size, 2)}) |> Nx.multiply(2) |> Nx.divide(size)
+    {num_freqs, denominator} =
+      if rotary_dim do
+        {div(rotary_dim, 2), size}
+      else
+        {div(size, 2), size}
+      end
+
+    range = Nx.iota({num_freqs}) |> Nx.multiply(2) |> Nx.divide(denominator)
 
     case scaling_strategy do
       %{type: :linear, factor: factor} ->
         inv_frequency = inv_frequency(base, range)
+        inv_frequency = maybe_pad_inv_frequency(inv_frequency, div(size, 2), rotary_dim)
         position = Nx.divide(position, factor)
         positions_cos_sin(position, inv_frequency)
 
@@ -1273,6 +1282,7 @@ defmodule Bumblebee.Layers do
           |> Nx.pow(size / (size - 2))
 
         inv_frequency = inv_frequency(base, range)
+        inv_frequency = maybe_pad_inv_frequency(inv_frequency, div(size, 2), rotary_dim)
         positions_cos_sin(position, inv_frequency)
 
       %{
@@ -1300,6 +1310,7 @@ defmodule Bumblebee.Layers do
           end
 
         inv_frequency = inv_frequency(base, range) |> Nx.divide(factor)
+        inv_frequency = maybe_pad_inv_frequency(inv_frequency, div(size, 2), rotary_dim)
         {cos, sin} = positions_cos_sin(position, inv_frequency)
         {Nx.multiply(cos, cos_sin_factor), Nx.multiply(sin, cos_sin_factor)}
 
@@ -1321,11 +1332,26 @@ defmodule Bumblebee.Layers do
             original_max_positions
           )
 
+        inv_frequency = maybe_pad_inv_frequency(inv_frequency, div(size, 2), rotary_dim)
         positions_cos_sin(position, inv_frequency)
 
       _other ->
         inv_frequency = inv_frequency(base, range)
+        inv_frequency = maybe_pad_inv_frequency(inv_frequency, div(size, 2), rotary_dim)
         positions_cos_sin(position, inv_frequency)
+    end
+  end
+
+  defp maybe_pad_inv_frequency(inv_frequency, _target_size, nil), do: inv_frequency
+
+  defp maybe_pad_inv_frequency(inv_frequency, target_size, _rotary_dim) do
+    pad_size = target_size - Nx.axis_size(inv_frequency, 0)
+
+    if pad_size > 0 do
+      padding = Nx.broadcast(Nx.tensor(0.0, type: Nx.type(inv_frequency)), {pad_size})
+      Nx.concatenate([inv_frequency, padding])
+    else
+      inv_frequency
     end
   end
 
@@ -1381,6 +1407,7 @@ defmodule Bumblebee.Layers do
       keyword!(opts, [
         :size,
         :scaling_strategy,
+        :rotary_dim,
         mode: :inference,
         max_positions: 2048,
         base: 10_000
@@ -1400,7 +1427,8 @@ defmodule Bumblebee.Layers do
         opts[:max_positions],
         opts[:size],
         opts[:base],
-        opts[:scaling_strategy]
+        opts[:scaling_strategy],
+        opts[:rotary_dim]
       )
 
     position_ids = Nx.as_type(position_ids, :s64)

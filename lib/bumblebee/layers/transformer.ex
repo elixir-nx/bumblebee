@@ -878,6 +878,7 @@ defmodule Bumblebee.Layers.Transformer do
               :position_ids,
               :max_positions,
               :scaling_strategy,
+              :rotary_dim,
               base: 10_000,
               percentage: 1.0
             ])
