@@ -62,7 +62,8 @@ defmodule Bumblebee.Layers.Transformer do
       :block_type,
       :attention_scale,
       :query_norm,
-      :key_norm
+      :key_norm,
+      :value_norm
     ]
 
     opts =
@@ -363,7 +364,8 @@ defmodule Bumblebee.Layers.Transformer do
         attention_scale: nil,
         rotary_embedding: nil,
         query_norm: nil,
-        key_norm: nil
+        key_norm: nil,
+        value_norm: nil
       ])
 
     name = opts[:name]
@@ -395,6 +397,7 @@ defmodule Bumblebee.Layers.Transformer do
     rotary_embedding = opts[:rotary_embedding]
     query_norm = opts[:query_norm]
     key_norm = opts[:key_norm]
+    value_norm = opts[:value_norm]
 
     ffn_fun =
       case ffn do
@@ -455,6 +458,7 @@ defmodule Bumblebee.Layers.Transformer do
           rotary_embedding: rotary_embedding,
           query_norm: query_norm,
           key_norm: key_norm,
+          value_norm: value_norm,
           name: join(name, "self_attention")
         )
 
@@ -781,7 +785,8 @@ defmodule Bumblebee.Layers.Transformer do
         output_use_bias: true,
         rotary_embedding: nil,
         query_norm: nil,
-        key_norm: nil
+        key_norm: nil,
+        value_norm: nil
       ])
 
     attention_mask = opts[:attention_mask]
@@ -797,6 +802,7 @@ defmodule Bumblebee.Layers.Transformer do
     causal = opts[:causal]
     attention_window_size = opts[:attention_window_size]
     attention_scale = opts[:attention_scale]
+    value_norm = opts[:value_norm]
     dropout_rate = opts[:dropout_rate]
     rotary_embedding = opts[:rotary_embedding]
     query_norm = opts[:query_norm]
@@ -853,6 +859,13 @@ defmodule Bumblebee.Layers.Transformer do
         key_norm.(key, join(name, "key_norm"))
       else
         key
+      end
+
+    value =
+      if value_norm do
+        value_norm.(value, join(name, "value_norm"))
+      else
+        value
       end
 
     {query, key} =

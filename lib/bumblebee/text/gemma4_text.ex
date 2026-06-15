@@ -362,28 +362,27 @@ defmodule Bumblebee.Text.Gemma4Text do
         Nx.reshape(x, {batch, seq, num_layers, ple_dim})
       end)
 
-    # Context-aware: project main embeddings
-    # Norm is applied before reshape so its weight has shape [num_layers * ple_dim],
-    # matching HuggingFace's per_layer_projection_norm weight.
+    # Context-aware: project main embeddings, reshape, then norm.
+    # The norm weight has shape [ple_dim] because HuggingFace applies it
+    # after reshaping to [B, S, num_layers, ple_dim].
     context_aware =
       Axon.dense(embeddings, total_ple_dim,
         name: "per_layer_model_projection",
         use_bias: false
       )
-      |> Layers.rms_norm(
-        name: "per_layer_projection_norm",
-        epsilon: spec.layer_norm_epsilon
-      )
       |> Axon.nx(fn x ->
-        # Scale by 1/sqrt(hidden_size)
         scale = Nx.divide(1.0, Nx.sqrt(Nx.tensor(spec.hidden_size, type: Nx.type(x))))
         x = Nx.multiply(x, scale)
-        # Reshape to [B, S, num_layers, ple_dim]
         shape = Nx.shape(x)
         batch = elem(shape, 0)
         seq = elem(shape, 1)
         Nx.reshape(x, {batch, seq, num_layers, ple_dim})
       end)
+      |> Layers.rms_norm(
+        name: "per_layer_projection_norm",
+        shift: 1.0,
+        epsilon: spec.layer_norm_epsilon
+      )
 
     # Combine: (token_identity + context_aware) * (1/sqrt(2))
     Axon.layer(
@@ -429,6 +428,13 @@ defmodule Bumblebee.Text.Gemma4Text do
     query_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
     key_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
 
+    value_norm = fn value, _name ->
+      Axon.nx(value, fn x ->
+        variance = Nx.mean(Nx.multiply(x, x), axes: [-1], keep_axes: true)
+        Nx.multiply(x, Nx.rsqrt(Nx.add(variance, spec.layer_norm_epsilon)))
+      end)
+    end
+
     layer_types = spec.layer_types || generate_layer_types(spec.num_blocks)
 
     attention_window_size = fn idx ->
@@ -439,20 +445,26 @@ defmodule Bumblebee.Text.Gemma4Text do
     end
 
     rotary_embedding = fn idx ->
-      base =
-        case Enum.at(layer_types, idx, :sliding_attention) do
-          :full_attention -> spec.rotary_embedding_base
-          :sliding_attention -> spec.rotary_embedding_base_local
-        end
+      case Enum.at(layer_types, idx, :sliding_attention) do
+        :full_attention ->
+          [
+            position_ids: position_ids,
+            max_positions: spec.max_positions,
+            base: :math.pow(spec.rotary_embedding_base, spec.partial_rotary_factor),
+            percentage: spec.partial_rotary_factor
+          ]
 
-      [
-        position_ids: position_ids,
-        max_positions: spec.max_positions,
-        base: base
-      ]
+        :sliding_attention ->
+          [
+            position_ids: position_ids,
+            max_positions: spec.max_positions,
+            base: spec.rotary_embedding_base_local,
+            percentage: 1.0
+          ]
+      end
     end
 
-    attention_scale = :math.pow(spec.attention_head_size, -0.5)
+    attention_scale = 1.0
     non_double_wide_count = spec.num_blocks - spec.num_kv_shared_layers
 
     Layers.Transformer.blocks(hidden_state,
@@ -503,6 +515,7 @@ defmodule Bumblebee.Text.Gemma4Text do
       attention_window_size: attention_window_size,
       query_norm: query_norm,
       key_norm: key_norm,
+      value_norm: value_norm,
       query_use_bias: spec.use_attention_bias,
       key_use_bias: spec.use_attention_bias,
       value_use_bias: spec.use_attention_bias,
@@ -514,54 +527,9 @@ defmodule Bumblebee.Text.Gemma4Text do
   # Custom block implementation for Gemma 4's normalization structure:
   # - Post-attention norm BEFORE residual add
   # - Pre/post FFN norms
+  # - PLE applied AFTER attention+MLP as a third residual block
   defp gemma4_block_impl(hidden_state, steps, name, spec, per_layer_inputs) do
-    # PLE: add per-layer input to hidden state
-    hidden_state =
-      if per_layer_inputs do
-        # Extract layer index from name like "decoder.blocks.5"
-        idx =
-          name
-          |> String.split(".")
-          |> Enum.at(2)
-          |> String.to_integer()
-
-        ple_slice =
-          Axon.nx(per_layer_inputs, fn x ->
-            x[[.., .., idx, ..]]
-          end)
-
-        # Gate: sigmoid(gate(ple_slice))
-        gate =
-          Axon.dense(ple_slice, spec.hidden_size,
-            name: join(name, "per_layer_input_gate"),
-            use_bias: false
-          )
-          |> Axon.sigmoid()
-
-        # Projection: project ple_slice to hidden_size
-        projection =
-          Axon.dense(ple_slice, spec.hidden_size,
-            name: join(name, "per_layer_projection"),
-            use_bias: false
-          )
-
-        # Gated projection
-        gated = Axon.multiply(gate, projection)
-
-        # Normalize
-        gated =
-          Layers.rms_norm(gated,
-            name: join(name, "post_per_layer_input_norm"),
-            epsilon: spec.layer_norm_epsilon
-          )
-
-        # Scale by layer_scalar
-        Axon.add(hidden_state, gated)
-      else
-        hidden_state
-      end
-
-    # Rest of the block stays the same
+    # 1. Self-attention with pre/post norms
     shortcut = hidden_state
 
     {hidden_state, attention_info} =
@@ -579,6 +547,7 @@ defmodule Bumblebee.Text.Gemma4Text do
 
     hidden_state = Axon.add(shortcut, hidden_state)
 
+    # 2. FFN with pre/post norms
     shortcut = hidden_state
 
     hidden_state =
@@ -600,6 +569,68 @@ defmodule Bumblebee.Text.Gemma4Text do
       )
 
     hidden_state = Axon.add(shortcut, hidden_state)
+
+    # 3. PLE: gate hidden_state down to PLE dim, multiply with PLE signal, project back up
+    hidden_state =
+      if per_layer_inputs do
+        idx =
+          name
+          |> String.split(".")
+          |> Enum.at(2)
+          |> String.to_integer()
+
+        ple_slice =
+          Axon.nx(per_layer_inputs, fn x ->
+            x[[.., .., idx, ..]]
+          end)
+
+        shortcut_ple = hidden_state
+
+        # Gate: project hidden_state DOWN to PLE dimension
+        gated =
+          Axon.dense(hidden_state, spec.hidden_size_per_layer_input,
+            name: join(name, "per_layer_input_gate"),
+            use_bias: false
+          )
+
+        # Activation (gelu_approx_tanh, same as FFN)
+        gated = Layers.activation(gated, spec.activation)
+
+        # Element-wise multiply with PLE signal
+        gated = Axon.multiply(gated, ple_slice)
+
+        # Project back UP to hidden dimension
+        gated =
+          Axon.dense(gated, spec.hidden_size,
+            name: join(name, "per_layer_projection"),
+            use_bias: false
+          )
+
+        # Normalize
+        gated =
+          Layers.rms_norm(gated,
+            shift: 1.0,
+            name: join(name, "post_per_layer_input_norm"),
+            epsilon: spec.layer_norm_epsilon
+          )
+
+        Axon.add(shortcut_ple, gated)
+      else
+        hidden_state
+      end
+
+    # 4. Layer scalar: multiply output by per-layer learned scalar
+    layer_scalar =
+      Axon.param("layer_scalar", fn _ -> {1} end, initializer: :ones)
+
+    hidden_state =
+      Axon.layer(
+        fn hidden_state, scalar, _opts ->
+          Nx.multiply(hidden_state, scalar)
+        end,
+        [hidden_state, layer_scalar],
+        name: join(name, "layer_scalar")
+      )
 
     {_hidden_state, cross_attention_info} =
       steps.cross_attention_maybe.(hidden_state, fn _ ->
@@ -730,13 +761,15 @@ defmodule Bumblebee.Text.Gemma4Text do
         "embedder.token_embedding_per_layer" => "model.language_model.embed_tokens_per_layer",
         "per_layer_model_projection" => "model.language_model.per_layer_model_projection",
         "per_layer_projection_norm" => "model.language_model.per_layer_projection_norm",
-        # PLE per-layer weights
         "decoder.blocks.{n}.per_layer_input_gate" =>
           "model.language_model.layers.{n}.per_layer_input_gate",
         "decoder.blocks.{n}.per_layer_projection" =>
           "model.language_model.layers.{n}.per_layer_projection",
         "decoder.blocks.{n}.post_per_layer_input_norm" =>
           "model.language_model.layers.{n}.post_per_layer_input_norm",
+        # Per-layer scalar
+        "decoder.blocks.{n}.layer_scalar" =>
+          "model.language_model.layers.{n}",
         # Attention projections
         "decoder.blocks.{n}.self_attention.query" =>
           "model.language_model.layers.{n}.self_attn.q_proj",
