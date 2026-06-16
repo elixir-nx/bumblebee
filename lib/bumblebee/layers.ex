@@ -1237,7 +1237,14 @@ defmodule Bumblebee.Layers do
   Adds a rotary embedding layer to the network.
   """
   def rotary_embedding(query, key, position_ids, attention_mask, size, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, :scaling_strategy, :rotary_dim, max_positions: 2048, base: 10_000])
+    opts =
+      Keyword.validate!(opts, [
+        :name,
+        :scaling_strategy,
+        :rotary_dim,
+        max_positions: 2048,
+        base: 10_000
+      ])
 
     output =
       Axon.layer(

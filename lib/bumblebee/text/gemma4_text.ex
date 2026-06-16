@@ -452,8 +452,7 @@ defmodule Bumblebee.Text.Gemma4Text do
             max_positions: spec.max_positions,
             base: spec.rotary_embedding_base,
             percentage: 1.0,
-            rotary_dim:
-              trunc(spec.global_attention_head_size * spec.partial_rotary_factor)
+            rotary_dim: trunc(spec.global_attention_head_size * spec.partial_rotary_factor)
           ]
 
         :sliding_attention ->
@@ -588,14 +587,13 @@ defmodule Bumblebee.Text.Gemma4Text do
 
         shortcut_ple = hidden_state
 
-        # Gate: project hidden_state DOWN to PLE dimension
+        # Gate: project hidden_state DOWN to PLE dimension, then activation
         gated =
           Axon.dense(hidden_state, spec.hidden_size_per_layer_input,
             name: join(name, "per_layer_input_gate"),
             use_bias: false
           )
 
-        # Activation (gelu_approx_tanh, same as FFN)
         gated = Layers.activation(gated, spec.activation)
 
         # Element-wise multiply with PLE signal
@@ -622,18 +620,19 @@ defmodule Bumblebee.Text.Gemma4Text do
       end
 
     # 4. Layer scalar: multiply output by per-layer learned scalar
-    layer_scalar =
-      Axon.param("layer_scalar", fn _ -> {1} end, initializer: :ones)
-
     hidden_state =
       Axon.layer(
         fn hidden_state, scalar, _opts ->
-          Nx.multiply(hidden_state, scalar)
+          Nx.multiply(hidden_state, Nx.reshape(scalar, {}))
         end,
-        [hidden_state, layer_scalar],
-        name: join(name, "layer_scalar")
+        [
+          hidden_state,
+          Axon.param("layer_scalar", fn _ -> {1} end, initializer: Axon.Initializers.ones())
+        ],
+        name: join(name, "layer_scalar_op")
       )
 
+    # Handle cross-attention (required by block interface but not used by Gemma 4)
     {_hidden_state, cross_attention_info} =
       steps.cross_attention_maybe.(hidden_state, fn _ ->
         raise "cross attention not supported"
@@ -756,59 +755,61 @@ defmodule Bumblebee.Text.Gemma4Text do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(spec) do
-      %{
-        "embedder.token_embedding" => "model.language_model.embed_tokens",
-        # PLE (Per-Layer Embeddings) global weights
-        "embedder.token_embedding_per_layer" => "model.language_model.embed_tokens_per_layer",
-        "per_layer_model_projection" => "model.language_model.per_layer_model_projection",
-        "per_layer_projection_norm" => "model.language_model.per_layer_projection_norm",
-        "decoder.blocks.{n}.per_layer_input_gate" =>
-          "model.language_model.layers.{n}.per_layer_input_gate",
-        "decoder.blocks.{n}.per_layer_projection" =>
-          "model.language_model.layers.{n}.per_layer_projection",
-        "decoder.blocks.{n}.post_per_layer_input_norm" =>
-          "model.language_model.layers.{n}.post_per_layer_input_norm",
-        # Per-layer scalar
-        "decoder.blocks.{n}.layer_scalar" =>
-          "model.language_model.layers.{n}",
-        # Attention projections
-        "decoder.blocks.{n}.self_attention.query" =>
-          "model.language_model.layers.{n}.self_attn.q_proj",
-        "decoder.blocks.{n}.self_attention.key" =>
-          "model.language_model.layers.{n}.self_attn.k_proj",
-        "decoder.blocks.{n}.self_attention.value" =>
-          "model.language_model.layers.{n}.self_attn.v_proj",
-        "decoder.blocks.{n}.self_attention.output" =>
-          "model.language_model.layers.{n}.self_attn.o_proj",
-        # QK-norm
-        "decoder.blocks.{n}.self_attention.query_norm" =>
-          "model.language_model.layers.{n}.self_attn.q_norm",
-        "decoder.blocks.{n}.self_attention.key_norm" =>
-          "model.language_model.layers.{n}.self_attn.k_norm",
-        # Layer norms
-        "decoder.blocks.{n}.self_attention_norm" =>
-          "model.language_model.layers.{n}.input_layernorm",
-        "decoder.blocks.{n}.post_attention_norm" =>
-          "model.language_model.layers.{n}.post_attention_layernorm",
-        # FFN layer norms
-        "decoder.blocks.{n}.pre_ffn_norm" =>
-          "model.language_model.layers.{n}.pre_feedforward_layernorm",
-        "decoder.blocks.{n}.post_ffn_norm" =>
-          "model.language_model.layers.{n}.post_feedforward_layernorm",
-        # FFN projections
-        "decoder.blocks.{n}.ffn.gate" => "model.language_model.layers.{n}.mlp.gate_proj",
-        "decoder.blocks.{n}.ffn.intermediate" => "model.language_model.layers.{n}.mlp.up_proj",
-        "decoder.blocks.{n}.ffn.output" => "model.language_model.layers.{n}.mlp.down_proj",
-        # Output
-        "output_norm" => "model.language_model.norm",
-        "language_modeling_head.output" =>
-          if(spec.tie_word_embeddings,
-            do: "model.language_model.embed_tokens",
-            else: "lm_head"
-          ),
-        "sequence_classification_head.output" => "score"
-      }
-    end
+      def params_mapping(spec) do
+        %{
+          "embedder.token_embedding" => "model.language_model.embed_tokens",
+          # PLE global weights
+          "embedder.token_embedding_per_layer" => "model.language_model.embed_tokens_per_layer",
+          "per_layer_model_projection" => "model.language_model.per_layer_model_projection",
+          "per_layer_projection_norm" => "model.language_model.per_layer_projection_norm",
+          # PLE per-layer weights
+          "decoder.blocks.{n}.per_layer_input_gate" =>
+            "model.language_model.layers.{n}.per_layer_input_gate",
+          "decoder.blocks.{n}.per_layer_projection" =>
+            "model.language_model.layers.{n}.per_layer_projection",
+          "decoder.blocks.{n}.post_per_layer_input_norm" =>
+            "model.language_model.layers.{n}.post_per_layer_input_norm",
+          # Layer scalar
+          "decoder.blocks.{n}.layer_scalar_op" => "model.language_model.layers.{n}",
+          "decoder.blocks.{n}.layer_scalar_op.layer_scalar" =>
+            "model.language_model.layers.{n}.layer_scalar",
+          # Attention projections
+          "decoder.blocks.{n}.self_attention.query" =>
+            "model.language_model.layers.{n}.self_attn.q_proj",
+          "decoder.blocks.{n}.self_attention.key" =>
+            "model.language_model.layers.{n}.self_attn.k_proj",
+          "decoder.blocks.{n}.self_attention.value" =>
+            "model.language_model.layers.{n}.self_attn.v_proj",
+          "decoder.blocks.{n}.self_attention.output" =>
+            "model.language_model.layers.{n}.self_attn.o_proj",
+          # QK-norm
+          "decoder.blocks.{n}.self_attention.query_norm" =>
+            "model.language_model.layers.{n}.self_attn.q_norm",
+          "decoder.blocks.{n}.self_attention.key_norm" =>
+            "model.language_model.layers.{n}.self_attn.k_norm",
+          # Layer norms
+          "decoder.blocks.{n}.self_attention_norm" =>
+            "model.language_model.layers.{n}.input_layernorm",
+          "decoder.blocks.{n}.post_attention_norm" =>
+            "model.language_model.layers.{n}.post_attention_layernorm",
+          # FFN layer norms
+          "decoder.blocks.{n}.pre_ffn_norm" =>
+            "model.language_model.layers.{n}.pre_feedforward_layernorm",
+          "decoder.blocks.{n}.post_ffn_norm" =>
+            "model.language_model.layers.{n}.post_feedforward_layernorm",
+          # FFN projections
+          "decoder.blocks.{n}.ffn.gate" => "model.language_model.layers.{n}.mlp.gate_proj",
+          "decoder.blocks.{n}.ffn.intermediate" => "model.language_model.layers.{n}.mlp.up_proj",
+          "decoder.blocks.{n}.ffn.output" => "model.language_model.layers.{n}.mlp.down_proj",
+          # Output
+          "output_norm" => "model.language_model.norm",
+          "language_modeling_head.output" =>
+            if(spec.tie_word_embeddings,
+              do: "model.language_model.embed_tokens",
+              else: "lm_head"
+            ),
+          "sequence_classification_head.output" => "score"
+        }
+      end
   end
 end
