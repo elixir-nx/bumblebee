@@ -328,7 +328,6 @@ defmodule Bumblebee.Text.Gemma4Text do
     hidden_state =
       Layers.rms_norm(decoder_outputs.hidden_state,
         name: "output_norm",
-        shift: 1.0,
         epsilon: spec.layer_norm_epsilon,
         upcast: :all
       )
@@ -380,7 +379,6 @@ defmodule Bumblebee.Text.Gemma4Text do
       end)
       |> Layers.rms_norm(
         name: "per_layer_projection_norm",
-        shift: 1.0,
         epsilon: spec.layer_norm_epsilon
       )
 
@@ -425,8 +423,8 @@ defmodule Bumblebee.Text.Gemma4Text do
     name = opts[:name]
     per_layer_inputs = opts[:per_layer_inputs]
 
-    query_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
-    key_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
+    query_norm = &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, name: &2)
+    key_norm = &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, name: &2)
 
     value_norm = fn value, _name ->
       Axon.nx(value, fn x ->
@@ -436,111 +434,143 @@ defmodule Bumblebee.Text.Gemma4Text do
     end
 
     layer_types = spec.layer_types || generate_layer_types(spec.num_blocks)
+    first_kv_shared = spec.num_blocks - spec.num_kv_shared_layers
 
-    attention_window_size = fn idx ->
-      case Enum.at(layer_types, idx, :sliding_attention) do
-        :full_attention -> nil
-        :sliding_attention -> {spec.attention_window_size, spec.attention_window_size}
-      end
-    end
-
-    rotary_embedding = fn idx ->
-      case Enum.at(layer_types, idx, :sliding_attention) do
-        :full_attention ->
-          [
-            position_ids: position_ids,
-            max_positions: spec.max_positions,
-            base: spec.rotary_embedding_base,
-            percentage: 1.0,
-            rotary_dim: trunc(spec.global_attention_head_size * spec.partial_rotary_factor)
-          ]
-
-        :sliding_attention ->
-          [
-            position_ids: position_ids,
-            max_positions: spec.max_positions,
-            base: spec.rotary_embedding_base_local,
-            percentage: 1.0
-          ]
-      end
-    end
+    # Last occurrence of each layer type before first_kv_shared — these become "store" layers
+    store_layer_indices =
+      Enum.reduce(0..(first_kv_shared - 1), %{}, fn idx, acc ->
+        Map.put(acc, Enum.at(layer_types, idx), idx)
+      end)
 
     attention_scale = 1.0
-    non_double_wide_count = spec.num_blocks - spec.num_kv_shared_layers
 
-    Layers.Transformer.blocks(hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
+    {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
+    offset = Layers.Decoder.get_cache_offset(cache)
+
+    initial_state = %{
+      hidden_state: hidden_state,
+      hidden_states: Axon.container({hidden_state}),
+      attentions: Axon.container({}),
       cache: cache,
-      num_blocks: spec.num_blocks,
-      num_attention_heads: spec.num_attention_heads,
-      num_key_value_heads: spec.num_key_value_heads,
-      hidden_size: spec.hidden_size,
-      attention_head_size: fn idx ->
-        case Enum.at(layer_types, idx, :sliding_attention) do
-          :full_attention -> spec.global_attention_head_size
-          :sliding_attention -> spec.attention_head_size
-        end
-      end,
-      attention_scale: attention_scale,
-      kernel_initializer: kernel_initializer(spec),
-      layer_norm:
-        &Layers.rms_norm(&1,
-          shift: 1.0,
-          name: &2,
-          epsilon: spec.layer_norm_epsilon,
-          upcast: :all
-        ),
-      ffn: fn hidden_state, ffn_name ->
-        idx =
-          ffn_name
-          |> String.split(".")
-          |> Enum.at(2)
-          |> String.to_integer()
+      shared_kv: %{}
+    }
 
-        intermediate_size =
-          if spec.use_double_wide_mlp and idx >= non_double_wide_count do
-            spec.intermediate_size * 2
-          else
-            spec.intermediate_size
+    outputs =
+      Enum.reduce(0..(spec.num_blocks - 1), initial_state, fn idx, state ->
+        layer_type = Enum.at(layer_types, idx)
+        is_shared = spec.num_kv_shared_layers > 0 and idx >= first_kv_shared
+        is_store = not is_shared and Map.get(store_layer_indices, layer_type) == idx
+
+        block_name = join(join(name, "blocks"), idx)
+        block_cache = Layers.Decoder.get_block_cache(state.cache, idx)
+        block_attention_head_mask = Axon.nx(attention_head_mask, & &1[idx])
+
+        head_size =
+          case layer_type do
+            :full_attention -> spec.global_attention_head_size
+            :sliding_attention -> spec.attention_head_size
           end
 
-        gated_ffn(hidden_state, intermediate_size, spec.hidden_size,
-          name: ffn_name,
-          activation: spec.activation
-        )
-      end,
-      block_type: &gemma4_block_impl(&1, &2, &3, spec, per_layer_inputs),
-      causal: true,
-      rotary_embedding: rotary_embedding,
-      attention_window_size: attention_window_size,
-      query_norm: query_norm,
-      key_norm: key_norm,
-      value_norm: value_norm,
-      query_use_bias: spec.use_attention_bias,
-      key_use_bias: spec.use_attention_bias,
-      value_use_bias: spec.use_attention_bias,
-      output_use_bias: spec.use_attention_bias,
-      name: join(name, "blocks")
-    )
+        num_kv_heads =
+          case layer_type do
+            :full_attention -> spec.num_global_key_value_heads || spec.num_key_value_heads
+            :sliding_attention -> spec.num_key_value_heads
+          end
+
+        window_size =
+          case layer_type do
+            :full_attention -> nil
+            :sliding_attention -> {spec.attention_window_size, spec.attention_window_size}
+          end
+
+        rotary_opts =
+          case layer_type do
+            :full_attention ->
+              [
+                position_ids: position_ids,
+                max_positions: spec.max_positions,
+                base: spec.rotary_embedding_base,
+                rotary_dim: trunc(spec.global_attention_head_size * spec.partial_rotary_factor)
+              ]
+
+            :sliding_attention ->
+              [
+                position_ids: position_ids,
+                max_positions: spec.max_positions,
+                base: spec.rotary_embedding_base_local
+              ]
+          end
+
+        precomputed_kv = if is_shared, do: Map.get(state.shared_kv, layer_type), else: nil
+
+        {block_hidden_state, block_cache, pre_rope_kv} =
+          gemma4_block(
+            state.hidden_state,
+            block_cache,
+            offset,
+            idx,
+            spec,
+            per_layer_inputs,
+            precomputed_kv,
+            %{
+              attention_mask: attention_mask,
+              attention_head_mask: block_attention_head_mask,
+              rotary_opts: rotary_opts,
+              window_size: window_size,
+              head_size: head_size,
+              num_kv_heads: num_kv_heads,
+              query_norm: query_norm,
+              key_norm: key_norm,
+              value_norm: value_norm,
+              attention_scale: attention_scale,
+              first_kv_shared: first_kv_shared,
+              name: block_name
+            }
+          )
+
+        updated_shared_kv =
+          if is_store,
+            do: Map.put(state.shared_kv, layer_type, pre_rope_kv),
+            else: state.shared_kv
+
+        new_cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
+
+        %{
+          hidden_state: block_hidden_state,
+          hidden_states: Layers.append(state.hidden_states, block_hidden_state),
+          attentions: Layers.append(state.attentions, Layers.none()),
+          cache: new_cache,
+          shared_kv: updated_shared_kv
+        }
+      end)
+
+    update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, outputs.hidden_state))
   end
 
-  # Custom block implementation for Gemma 4's normalization structure:
-  # - Post-attention norm BEFORE residual add
-  # - Pre/post FFN norms
-  # - PLE applied AFTER attention+MLP as a third residual block
-  defp gemma4_block_impl(hidden_state, steps, name, spec, per_layer_inputs) do
-    # 1. Self-attention with pre/post norms
-    shortcut = hidden_state
+  # Builds one Gemma4 decoder block with:
+  # - Pre-attention norm, self-attention, post-attention norm, residual
+  # - Pre-FFN norm, FFN, post-FFN norm, residual
+  # - Optional PLE block
+  # - Layer scalar
+  # Returns {hidden_state, block_cache, pre_rope_kv} where pre_rope_kv is nil for shared layers
+  defp gemma4_block(hidden_state, block_cache, offset, idx, spec, per_layer_inputs, precomputed_kv, opts) do
+    name = opts.name
 
-    {hidden_state, attention_info} =
-      hidden_state
-      |> steps.self_attention_norm.()
-      |> steps.self_attention.()
+    # 1. Self-attention
+    shortcut = hidden_state
 
     hidden_state =
       Layers.rms_norm(hidden_state,
-        shift: 1.0,
+        name: join(name, "self_attention_norm"),
+        epsilon: spec.layer_norm_epsilon,
+        upcast: :all
+      )
+
+    {hidden_state, block_cache, pre_rope_kv} =
+      gemma4_attention(hidden_state, block_cache, offset, spec, precomputed_kv, opts)
+
+    hidden_state =
+      Layers.rms_norm(hidden_state,
         name: join(name, "post_attention_norm"),
         epsilon: spec.layer_norm_epsilon,
         upcast: :all
@@ -548,22 +578,31 @@ defmodule Bumblebee.Text.Gemma4Text do
 
     hidden_state = Axon.add(shortcut, hidden_state)
 
-    # 2. FFN with pre/post norms
+    # 2. FFN
     shortcut = hidden_state
 
     hidden_state =
       Layers.rms_norm(hidden_state,
-        shift: 1.0,
         name: join(name, "pre_ffn_norm"),
         epsilon: spec.layer_norm_epsilon,
         upcast: :all
       )
 
-    hidden_state = steps.ffn.(hidden_state)
+    intermediate_size =
+      if spec.use_double_wide_mlp and idx >= opts.first_kv_shared do
+        spec.intermediate_size * 2
+      else
+        spec.intermediate_size
+      end
+
+    hidden_state =
+      gated_ffn(hidden_state, intermediate_size, spec.hidden_size,
+        name: join(name, "ffn"),
+        activation: spec.activation
+      )
 
     hidden_state =
       Layers.rms_norm(hidden_state,
-        shift: 1.0,
         name: join(name, "post_ffn_norm"),
         epsilon: spec.layer_norm_epsilon,
         upcast: :all
@@ -571,23 +610,12 @@ defmodule Bumblebee.Text.Gemma4Text do
 
     hidden_state = Axon.add(shortcut, hidden_state)
 
-    # 3. PLE: gate hidden_state down to PLE dim, multiply with PLE signal, project back up
+    # 3. PLE
     hidden_state =
       if per_layer_inputs do
-        idx =
-          name
-          |> String.split(".")
-          |> Enum.at(2)
-          |> String.to_integer()
-
-        ple_slice =
-          Axon.nx(per_layer_inputs, fn x ->
-            x[[.., .., idx, ..]]
-          end)
-
+        ple_slice = Axon.nx(per_layer_inputs, fn x -> x[[.., .., idx, ..]] end)
         shortcut_ple = hidden_state
 
-        # Gate: project hidden_state DOWN to PLE dimension, then activation
         gated =
           Axon.dense(hidden_state, spec.hidden_size_per_layer_input,
             name: join(name, "per_layer_input_gate"),
@@ -595,21 +623,16 @@ defmodule Bumblebee.Text.Gemma4Text do
           )
 
         gated = Layers.activation(gated, spec.activation)
-
-        # Element-wise multiply with PLE signal
         gated = Axon.multiply(gated, ple_slice)
 
-        # Project back UP to hidden dimension
         gated =
           Axon.dense(gated, spec.hidden_size,
             name: join(name, "per_layer_projection"),
             use_bias: false
           )
 
-        # Normalize
         gated =
           Layers.rms_norm(gated,
-            shift: 1.0,
             name: join(name, "post_per_layer_input_norm"),
             epsilon: spec.layer_norm_epsilon
           )
@@ -619,7 +642,7 @@ defmodule Bumblebee.Text.Gemma4Text do
         hidden_state
       end
 
-    # 4. Layer scalar: multiply output by per-layer learned scalar
+    # 4. Layer scalar
     hidden_state =
       Axon.layer(
         fn hidden_state, scalar, _opts ->
@@ -632,13 +655,141 @@ defmodule Bumblebee.Text.Gemma4Text do
         name: join(name, "layer_scalar_op")
       )
 
-    # Handle cross-attention (required by block interface but not used by Gemma 4)
-    {_hidden_state, cross_attention_info} =
-      steps.cross_attention_maybe.(hidden_state, fn _ ->
-        raise "cross attention not supported"
-      end)
+    {hidden_state, block_cache, pre_rope_kv}
+  end
 
-    {hidden_state, attention_info, cross_attention_info}
+  # Builds self-attention for one Gemma4 block.
+  # Non-shared layers: compute Q/K/V, apply RoPE to Q+K, GQA-expand, return post-RoPE expanded K/V.
+  # Shared layers: compute Q only, apply RoPE to Q only, reuse stored post-RoPE K/V from store layer.
+  # Returns {attention_output, block_cache, storable_kv}.
+  defp gemma4_attention(hidden_state, block_cache, offset, spec, precomputed_kv, opts) do
+    name = join(opts.name, "self_attention")
+
+    head_size = opts.head_size
+    num_kv_heads = opts.num_kv_heads
+    num_q_heads = spec.num_attention_heads
+    inner_size = num_q_heads * head_size
+    inner_kv_size = num_kv_heads * head_size
+
+    rotary_opts = opts.rotary_opts
+    position_ids = rotary_opts[:position_ids]
+
+    rotary_call_opts =
+      rotary_opts
+      |> Keyword.delete(:position_ids)
+      |> Keyword.put(:name, join(name, "rotary_embedding"))
+
+    # Q projection + split heads + Q-norm (always computed)
+    query =
+      hidden_state
+      |> Axon.dense(inner_size, name: join(name, "query"), use_bias: spec.use_attention_bias)
+      |> Layers.split_heads(num_q_heads)
+      |> opts.query_norm.(join(name, "query_norm"))
+
+    {query, key, value, storable_kv} =
+      if precomputed_kv do
+        # Shared layer: K/V are already post-RoPE, post-GQA from store layer.
+        # Apply RoPE to Q only by passing stored key through and discarding the re-rotated key.
+        {stored_key, stored_value} = precomputed_kv
+
+        {rotated_query, _discarded} =
+          Layers.rotary_embedding(
+            query,
+            stored_key,
+            position_ids,
+            opts.attention_mask,
+            head_size,
+            rotary_call_opts
+          )
+
+        {rotated_query, stored_key, stored_value, nil}
+      else
+        # Non-shared layer: compute K/V projections + norms
+        key =
+          hidden_state
+          |> Axon.dense(inner_kv_size,
+            name: join(name, "key"),
+            use_bias: spec.use_attention_bias
+          )
+          |> Layers.split_heads(num_kv_heads)
+          |> opts.key_norm.(join(name, "key_norm"))
+
+        value =
+          hidden_state
+          |> Axon.dense(inner_kv_size,
+            name: join(name, "value"),
+            use_bias: spec.use_attention_bias
+          )
+          |> Layers.split_heads(num_kv_heads)
+          |> opts.value_norm.(join(name, "value_norm"))
+
+        # Apply RoPE to both Q and K
+        {rotated_query, rotated_key} =
+          Layers.rotary_embedding(
+            query,
+            key,
+            position_ids,
+            opts.attention_mask,
+            head_size,
+            rotary_call_opts
+          )
+
+        # GQA: expand K/V heads to match Q heads
+        num_kv_groups = div(num_q_heads, num_kv_heads)
+
+        expanded_key =
+          if num_kv_groups > 1,
+            do: Layers.repeat_interleave(rotated_key, num_kv_groups, axis: 2),
+            else: rotated_key
+
+        expanded_value =
+          if num_kv_groups > 1,
+            do: Layers.repeat_interleave(value, num_kv_groups, axis: 2),
+            else: value
+
+        # Storable: post-RoPE, post-GQA (matches Python's shared_kv_states)
+        {rotated_query, expanded_key, expanded_value, {expanded_key, expanded_value}}
+      end
+
+    # KV cache update
+    {self_attention_cache, cross_attention_cache} =
+      Layers.Decoder.get_attention_caches(block_cache)
+
+    {key, value, self_attention_cache} =
+      Layers.Decoder.cached_attention_key_values(key, value, self_attention_cache, offset)
+
+    # Scaled dot-product attention
+    {attention_output, _weights} =
+      Layers.attention(
+        query,
+        key,
+        value,
+        opts.attention_mask,
+        opts.attention_head_mask,
+        Layers.none(),
+        offset,
+        scale: opts.attention_scale,
+        causal: true,
+        window_size: opts.window_size
+      )
+
+    # Output projection
+    attention_output =
+      attention_output
+      |> Layers.flatten_trailing()
+      |> Axon.dense(spec.hidden_size,
+        name: join(name, "output"),
+        use_bias: spec.use_attention_bias
+      )
+
+    block_cache =
+      Layers.Decoder.put_attention_caches(
+        block_cache,
+        self_attention_cache,
+        cross_attention_cache
+      )
+
+    {attention_output, block_cache, storable_kv}
   end
 
   defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
