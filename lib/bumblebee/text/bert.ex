@@ -67,6 +67,10 @@ defmodule Bumblebee.Text.Bert do
         default: 0.02,
         doc:
           "the standard deviation of the normal initializer used for initializing kernel parameters"
+      ],
+      tie_word_embeddings: [
+        default: true,
+        doc: "whether to tie input and output embedding weights"
       ]
     ] ++ Shared.common_options([:use_cross_attention, :num_labels, :id_to_label])
 
@@ -606,7 +610,8 @@ defmodule Bumblebee.Text.Bert do
           attention_dropout_rate: {"attention_probs_dropout_prob", number()},
           classifier_dropout_rate: {"classifier_dropout", optional(number())},
           layer_norm_epsilon: {"layer_norm_eps", number()},
-          initializer_scale: {"initializer_range", number()}
+          initializer_scale: {"initializer_range", number()},
+          tie_word_embeddings: {"tie_word_embeddings", boolean()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -614,7 +619,7 @@ defmodule Bumblebee.Text.Bert do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(_spec) do
+    def params_mapping(spec) do
       %{
         "embedder.token_embedding" => "bert.embeddings.word_embeddings",
         "embedder.position_embedding" => "bert.embeddings.position_embeddings",
@@ -645,7 +650,11 @@ defmodule Bumblebee.Text.Bert do
         "pooler.output" => "bert.pooler.dense",
         "language_modeling_head.dense" => "cls.predictions.transform.dense",
         "language_modeling_head.norm" => "cls.predictions.transform.LayerNorm",
-        "language_modeling_head.output" => "cls.predictions.decoder",
+        "language_modeling_head.output" =>
+          if(spec.tie_word_embeddings,
+            do: "bert.embeddings.word_embeddings",
+            else: "cls.predictions.decoder"
+          ),
         "language_modeling_head.bias" => "cls.predictions",
         "next_sentence_prediction_head.output" => "cls.seq_relationship",
         "sequence_classification_head.output" => "classifier",
