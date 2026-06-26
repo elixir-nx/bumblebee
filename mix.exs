@@ -45,7 +45,6 @@ defmodule Bumblebee.MixProject do
       {:safetensors, "~> 0.1.3"},
       {:jason, "~> 1.4.0"},
       {:unzip, "~> 0.12.0 or ~> 0.13.0"},
-      {:progress_bar, "~> 3.0"},
       {:stb_image, "~> 0.6.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
