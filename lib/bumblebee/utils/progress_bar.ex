@@ -2,26 +2,31 @@ defmodule Bumblebee.Utils.ProgressBar do
   @moduledoc false
 
   # Reserve 2 chars for the start and end of the bar
-  @reserved_width 2
+  # and one to leave a gap at the end of a line, to prevent wrapping on to the next line
+  @reserved_width 3
 
   @start_end_char "|"
   @filled_char "="
   @unfilled_char " "
+  @carriage_return "\r"
+
+  @default_opts [unit: :none]
 
   @doc """
   Renders a simple progress bar to the terminal.
   The progress bar sizes to fill the entire width of the terminal.
   """
-  @spec render(number(), number()) :: :ok
-  @spec render(number(), number(), :none | :bytes) :: :ok
-  def render(count, total, unit \\ :none) do
+  @spec render(number(), number(), keyword()) :: :ok
+  def render(count, total, opts \\ @default_opts) do
+    opts = Keyword.merge(@default_opts, opts)
+    unit = Keyword.get(opts, :unit, :none)
     percent = min(max(count / total, 0), 1)
 
     formatted_percent = String.pad_leading("#{trunc(percent * 100)}%", 4)
     formatted_progress = " " <> formatted_progress(count, total, unit)
 
     reserved_width =
-      @reserved_width + String.length(formatted_progress) + String.length(formatted_percent)
+      @reserved_width + byte_size(formatted_progress) + byte_size(formatted_percent)
 
     bar_width = max(terminal_width() - reserved_width, 0)
 
@@ -32,7 +37,8 @@ defmodule Bumblebee.Utils.ProgressBar do
     unfilled_chars = String.duplicate(@unfilled_char, unfilled_char_count)
 
     output =
-      @start_end_char <>
+      @carriage_return <>
+        @start_end_char <>
         filled_chars <>
         unfilled_chars <>
         @start_end_char <>

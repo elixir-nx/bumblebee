@@ -121,7 +121,7 @@ defmodule Bumblebee.Utils.HTTP do
       last_step_bucket = if step, do: div(last_percent, step), else: last_percent
 
       if step_bucket > last_step_bucket or percent == 100 do
-        Bumblebee.Utils.ProgressBar.render(state.size, state.total_size, :bytes)
+        Bumblebee.Utils.ProgressBar.render(state.size, state.total_size, unit: :bytes)
       end
     end
 
