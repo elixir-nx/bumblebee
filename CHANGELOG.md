@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.1](https://github.com/elixir-nx/bumblebee/tree/v0.7.1) (2026-07-22)
+
+### Added
+
+* Added `:safetensors_reader` option to `Bumblebee.load_model/2` ([#456](https://github.com/elixir-nx/bumblebee/pull/456))
+
+### Changed
+
+* Replaced the `progress_bar` dependency with a custom utility function ([#461](https://github.com/elixir-nx/bumblebee/pull/461))
+* Updated to accept Nx 0.13
+
+### Fixed
+
+* Fix loading BERT models with tied weights
+
 ## [v0.7.0](https://github.com/elixir-nx/bumblebee/tree/v0.7.0) (2026-05-16)
 
 ### Added
