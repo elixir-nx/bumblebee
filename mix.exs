@@ -1,7 +1,7 @@
 defmodule Bumblebee.MixProject do
   use Mix.Project
 
-  @version "0.7.0"
+  @version "0.7.1"
   @description "Pre-trained and transformer Neural Network models in Axon"
 
   def project do
@@ -34,7 +34,7 @@ defmodule Bumblebee.MixProject do
       {:axon, "~> 0.8.0"},
       # {:axon, github: "elixir-nx/axon", override: true},
       {:tokenizers, "~> 0.4"},
-      {:nx, "~> 0.12.0"},
+      {:nx, "~> 0.12.0 or ~> 0.13.0"},
       {:exla, ">= 0.0.0", only: [:dev, :test]},
       {:torchx, ">= 0.0.0", only: [:dev, :test]},
       # {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
