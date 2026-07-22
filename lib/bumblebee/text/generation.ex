@@ -663,7 +663,7 @@ defmodule Bumblebee.Text.Generation do
     finished? = finished_length > 0
     output_length = Nx.broadcast(length - input_length, {batch_size})
     data = %{token_id: token_id, finished?: finished?, length: output_length}
-    {ignored, _data} = Nx.io_call({state.ignored, data}, :token)
+    {ignored, _data} = io_call({state.ignored, data}, :token)
 
     %{state | sequences: sequences, length: length, finished_length: finished_length, ignored: ignored}
   end
