@@ -665,7 +665,13 @@ defmodule Bumblebee.Text.Generation do
     data = %{token_id: token_id, finished?: finished?, length: output_length}
     {ignored, _data} = io_call({state.ignored, data}, :token)
 
-    %{state | sequences: sequences, length: length, finished_length: finished_length, ignored: ignored}
+    %{
+      state
+      | sequences: sequences,
+        length: length,
+        finished_length: finished_length,
+        ignored: ignored
+    }
   end
 
   deftransformp eos_token?(token_id, eos_token_id) do
