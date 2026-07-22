@@ -154,7 +154,8 @@ defmodule Bumblebee.Text.TextGeneration do
         _event, %{finished?: true} = state ->
           {:halt, state}
 
-        {:token, %{token_id: token_id, finished?: finished?, length: output_length}}, state ->
+        {:token, {_ignored, %{token_id: token_id, finished?: finished?, length: output_length}}},
+        state ->
           token_id = Nx.to_number(token_id[0])
           finished? = Nx.to_number(finished?[0]) == 1
 

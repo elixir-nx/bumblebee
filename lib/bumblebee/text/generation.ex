@@ -663,11 +663,15 @@ defmodule Bumblebee.Text.Generation do
     finished? = finished_length > 0
     output_length = Nx.broadcast(length - input_length, {batch_size})
     data = %{token_id: token_id, finished?: finished?, length: output_length}
-    token = create_token()
-    {token, _} = hook_token(token, data, :token)
+    {ignored, _data} = io_call({state.ignored, data}, :token)
 
-    state = %{state | sequences: sequences, length: length, finished_length: finished_length}
-    attach_token(token, state)
+    %{
+      state
+      | sequences: sequences,
+        length: length,
+        finished_length: finished_length,
+        ignored: ignored
+    }
   end
 
   deftransformp eos_token?(token_id, eos_token_id) do
