@@ -75,6 +75,7 @@ defmodule Bumblebee.Layers.Transformer do
             :num_blocks,
             :rotary_embedding,
             :attention_window_size,
+            :post_block_hook,
             attention_mask: Layers.none(),
             attention_head_mask: Layers.none(),
             attention_relative_bias: nil,
@@ -97,6 +98,7 @@ defmodule Bumblebee.Layers.Transformer do
     cache = opts[:cache]
     rotary_embedding = opts[:rotary_embedding]
     attention_window_size = opts[:attention_window_size]
+    post_block_hook = opts[:post_block_hook]
 
     block_opts = Keyword.take(opts, block_opts_keys)
 
@@ -159,6 +161,14 @@ defmodule Bumblebee.Layers.Transformer do
                 name: join(name, idx)
               ] ++ block_opts
             )
+
+          # Apply post-block hook if provided (e.g., for DeepStack feature injection)
+          hidden_state =
+            if post_block_hook do
+              post_block_hook.(idx, hidden_state)
+            else
+              hidden_state
+            end
 
           cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
 
