@@ -79,6 +79,7 @@ defmodule Bumblebee.Layers.Moe do
         routed_scaling_factor: 1.0,
         use_score_correction_bias: true,
         use_bias: false,
+        logit_softcapping: nil,
         expert_use_bias: false,
         expert_variant: :gated,
         expert_clamp_limit: 7.0,
@@ -98,6 +99,7 @@ defmodule Bumblebee.Layers.Moe do
         routed_scaling_factor: opts[:routed_scaling_factor],
         use_score_correction_bias: opts[:use_score_correction_bias],
         use_bias: opts[:use_bias],
+        logit_softcapping: opts[:logit_softcapping],
         kernel_initializer: opts[:kernel_initializer],
         name: join(name, "router")
       )
@@ -122,11 +124,19 @@ defmodule Bumblebee.Layers.Moe do
 
       intermediate_size ->
         shared =
-          gated_ffn(hidden_state, intermediate_size, opts[:hidden_size],
-            activation: opts[:activation],
-            kernel_initializer: opts[:kernel_initializer],
-            name: join(name, "shared_expert")
-          )
+          if opts[:expert_variant] == :ungated do
+            ffn(hidden_state, intermediate_size, opts[:hidden_size],
+              activation: opts[:activation],
+              kernel_initializer: opts[:kernel_initializer],
+              name: join(name, "shared_expert")
+            )
+          else
+            gated_ffn(hidden_state, intermediate_size, opts[:hidden_size],
+              activation: opts[:activation],
+              kernel_initializer: opts[:kernel_initializer],
+              name: join(name, "shared_expert")
+            )
+          end
 
         Axon.add(routed, shared)
     end
@@ -183,6 +193,7 @@ defmodule Bumblebee.Layers.Moe do
         routed_scaling_factor: 1.0,
         use_score_correction_bias: true,
         use_bias: false,
+        logit_softcapping: nil,
         kernel_initializer: :glorot_uniform
       ])
 
@@ -232,7 +243,8 @@ defmodule Bumblebee.Layers.Moe do
       scoring: opts[:scoring],
       normalize_top_k: opts[:normalize_top_k],
       routed_scaling_factor: opts[:routed_scaling_factor],
-      logit_bias: opts[:use_bias]
+      logit_bias: opts[:use_bias],
+      logit_softcapping: opts[:logit_softcapping]
     )
   end
 
@@ -250,6 +262,7 @@ defmodule Bumblebee.Layers.Moe do
         :scoring,
         :normalize_top_k,
         :routed_scaling_factor,
+        :logit_softcapping,
         logit_bias: false,
         mode: :inference
       ])
@@ -263,6 +276,13 @@ defmodule Bumblebee.Layers.Moe do
     bias = Nx.as_type(bias, :f32)
 
     logits = Nx.dot(hidden_state, [-1], kernel, [0])
+
+    # Some routers cap the logits before scoring
+    logits =
+      case opts[:logit_softcapping] do
+        nil -> logits
+        cap -> Nx.tanh(logits / cap) * cap
+      end
 
     logits = if opts[:logit_bias], do: logits + bias, else: logits
 
@@ -409,24 +429,31 @@ defmodule Bumblebee.Layers.Moe do
     kernels = [gate_kernel, up_kernel, down_kernel]
 
     {inputs, impl} =
-      if opts[:use_bias] do
-        gate_bias =
-          Axon.param("gate_bias", fn _, _ -> {num_experts, intermediate_size} end,
-            initializer: :zeros
-          )
+      cond do
+        opts[:variant] == :ungated ->
+          {[hidden_state, weights, up_kernel, down_kernel], &ungated_experts_impl/5}
 
-        up_bias =
-          Axon.param("up_bias", fn _, _ -> {num_experts, intermediate_size} end,
-            initializer: :zeros
-          )
+        opts[:use_bias] ->
+          gate_bias =
+            Axon.param("gate_bias", fn _, _ -> {num_experts, intermediate_size} end,
+              initializer: :zeros
+            )
 
-        down_bias =
-          Axon.param("down_bias", fn _, _ -> {num_experts, hidden_size} end, initializer: :zeros)
+          up_bias =
+            Axon.param("up_bias", fn _, _ -> {num_experts, intermediate_size} end,
+              initializer: :zeros
+            )
 
-        {[hidden_state, weights] ++ kernels ++ [gate_bias, up_bias, down_bias],
-         &biased_experts_impl/9}
-      else
-        {[hidden_state, weights] ++ kernels, &experts_impl/6}
+          down_bias =
+            Axon.param("down_bias", fn _, _ -> {num_experts, hidden_size} end,
+              initializer: :zeros
+            )
+
+          {[hidden_state, weights] ++ kernels ++ [gate_bias, up_bias, down_bias],
+           &biased_experts_impl/9}
+
+        true ->
+          {[hidden_state, weights] ++ kernels, &experts_impl/6}
       end
 
     Axon.layer(impl, inputs,
@@ -437,6 +464,26 @@ defmodule Bumblebee.Layers.Moe do
       clamp_limit: opts[:clamp_limit],
       activation_alpha: opts[:activation_alpha]
     )
+  end
+
+  defnp ungated_experts_impl(hidden_state, weights, up_kernel, down_kernel, opts \\ []) do
+    opts =
+      keyword!(opts, [:activation, :variant, :clamp_limit, :activation_alpha, mode: :inference])
+
+    {batch_size, sequence_length, hidden_size} = Nx.shape(hidden_state)
+    tokens = Nx.reshape(hidden_state, {batch_size * sequence_length, hidden_size})
+    weights = Nx.reshape(weights, {batch_size * sequence_length, :auto})
+    weights = Nx.as_type(weights, Nx.type(tokens))
+
+    intermediate =
+      tokens
+      |> Nx.dot([1], up_kernel, [1])
+      |> apply_activation(opts[:activation])
+      |> Nx.multiply(Nx.new_axis(weights, -1))
+
+    output = Nx.dot(intermediate, [1, 2], down_kernel, [0, 1])
+
+    Nx.reshape(output, {batch_size, sequence_length, hidden_size})
   end
 
   defnp experts_impl(hidden_state, weights, gate_kernel, up_kernel, down_kernel, opts \\ []) do
@@ -520,8 +567,37 @@ defmodule Bumblebee.Layers.Moe do
     case activation do
       :gelu_approx_tanh -> Layers.gelu_approx_tanh(input)
       :gelu_approx_sigmoid -> Layers.gelu_approx_sigmoid(input)
+      :relu_squared -> Layers.relu_squared(input)
       activation -> apply(Axon.Activations, activation, [input])
     end
+  end
+
+  @doc """
+  Adds a regular (non-gated) feed-forward network.
+  """
+  def ffn(hidden_state, intermediate_size, output_size, opts) do
+    opts =
+      Keyword.validate!(opts, [
+        :name,
+        activation: :silu,
+        use_bias: false,
+        kernel_initializer: :glorot_uniform
+      ])
+
+    name = opts[:name]
+
+    hidden_state
+    |> Axon.dense(intermediate_size,
+      kernel_initializer: opts[:kernel_initializer],
+      name: join(name, "intermediate"),
+      use_bias: opts[:use_bias]
+    )
+    |> Layers.activation(opts[:activation])
+    |> Axon.dense(output_size,
+      kernel_initializer: opts[:kernel_initializer],
+      name: join(name, "output"),
+      use_bias: opts[:use_bias]
+    )
   end
 
   @doc """

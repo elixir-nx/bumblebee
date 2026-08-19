@@ -40,6 +40,11 @@ defmodule Bumblebee.Layers.Transformer do
     * `:attention` - see `block/2`. Additionally, a function taking the
       block index and returning the block configuration may be given
 
+    * `:num_attention_heads` (required) - see `block/2`. Additionally, a
+      function taking the block index and returning the number of heads
+      may be given, for models where the number of heads differs across
+      blocks
+
     * `:name` - the prefix for layer names
 
   For all other options (including required options) see `block/2`.
@@ -55,7 +60,6 @@ defmodule Bumblebee.Layers.Transformer do
     # block_opts_keys because they are handled specially (they support
     # per-layer functions) and passed explicitly to block/2
     block_opts_keys = [
-      :num_attention_heads,
       :num_key_value_heads,
       :causal,
       :hidden_size,
@@ -72,7 +76,8 @@ defmodule Bumblebee.Layers.Transformer do
       :attention_scale,
       :query_norm,
       :key_norm,
-      :output_gate_activation
+      :output_gate_activation,
+      :output_gate_per_head
     ]
 
     opts =
@@ -86,6 +91,7 @@ defmodule Bumblebee.Layers.Transformer do
             :attention_window_size,
             :ffn,
             :attention,
+            :num_attention_heads,
             attention_mask: Layers.none(),
             attention_head_mask: Layers.none(),
             attention_relative_bias: nil,
@@ -110,6 +116,7 @@ defmodule Bumblebee.Layers.Transformer do
     attention_window_size = opts[:attention_window_size]
     ffn = opts[:ffn]
     attention = opts[:attention]
+    num_attention_heads = opts[:num_attention_heads]
 
     block_opts = Keyword.take(opts, block_opts_keys)
 
@@ -159,6 +166,7 @@ defmodule Bumblebee.Layers.Transformer do
           # keyword lists), so an arity-1 function is a per-block builder
           block_ffn = per_block(ffn, idx)
           block_attention = per_block(attention, idx)
+          block_num_attention_heads = per_block(num_attention_heads, idx)
 
           {hidden_state, attention, cross_attention, block_cache, attention_relative_bias} =
             block(
@@ -176,6 +184,7 @@ defmodule Bumblebee.Layers.Transformer do
                 attention_window_size: block_attention_window_size,
                 ffn: block_ffn,
                 attention: block_attention,
+                num_attention_heads: block_num_attention_heads,
                 name: join(name, idx)
               ] ++ block_opts
             )
@@ -386,6 +395,7 @@ defmodule Bumblebee.Layers.Transformer do
         query_norm: nil,
         key_norm: nil,
         output_gate_activation: nil,
+        output_gate_per_head: false,
         attention: nil,
         sinks: nil
       ])
@@ -486,6 +496,7 @@ defmodule Bumblebee.Layers.Transformer do
           query_norm: query_norm,
           key_norm: key_norm,
           output_gate_activation: opts[:output_gate_activation],
+          output_gate_per_head: opts[:output_gate_per_head],
           name: join(name, "self_attention")
         )
 
@@ -744,6 +755,10 @@ defmodule Bumblebee.Layers.Transformer do
     * `:attention_head_size` - the projection size for key, value,
       and query states per-head. Defaults to `div(hidden_size, num_attention_heads)`
 
+    * `:value_head_size` - the projection size for value states per-head.
+      Some models use a value head size different from the query and key
+      head size. Defaults to `:attention_head_size`
+
     * `:query_use_bias` - whether to use bias in the query projection.
       Defaults to `true`
 
@@ -810,6 +825,7 @@ defmodule Bumblebee.Layers.Transformer do
         kernel_initializer: :glorot_uniform,
         dropout_rate: 0.0,
         attention_head_size: nil,
+        value_head_size: nil,
         query_use_bias: true,
         key_use_bias: true,
         value_use_bias: true,
@@ -818,6 +834,7 @@ defmodule Bumblebee.Layers.Transformer do
         query_norm: nil,
         key_norm: nil,
         output_gate_activation: nil,
+        output_gate_per_head: false,
         sinks: nil
       ])
 
@@ -847,8 +864,10 @@ defmodule Bumblebee.Layers.Transformer do
     attention_relative_bias = opts[:attention_relative_bias]
 
     attention_head_size = opts[:attention_head_size] || div(hidden_size, num_heads)
+    value_head_size = opts[:value_head_size] || attention_head_size
     inner_size = num_heads * attention_head_size
     inner_kv_size = num_key_value_heads * attention_head_size
+    inner_value_size = num_key_value_heads * value_head_size
 
     attention_input = query
 
@@ -872,7 +891,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     value =
       value
-      |> Axon.dense(inner_kv_size,
+      |> Axon.dense(inner_value_size,
         kernel_initializer: kernel_initializer,
         name: join(name, "value"),
         use_bias: value_use_bias
@@ -991,14 +1010,32 @@ defmodule Bumblebee.Layers.Transformer do
           attention_output
 
         activation ->
+          gate_size = if opts[:output_gate_per_head], do: num_heads, else: inner_size
+
           gate =
             attention_input
-            |> Axon.dense(inner_size,
+            |> Axon.dense(gate_size,
               kernel_initializer: kernel_initializer,
               name: join(name, "output_gate"),
               use_bias: false
             )
             |> Layers.activation(activation)
+
+          gate =
+            if opts[:output_gate_per_head] do
+              # A single gate value per head, broadcast across the head
+              Axon.layer(
+                fn attention_output, gate, _opts ->
+                  gate
+                  |> Nx.new_axis(-1)
+                  |> Nx.broadcast(Tuple.insert_at(Nx.shape(gate), 3, attention_head_size))
+                  |> Nx.reshape(Nx.shape(attention_output))
+                end,
+                [attention_output, gate]
+              )
+            else
+              gate
+            end
 
           Axon.multiply(attention_output, gate)
       end

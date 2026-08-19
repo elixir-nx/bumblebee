@@ -3,7 +3,7 @@ defmodule Bumblebee.Layers do
 
   import Nx.Defn
 
-  @unsupported_activations [:gelu_approx_tanh, :gelu_approx_sigmoid]
+  @unsupported_activations [:gelu_approx_tanh, :gelu_approx_sigmoid, :relu_squared]
 
   @pi :math.pi()
 
@@ -40,6 +40,13 @@ defmodule Bumblebee.Layers do
   defn gelu_approx_tanh(input, _opts \\ []) do
     0.5 * input *
       (1.0 + Nx.tanh(Nx.sqrt(2.0 / @pi) * (input + 0.044715 * Nx.pow(input, 3.0))))
+  end
+
+  @doc """
+  Implements the squared ReLU activation.
+  """
+  defn relu_squared(input, _opts \\ []) do
+    input |> Nx.max(0.0) |> Nx.pow(2)
   end
 
   @doc """
@@ -1354,6 +1361,20 @@ defmodule Bumblebee.Layers do
       name: opts[:name],
       op_name: :causal_depthwise_conv1d,
       kernel_size: kernel_size
+    )
+  end
+
+  @doc """
+  Zeroes out the hidden state at padding positions.
+
+  This is used by state-space models, where padding tokens would
+  otherwise contribute to the recurrent state.
+  """
+  def mask_padding(hidden_state, attention_mask, offset) do
+    Axon.layer(
+      &mask_padding_impl/5,
+      [hidden_state, hidden_state, Axon.optional(attention_mask), Axon.optional(offset)],
+      op_name: :mask_padding
     )
   end
 

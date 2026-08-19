@@ -208,7 +208,8 @@ defmodule Bumblebee.Shared.Converters do
     mapping = %{
       "gelu_new" => :gelu_approx_tanh,
       "gelu_pytorch_tanh" => :gelu_approx_tanh,
-      "quick_gelu" => :gelu_approx_sigmoid
+      "quick_gelu" => :gelu_approx_sigmoid,
+      "relu2" => :relu_squared
     }
 
     fn name, value ->

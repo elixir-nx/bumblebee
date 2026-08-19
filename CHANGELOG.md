@@ -20,7 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * LFM2 model
 * Gemma 4 text model
 * DeepSeek V4 model
+* Kimi K2.5 vision model
+* Laguna model
+* MiMo V2 Flash model
+* Nemotron-H model, a Mamba-2 hybrid
 * Mixture-of-experts layers (`Bumblebee.Layers.Moe`), shared by the models above
+* Mamba-2 state-space layers (`Bumblebee.Layers.Mamba`)
 * Attention sinks, causal depthwise convolutions and YaRN/proportional rotary embedding scaling in `Bumblebee.Layers`
 
 ### Fixed

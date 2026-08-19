@@ -260,6 +260,44 @@ defmodule Bumblebee.Layers.Decoder do
   end
 
   @doc """
+  Reads an extra state from the cache.
+
+  Returns `Bumblebee.Layers.none/0` when there is no cache. The
+  corresponding cache entry must be initialized by passing
+  `:extra_window_states` to `init_cache/3`.
+  """
+  def get_extra_state(attention_cache, name) do
+    Layers.if_present attention_cache do
+      Axon.layer(
+        fn attention_cache, opts -> Map.fetch!(attention_cache, opts[:state_name]) end,
+        [attention_cache],
+        state_name: name,
+        op_name: :get_extra_state
+      )
+    else
+      Layers.none()
+    end
+  end
+
+  @doc """
+  Writes an extra state into the cache.
+  """
+  def put_extra_state(attention_cache, name, state) do
+    Layers.if_present attention_cache do
+      Axon.layer(
+        fn attention_cache, state, opts ->
+          Map.put(attention_cache, opts[:state_name], state)
+        end,
+        [attention_cache, state],
+        state_name: name,
+        op_name: :put_extra_state
+      )
+    else
+      attention_cache
+    end
+  end
+
+  @doc """
   Combines a new state with a fixed-size window of preceding states from
   the cache.
 
