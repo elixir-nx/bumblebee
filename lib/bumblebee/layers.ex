@@ -1262,6 +1262,48 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  Splices embeddings into a sequence of token embeddings.
+
+  Multimodal models embed non-text inputs, such as images, into the same
+  space as the token embeddings and place them at the positions of
+  dedicated placeholder tokens. Expects `mask` to mark those positions,
+  and `embeddings` to hold the replacements in order.
+
+  ## Parameter Shapes
+
+    * `token_embeddings` - `{batch_size, sequence_length, hidden_size}`
+    * `embeddings` - `{batch_size, num_embeddings, hidden_size}`
+    * `mask` - `{batch_size, sequence_length}`
+
+  Note that the placeholder tokens beyond `num_embeddings` keep their
+  token embedding.
+  """
+  def splice_embeddings(token_embeddings, embeddings, mask) do
+    Axon.layer(&splice_embeddings_impl/4, [token_embeddings, embeddings, mask],
+      op_name: :splice_embeddings
+    )
+  end
+
+  defnp splice_embeddings_impl(token_embeddings, embeddings, mask, _opts \\ []) do
+    mask = Nx.as_type(mask, :s64)
+
+    # The index of each placeholder token among all placeholder tokens
+    indices =
+      mask
+      |> Nx.cumulative_sum(axis: 1)
+      |> Nx.subtract(1)
+      |> Nx.max(0)
+      |> Nx.min(Nx.axis_size(embeddings, 1) - 1)
+
+    embeddings =
+      embeddings
+      |> Bumblebee.Utils.Nx.batched_take(indices)
+      |> Nx.as_type(Nx.type(token_embeddings))
+
+    Nx.select(Nx.new_axis(mask, -1), embeddings, token_embeddings)
+  end
+
+  @doc """
   Adds a causal depthwise 1-D convolution over the sequence axis.
 
   Expects `full_hidden_state` to be `hidden_state`, optionally prepended

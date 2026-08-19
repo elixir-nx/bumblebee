@@ -300,16 +300,17 @@ defmodule Bumblebee.Text.MuseGlimmerText do
   defp embedder(input_ids, input_embeddings, spec, opts) do
     name = opts[:name]
 
-    embeddings =
-      Layers.default input_embeddings do
-        Axon.embedding(input_ids, spec.vocab_size, spec.hidden_size,
-          kernel_initializer: kernel_initializer(spec),
-          name: join(name, "token_embedding")
-        )
-      end
-
-    # The embeddings are normalized with a weight-less RMS normalization
-    scaleless_rms_norm(embeddings, spec.layer_norm_epsilon)
+    # The normalization is a part of the embedding lookup, so it does
+    # not apply to embeddings passed by the caller, such as the image
+    # embeddings that a multimodal model splices in
+    Layers.default input_embeddings do
+      input_ids
+      |> Axon.embedding(spec.vocab_size, spec.hidden_size,
+        kernel_initializer: kernel_initializer(spec),
+        name: join(name, "token_embedding")
+      )
+      |> scaleless_rms_norm(spec.layer_norm_epsilon)
+    end
   end
 
   defp decoder(
