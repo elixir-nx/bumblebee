@@ -225,24 +225,31 @@ defmodule Bumblebee.Layers do
     * `:dropout_rate` - the dropout rate for attention weights dropout.
       Defaults to `0.0`
 
+    * `:sinks` - a node with per-head attention sink logits, of shape
+      `{num_heads}`. When set, the sinks take part in the softmax, but
+      are dropped from the resulting weights, which allows the attention
+      to attend to "nothing"
+
   ## References
 
     * [Attention Is All You Need](https://arxiv.org/abs/1706.03762), Figure 2 (left)
 
   """
   def attention(query, key, value, key_mask, head_mask, bias, offset, opts \\ []) do
-    opts = Keyword.validate!(opts, [:window_size, :scale, causal: false, dropout_rate: 0.0])
+    opts =
+      Keyword.validate!(opts, [:window_size, :scale, :sinks, causal: false, dropout_rate: 0.0])
 
     weights =
       Axon.layer(
-        &attention_weights_impl/7,
+        &attention_weights_impl/8,
         [
           query,
           key,
           Axon.optional(key_mask),
           Axon.optional(head_mask),
           Axon.optional(bias),
-          Axon.optional(offset)
+          Axon.optional(offset),
+          Axon.optional(opts[:sinks] || none())
         ],
         causal: opts[:causal],
         window_size: opts[:window_size],
@@ -255,7 +262,7 @@ defmodule Bumblebee.Layers do
     {output, weights}
   end
 
-  defnp attention_weights_impl(query, key, key_mask, head_mask, bias, offset, opts \\ []) do
+  defnp attention_weights_impl(query, key, key_mask, head_mask, bias, offset, sinks, opts \\ []) do
     opts = keyword!(opts, [:window_size, mode: :inference, scale: true, causal: false])
 
     query = Nx.transpose(query, axes: [0, 2, 1, 3])
@@ -329,7 +336,28 @@ defmodule Bumblebee.Layers do
 
     weights = weights + bias
 
-    weights = Axon.Activations.softmax(weights, axis: -1)
+    weights =
+      case sinks do
+        %Axon.None{} ->
+          Axon.Activations.softmax(weights, axis: -1)
+
+        sinks ->
+          # An attention sink is a learnt per-head logit that takes part
+          # in the softmax, but has no value attached, which allows the
+          # attention to attend to "nothing"
+          sinks =
+            sinks
+            |> Nx.reshape({1, :auto, 1, 1})
+            |> Nx.broadcast(
+              {Nx.axis_size(weights, 0), Nx.axis_size(weights, 1), Nx.axis_size(weights, 2), 1}
+            )
+            |> Nx.as_type(Nx.type(weights))
+
+          [weights, sinks]
+          |> Nx.concatenate(axis: -1)
+          |> Axon.Activations.softmax(axis: -1)
+          |> Nx.slice_along_axis(0, key_sequence_length, axis: -1)
+      end
 
     case head_mask do
       %Axon.None{} ->
@@ -1234,10 +1262,141 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  Adds a causal depthwise 1-D convolution over the sequence axis.
+
+  Expects `full_hidden_state` to be `hidden_state`, optionally prepended
+  with the preceding `kernel_size - 1` positions taken from the cache
+  (see `Bumblebee.Layers.Decoder.cached_window_state/3`), in which case
+  the convolution spans across sequential decoding steps. Otherwise the
+  input is padded with zeros.
+
+  Padding tokens are zeroed out, so that they do not leak into the output
+  of the subsequent tokens.
+
+  ## Options
+
+    * `:channels` (required) - the number of channels, which are
+      convolved independently
+
+    * `:kernel_size` (required) - the size of the convolution kernel
+
+    * `:use_bias` - whether to add a per-channel bias. Defaults to `false`
+
+    * `:name` - the prefix for layer names
+
+  """
+  def causal_depthwise_conv1d(hidden_state, full_hidden_state, attention_mask, offset, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, :channels, :kernel_size, use_bias: false])
+
+    channels = Keyword.fetch!(opts, :channels)
+    kernel_size = Keyword.fetch!(opts, :kernel_size)
+
+    full_hidden_state =
+      Axon.layer(
+        &mask_padding_impl/5,
+        [full_hidden_state, hidden_state, Axon.optional(attention_mask), Axon.optional(offset)]
+      )
+
+    kernel =
+      Axon.param("kernel", fn _, _ -> {channels, kernel_size} end, initializer: :zeros)
+
+    {inputs, impl} =
+      if opts[:use_bias] do
+        bias = Axon.param("bias", fn _, _ -> {channels} end, initializer: :zeros)
+        {[hidden_state, full_hidden_state, kernel, bias], &biased_causal_conv1d_impl/5}
+      else
+        {[hidden_state, full_hidden_state, kernel], &causal_conv1d_impl/4}
+      end
+
+    Axon.layer(impl, inputs,
+      name: opts[:name],
+      op_name: :causal_depthwise_conv1d,
+      kernel_size: kernel_size
+    )
+  end
+
+  defnp mask_padding_impl(full_hidden_state, hidden_state, attention_mask, offset, _opts \\ []) do
+    sequence_length = Nx.axis_size(hidden_state, 1)
+    context = Nx.axis_size(full_hidden_state, 1) - sequence_length
+
+    full_hidden_state = Nx.as_type(full_hidden_state, :f32)
+
+    case attention_mask do
+      %Axon.None{} ->
+        full_hidden_state
+
+      attention_mask ->
+        attention_mask =
+          if Nx.axis_size(attention_mask, 1) == sequence_length do
+            attention_mask
+          else
+            offset =
+              case offset do
+                %Axon.None{} -> 0
+                offset -> offset
+              end
+
+            Nx.slice_along_axis(attention_mask, offset, sequence_length, axis: 1)
+          end
+
+        mask =
+          attention_mask
+          |> Nx.as_type(:f32)
+          |> Nx.pad(1.0, [{0, 0, 0}, {context, 0, 0}])
+          |> Nx.new_axis(-1)
+
+        full_hidden_state * mask
+    end
+  end
+
+  defnp causal_conv1d_impl(hidden_state, full_hidden_state, kernel, opts \\ []) do
+    biased_causal_conv1d_impl(hidden_state, full_hidden_state, kernel, 0.0, opts)
+  end
+
+  defnp biased_causal_conv1d_impl(hidden_state, full_hidden_state, kernel, bias, opts \\ []) do
+    opts = keyword!(opts, [:kernel_size, mode: :inference])
+
+    kernel_size = opts[:kernel_size]
+
+    sequence_length = Nx.axis_size(hidden_state, 1)
+    context = Nx.axis_size(full_hidden_state, 1) - sequence_length
+
+    padded =
+      Nx.pad(full_hidden_state, 0.0, [{0, 0, 0}, {kernel_size - 1 - context, 0, 0}, {0, 0, 0}])
+
+    output = convolve_windows(padded, kernel, kernel_size, sequence_length)
+
+    Nx.as_type(output + bias, Nx.type(hidden_state))
+  end
+
+  deftransformp convolve_windows(padded, kernel, kernel_size, sequence_length) do
+    for idx <- 0..(kernel_size - 1), reduce: 0.0 do
+      acc ->
+        window = Nx.slice_along_axis(padded, idx, sequence_length, axis: 1)
+        Nx.add(acc, Nx.multiply(window, kernel[[.., idx]]))
+    end
+  end
+
+  @doc """
   Adds a rotary embedding layer to the network.
+
+  ## Options
+
+    * `:interleaved` - when `true`, the rotary dimensions are laid out as
+      interleaved pairs `(x0, x1), (x2, x3), ...`, each rotated by a single
+      frequency, rather than as two halves. This is the layout used by the
+      DeepSeek model family. Defaults to `false`
+
   """
   def rotary_embedding(query, key, position_ids, attention_mask, size, opts \\ []) do
-    opts = Keyword.validate!(opts, [:name, :scaling_strategy, max_positions: 2048, base: 10_000])
+    opts =
+      Keyword.validate!(opts, [
+        :name,
+        :scaling_strategy,
+        max_positions: 2048,
+        base: 10_000,
+        interleaved: false
+      ])
 
     output =
       Axon.layer(
@@ -1303,6 +1462,27 @@ defmodule Bumblebee.Layers do
         {cos, sin} = positions_cos_sin(position, inv_frequency)
         {Nx.multiply(cos, cos_sin_factor), Nx.multiply(sin, cos_sin_factor)}
 
+      %{type: :proportional} = strategy ->
+        # Rotary is applied to the leading fraction of the head, which
+        # is expressed by zeroing out the remaining frequencies
+        factor = Map.get(strategy, :factor, 1.0)
+        rotary_size = trunc(strategy.partial_rotary_factor * div(size, 2))
+
+        inv_frequency =
+          Nx.iota({rotary_size})
+          |> Nx.multiply(2)
+          |> Nx.divide(size)
+          |> then(&inv_frequency(base, &1))
+          |> Nx.pad(0.0, [{0, div(size, 2) - rotary_size, 0}])
+          |> Nx.divide(factor)
+
+        positions_cos_sin(position, inv_frequency)
+
+      %{type: :yarn} = strategy ->
+        {inv_frequency, attention_factor} = yarn_inv_frequency(base, size, strategy)
+        {cos, sin} = positions_cos_sin(position, inv_frequency)
+        {Nx.multiply(cos, attention_factor), Nx.multiply(sin, attention_factor)}
+
       %{
         type: :llama3,
         factor: factor,
@@ -1365,6 +1545,68 @@ defmodule Bumblebee.Layers do
     Nx.devectorize(inv_frequency)
   end
 
+  # Computes YaRN-scaled inverse frequencies, interpolating between the
+  # original frequencies (high frequency, extrapolation) and the scaled
+  # ones (low frequency, interpolation). Also returns the factor applied
+  # to the resulting cos/sin, which compensates for the attention entropy
+  # change. See https://arxiv.org/abs/2309.00071
+  deftransformp yarn_inv_frequency(base, size, strategy) do
+    %{
+      factor: factor,
+      original_max_positions: original_max_positions,
+      beta_fast: beta_fast,
+      beta_slow: beta_slow
+    } = strategy
+
+    mscale = strategy[:attention_factor]
+    mscale_all_dim = strategy[:attention_factor_all_dim]
+
+    attention_factor =
+      cond do
+        is_number(mscale) and is_number(mscale_all_dim) ->
+          yarn_mscale(factor, mscale) / yarn_mscale(factor, mscale_all_dim)
+
+        is_number(mscale) ->
+          mscale
+
+        true ->
+          yarn_mscale(factor, 1)
+      end
+
+    correction_dim = fn rotations ->
+      size * :math.log(original_max_positions / (rotations * 2 * :math.pi())) /
+        (2 * :math.log(base))
+    end
+
+    low = max(Float.floor(correction_dim.(beta_fast)), 0)
+    high = min(Float.ceil(correction_dim.(beta_slow)), size - 1)
+    high = if low == high, do: high + 0.001, else: high
+
+    range = Nx.iota({div(size, 2)}) |> Nx.multiply(2) |> Nx.divide(size)
+    positional_frequency = Nx.pow(base, range)
+
+    extrapolation_factor =
+      Nx.iota({div(size, 2)})
+      |> Nx.subtract(low)
+      |> Nx.divide(high - low)
+      |> Nx.clip(0, 1)
+      |> then(&Nx.subtract(1, &1))
+
+    inv_frequency_extrapolation = Nx.divide(1.0, positional_frequency)
+    inv_frequency_interpolation = Nx.divide(1.0, Nx.multiply(factor, positional_frequency))
+
+    inv_frequency =
+      Nx.add(
+        Nx.multiply(inv_frequency_interpolation, Nx.subtract(1, extrapolation_factor)),
+        Nx.multiply(inv_frequency_extrapolation, extrapolation_factor)
+      )
+
+    {inv_frequency, attention_factor}
+  end
+
+  defp yarn_mscale(scale, _mscale) when scale <= 1, do: 1.0
+  defp yarn_mscale(scale, mscale), do: 0.1 * mscale * :math.log(scale) + 1.0
+
   defnp inv_frequency(base, range) do
     frequency = Nx.pow(base, range)
     1.0 / frequency
@@ -1383,7 +1625,8 @@ defmodule Bumblebee.Layers do
         :scaling_strategy,
         mode: :inference,
         max_positions: 2048,
-        base: 10_000
+        base: 10_000,
+        interleaved: false
       ])
 
     # When decoding with cache position_ids may be a partial sequence,
@@ -1408,10 +1651,27 @@ defmodule Bumblebee.Layers do
     cos = cos |> Nx.take(position_ids) |> Nx.new_axis(2) |> Nx.as_type(Nx.type(query))
     sin = sin |> Nx.take(position_ids) |> Nx.new_axis(2) |> Nx.as_type(Nx.type(query))
 
-    rotated_query = query * cos + rotate_half(query) * sin
-    rotated_key = key * cos + rotate_half(key) * sin
+    if opts[:interleaved] do
+      # The pairs are adjacent, so we only need one angle per pair. Note
+      # that the rotated values are laid out as two halves, which is fine,
+      # since query and key are transformed the same way
+      half = div(opts[:size], 2)
+      cos = cos[[.., .., .., 0..(half - 1)//1]]
+      sin = sin[[.., .., .., 0..(half - 1)//1]]
 
-    {rotated_query, rotated_key}
+      {rotate_interleaved(query, cos, sin), rotate_interleaved(key, cos, sin)}
+    else
+      rotated_query = query * cos + rotate_half(query) * sin
+      rotated_key = key * cos + rotate_half(key) * sin
+
+      {rotated_query, rotated_key}
+    end
+  end
+
+  defnp rotate_interleaved(x, cos, sin) do
+    x1 = x[[.., .., .., 0..-1//2]]
+    x2 = x[[.., .., .., 1..-1//2]]
+    Nx.concatenate([x1 * cos - x2 * sin, x2 * cos + x1 * sin], axis: -1)
   end
 
   defnp rotate_half(x) do

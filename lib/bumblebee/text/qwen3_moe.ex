@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.Qwen3 do
+defmodule Bumblebee.Text.Qwen3Moe do
   alias Bumblebee.Shared
 
   options =
@@ -11,7 +11,7 @@ defmodule Bumblebee.Text.Qwen3 do
         """
       ],
       max_positions: [
-        default: 262_144,
+        default: 40_960,
         doc: """
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
         length that this model can process. Typically this is set to a large value just in case,
@@ -19,11 +19,11 @@ defmodule Bumblebee.Text.Qwen3 do
         """
       ],
       hidden_size: [
-        default: 2560,
+        default: 2048,
         doc: "the dimensionality of hidden layers"
       ],
       intermediate_size: [
-        default: 9728,
+        default: 6144,
         doc: "the dimensionality of intermediate layers"
       ],
       attention_head_size: [
@@ -33,7 +33,7 @@ defmodule Bumblebee.Text.Qwen3 do
         """
       ],
       num_blocks: [
-        default: 36,
+        default: 48,
         doc: "the number of Transformer blocks in the model"
       ],
       num_attention_heads: [
@@ -41,7 +41,7 @@ defmodule Bumblebee.Text.Qwen3 do
         doc: "the number of attention heads for each attention layer in the model"
       ],
       num_key_value_heads: [
-        default: 8,
+        default: 4,
         doc: "the number of key value heads for each attention layer in the model"
       ],
       activation: [
@@ -49,7 +49,7 @@ defmodule Bumblebee.Text.Qwen3 do
         doc: "the activation function"
       ],
       rotary_embedding_base: [
-        default: 5_000_000,
+        default: 1_000_000,
         doc: "base for computing rotary embedding frequency"
       ],
       rotary_embedding_scaling_strategy: [
@@ -74,29 +74,61 @@ defmodule Bumblebee.Text.Qwen3 do
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ],
       tie_word_embeddings: [
-        default: true,
+        default: false,
         doc: "whether to tie input and output embedding weights"
       ],
       use_qk_norm: [
         default: true,
         doc: "whether to use RMS normalization on query and key projections"
+      ],
+      moe_intermediate_size: [
+        default: 768,
+        doc: "the dimensionality of intermediate layers in each mixture-of-experts expert"
+      ],
+      num_experts: [
+        default: 128,
+        doc: "the number of experts in each mixture-of-experts block"
+      ],
+      num_experts_per_token: [
+        default: 8,
+        doc: "the number of experts that each token is routed to"
+      ],
+      normalize_top_k_probabilities: [
+        default: true,
+        doc: "whether to normalize the weights of the selected experts to sum up to one"
+      ],
+      sparse_block_step: [
+        default: 1,
+        doc: """
+        every n-th block uses a mixture-of-experts network, the remaining blocks use a regular
+        feed-forward network
+        """
+      ],
+      dense_blocks: [
+        default: [],
+        doc: "a list with the indices of blocks that always use a regular feed-forward network"
       ]
     ] ++
       Shared.common_options([:num_labels, :id_to_label]) ++
       Shared.token_options(pad_token_id: 151_643)
 
   @moduledoc """
-  Qwen3 model family.
+  Qwen3 MoE model family.
+
+  The architecture matches `Bumblebee.Text.Qwen3`, except that most
+  blocks replace the feed-forward network with a mixture-of-experts
+  block. Unlike most mixture-of-experts models, there are no shared
+  experts.
 
   ## Architectures
 
-    * `:base` - plain Qwen3 without any head on top
+    * `:base` - plain Qwen3 MoE without any head on top
 
-    * `:for_causal_language_modeling` - Qwen3 with a language modeling
+    * `:for_causal_language_modeling` - Qwen3 MoE with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - Qwen3 with a sequence
+    * `:for_sequence_classification` - Qwen3 MoE with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
@@ -155,6 +187,7 @@ defmodule Bumblebee.Text.Qwen3 do
   import Bumblebee.Utils.Model, only: [join: 2]
 
   alias Bumblebee.Layers
+  alias Bumblebee.Layers.Moe
 
   @impl true
   def architectures(),
@@ -360,11 +393,7 @@ defmodule Bumblebee.Text.Qwen3 do
       cache: cache,
       causal: true,
       layer_norm: &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, name: &2),
-      ffn:
-        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
-          name: &2,
-          activation: spec.activation
-        ),
+      ffn: &block_ffn(&1, spec),
       rotary_embedding: [
         position_ids: position_ids,
         max_positions: spec.max_positions,
@@ -375,6 +404,33 @@ defmodule Bumblebee.Text.Qwen3 do
       key_norm: key_norm,
       name: join(name, "blocks")
     )
+  end
+
+  defp block_ffn(block_idx, spec) do
+    if sparse_block?(spec, block_idx) do
+      &Moe.block(&1,
+        num_experts: spec.num_experts,
+        num_experts_per_token: spec.num_experts_per_token,
+        hidden_size: spec.hidden_size,
+        intermediate_size: spec.moe_intermediate_size,
+        activation: spec.activation,
+        scoring: :softmax,
+        normalize_top_k: spec.normalize_top_k_probabilities,
+        use_score_correction_bias: false,
+        kernel_initializer: kernel_initializer(spec),
+        name: &2
+      )
+    else
+      &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
+        name: &2,
+        activation: spec.activation
+      )
+    end
+  end
+
+  defp sparse_block?(spec, block_idx) do
+    spec.num_experts > 0 and block_idx not in spec.dense_blocks and
+      rem(block_idx + 1, spec.sparse_block_step) == 0
   end
 
   defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
@@ -445,14 +501,29 @@ defmodule Bumblebee.Text.Qwen3 do
           rotary_embedding_scaling_strategy:
             {"rope_scaling", optional(scaling_strategy_converter)},
           initializer_scale: {"initializer_range", number()},
-          layer_norm_epsilon: {"rms_norm_eps", number()}
+          layer_norm_epsilon: {"rms_norm_eps", number()},
+          moe_intermediate_size: {"moe_intermediate_size", number()},
+          num_experts: {"num_local_experts", number()},
+          num_experts_per_token: {"num_experts_per_tok", number()},
+          normalize_top_k_probabilities: {"norm_topk_prob", boolean()},
+          sparse_block_step: {"decoder_sparse_step", number()},
+          dense_blocks: {"mlp_only_layers", list(number())}
         ) ++ Shared.common_options_from_transformers(data, spec)
+
+      # Older checkpoints name the number of experts differently
+      opts =
+        case data["num_experts"] do
+          nil -> opts
+          num_experts -> Keyword.put_new(opts, :num_experts, num_experts)
+        end
 
       @for.config(spec, opts)
     end
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
+    alias Bumblebee.Layers.Moe
+
     def params_mapping(spec) do
       %{
         "embedder.token_embedding" => "model.embed_tokens",
@@ -466,11 +537,47 @@ defmodule Bumblebee.Text.Qwen3 do
         "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
         "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.up_proj",
         "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",
+        "decoder.blocks.{n}.ffn.router" => %{
+          "kernel" => {
+            [{"model.layers.{n}.mlp.gate", "weight"}],
+            fn [kernel] -> Nx.transpose(kernel) end
+          }
+        },
         "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
         "output_norm" => "model.norm",
         "language_modeling_head.output" =>
           if(spec.tie_word_embeddings, do: "model.embed_tokens", else: "lm_head"),
         "sequence_classification_head.output" => "score"
+      }
+      |> Map.merge(expert_params(spec))
+    end
+
+    defp expert_params(spec) do
+      experts = "model.layers.{n}.mlp.experts"
+
+      refs = fn projection, packed ->
+        for idx <- 0..(spec.num_experts - 1) do
+          [
+            {experts <> ".#{idx}.#{projection}", "weight"},
+            {experts, packed}
+          ]
+        end
+      end
+
+      %{
+        "decoder.blocks.{n}.ffn.experts" => %{
+          "gate_kernel" =>
+            {refs.("gate_proj", "gate_up_proj"),
+             &Moe.stack_expert_kernels(&1, 0, spec.moe_intermediate_size)},
+          "up_kernel" =>
+            {refs.("up_proj", "gate_up_proj"),
+             &Moe.stack_expert_kernels(
+               &1,
+               spec.moe_intermediate_size,
+               spec.moe_intermediate_size
+             )},
+          "down_kernel" => {refs.("down_proj", "down_proj"), &Moe.stack_expert_kernels(&1)}
+        }
       }
     end
   end

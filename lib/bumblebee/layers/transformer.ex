@@ -32,6 +32,14 @@ defmodule Bumblebee.Layers.Transformer do
         This enables per-layer attention patterns like Gemma 3's alternating
         local/global attention (5 local layers followed by 1 global layer)
 
+    * `:ffn` (required) - see `block/2`. Additionally, a function taking
+      the block index and returning the block configuration may be given,
+      which enables per-layer feed-forward networks, such as mixture-of-experts
+      models alternating between dense and sparse blocks
+
+    * `:attention` - see `block/2`. Additionally, a function taking the
+      block index and returning the block configuration may be given
+
     * `:name` - the prefix for layer names
 
   For all other options (including required options) see `block/2`.
@@ -43,14 +51,14 @@ defmodule Bumblebee.Layers.Transformer do
   def blocks(hidden_state, opts) do
     validate_required_keys!(opts, [:num_blocks, :num_attention_heads, :hidden_size, :ffn])
 
-    # Note: :attention_window_size is NOT in block_opts_keys because it's handled
-    # specially (supports per-layer function) and passed explicitly to block/2
+    # Note: :attention_window_size, :ffn and :attention are NOT in
+    # block_opts_keys because they are handled specially (they support
+    # per-layer functions) and passed explicitly to block/2
     block_opts_keys = [
       :num_attention_heads,
       :num_key_value_heads,
       :causal,
       :hidden_size,
-      :ffn,
       :kernel_initializer,
       :attention_head_size,
       :dropout_rate,
@@ -63,7 +71,8 @@ defmodule Bumblebee.Layers.Transformer do
       :block_type,
       :attention_scale,
       :query_norm,
-      :key_norm
+      :key_norm,
+      :output_gate_activation
     ]
 
     opts =
@@ -75,6 +84,8 @@ defmodule Bumblebee.Layers.Transformer do
             :num_blocks,
             :rotary_embedding,
             :attention_window_size,
+            :ffn,
+            :attention,
             attention_mask: Layers.none(),
             attention_head_mask: Layers.none(),
             attention_relative_bias: nil,
@@ -97,6 +108,8 @@ defmodule Bumblebee.Layers.Transformer do
     cache = opts[:cache]
     rotary_embedding = opts[:rotary_embedding]
     attention_window_size = opts[:attention_window_size]
+    ffn = opts[:ffn]
+    attention = opts[:attention]
 
     block_opts = Keyword.take(opts, block_opts_keys)
 
@@ -142,6 +155,11 @@ defmodule Bumblebee.Layers.Transformer do
               size -> size
             end
 
+          # Both :ffn and :attention are ultimately arity-2 functions (or
+          # keyword lists), so an arity-1 function is a per-block builder
+          block_ffn = per_block(ffn, idx)
+          block_attention = per_block(attention, idx)
+
           {hidden_state, attention, cross_attention, block_cache, attention_relative_bias} =
             block(
               state.hidden_state,
@@ -156,6 +174,8 @@ defmodule Bumblebee.Layers.Transformer do
                 offset: offset,
                 rotary_embedding: block_rotary_embedding,
                 attention_window_size: block_attention_window_size,
+                ffn: block_ffn,
+                attention: block_attention,
                 name: join(name, idx)
               ] ++ block_opts
             )
@@ -174,6 +194,9 @@ defmodule Bumblebee.Layers.Transformer do
 
     update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, hidden_state))
   end
+
+  defp per_block(fun, idx) when is_function(fun, 1), do: fun.(idx)
+  defp per_block(other, _idx), do: other
 
   @doc """
   Adds a transformer block to the network
@@ -206,6 +229,13 @@ defmodule Bumblebee.Layers.Transformer do
       Alternatively a custom 2-arity function may be given. The function
       should add FFN nodes to the given Axon node. The function also
       receives layer name prefix as the second argument.
+
+    * `:attention` - overrides how self-attention is computed. Expects a
+      2-arity function receiving the normalized hidden state and the same
+      options that `multi_head_attention/4` accepts, and returning the
+      same 4-element tuple. This is used by models with a non-standard
+      attention, such as the multi-head latent attention (MLA) in the
+      DeepSeek family. Defaults to `multi_head_attention/4`
 
     * `:attention_mask` - a mask indicating which positions to attend to
 
@@ -354,7 +384,10 @@ defmodule Bumblebee.Layers.Transformer do
         attention_scale: nil,
         rotary_embedding: nil,
         query_norm: nil,
-        key_norm: nil
+        key_norm: nil,
+        output_gate_activation: nil,
+        attention: nil,
+        sinks: nil
       ])
 
     name = opts[:name]
@@ -422,9 +455,15 @@ defmodule Bumblebee.Layers.Transformer do
 
     self_attention_norm = &layer_norm_fun.(&1, join(name, "self_attention_norm"))
 
+    attention_fun =
+      case opts[:attention] do
+        nil -> &multi_head_attention(&1, &1, &1, &2)
+        fun when is_function(fun, 2) -> fun
+      end
+
     self_attention = fn hidden_state ->
       {hidden_state, attention, self_attention_cache, attention_relative_bias} =
-        multi_head_attention(hidden_state, hidden_state, hidden_state,
+        attention_fun.(hidden_state,
           attention_mask: attention_mask,
           attention_head_mask: attention_head_mask,
           attention_relative_bias: attention_relative_bias,
@@ -446,6 +485,7 @@ defmodule Bumblebee.Layers.Transformer do
           rotary_embedding: rotary_embedding,
           query_norm: query_norm,
           key_norm: key_norm,
+          output_gate_activation: opts[:output_gate_activation],
           name: join(name, "self_attention")
         )
 
@@ -739,6 +779,10 @@ defmodule Bumblebee.Layers.Transformer do
       projection before rotary embedding. The function should accept two
       arguments: the input and a name for the layer. Defaults to `nil`
 
+    * `:output_gate_activation` - when set, the attention output is
+      multiplied by a gate computed from the attention input using the
+      given activation, before the output projection. Defaults to `nil`
+
     * `:name` - the prefix for layer names
 
   ## References
@@ -772,7 +816,9 @@ defmodule Bumblebee.Layers.Transformer do
         output_use_bias: true,
         rotary_embedding: nil,
         query_norm: nil,
-        key_norm: nil
+        key_norm: nil,
+        output_gate_activation: nil,
+        sinks: nil
       ])
 
     attention_mask = opts[:attention_mask]
@@ -803,6 +849,8 @@ defmodule Bumblebee.Layers.Transformer do
     attention_head_size = opts[:attention_head_size] || div(hidden_size, num_heads)
     inner_size = num_heads * attention_head_size
     inner_kv_size = num_key_value_heads * attention_head_size
+
+    attention_input = query
 
     query =
       query
@@ -931,13 +979,32 @@ defmodule Bumblebee.Layers.Transformer do
         scale: attention_scale,
         causal: causal,
         window_size: attention_window_size,
-        dropout_rate: dropout_rate
+        dropout_rate: dropout_rate,
+        sinks: opts[:sinks]
       )
 
+    attention_output = Layers.flatten_trailing(attention_output)
+
     attention_output =
-      attention_output
-      |> Layers.flatten_trailing()
-      |> Axon.dense(hidden_size,
+      case opts[:output_gate_activation] do
+        nil ->
+          attention_output
+
+        activation ->
+          gate =
+            attention_input
+            |> Axon.dense(inner_size,
+              kernel_initializer: kernel_initializer,
+              name: join(name, "output_gate"),
+              use_bias: false
+            )
+            |> Layers.activation(activation)
+
+          Axon.multiply(attention_output, gate)
+      end
+
+    attention_output =
+      Axon.dense(attention_output, hidden_size,
         kernel_initializer: kernel_initializer,
         name: join(name, "output"),
         use_bias: output_use_bias

@@ -38,9 +38,30 @@ defmodule Bumblebee.Layers.Decoder do
     * `:attention_head_size` - the size of the key, value, and query
       projection per attention head
 
+    * `:key_head_size` - the size of the key projection per attention
+      head, when it differs from `:attention_head_size`
+
+    * `:value_head_size` - the size of the value projection per attention
+      head, when it differs from `:attention_head_size`
+
+    * `:extra_states` - additional per-position states to cache in every
+      self-attention block. Expects a keyword list with the state name
+      and its shape, excluding the leading batch size and sequence
+      length. See `cached_state/4`
+
+    * `:extra_window_states` - additional fixed-size window states to
+      cache in every self-attention block. Expects a keyword list with
+      the state name and its shape, excluding the leading batch size.
+      See `cached_window_state/3`
+
     * `:decoder_num_blocks` - the number of Transformer blocks in the decoder
 
     * `:decoder_num_attention_heads` - the number of decoder attention heads
+
+  Note that `:attention_head_size`, `:key_head_size`, `:value_head_size`,
+  `:decoder_num_attention_heads` and `:extra_states` may also be given as
+  functions of the block index, for models where the attention shape
+  differs across blocks.
 
     * `:encoder_num_attention_heads` - the number of encoder attention heads
       (for cross attention)
@@ -56,11 +77,34 @@ defmodule Bumblebee.Layers.Decoder do
     encoder_num_attention_heads = opts[:encoder_num_attention_heads]
     encoder_sequence_length = opts[:encoder_sequence_length]
 
-    decoder_head_size =
-      opts[:attention_head_size] || div(hidden_size, decoder_num_attention_heads)
+    self_attention = fn block_idx ->
+      num_attention_heads = per_block(decoder_num_attention_heads, block_idx)
 
-    self_attention =
-      attention_cache(batch_size, max_length, decoder_num_attention_heads, decoder_head_size)
+      decoder_head_size =
+        per_block(opts[:attention_head_size], block_idx) ||
+          div(hidden_size, num_attention_heads)
+
+      self_attention =
+        attention_cache(
+          batch_size,
+          max_length,
+          num_attention_heads,
+          per_block(opts[:key_head_size], block_idx) || decoder_head_size,
+          per_block(opts[:value_head_size], block_idx) || decoder_head_size
+        )
+
+      self_attention =
+        for {name, shape} <- per_block(opts[:extra_states], block_idx) || [],
+            into: self_attention do
+          {name,
+           Nx.broadcast(0.0, List.to_tuple([batch_size, max_length | Tuple.to_list(shape)]))}
+        end
+
+      for {name, shape} <- per_block(opts[:extra_window_states], block_idx) || [],
+          into: self_attention do
+        {name, Nx.broadcast(0.0, List.to_tuple([batch_size | Tuple.to_list(shape)]))}
+      end
+    end
 
     cross_attention =
       if encoder_sequence_length do
@@ -71,6 +115,7 @@ defmodule Bumblebee.Layers.Decoder do
           batch_size,
           encoder_sequence_length,
           encoder_num_attention_heads,
+          encoder_head_size,
           encoder_head_size
         )
       else
@@ -78,8 +123,9 @@ defmodule Bumblebee.Layers.Decoder do
       end
 
     blocks =
-      %{self_attention: self_attention, cross_attention: cross_attention}
-      |> List.duplicate(decoder_num_blocks)
+      for block_idx <- 0..(decoder_num_blocks - 1) do
+        %{self_attention: self_attention.(block_idx), cross_attention: cross_attention}
+      end
       |> List.to_tuple()
 
     offset = Nx.tensor(0)
@@ -89,10 +135,13 @@ defmodule Bumblebee.Layers.Decoder do
     %{blocks: blocks, offset: offset, attention_mask: attention_mask}
   end
 
-  defp attention_cache(batch_size, sequence_length, num_heads, head_size) do
-    shape = {batch_size, sequence_length, num_heads, head_size}
-    zeros = Nx.broadcast(0.0, shape)
-    %{key: zeros, value: zeros}
+  defp per_block(fun, block_idx) when is_function(fun, 1), do: fun.(block_idx)
+  defp per_block(value, _block_idx), do: value
+
+  defp attention_cache(batch_size, sequence_length, num_heads, key_head_size, value_head_size) do
+    key = Nx.broadcast(0.0, {batch_size, sequence_length, num_heads, key_head_size})
+    value = Nx.broadcast(0.0, {batch_size, sequence_length, num_heads, value_head_size})
+    %{key: key, value: value}
   end
 
   @doc """
@@ -173,8 +222,78 @@ defmodule Bumblebee.Layers.Decoder do
     indices = [0, offset, 0, 0]
     key = Nx.put_slice(cached_key, indices, key)
     value = Nx.put_slice(cached_value, indices, value)
-    updated_cache = %{key: key, value: value}
+    updated_cache = %{attention_cache | key: key, value: value}
     {key, value, updated_cache}
+  end
+
+  @doc """
+  Combines a new auxiliary state with the one in cache.
+
+  This is the equivalent of `cached_attention_key_values/4` for extra
+  per-position states, such as the keys of the sparse attention indexer
+  in the DeepSeek V3.2 family. The state is accumulated along the second
+  axis and the corresponding cache entry must be initialized by passing
+  `:extra_states` to `init_cache/3`.
+  """
+  def cached_state(state, name, attention_cache, offset) do
+    Layers.if_present attention_cache do
+      Axon.layer(&update_state_cache/4, [state, attention_cache, offset], state_name: name)
+      |> Layers.unwrap_tuple(2)
+    else
+      {state, attention_cache}
+    end
+  end
+
+  deftransformp update_state_cache(state, attention_cache, offset, opts \\ []) do
+    name = opts[:state_name]
+    cached_state = Map.fetch!(attention_cache, name)
+
+    state =
+      if Nx.shape(state) == Nx.shape(cached_state) do
+        state
+      else
+        indices = [0, offset] ++ List.duplicate(0, Nx.rank(cached_state) - 2)
+        Nx.put_slice(cached_state, indices, state)
+      end
+
+    {state, Map.put(attention_cache, name, state)}
+  end
+
+  @doc """
+  Combines a new state with a fixed-size window of preceding states from
+  the cache.
+
+  Returns the concatenation of the cached window and the new state, as
+  well as the updated cache, where the window is the trailing part of the
+  concatenation. This is used by models with short convolutions, which
+  only need a few preceding positions. The corresponding cache entry must
+  be initialized by passing `:extra_states` to `init_cache/3`.
+  """
+  def cached_window_state(state, name, attention_cache) do
+    Layers.if_present attention_cache do
+      Axon.layer(&update_window_cache/3, [state, attention_cache], state_name: name)
+      |> Layers.unwrap_tuple(2)
+    else
+      {state, attention_cache}
+    end
+  end
+
+  deftransformp update_window_cache(state, attention_cache, opts \\ []) do
+    name = opts[:state_name]
+    window = Map.fetch!(attention_cache, name)
+    window_size = Nx.axis_size(window, 1)
+
+    full_state = Nx.concatenate([window, state], axis: 1)
+
+    window =
+      Nx.slice_along_axis(
+        full_state,
+        Nx.axis_size(full_state, 1) - window_size,
+        window_size,
+        axis: 1
+      )
+
+    {full_state, Map.put(attention_cache, name, window)}
   end
 
   @doc """

@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+* DeepSeek V3 model, which also covers the Kimi K2 and Kimi K2.5 text models
+* DeepSeek V3.2 model, with DeepSeek Sparse Attention (DSA)
+* GLM MoE DSA model, as used by GLM-5
+* Muse Glimmer text model
+* Inkling text model
+* Qwen2 model, which also covers the Qwen2.5 checkpoints
+* Qwen3 MoE model
+* GPT OSS model
+* LFM2 model
+* Gemma 4 text model
+* DeepSeek V4 model
+* Mixture-of-experts layers (`Bumblebee.Layers.Moe`), shared by the models above
+* Attention sinks, causal depthwise convolutions and YaRN/proportional rotary embedding scaling in `Bumblebee.Layers`
+
+### Fixed
+
+* Qwen3 checkpoints saved by recent versions of huggingface/transformers, which group the rotary embedding configuration under `rope_parameters`
+
 ## [v0.7.1](https://github.com/elixir-nx/bumblebee/tree/v0.7.1) (2026-07-22)
 
 ### Added

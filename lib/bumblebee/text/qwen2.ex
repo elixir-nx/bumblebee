@@ -1,4 +1,4 @@
-defmodule Bumblebee.Text.Qwen3 do
+defmodule Bumblebee.Text.Qwen2 do
   alias Bumblebee.Shared
 
   options =
@@ -11,7 +11,7 @@ defmodule Bumblebee.Text.Qwen3 do
         """
       ],
       max_positions: [
-        default: 262_144,
+        default: 32_768,
         doc: """
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
         length that this model can process. Typically this is set to a large value just in case,
@@ -19,29 +19,30 @@ defmodule Bumblebee.Text.Qwen3 do
         """
       ],
       hidden_size: [
-        default: 2560,
+        default: 3584,
         doc: "the dimensionality of hidden layers"
       ],
       intermediate_size: [
-        default: 9728,
+        default: 18_944,
         doc: "the dimensionality of intermediate layers"
       ],
       attention_head_size: [
-        default: 128,
+        default: nil,
         doc: """
-        the size of the key, value, and query projection per attention head.
+        the size of the key, value, and query projection per attention head. Defaults to
+        `div(hidden_size, num_attention_heads)`
         """
       ],
       num_blocks: [
-        default: 36,
+        default: 28,
         doc: "the number of Transformer blocks in the model"
       ],
       num_attention_heads: [
-        default: 32,
+        default: 28,
         doc: "the number of attention heads for each attention layer in the model"
       ],
       num_key_value_heads: [
-        default: 8,
+        default: 4,
         doc: "the number of key value heads for each attention layer in the model"
       ],
       activation: [
@@ -49,7 +50,7 @@ defmodule Bumblebee.Text.Qwen3 do
         doc: "the activation function"
       ],
       rotary_embedding_base: [
-        default: 5_000_000,
+        default: 1_000_000,
         doc: "base for computing rotary embedding frequency"
       ],
       rotary_embedding_scaling_strategy: [
@@ -77,26 +78,39 @@ defmodule Bumblebee.Text.Qwen3 do
         default: true,
         doc: "whether to tie input and output embedding weights"
       ],
-      use_qk_norm: [
-        default: true,
-        doc: "whether to use RMS normalization on query and key projections"
+      use_sliding_window: [
+        default: false,
+        doc: "whether the upper blocks use sliding window attention"
+      ],
+      attention_window_size: [
+        default: 32_768,
+        doc: "the size of the attention window for blocks using sliding window attention"
+      ],
+      num_full_attention_blocks: [
+        default: 28,
+        doc: """
+        the number of leading blocks that use full attention, when `:use_sliding_window` is
+        enabled
+        """
       ]
     ] ++
       Shared.common_options([:num_labels, :id_to_label]) ++
       Shared.token_options(pad_token_id: 151_643)
 
   @moduledoc """
-  Qwen3 model family.
+  Qwen2 model family.
+
+  This model is also used by the Qwen2.5 checkpoints.
 
   ## Architectures
 
-    * `:base` - plain Qwen3 without any head on top
+    * `:base` - plain Qwen2 without any head on top
 
-    * `:for_causal_language_modeling` - Qwen3 with a language modeling
+    * `:for_causal_language_modeling` - Qwen2 with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - Qwen3 with a sequence
+    * `:for_sequence_classification` - Qwen2 with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
@@ -182,7 +196,7 @@ defmodule Bumblebee.Text.Qwen3 do
   def init_cache(spec, batch_size, max_length, _inputs) do
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
-      attention_head_size: spec.attention_head_size,
+      attention_head_size: attention_head_size(spec),
       decoder_num_attention_heads: spec.num_attention_heads,
       decoder_num_blocks: spec.num_blocks
     )
@@ -332,15 +346,15 @@ defmodule Bumblebee.Text.Qwen3 do
        ) do
     name = opts[:name]
 
-    # Build query and key normalization functions for Qwen3
-    query_norm =
-      if spec.use_qk_norm do
-        &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, channel_index: -1, name: &2)
-      end
-
-    key_norm =
-      if spec.use_qk_norm do
-        &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, channel_index: -1, name: &2)
+    attention_window_size =
+      if spec.use_sliding_window do
+        fn idx ->
+          if idx >= spec.num_full_attention_blocks do
+            # The window includes the current position, so the maximum
+            # distance to an attended position is one less
+            {spec.attention_window_size - 1, 0}
+          end
+        end
       end
 
     Layers.Transformer.blocks(hidden_state,
@@ -348,12 +362,13 @@ defmodule Bumblebee.Text.Qwen3 do
       num_attention_heads: spec.num_attention_heads,
       num_key_value_heads: spec.num_key_value_heads,
       hidden_size: spec.hidden_size,
-      attention_head_size: spec.attention_head_size,
+      attention_head_size: attention_head_size(spec),
       kernel_initializer: kernel_initializer(spec),
-      query_use_bias: false,
-      key_use_bias: false,
-      value_use_bias: false,
+      query_use_bias: true,
+      key_use_bias: true,
+      value_use_bias: true,
       output_use_bias: false,
+      attention_window_size: attention_window_size,
       block_type: :norm_first,
       attention_mask: attention_mask,
       attention_head_mask: attention_head_mask,
@@ -371,10 +386,12 @@ defmodule Bumblebee.Text.Qwen3 do
         base: spec.rotary_embedding_base,
         scaling_strategy: spec.rotary_embedding_scaling_strategy
       ],
-      query_norm: query_norm,
-      key_norm: key_norm,
       name: join(name, "blocks")
     )
+  end
+
+  defp attention_head_size(spec) do
+    spec.attention_head_size || div(spec.hidden_size, spec.num_attention_heads)
   end
 
   defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
@@ -438,14 +455,17 @@ defmodule Bumblebee.Text.Qwen3 do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
-          attention_head_size: {"head_dim", number()},
+          attention_head_size: {"head_dim", optional(number())},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
           rotary_embedding_base: {"rope_theta", number()},
           rotary_embedding_scaling_strategy:
             {"rope_scaling", optional(scaling_strategy_converter)},
           initializer_scale: {"initializer_range", number()},
-          layer_norm_epsilon: {"rms_norm_eps", number()}
+          layer_norm_epsilon: {"rms_norm_eps", number()},
+          use_sliding_window: {"use_sliding_window", boolean()},
+          attention_window_size: {"sliding_window", optional(number())},
+          num_full_attention_blocks: {"max_window_layers", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
@@ -460,8 +480,6 @@ defmodule Bumblebee.Text.Qwen3 do
         "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
         "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
         "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.o_proj",
-        "decoder.blocks.{n}.self_attention.query_norm" => "model.layers.{n}.self_attn.q_norm",
-        "decoder.blocks.{n}.self_attention.key_norm" => "model.layers.{n}.self_attn.k_norm",
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
         "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
         "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.up_proj",

@@ -219,6 +219,73 @@ defmodule Bumblebee.Shared.Converters do
     end
   end
 
+  @doc """
+  Converts the huggingface/transformers `"rope_scaling"` configuration
+  into a rotary embedding scaling strategy.
+  """
+  def rope_scaling_strategy() do
+    fn name, value ->
+      # "type" has been renamed to "rope_type"
+      value =
+        case Map.pop(value, "type") do
+          {nil, value} -> value
+          {type, value} -> Map.put(value, "rope_type", type)
+        end
+
+      case value do
+        %{"rope_type" => "default"} ->
+          {:ok, nil}
+
+        %{"rope_type" => "linear", "factor" => factor} when is_number(factor) ->
+          {:ok, %{type: :linear, factor: factor}}
+
+        %{"rope_type" => "dynamic", "factor" => factor} when is_number(factor) ->
+          {:ok, %{type: :dynamic, factor: factor}}
+
+        %{
+          "rope_type" => "llama3",
+          "factor" => factor,
+          "low_freq_factor" => low_frequency_factor,
+          "high_freq_factor" => high_frequency_factor,
+          "original_max_position_embeddings" => original_max_positions
+        }
+        when is_number(factor) and is_number(low_frequency_factor) and
+               is_number(high_frequency_factor) and is_number(original_max_positions) ->
+          {:ok,
+           %{
+             type: :llama3,
+             factor: factor,
+             low_frequency_factor: low_frequency_factor,
+             high_frequency_factor: high_frequency_factor,
+             original_max_positions: original_max_positions
+           }}
+
+        %{"rope_type" => "proportional"} = value ->
+          {:ok,
+           %{
+             type: :proportional,
+             partial_rotary_factor: value["partial_rotary_factor"] || 1.0,
+             factor: value["factor"] || 1.0
+           }}
+
+        %{"rope_type" => "yarn", "factor" => factor} = value when is_number(factor) ->
+          {:ok,
+           %{
+             type: :yarn,
+             factor: factor,
+             original_max_positions: value["original_max_position_embeddings"] || 4096,
+             beta_fast: value["beta_fast"] || 32,
+             beta_slow: value["beta_slow"] || 1,
+             attention_factor: value["mscale"] || value["attention_factor"],
+             attention_factor_all_dim: value["mscale_all_dim"]
+           }}
+
+        _other ->
+          {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
+      end
+    end
+  end
+
   def image_size(opts \\ []) do
     opts = Keyword.validate!(opts, single_as: :both_edges)
     single_as = opts[:single_as]

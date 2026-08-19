@@ -35,6 +35,63 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Normalizes rotary embedding configuration in huggingface/transformers
+  data.
+
+  Newer versions of huggingface/transformers group rotary embedding
+  configuration under a single `"rope_parameters"` key, while older
+  checkpoints have flat `"rope_theta"` and `"rope_scaling"` keys. This
+  function converts the former into the latter, so that model converters
+  only need to handle one format.
+  """
+  def normalize_rope_options(%{"rope_parameters" => %{} = parameters} = data) do
+    data =
+      case parameters["rope_theta"] do
+        nil -> data
+        theta -> Map.put_new(data, "rope_theta", theta)
+      end
+
+    case parameters["rope_type"] do
+      type when type in [nil, "default"] -> data
+      _type -> Map.put_new(data, "rope_scaling", parameters)
+    end
+  end
+
+  def normalize_rope_options(data), do: data
+
+  @doc """
+  Extracts text model configuration from huggingface/transformers data.
+
+  Multimodal checkpoints nest the configuration of the text model under
+  the `"text_config"` key, in which case it takes precedence over the
+  top-level keys.
+  """
+  def text_config(%{"text_config" => %{} = text_config} = data), do: Map.merge(data, text_config)
+  def text_config(data), do: data
+
+  @doc """
+  Rewrites the `"model"` prefix of every source layer name in the given
+  params mapping.
+
+  In a multimodal checkpoint the text model parameters are nested under
+  a language model prefix, such as `"model.language_model"`, in which
+  case the mapping of the standalone text model needs to be adjusted.
+  """
+  def replace_params_mapping_source_prefix(params_mapping, nil), do: params_mapping
+
+  def replace_params_mapping_source_prefix(params_mapping, prefix) do
+    Map.new(params_mapping, fn {target_layer_name, params_source} ->
+      params_source =
+        Bumblebee.HuggingFace.Transformers.Utils.map_params_source_layer_names(
+          params_source,
+          &String.replace_prefix(&1, "model.", prefix <> ".")
+        )
+
+      {target_layer_name, params_source}
+    end)
+  end
+
+  @doc """
   Returns specification for the token options with the corresponding
   defaults.
   """

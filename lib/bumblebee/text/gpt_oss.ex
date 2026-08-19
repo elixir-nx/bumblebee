@@ -1,17 +1,17 @@
-defmodule Bumblebee.Text.Qwen3 do
+defmodule Bumblebee.Text.GptOss do
   alias Bumblebee.Shared
 
   options =
     [
       vocab_size: [
-        default: 151_936,
+        default: 201_088,
         doc: """
         the vocabulary size of the token embedding. This corresponds to the number of distinct
         tokens that can be represented in model input and output
         """
       ],
       max_positions: [
-        default: 262_144,
+        default: 131_072,
         doc: """
         the vocabulary size of the position embedding. This corresponds to the maximum sequence
         length that this model can process. Typically this is set to a large value just in case,
@@ -19,37 +19,63 @@ defmodule Bumblebee.Text.Qwen3 do
         """
       ],
       hidden_size: [
-        default: 2560,
+        default: 2880,
         doc: "the dimensionality of hidden layers"
       ],
       intermediate_size: [
-        default: 9728,
-        doc: "the dimensionality of intermediate layers"
+        default: 2880,
+        doc: "the dimensionality of intermediate layers in each expert"
       ],
       attention_head_size: [
-        default: 128,
-        doc: """
-        the size of the key, value, and query projection per attention head.
-        """
+        default: 64,
+        doc: "the size of the key, value, and query projection per attention head"
       ],
       num_blocks: [
         default: 36,
         doc: "the number of Transformer blocks in the model"
       ],
       num_attention_heads: [
-        default: 32,
+        default: 64,
         doc: "the number of attention heads for each attention layer in the model"
       ],
       num_key_value_heads: [
         default: 8,
         doc: "the number of key value heads for each attention layer in the model"
       ],
+      num_experts: [
+        default: 128,
+        doc: "the number of experts in each mixture-of-experts block"
+      ],
+      num_experts_per_token: [
+        default: 4,
+        doc: "the number of experts that each token is routed to"
+      ],
+      block_types: [
+        default: nil,
+        doc: """
+        a list with the attention type of each block, either `:full_attention` or
+        `:sliding_attention`. When `nil`, the blocks alternate, starting with sliding window
+        attention
+        """
+      ],
+      attention_window_size: [
+        default: 128,
+        doc: "the size of the attention window for blocks using sliding window attention"
+      ],
       activation: [
         default: :silu,
         doc: "the activation function"
       ],
+      expert_clamp_limit: [
+        default: 7.0,
+        doc: "the value that the expert gate and up projections are clamped to"
+      ],
+      expert_activation_alpha: [
+        default: 1.702,
+        doc: "the multiplier used in the sigmoid of the expert gated activation"
+      ],
       rotary_embedding_base: [
-        default: 5_000_000,
+        default: 150_000,
         doc: "base for computing rotary embedding frequency"
       ],
       rotary_embedding_scaling_strategy: [
@@ -61,11 +87,16 @@ defmodule Bumblebee.Text.Qwen3 do
 
           * `%{type: :dynamic, factor: number()}`
 
-        For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
+          * `%{type: :yarn, factor: number(), original_max_positions: number()}`
+
         """
       ],
+      use_attention_bias: [
+        default: true,
+        doc: "whether to use bias in the query, key, value and output projections"
+      ],
       layer_norm_epsilon: [
-        default: 1.0e-6,
+        default: 1.0e-5,
         doc: "the epsilon used by RMS normalization layers"
       ],
       initializer_scale: [
@@ -74,29 +105,31 @@ defmodule Bumblebee.Text.Qwen3 do
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ],
       tie_word_embeddings: [
-        default: true,
+        default: false,
         doc: "whether to tie input and output embedding weights"
-      ],
-      use_qk_norm: [
-        default: true,
-        doc: "whether to use RMS normalization on query and key projections"
       ]
     ] ++
       Shared.common_options([:num_labels, :id_to_label]) ++
-      Shared.token_options(pad_token_id: 151_643)
+      Shared.token_options(pad_token_id: nil)
 
   @moduledoc """
-  Qwen3 model family.
+  GPT OSS model family.
+
+  The model is a mixture-of-experts Transformer, where the blocks
+  alternate between sliding window and full attention. Each attention
+  block has a learnt per-head attention sink, that is, an extra logit
+  that takes part in the attention softmax, but has no value attached,
+  which allows the attention to attend to "nothing".
 
   ## Architectures
 
-    * `:base` - plain Qwen3 without any head on top
+    * `:base` - plain GPT OSS without any head on top
 
-    * `:for_causal_language_modeling` - Qwen3 with a language modeling
+    * `:for_causal_language_modeling` - GPT OSS with a language modeling
       head. The head returns logits for each token in the original
       sequence
 
-    * `:for_sequence_classification` - Qwen3 with a sequence
+    * `:for_sequence_classification` - GPT OSS with a sequence
       classification head. The head returns logits corresponding to
       possible classes
 
@@ -155,14 +188,11 @@ defmodule Bumblebee.Text.Qwen3 do
   import Bumblebee.Utils.Model, only: [join: 2]
 
   alias Bumblebee.Layers
+  alias Bumblebee.Layers.Moe
 
   @impl true
   def architectures(),
-    do: [
-      :base,
-      :for_causal_language_modeling,
-      :for_sequence_classification
-    ]
+    do: [:base, :for_causal_language_modeling, :for_sequence_classification]
 
   @impl true
   def config(spec, opts) do
@@ -234,7 +264,7 @@ defmodule Bumblebee.Text.Qwen3 do
           fn logits, input_ids, _opts ->
             indices =
               input_ids
-              |> Nx.not_equal(spec.pad_token_id)
+              |> Nx.not_equal(spec.pad_token_id || 0)
               |> Nx.sum(axes: [-1])
               |> Nx.subtract(1)
               |> Nx.as_type({:s, 64})
@@ -273,12 +303,7 @@ defmodule Bumblebee.Text.Qwen3 do
 
   defp core(inputs, spec) do
     embeddings =
-      embedder(
-        inputs["input_ids"],
-        inputs["input_embeddings"],
-        spec,
-        name: "embedder"
-      )
+      embedder(inputs["input_ids"], inputs["input_embeddings"], spec, name: "embedder")
 
     position_ids =
       Layers.default inputs["position_ids"] do
@@ -299,7 +324,8 @@ defmodule Bumblebee.Text.Qwen3 do
     hidden_state =
       Layers.rms_norm(decoder_outputs.hidden_state,
         name: "output_norm",
-        epsilon: spec.layer_norm_epsilon
+        epsilon: spec.layer_norm_epsilon,
+        upcast: :all
       )
 
     %{
@@ -332,16 +358,19 @@ defmodule Bumblebee.Text.Qwen3 do
        ) do
     name = opts[:name]
 
-    # Build query and key normalization functions for Qwen3
-    query_norm =
-      if spec.use_qk_norm do
-        &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, channel_index: -1, name: &2)
-      end
+    block_types = block_types(spec)
 
-    key_norm =
-      if spec.use_qk_norm do
-        &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, channel_index: -1, name: &2)
+    attention_window_size = fn idx ->
+      case Enum.at(block_types, idx) do
+        :full_attention ->
+          nil
+
+        :sliding_attention ->
+          # The window includes the current position, so the maximum
+          # distance to an attended position is one less
+          {spec.attention_window_size - 1, 0}
       end
+    end
 
     Layers.Transformer.blocks(hidden_state,
       num_blocks: spec.num_blocks,
@@ -350,48 +379,70 @@ defmodule Bumblebee.Text.Qwen3 do
       hidden_size: spec.hidden_size,
       attention_head_size: spec.attention_head_size,
       kernel_initializer: kernel_initializer(spec),
-      query_use_bias: false,
-      key_use_bias: false,
-      value_use_bias: false,
-      output_use_bias: false,
-      block_type: :norm_first,
+      query_use_bias: spec.use_attention_bias,
+      key_use_bias: spec.use_attention_bias,
+      value_use_bias: spec.use_attention_bias,
+      output_use_bias: spec.use_attention_bias,
       attention_mask: attention_mask,
       attention_head_mask: attention_head_mask,
       cache: cache,
       causal: true,
-      layer_norm: &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, name: &2),
-      ffn:
-        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
-          name: &2,
-          activation: spec.activation
-        ),
+      block_type: :norm_first,
+      layer_norm: &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, upcast: :all, name: &2),
+      attention: &attention_with_sinks(&1, &2, spec),
+      attention_window_size: attention_window_size,
       rotary_embedding: [
         position_ids: position_ids,
         max_positions: spec.max_positions,
         base: spec.rotary_embedding_base,
         scaling_strategy: spec.rotary_embedding_scaling_strategy
       ],
-      query_norm: query_norm,
-      key_norm: key_norm,
+      ffn: &moe_block(&1, spec, name: &2),
       name: join(name, "blocks")
     )
   end
 
-  defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
-    name = opts[:name]
-    activation = opts[:activation]
+  # The attention is the standard multi-head attention with an extra
+  # learnt per-head sink logit taking part in the softmax
+  defp attention_with_sinks(hidden_state, opts, spec) do
+    sinks_param =
+      Axon.param("sinks", fn _ -> {spec.num_attention_heads} end, initializer: :zeros)
 
-    intermediate =
-      Axon.dense(hidden_state, intermediate_size,
-        name: join(name, "intermediate"),
-        use_bias: false
+    sinks =
+      Axon.layer(fn _hidden_state, sinks, _opts -> sinks end, [hidden_state, sinks_param],
+        name: join(opts[:name], "sinks"),
+        op_name: :attention_sinks
       )
 
-    gate = Axon.dense(hidden_state, intermediate_size, name: join(name, "gate"), use_bias: false)
+    opts = Keyword.put(opts, :sinks, sinks)
 
-    hidden_state = Axon.multiply(intermediate, Axon.activation(gate, activation))
+    Layers.Transformer.multi_head_attention(hidden_state, hidden_state, hidden_state, opts)
+  end
 
-    Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
+  defp moe_block(hidden_state, spec, opts) do
+    Moe.block(hidden_state,
+      num_experts: spec.num_experts,
+      num_experts_per_token: spec.num_experts_per_token,
+      hidden_size: spec.hidden_size,
+      intermediate_size: spec.intermediate_size,
+      activation: spec.activation,
+      scoring: :softmax_top_k,
+      use_bias: true,
+      use_score_correction_bias: false,
+      expert_use_bias: true,
+      expert_variant: :clamped_glu,
+      expert_clamp_limit: spec.expert_clamp_limit,
+      expert_activation_alpha: spec.expert_activation_alpha,
+      kernel_initializer: kernel_initializer(spec),
+      name: opts[:name]
+    )
+  end
+
+  defp block_types(spec) do
+    spec.block_types ||
+      for idx <- 0..(spec.num_blocks - 1) do
+        if rem(idx + 1, 2) == 1, do: :sliding_attention, else: :full_attention
+      end
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do
@@ -413,21 +464,13 @@ defmodule Bumblebee.Text.Qwen3 do
 
       data = Shared.normalize_rope_options(data)
 
-      scaling_strategy_converter = fn _name, value ->
-        case value do
-          %{"type" => "linear", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :linear, factor: factor}}
-
-          %{"type" => "dynamic", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :dynamic, factor: factor}}
-
-          nil ->
-            {:ok, nil}
-
-          _other ->
-            {:ok, nil}
-        end
-      end
+      block_type_converter =
+        list(
+          mapping(%{
+            "full_attention" => :full_attention,
+            "sliding_attention" => :sliding_attention
+          })
+        )
 
       opts =
         convert!(data,
@@ -435,18 +478,30 @@ defmodule Bumblebee.Text.Qwen3 do
           tie_word_embeddings: {"tie_word_embeddings", boolean()},
           max_positions: {"max_position_embeddings", number()},
           hidden_size: {"hidden_size", number()},
+          intermediate_size: {"intermediate_size", number()},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
           attention_head_size: {"head_dim", number()},
-          intermediate_size: {"intermediate_size", number()},
+          num_experts: {"num_local_experts", number()},
+          num_experts_per_token: {"num_experts_per_tok", number()},
+          block_types: {"layer_types", optional(block_type_converter)},
+          attention_window_size: {"sliding_window", number()},
           activation: {"hidden_act", activation()},
           rotary_embedding_base: {"rope_theta", number()},
-          rotary_embedding_scaling_strategy:
-            {"rope_scaling", optional(scaling_strategy_converter)},
+          rotary_embedding_scaling_strategy: {"rope_scaling", optional(rope_scaling_strategy())},
+          use_attention_bias: {"attention_bias", boolean()},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()}
         ) ++ Shared.common_options_from_transformers(data, spec)
+
+      # Some checkpoints only ship the number of experts under a
+      # different key
+      opts =
+        case data["num_experts"] do
+          nil -> opts
+          num_experts -> Keyword.put_new(opts, :num_experts, num_experts)
+        end
 
       @for.config(spec, opts)
     end
@@ -460,17 +515,63 @@ defmodule Bumblebee.Text.Qwen3 do
         "decoder.blocks.{n}.self_attention.key" => "model.layers.{n}.self_attn.k_proj",
         "decoder.blocks.{n}.self_attention.value" => "model.layers.{n}.self_attn.v_proj",
         "decoder.blocks.{n}.self_attention.output" => "model.layers.{n}.self_attn.o_proj",
-        "decoder.blocks.{n}.self_attention.query_norm" => "model.layers.{n}.self_attn.q_norm",
-        "decoder.blocks.{n}.self_attention.key_norm" => "model.layers.{n}.self_attn.k_norm",
+        "decoder.blocks.{n}.self_attention.sinks" => %{
+          "sinks" => {
+            [{"model.layers.{n}.self_attn", "sinks"}],
+            fn [sinks] -> sinks end
+          }
+        },
         "decoder.blocks.{n}.self_attention_norm" => "model.layers.{n}.input_layernorm",
-        "decoder.blocks.{n}.ffn.gate" => "model.layers.{n}.mlp.gate_proj",
-        "decoder.blocks.{n}.ffn.intermediate" => "model.layers.{n}.mlp.up_proj",
-        "decoder.blocks.{n}.ffn.output" => "model.layers.{n}.mlp.down_proj",
         "decoder.blocks.{n}.output_norm" => "model.layers.{n}.post_attention_layernorm",
+        "decoder.blocks.{n}.ffn.router" => %{
+          "kernel" => {
+            [{"model.layers.{n}.mlp.router", "weight"}],
+            fn [kernel] -> Nx.transpose(kernel) end
+          },
+          "bias" => {
+            [{"model.layers.{n}.mlp.router", "bias"}],
+            fn [bias] -> bias end
+          }
+        },
+        "decoder.blocks.{n}.ffn.experts" => experts_params(spec),
         "output_norm" => "model.norm",
         "language_modeling_head.output" =>
           if(spec.tie_word_embeddings, do: "model.embed_tokens", else: "lm_head"),
         "sequence_classification_head.output" => "score"
+      }
+    end
+
+    # GPT OSS stores the gate and up projections in a single tensor of
+    # shape `{num_experts, hidden_size, 2 * intermediate_size}`, where
+    # the gate and up entries are interleaved along the last axis
+    defp experts_params(_spec) do
+      experts = "model.layers.{n}.mlp.experts"
+
+      %{
+        "gate_kernel" => {
+          [{experts, "gate_up_proj"}],
+          fn [kernel] -> kernel[[.., .., 0..-1//2]] end
+        },
+        "up_kernel" => {
+          [{experts, "gate_up_proj"}],
+          fn [kernel] -> kernel[[.., .., 1..-1//2]] end
+        },
+        "down_kernel" => {
+          [{experts, "down_proj"}],
+          fn [kernel] -> kernel end
+        },
+        "gate_bias" => {
+          [{experts, "gate_up_proj_bias"}],
+          fn [bias] -> bias[[.., 0..-1//2]] end
+        },
+        "up_bias" => {
+          [{experts, "gate_up_proj_bias"}],
+          fn [bias] -> bias[[.., 1..-1//2]] end
+        },
+        "down_bias" => {
+          [{experts, "down_proj_bias"}],
+          fn [bias] -> bias end
+        }
       }
     end
   end
