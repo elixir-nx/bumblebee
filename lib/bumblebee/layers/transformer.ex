@@ -52,7 +52,6 @@ defmodule Bumblebee.Layers.Transformer do
       :hidden_size,
       :ffn,
       :kernel_initializer,
-      :attention_head_size,
       :dropout_rate,
       :attention_dropout_rate,
       :query_use_bias,
@@ -75,6 +74,7 @@ defmodule Bumblebee.Layers.Transformer do
             :num_blocks,
             :rotary_embedding,
             :attention_window_size,
+            :attention_head_size,
             attention_mask: Layers.none(),
             attention_head_mask: Layers.none(),
             attention_relative_bias: nil,
@@ -97,6 +97,7 @@ defmodule Bumblebee.Layers.Transformer do
     cache = opts[:cache]
     rotary_embedding = opts[:rotary_embedding]
     attention_window_size = opts[:attention_window_size]
+    attention_head_size = opts[:attention_head_size]
 
     block_opts = Keyword.take(opts, block_opts_keys)
 
@@ -142,12 +143,20 @@ defmodule Bumblebee.Layers.Transformer do
               size -> size
             end
 
+          block_attention_head_size =
+            case attention_head_size do
+              nil -> nil
+              fun when is_function(fun, 1) -> fun.(idx)
+              size -> size
+            end
+
           {hidden_state, attention, cross_attention, block_cache, attention_relative_bias} =
             block(
               state.hidden_state,
               [
                 attention_mask: attention_mask,
                 attention_head_mask: block_attention_head_mask,
+                attention_head_size: block_attention_head_size,
                 attention_relative_bias: attention_relative_bias,
                 cross_hidden_state: cross_hidden_state,
                 cross_attention_mask: cross_attention_mask,
@@ -856,6 +865,7 @@ defmodule Bumblebee.Layers.Transformer do
               :position_ids,
               :max_positions,
               :scaling_strategy,
+              :rotary_dim,
               base: 10_000,
               percentage: 1.0
             ])

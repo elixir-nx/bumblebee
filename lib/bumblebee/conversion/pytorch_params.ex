@@ -150,7 +150,7 @@ defmodule Bumblebee.Conversion.PyTorchParams do
 
             {value, diff} =
               if all_sources_found? do
-                source_values = Enum.map(source_values, &Nx.to_tensor/1)
+                source_values = Enum.map(source_values, &lazy_to_tensor/1)
                 value = builder_fun.(Enum.reverse(source_values))
 
                 case verify_param_shape(param_expr, value) do
@@ -187,6 +187,51 @@ defmodule Bumblebee.Conversion.PyTorchParams do
   end
 
   defp prepend(diff, key, values), do: Map.update!(diff, key, &(values ++ &1))
+
+  # macOS pread(2) returns EINVAL when byte count > INT_MAX (~2 GB).
+  # For large safetensors tensors, read in 1 GB chunks instead.
+  @pread_chunk 1_073_741_824
+
+  defp lazy_to_tensor(%Safetensors.FileTensor{byte_size: size} = ft)
+       when size > @pread_chunk do
+    # Force BinaryBackend: the GPU backend (EMLX) cannot allocate tensors
+    # this large in a single call, and we must also avoid the macOS pread
+    # INT_MAX limit by reading in chunks.
+    Nx.with_default_backend(Nx.BinaryBackend, fn ->
+      File.open!(ft.path, [:read, :raw], fn file ->
+        binary = pread_chunked(file, ft.byte_offset, ft.byte_size)
+        Safetensors.Shared.build_tensor(binary, ft.shape, ft.type)
+      end)
+    end)
+  end
+
+  defp lazy_to_tensor(value), do: Nx.to_tensor(value)
+
+  defp pread_chunked(file, offset, size) when size <= @pread_chunk do
+    {:ok, binary} = :file.pread(file, offset, size)
+    binary
+  end
+
+  defp pread_chunked(file, offset, size) do
+    full = div(size, @pread_chunk)
+    rest = rem(size, @pread_chunk)
+
+    chunks =
+      for i <- 0..(full - 1) do
+        {:ok, chunk} = :file.pread(file, offset + i * @pread_chunk, @pread_chunk)
+        chunk
+      end
+
+    chunks =
+      if rest > 0 do
+        {:ok, tail} = :file.pread(file, offset + full * @pread_chunk, rest)
+        chunks ++ [tail]
+      else
+        chunks
+      end
+
+    IO.iodata_to_binary(chunks)
+  end
 
   defp infer_prefixes(layers, pytorch_state, params_mapping) do
     # Note: target refers to the parameters we are initializing, while

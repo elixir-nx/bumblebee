@@ -1,0 +1,272 @@
+# Testing Gemma 4 (E2B-it)
+
+```elixir
+Mix.install(
+  [
+    # Gemma 4 is not in a Hex release yet, so point this at a Bumblebee checkout that
+    # has it. Once released this becomes {:bumblebee, "~> 0.8"}.
+    {:bumblebee, path: "/path/to/bumblebee"},
+    {:exla, "~> 0.12"},
+    {:kino, "~> 0.14"}
+  ],
+  config: [
+    nx: [default_backend: EXLA.Backend]
+  ]
+)
+```
+
+## What this notebook checks
+
+Five checks, cheapest first, so a failure tells you where the problem is:
+
+| # | Check | Expected |
+| - | ----- | -------- |
+| 1 | One forward pass | `" Paris"` |
+| 2 | Greedy chat generation | `"The capital of France is Paris."` |
+| 3 | System prompt, multi-turn, arithmetic | `"Tokyo"`, `"Your name is Ada."`, `"391"` |
+| 4 | Thinking mode | a `<|channel>thought` block |
+| 5 | Sampling with Google's recommended params | fluent prose |
+
+**Timings on a 32 GB M-series CPU.** Loading the model takes about 10 s. Check 1 runs in
+roughly a minute. The first `Nx.Serving.run` on a serving has to compile the XLA graph,
+which takes **10–15 min** at `sequence_length: 128` — it is not hung, and it only happens
+once per serving. Runs after that are fast. Check 1 uses `Axon.predict` and skips that wait
+entirely, so run it first.
+
+## Setup
+
+```elixir
+alias Bumblebee.Text.Gemma4Chat
+
+repo = {:hf, "google/gemma-4-E2B-it"}
+```
+
+If you already have the checkpoint on disk, point at the directory instead — it needs
+`config.json`, `tokenizer.json` and `model.safetensors`:
+
+```elixir
+# repo = {:local, "/path/to/gemma-4-E2B-it"}
+```
+
+```elixir
+{:ok, tokenizer} = Bumblebee.load_tokenizer(repo)
+{:ok, generation_config} = Bumblebee.load_generation_config(repo)
+
+generation_config
+```
+
+Load in **bf16**. At the f32 default the tied `lm_head` plus the per-layer-input embedding
+table come to roughly 13 GB of params, which does not fit comfortably in 32 GB.
+
+```elixir
+{:ok, model_info} = Bumblebee.load_model(repo, type: :bf16)
+
+model_info.spec
+```
+
+Sanity-check the spec before going further. `num_blocks` should be `35`,
+`num_kv_shared_layers` `20`, `attention_window_size` `512`, and `layer_types` should have
+`:full_attention` at indices 4, 9, 14, 19, 24, 29 and 34.
+
+```elixir
+spec = model_info.spec
+
+%{
+  num_blocks: spec.num_blocks,
+  num_kv_shared_layers: spec.num_kv_shared_layers,
+  attention_window_size: spec.attention_window_size,
+  global_layers:
+    spec.layer_types
+    |> Enum.with_index()
+    |> Enum.filter(&match?({:full_attention, _}, &1))
+    |> Enum.map(&elem(&1, 1))
+}
+```
+
+## Check 1 — a single forward pass
+
+Gemma 4's `tokenizer.json` has an empty post-processor, so it adds **no `<bos>`**, and the
+model degenerates badly without one. The `<bos>` has to be in the prompt string itself.
+(Upstream Transformers behaves the same way — this is not a Bumblebee quirk.)
+
+```elixir
+inputs = Bumblebee.apply_tokenizer(tokenizer, "<bos>The capital of France is")
+
+outputs = Axon.predict(model_info.model, model_info.params, inputs, compiler: EXLA)
+
+next_id =
+  outputs.logits
+  |> Nx.slice_along_axis(Nx.axis_size(outputs.logits, 1) - 1, 1, axis: 1)
+  |> Nx.squeeze(axes: [1])
+  |> Nx.argmax(axis: -1)
+  |> Nx.to_flat_list()
+  |> hd()
+
+Bumblebee.Tokenizer.decode(tokenizer, [next_id])
+```
+
+Expected `" Paris"`. If you get `" France"` instead, the `<bos>` went missing — that single
+token is the difference between coherent output and a repetition loop.
+
+## Check 2 — greedy generation
+
+`strategy: %{type: :greedy_search}` — note the `_search` suffix; plain `:greedy` raises.
+Greedy is used here because it is deterministic and therefore reproducible.
+
+`sequence_length: 128` keeps the first-run XLA compile bearable. Raise it only if you need
+longer prompts; compile time grows with it.
+
+```elixir
+greedy_config =
+  Bumblebee.configure(generation_config,
+    max_new_tokens: 64,
+    strategy: %{type: :greedy_search}
+  )
+
+serving =
+  Bumblebee.Text.generation(model_info, tokenizer, greedy_config,
+    compile: [batch_size: 1, sequence_length: 128],
+    defn_options: [compiler: EXLA]
+  )
+
+:ready
+```
+
+`Gemma4Chat.format/2` renders the `<bos>` and the `<|turn>role\n...<turn|>\n` frame exactly
+as the checkpoint's `chat_template.jinja` does.
+
+```elixir
+prompt =
+  Gemma4Chat.format([
+    %{role: :user, content: "What is the capital of France? Answer in one sentence."}
+  ])
+
+IO.puts(prompt)
+
+Nx.Serving.run(serving, prompt)
+```
+
+Expected `"The capital of France is Paris."` **This cell is the slow one** — it triggers the
+XLA compile.
+
+## Check 3 — system prompt, multi-turn, arithmetic
+
+These three exercise instruction-following, KV-cache correctness across turns, and actual
+reasoning. All reuse the compiled serving, so they are quick.
+
+```elixir
+Gemma4Chat.format([
+  %{role: :system, content: "You are terse. Answer in exactly one word."},
+  %{role: :user, content: "Capital of Japan?"}
+])
+|> then(&Nx.Serving.run(serving, &1))
+```
+
+Expected `"Tokyo"` — a single word, meaning the system turn was honoured.
+
+```elixir
+Gemma4Chat.format([
+  %{role: :user, content: "My name is Ada."},
+  %{role: :assistant, content: "Nice to meet you, Ada."},
+  %{role: :user, content: "What is my name?"}
+])
+|> then(&Nx.Serving.run(serving, &1))
+```
+
+Expected `"Your name is Ada."` — recall across turns, so the assistant turn was rendered
+with the `model` role and the cache is sound.
+
+```elixir
+Gemma4Chat.format([
+  %{role: :user, content: "What is 17 * 23? Reply with just the number."}
+])
+|> then(&Nx.Serving.run(serving, &1))
+```
+
+Expected `"391"`.
+
+## Check 4 — thinking mode
+
+`enable_thinking: true` emits the `<|think|>` control token at the top of the system turn.
+The model then produces a `<|channel>thought\n...<channel|>` block before its answer, so
+give it more room.
+
+```elixir
+thinking_serving =
+  Bumblebee.Text.generation(
+    model_info,
+    tokenizer,
+    Bumblebee.configure(greedy_config, max_new_tokens: 256),
+    compile: [batch_size: 1, sequence_length: 128],
+    defn_options: [compiler: EXLA]
+  )
+
+Gemma4Chat.format([%{role: :user, content: "Is 91 prime?"}], enable_thinking: true)
+|> then(&Nx.Serving.run(thinking_serving, &1))
+```
+
+91 = 7 x 13, so a correct answer is "no". Watch for the reasoning block in the output.
+
+## Check 5 — sampling
+
+Google's recommended settings for Gemma 4 are `temperature: 1.0`, `top_p: 0.95`,
+`top_k: 64`. The shipped `generation_config.json` already carries them, so this is what you
+get by default if you do not override the strategy. Output varies between runs.
+
+```elixir
+sampling_serving =
+  Bumblebee.Text.generation(
+    model_info,
+    tokenizer,
+    Bumblebee.configure(generation_config,
+      max_new_tokens: 128,
+      strategy: %{type: :multinomial_sampling, top_p: 0.95, top_k: 64},
+      temperature: 1.0
+    ),
+    compile: [batch_size: 1, sequence_length: 128],
+    defn_options: [compiler: EXLA]
+  )
+
+Gemma4Chat.format([%{role: :user, content: "Write one sentence about bees."}])
+|> then(&Nx.Serving.run(sampling_serving, &1))
+```
+
+## Interactive chat
+
+```elixir
+message_input = Kino.Input.textarea("Message", default: "Explain RoPE in two sentences.")
+```
+
+```elixir
+Gemma4Chat.format([%{role: :user, content: Kino.Input.read(message_input)}])
+|> then(&Nx.Serving.run(serving, &1))
+```
+
+Multi-turn: append the model's reply as an `:assistant` message and re-render the whole
+list. Per Google's guidance, drop any thinking blocks from previous turns — only the final
+answer should go back in.
+
+```elixir
+history = [
+  %{role: :user, content: "What is Elixir?"},
+  %{role: :assistant, content: "A functional language on the Erlang VM."},
+  %{role: :user, content: "What runs it?"}
+]
+
+Gemma4Chat.format(history) |> then(&Nx.Serving.run(serving, &1))
+```
+
+## Troubleshooting
+
+| Symptom | Cause |
+| ------- | ----- |
+| `" France"` in check 1, or a `" France is France is"` loop | `<bos>` missing — use `Gemma4Chat.format/2` or prepend it yourself |
+| `expected strategy type to be either :greedy_search or :contrastive_search` | you wrote `:greedy` instead of `:greedy_search` |
+| A cell appears hung for ~10 min | first-run XLA compile; expected, and only once per serving |
+| Out of memory / swapping | you dropped `type: :bf16`; f32 needs about 13 GB of params |
+| `no matching mapping found for layer ...` | the local dir is missing `config.json`, or is not a Gemma 4 checkpoint |
+| `mixture-of-experts checkpoints are not supported yet` | you pointed at the 26B A4B; only the dense sizes work |
+| `cmake not found` | only affects `mix run` in the checkout (torchx). Livebook is unaffected — torchx is a dev/test-only dep |
+
+Prompts longer than `sequence_length` are truncated silently, so raise it if you feed long
+context — at the cost of a longer compile.

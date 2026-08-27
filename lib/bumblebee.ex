@@ -142,6 +142,8 @@ defmodule Bumblebee do
     "Gemma3TextForCausalLM" => {Bumblebee.Text.Gemma3Text, :for_causal_language_modeling},
     "Gemma3TextForSequenceClassification" =>
       {Bumblebee.Text.Gemma3Text, :for_sequence_classification},
+    "Gemma4ForConditionalGeneration" =>
+      {Bumblebee.Text.Gemma4Text, :for_causal_language_modeling},
     "GPT2ForSequenceClassification" => {Bumblebee.Text.Gpt2, :for_sequence_classification},
     "GPT2ForTokenClassification" => {Bumblebee.Text.Gpt2, :for_token_classification},
     "GPT2LMHeadModel" => {Bumblebee.Text.Gpt2, :for_causal_language_modeling},
@@ -273,6 +275,7 @@ defmodule Bumblebee do
     "clip" => :clip,
     "gemma" => :gemma,
     "gemma3_text" => :gemma,
+    "gemma4" => :gemma,
     "gpt_neox" => :gpt_neo_x,
     "gpt2" => :gpt2,
     "gpt_bigcode" => :gpt2,
@@ -777,10 +780,14 @@ defmodule Bumblebee do
   end
 
   defp params_file_loader_fun(".safetensors", opts) do
-    opts[:safetensors_reader] || (&Safetensors.read!(&1, lazy: true))
+    opts[:safetensors_reader] || (&read_safetensors_chunked/1)
   end
 
   defp params_file_loader_fun(_, _opts), do: &Bumblebee.Conversion.PyTorchLoader.load!/1
+
+  defp read_safetensors_chunked(path) do
+    Safetensors.read!(path, lazy: true)
+  end
 
   @doc """
   Featurizes `input` with the given featurizer.
