@@ -49,8 +49,9 @@ defmodule Bumblebee.Text.Gemma4Text do
       num_global_key_value_heads: [
         default: nil,
         doc: """
-        the number of key value heads for global (full) attention layers.
-        If nil, defaults to num_key_value_heads.
+        the number of key value heads for global (full) attention layers. Upstream only
+        consults this together with `attention_k_eq_v`, which is not supported, so it is
+        currently unused and `:num_key_value_heads` applies to every layer.
         """
       ],
       activation: [
@@ -142,6 +143,82 @@ defmodule Bumblebee.Text.Gemma4Text do
   @moduledoc """
   Gemma 4 model family (text backbone).
 
+  Gemma 4 builds on Gemma 3 with several architectural changes:
+
+    * Per-layer embeddings (PLE), giving each decoder layer its own small
+      token embedding, so the effective parameter count is much lower than
+      the total
+
+    * Key-value sharing across the last `:num_kv_shared_layers` layers
+
+    * Larger heads and proportional RoPE (p-RoPE) on the global attention
+      layers, with a separate rotary base per layer type
+
+    * A learned per-layer output scalar
+
+  Note that the checkpoints are multimodal; this module implements the text
+  backbone only.
+
+  ## Architectures
+
+    * `:base` - plain Gemma 4 without any head on top
+
+    * `:for_causal_language_modeling` - Gemma 4 with a language modeling
+      head. The head returns logits for each token in the original
+      sequence
+
+    * `:for_sequence_classification` - Gemma 4 with a sequence
+      classification head. The head returns logits corresponding to
+      possible classes
+
+  ## Inputs
+
+    * `"input_ids"` - `{batch_size, sequence_length}`
+
+      Indices of input sequence tokens in the vocabulary.
+
+    * `"attention_mask"` - `{batch_size, sequence_length}`
+
+      Mask indicating which tokens to attend to. This is used to ignore
+      padding tokens, which are added when processing a batch of sequences
+      with different length.
+
+    * `"position_ids"` - `{batch_size, sequence_length}`
+
+      Indices of positions of each input sequence tokens in the position
+      embeddings.
+
+    * `"attention_head_mask"` - `{num_blocks, num_attention_heads}`
+
+      Mask to nullify selected heads of the self-attention blocks.
+
+    * `"input_embeddings"` - `{batch_size, sequence_length, hidden_size}`
+
+      Embedded representation of `"input_ids"`, which can be specified
+      for more control over how `"input_ids"` are embedded than the
+      model's internal embedding lookup. If `"input_embeddings"` are present,
+      then `"input_ids"` will be ignored.
+
+    * `"cache"`
+
+      A container with cached layer results used to speed up sequential
+      decoding (autoregression). With cache, certain hidden states are
+      taken from the cache, rather than recomputed on every decoding
+      pass. The cache should be treated as opaque and initialized with
+      `Bumblebee.Text.Generation.init_cache/4`.
+
+  ## Prompt format
+
+  Gemma 4 checkpoints ship a `tokenizer.json` whose post-processor adds nothing, so no
+  `<bos>` is prepended even with `add_special_tokens: true` (upstream Transformers behaves
+  the same way). Gemma 4 degenerates badly without it, so the prompt must carry `<bos>`
+  and the turn markers itself. Use `Bumblebee.Text.Gemma4Chat.format/2`:
+
+      prompt = Bumblebee.Text.Gemma4Chat.format([%{role: :user, content: "Hi there"}])
+      #=> "<bos><|turn>user\\nHi there<turn|>\\n<|turn>model\\n"
+
+  Passing a bare string such as `"The capital of France is"` yields incoherent output.
+
   ## Global layer options
 
   #{Shared.global_layer_options_doc([:output_hidden_states, :output_attentions])}
@@ -185,7 +262,7 @@ defmodule Bumblebee.Text.Gemma4Text do
 
   @impl true
   def init_cache(spec, batch_size, max_length, _inputs) do
-    layer_types = spec.layer_types || generate_layer_types(spec.num_blocks)
+    layer_types = layer_types(spec)
 
     blocks =
       Enum.map(0..(spec.num_blocks - 1), fn idx ->
@@ -300,11 +377,6 @@ defmodule Bumblebee.Text.Gemma4Text do
         name: "embedder"
       )
 
-    position_ids =
-      Layers.default inputs["position_ids"] do
-        Layers.default_position_ids(embeddings)
-      end
-
     # PLE: compute per-layer inputs
     per_layer_inputs =
       if spec.hidden_size_per_layer_input do
@@ -316,7 +388,7 @@ defmodule Bumblebee.Text.Gemma4Text do
     decoder_outputs =
       decoder(
         embeddings,
-        position_ids,
+        inputs["position_ids"],
         inputs["attention_mask"],
         inputs["attention_head_mask"],
         inputs["cache"],
@@ -426,6 +498,7 @@ defmodule Bumblebee.Text.Gemma4Text do
     query_norm = &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, name: &2)
     key_norm = &Layers.rms_norm(&1, epsilon: spec.layer_norm_epsilon, name: &2)
 
+    # Gemma4RMSNorm(with_scale: false) — normalization without a weight
     value_norm = fn value, _name ->
       Axon.nx(value, fn x ->
         variance = Nx.mean(Nx.multiply(x, x), axes: [-1], keep_axes: true)
@@ -433,7 +506,7 @@ defmodule Bumblebee.Text.Gemma4Text do
       end)
     end
 
-    layer_types = spec.layer_types || generate_layer_types(spec.num_blocks)
+    layer_types = layer_types(spec)
     first_kv_shared = spec.num_blocks - spec.num_kv_shared_layers
 
     # Last occurrence of each layer type before first_kv_shared — these become "store" layers
@@ -446,6 +519,28 @@ defmodule Bumblebee.Text.Gemma4Text do
 
     {attention_mask, cache} = Layers.Decoder.cached_attention_mask(attention_mask, cache)
     offset = Layers.Decoder.get_cache_offset(cache)
+
+    # Absolute positions must continue past what the cache already holds, matching
+    # `arange(seq_len) + past_seen_tokens` upstream. Layers.default_position_ids/2 only
+    # takes a literal offset, so build it from the cache offset node instead.
+    position_ids =
+      Layers.default position_ids do
+        Axon.layer(
+          fn hidden_state, offset, _opts ->
+            batch_size = Nx.axis_size(hidden_state, 0)
+            sequence_length = Nx.axis_size(hidden_state, 1)
+
+            offset =
+              case offset do
+                %Axon.None{} -> 0
+                offset -> offset
+              end
+
+            Nx.iota({batch_size, sequence_length}, axis: -1) |> Nx.add(offset)
+          end,
+          [hidden_state, Axon.optional(offset)]
+        )
+      end
 
     initial_state = %{
       hidden_state: hidden_state,
@@ -471,16 +566,20 @@ defmodule Bumblebee.Text.Gemma4Text do
             :sliding_attention -> spec.attention_head_size
           end
 
-        num_kv_heads =
-          case layer_type do
-            :full_attention -> spec.num_global_key_value_heads || spec.num_key_value_heads
-            :sliding_attention -> spec.num_key_value_heads
-          end
+        # Upstream only uses num_global_key_value_heads with attention_k_eq_v, which the
+        # config loader rejects, so every layer uses num_key_value_heads
+        num_kv_heads = spec.num_key_value_heads
 
         window_size =
           case layer_type do
-            :full_attention -> nil
-            :sliding_attention -> {spec.attention_window_size, spec.attention_window_size}
+            :full_attention ->
+              nil
+
+            :sliding_attention ->
+              # Upstream admits keys at distance 0..sliding_window-1 (sliding_window keys
+              # including self), while Layers.window_mask treats the bound as inclusive
+              size = spec.attention_window_size - 1
+              {size, size}
           end
 
         rotary_opts =
@@ -836,15 +935,17 @@ defmodule Bumblebee.Text.Gemma4Text do
     Axon.Initializers.normal(scale: spec.initializer_scale)
   end
 
-  # Generate layer_types fallback: every 5th layer uses full attention
-  defp generate_layer_types(num_blocks) do
-    Enum.map(0..(num_blocks - 1), fn i ->
-      if rem(i + 1, 5) == 0 do
-        :full_attention
-      else
-        :sliding_attention
-      end
-    end)
+  # Resolves the per-layer attention types, mirroring Gemma4TextConfig.__post_init__:
+  # when unspecified, every 6th layer is global (a 5:1 local-to-global ratio), and the
+  # last layer is always coerced to global regardless of where the list came from.
+  defp layer_types(spec) do
+    types =
+      spec.layer_types ||
+        Enum.map(0..(spec.num_blocks - 1), fn i ->
+          if rem(i + 1, 6) == 0, do: :full_attention, else: :sliding_attention
+        end)
+
+    List.replace_at(types, -1, :full_attention)
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
@@ -852,6 +953,29 @@ defmodule Bumblebee.Text.Gemma4Text do
       import Shared.Converters
 
       data = data["text_config"] || data
+
+      # Fail loudly rather than silently building a different architecture
+      if data["enable_moe_block"] do
+        raise ArgumentError,
+              "Gemma4 mixture-of-experts checkpoints are not supported yet" <>
+                " (config has enable_moe_block: true)"
+      end
+
+      # Only "all" changes the text backbone (it clears causality and halves the sliding
+      # window). "vision" affects image-token masking in the multimodal wrapper, leaving
+      # this text decoder bit-identical to the nil case, so it is safe to accept.
+      if data["use_bidirectional_attention"] == "all" do
+        raise ArgumentError,
+              "Gemma4 fully bidirectional attention is not supported yet" <>
+                " (config has use_bidirectional_attention: \"all\")"
+      end
+
+      if data["attention_k_eq_v"] do
+        raise ArgumentError,
+              "Gemma4 shared key/value attention is not supported yet" <>
+                " (config has attention_k_eq_v: true)"
+      end
+
       rope_params = data["rope_parameters"] || %{}
       full_attention_rope = rope_params["full_attention"] || %{}
       sliding_attention_rope = rope_params["sliding_attention"] || %{}

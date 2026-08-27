@@ -95,6 +95,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.Distilbert,
           Bumblebee.Text.Gemma,
           Bumblebee.Text.Gemma3Text,
+          Bumblebee.Text.Gemma4Text,
           Bumblebee.Text.Gpt2,
           Bumblebee.Text.GptBigCode,
           Bumblebee.Text.GptNeoX,
@@ -146,6 +147,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Text.Generation
         ],
         Other: [
+          Bumblebee.Text.Gemma4Chat,
           Bumblebee.Text.GenerationConfig,
           Bumblebee.Text.WhisperGenerationConfig
         ]
