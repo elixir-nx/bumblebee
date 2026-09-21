@@ -95,7 +95,7 @@ defmodule Bumblebee.Audio.WhisperFeaturizer do
   defnp extract_fbank_features(waveform, opts \\ []) do
     opts = keyword!(opts, [:fft_length, :sampling_rate, :mel_bins, :hop_length])
 
-    window = NxSignal.Windows.hann(n: opts[:fft_length], is_periodic: true)
+    window = NxSignal.Windows.hann(opts[:fft_length], is_periodic: true)
 
     {stft, _, _} =
       NxSignal.stft(waveform, window,

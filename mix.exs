@@ -31,21 +31,21 @@ defmodule Bumblebee.MixProject do
 
   defp deps do
     [
-      {:axon, "~> 0.8.0"},
+      {:axon, "~> 0.9.0"},
       # {:axon, github: "elixir-nx/axon", override: true},
       {:tokenizers, "~> 0.4"},
-      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true},
-      {:exla, github: "elixir-nx/nx", sparse: "exla", override: true, only: [:dev, :test]},
-      {:torchx, github: "elixir-nx/nx", sparse: "torchx", override: true, only: [:dev, :test]},
-      {:nx_image, "~> 0.1.0"},
+      {:nx, "~> 1.0"},
+      {:exla, "~> 1.0", only: [:dev, :test]},
+      {:torchx, "~> 1.0", only: [:dev, :test]},
+      {:nx_image, "~> 0.2.0"},
       {:unpickler, "~> 0.1.0"},
-      {:safetensors, "~> 0.1.3"},
+      {:safetensors, "~> 0.2.0"},
       {:jason, "~> 1.4.0"},
       {:unzip, "~> 0.12.0 or ~> 0.13.0"},
-      {:stb_image, "~> 0.6.0", only: :test},
+      {:stb_image, "~> 1.0.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
-      {:nx_signal, "~> 0.2.0"}
+      {:nx_signal, "~> 0.4.0"}
     ]
   end
 
