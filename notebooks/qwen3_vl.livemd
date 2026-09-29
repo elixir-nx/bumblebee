@@ -1,0 +1,248 @@
+# Qwen3-VL Vision-Language Model
+
+```elixir
+Mix.install([
+  {:bumblebee, path: "."},
+  {:nx, "~> 0.9"},
+  {:exla, "~> 0.9"},
+  {:kino, "~> 0.14"},
+  {:stb_image, "~> 0.6"}
+])
+
+Nx.global_default_backend(EXLA.Backend)
+```
+
+## Introduction
+
+Qwen3-VL is a multimodal vision-language model from Alibaba that can understand images and generate text descriptions. This notebook demonstrates how to use Qwen3-VL with Bumblebee.
+
+## Model Architecture
+
+Qwen3-VL combines:
+- **Vision Encoder**: Processes images using 2D spatial rotary position embeddings
+- **Text Decoder**: Qwen3-based transformer with MRoPE (Multi-axis Rotary Position Embedding)
+
+Key features:
+- 3D convolution patch embedding (supports video temporal dimension)
+- 2D spatial rotary embeddings for accurate spatial understanding
+- Patch merger for spatial reduction
+- Per-image `image_grid_thw` threaded through the encoder so it handles
+  multiple images of varying sizes in a single prompt
+- Smart-resize with `:low`/`:medium`/`:high` quality presets to trade
+  off image detail against visual-token count
+
+## Load the Model
+
+```elixir
+# Load the model, tokenizer, and featurizer
+repo = "Qwen/Qwen3-VL-2B-Instruct"
+
+{:ok, model_info} = Bumblebee.load_model({:hf, repo})
+{:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, repo})
+
+# The featurizer accepts a `:quality` preset (`:low`, `:medium`, `:high`) or
+# explicit `:min_pixels` / `:max_pixels` caps. Smart-resize preserves aspect
+# ratio and rounds each side to a multiple of `patch_size * merge_size`.
+{:ok, featurizer} =
+  Bumblebee.load_featurizer({:hf, repo},
+    module: Bumblebee.Vision.Qwen3VLFeaturizer,
+    quality: :medium
+  )
+
+:ok
+```
+
+## Process an Image
+
+```elixir
+# Upload an image
+image_input = Kino.Input.image("Upload an image", format: :rgb)
+```
+
+```elixir
+# Get the uploaded image
+image_data = Kino.Input.read(image_input)
+
+image =
+  if image_data do
+    # Convert Kino image to tensor
+    image_data.file_ref
+    |> Kino.Input.file_path()
+    |> StbImage.read_file!()
+  else
+    # Use a sample image if none uploaded
+    {:ok, %{body: body}} =
+      Req.get("https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png")
+    StbImage.read_binary!(body)
+  end
+
+Kino.Image.new(image)
+```
+
+## Generate Image Description
+
+```elixir
+# Build the prompt for image description
+prompt = "<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|>Describe this image in detail.<|im_end|>
+<|im_start|>assistant
+"
+
+# Tokenize the prompt
+inputs = Bumblebee.apply_tokenizer(tokenizer, prompt)
+
+# Process the image. The featurizer returns `pixel_values` (concatenated,
+# pre-extracted patches) and `image_grid_thw` (per-image grid dims). Both
+# are required by the model — `image_grid_thw` tells the vision encoder
+# the correct per-patch positions.
+image_inputs = Bumblebee.apply_featurizer(featurizer, image)
+
+# Combine inputs
+combined_inputs = Map.merge(inputs, image_inputs)
+
+# Run inference
+outputs = Axon.predict(model_info.model, model_info.params, combined_inputs)
+
+# Decode the output (greedy decoding for simplicity)
+# For better results, use Bumblebee.Text.generation/4 serving
+logits = outputs.logits
+predicted_ids = Nx.argmax(logits, axis: -1)
+
+Bumblebee.Tokenizer.decode(tokenizer, predicted_ids)
+```
+
+## Generating in One Call
+
+`Bumblebee.Multimodal.ImageTextToText.generate/6` is a single-call
+helper that featurizes the image, expands the `<|image_pad|>` marker
+in your prompt to the right number of visual tokens, and runs
+generation:
+
+```elixir
+{:ok, generation_config} = Bumblebee.load_generation_config({:hf, repo})
+generation_config = Bumblebee.configure(generation_config, max_new_tokens: 64)
+
+prompt = "<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|>What is in this image?<|im_end|>
+<|im_start|>assistant
+"
+
+Bumblebee.Multimodal.ImageTextToText.generate(
+  model_info,
+  featurizer,
+  tokenizer,
+  generation_config,
+  prompt,
+  image
+)
+#=> %{text: "A group of cats lying on a pink blanket with remote controls.", token_ids: ...}
+```
+
+> Note: each `generate/6` call recompiles the generation graph when
+> the image size or sequence length changes. For repeated calls, use
+> `compile/5` + `run/3` (see below).
+
+## Compile Once, Run Many
+
+For serving-style use where many images of varying sizes share one
+compiled graph, configure upper bounds with `compile/5`, then call
+`run/3` repeatedly. The featurizer pads `pixel_values` and
+`image_grid_thw` to the maxima you set, and the vision encoder
+excludes the padded patches from attention.
+
+```elixir
+compiled =
+  Bumblebee.Multimodal.ImageTextToText.compile(
+    model_info,
+    featurizer,
+    tokenizer,
+    generation_config,
+    max_patches: 1024,
+    max_num_images: 1,
+    sequence_length: 384
+  )
+
+# First call: JIT-compiles for these upper-bound shapes
+Bumblebee.Multimodal.ImageTextToText.run(compiled, prompt, image)
+
+# Subsequent calls reuse the same compiled graph, even if the new
+# image produces fewer real patches — padding makes the shapes match.
+Bumblebee.Multimodal.ImageTextToText.run(compiled, prompt, another_image)
+```
+
+On `Qwen3-VL-2B-Instruct` + CPU + a 640×480 COCO image, the warm
+call runs in ~10s while the cold (JIT-compiling) call takes ~27s — a
+2.7x speedup that scales with the number of repeated calls.
+
+## Multiple Images in One Prompt
+
+`apply_featurizer/2` accepts a list of images of differing sizes. They
+are concatenated into a single flat patch sequence and the per-image
+grid dimensions are returned via `image_grid_thw`.
+
+```elixir
+images = [image, image]
+
+multi_image_inputs = Bumblebee.apply_featurizer(featurizer, images)
+# multi_image_inputs["image_grid_thw"] has shape {2, 3}
+
+prompt = "<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>Compare these two images.<|im_end|>
+<|im_start|>assistant
+"
+
+inputs = Bumblebee.apply_tokenizer(tokenizer, prompt)
+combined_inputs = Map.merge(inputs, multi_image_inputs)
+
+outputs = Axon.predict(model_info.model, model_info.params, combined_inputs)
+```
+
+## Validation Against Standalone Qwen3
+
+Qwen3-VL's text decoder is the standalone Qwen3 model. A useful sanity
+check after touching the vision/multimodal code is to confirm the
+standalone Qwen3 text path still runs cleanly:
+
+```elixir
+# Loads only the small config.json, not weights
+{:ok, qwen3_spec} = Bumblebee.load_spec({:hf, "Qwen/Qwen3-4B-Instruct-2507"})
+IO.inspect(qwen3_spec.__struct__)
+# => Bumblebee.Text.Qwen3
+```
+
+For a full end-to-end check (downloads ~8GB of weights):
+
+```elixir
+{:ok, qwen3} = Bumblebee.load_model({:hf, "Qwen/Qwen3-4B-Instruct-2507"}, type: :bf16)
+{:ok, qwen3_tokenizer} = Bumblebee.load_tokenizer({:hf, "Qwen/Qwen3-4B-Instruct-2507"})
+
+serving =
+  Bumblebee.Text.generation(qwen3, qwen3_tokenizer,
+    max_new_tokens: 64,
+    compile: [batch_size: 1, sequence_length: 512]
+  )
+
+Nx.Serving.run(serving, "Explain in one sentence what a vector database is.")
+```
+
+## Quality Profiles
+
+Use the `:quality` preset to bound how many visual tokens each image
+produces. Lower quality = faster inference, less spatial detail.
+
+```elixir
+# Token-budget knobs
+{:ok, fast_featurizer} =
+  Bumblebee.load_featurizer({:hf, repo},
+    module: Bumblebee.Vision.Qwen3VLFeaturizer,
+    quality: :low
+  )
+
+# Or explicit pixel caps (overrides :quality)
+{:ok, custom_featurizer} =
+  Bumblebee.load_featurizer({:hf, repo},
+    module: Bumblebee.Vision.Qwen3VLFeaturizer,
+    min_pixels: 256 * 32 * 32,
+    max_pixels: 1280 * 32 * 32
+  )
+```
