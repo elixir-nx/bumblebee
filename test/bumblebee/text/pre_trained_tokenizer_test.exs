@@ -3,6 +3,34 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
 
   import Bumblebee.TestHelpers
 
+  test ":deberta_v2" do
+    assert {:ok, tokenizer} =
+             Bumblebee.load_tokenizer({:hf, "hf-internal-testing/tiny-random-DebertaV2Model"})
+
+    assert %Bumblebee.Text.PreTrainedTokenizer{type: :deberta_v2} = tokenizer
+
+    inputs =
+      Bumblebee.apply_tokenizer(tokenizer, [
+        "Test sentence with [MASK].",
+        {"Question?", "Answer"}
+      ])
+
+    assert_equal(
+      inputs["input_ids"],
+      Nx.tensor([[1, 4144, 4341, 19, 128_000, 65, 2], [1, 7063, 44, 2, 9881, 2, 0]])
+    )
+
+    assert_equal(
+      inputs["attention_mask"],
+      Nx.tensor([[1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 0]])
+    )
+
+    assert_equal(
+      inputs["token_type_ids"],
+      Nx.tensor([[0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 1, 1, 0]])
+    )
+  end
+
   test ":albert" do
     assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "albert/albert-base-v2"})
 

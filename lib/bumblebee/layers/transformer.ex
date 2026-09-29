@@ -17,6 +17,10 @@ defmodule Bumblebee.Layers.Transformer do
     * `:num_blocks` (required) - the number of consecutive transformer
       blocks to add
 
+    * `:block_output` - an optional 2-arity function receiving each block's
+      hidden state and zero-based index. The returned hidden state is
+      collected in the outputs and passed to the next block
+
     * `:share_attention_relative_bias` - when attention relative bias
       is configured, this option controls whether the bias from the
       first block is used for all other blocks. Defaults to `false`
@@ -63,7 +67,8 @@ defmodule Bumblebee.Layers.Transformer do
       :block_type,
       :attention_scale,
       :query_norm,
-      :key_norm
+      :key_norm,
+      :attention
     ]
 
     opts =
@@ -75,6 +80,7 @@ defmodule Bumblebee.Layers.Transformer do
             :num_blocks,
             :rotary_embedding,
             :attention_window_size,
+            block_output: fn hidden_state, _index -> hidden_state end,
             attention_mask: Layers.none(),
             attention_head_mask: Layers.none(),
             attention_relative_bias: nil,
@@ -97,6 +103,7 @@ defmodule Bumblebee.Layers.Transformer do
     cache = opts[:cache]
     rotary_embedding = opts[:rotary_embedding]
     attention_window_size = opts[:attention_window_size]
+    block_output = opts[:block_output]
 
     block_opts = Keyword.take(opts, block_opts_keys)
 
@@ -161,6 +168,8 @@ defmodule Bumblebee.Layers.Transformer do
             )
 
           cache = Layers.Decoder.put_block_cache(state.cache, idx, block_cache)
+
+          hidden_state = block_output.(hidden_state, idx)
 
           %{
             hidden_state: hidden_state,
@@ -299,6 +308,11 @@ defmodule Bumblebee.Layers.Transformer do
     * `:attention_scale` - the scaling factor applied to the attention weights.
       Defaults to $\frac{1}{\sqrt{d}}$.
 
+    * `:attention` - a custom 4-arity attention function, defaulting to
+      `multi_head_attention/4`. It receives query, key and value nodes,
+      followed by the attention options, and must return the same tuple
+      as `multi_head_attention/4`. It applies to self- and cross-attention
+
     * `:rotary_embedding` - configuration of rotary embedding. If set,
       will apply rotary position embedding with the given options. Valid
       options are:
@@ -354,7 +368,8 @@ defmodule Bumblebee.Layers.Transformer do
         attention_scale: nil,
         rotary_embedding: nil,
         query_norm: nil,
-        key_norm: nil
+        key_norm: nil,
+        attention: &multi_head_attention/4
       ])
 
     name = opts[:name]
@@ -386,6 +401,8 @@ defmodule Bumblebee.Layers.Transformer do
     rotary_embedding = opts[:rotary_embedding]
     query_norm = opts[:query_norm]
     key_norm = opts[:key_norm]
+
+    attention_fun = opts[:attention]
 
     ffn_fun =
       case ffn do
@@ -424,7 +441,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     self_attention = fn hidden_state ->
       {hidden_state, attention, self_attention_cache, attention_relative_bias} =
-        multi_head_attention(hidden_state, hidden_state, hidden_state,
+        attention_fun.(hidden_state, hidden_state, hidden_state,
           attention_mask: attention_mask,
           attention_head_mask: attention_head_mask,
           attention_relative_bias: attention_relative_bias,
@@ -473,7 +490,7 @@ defmodule Bumblebee.Layers.Transformer do
 
     cross_attention = fn hidden_state ->
       {hidden_state, cross_attention, cross_attention_cache, _cross_attention_relative_bias} =
-        multi_head_attention(hidden_state, cross_hidden_state, cross_hidden_state,
+        attention_fun.(hidden_state, cross_hidden_state, cross_hidden_state,
           attention_mask: cross_attention_mask,
           attention_head_mask: cross_attention_head_mask,
           attention_cache: cross_attention_cache,

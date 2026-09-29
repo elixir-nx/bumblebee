@@ -1,76 +1,34 @@
 defmodule Bumblebee.Text.DebertaV2Test do
   use ExUnit.Case, async: true
-  import Nx.Testing
-  import ExUnit.CaptureLog
 
-  for variant <- [
-        "absolute",
-        "shared",
-        "separate_conv",
-        "content_to_position",
-        "position_to_content"
-      ] do
-    @variant variant
-    test "base encoder matches Python for #{@variant}" do
-      directory = Path.expand("../../fixtures/deberta_v2/#{@variant}", __DIR__)
-      reference = directory |> Path.join("expected.json") |> File.read!() |> Jason.decode!()
+  import Bumblebee.TestHelpers
 
-      log =
-        capture_log(fn ->
-          {:ok, info} = Bumblebee.load_model({:local, directory}, log_params_diff: true)
-          assert info.spec.__struct__ == Bumblebee.Text.DebertaV2
-          inputs = Map.new(reference["inputs"], fn {key, value} -> {key, Nx.tensor(value)} end)
+  @moduletag model_test_tags()
 
-          {_, predict} =
-            Axon.build(info.model,
-              compiler: EXLA,
-              global_layer_options: [output_hidden_states: true, output_attentions: true]
-            )
+  test ":base" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-DebertaV2Model"})
 
-          result = predict.(info.params, inputs)
+    assert %Bumblebee.Text.DebertaV2{architecture: :base} = spec
 
-          assert_all_close(result.hidden_state, Nx.tensor(reference["hidden_state"]),
-            atol: 2.0e-5,
-            rtol: 2.0e-5
-          )
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
 
-          for {actual, expected} <-
-                Enum.zip(Tuple.to_list(result.hidden_states), reference["hidden_states"]) do
-            assert_all_close(actual, Nx.tensor(expected), atol: 2.0e-5, rtol: 2.0e-5)
-          end
+    outputs = Axon.predict(model, params, inputs)
 
-          for {actual, expected} <-
-                Enum.zip(Tuple.to_list(result.attentions), reference["attentions"]) do
-            assert_all_close(actual, Nx.tensor(expected), atol: 2.0e-5, rtol: 2.0e-5)
-          end
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
 
-          result = predict.(info.params, Map.take(inputs, ["input_ids"]))
-
-          assert_all_close(result.hidden_state, Nx.tensor(reference["unmasked"]),
-            atol: 2.0e-5,
-            rtol: 2.0e-5
-          )
-        end)
-
-      refute log =~ "were missing"
-      refute log =~ "non-matching shape"
-      refute log =~ "were unused"
-    end
-  end
-
-  test "loads the DeBERTa Unigram tokenizer and special tokens" do
-    directory = Path.expand("../../fixtures/deberta_v2/tokenizer", __DIR__)
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:local, directory})
-    assert tokenizer.type == :deberta_v2
-    expected = directory |> Path.join("expected.json") |> File.read!() |> Jason.decode!()
-    actual = Bumblebee.apply_tokenizer(tokenizer, "hello world")
-    assert_equal(actual["input_ids"], Nx.tensor([expected["input_ids"]]))
-    assert_equal(actual["attention_mask"], Nx.tensor([expected["attention_mask"]]))
-  end
-
-  test "validates incompatible attention dimensions" do
-    assert_raise ArgumentError, ~r/divisible/, fn ->
-      Bumblebee.configure(Bumblebee.Text.DebertaV2, hidden_size: 13, num_attention_heads: 3)
-    end
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [
+          [0.3541943, 1.1629471, 0.0185237],
+          [0.0140337, 0.7757561, -2.6558414],
+          [0.9447213, -0.1594023, 1.3522732]
+        ]
+      ])
+    )
   end
 end

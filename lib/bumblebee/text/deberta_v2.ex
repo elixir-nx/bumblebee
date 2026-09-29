@@ -1,6 +1,8 @@
 defmodule Bumblebee.Text.DebertaV2 do
   alias Bumblebee.{Layers, Shared}
-  alias Bumblebee.Text.DebertaV2.DisentangledAttention
+  alias Bumblebee.Layers.Transformer
+
+  import Nx.Defn
 
   options = [
     vocab_size: [default: 128_100, doc: "the token vocabulary size"],
@@ -149,87 +151,85 @@ defmodule Bumblebee.Text.DebertaV2 do
 
     relative = relative_embeddings(spec)
 
-    {hidden, states, attentions} =
-      Enum.reduce(0..(spec.num_blocks - 1), {embedding, [embedding], []}, fn index,
-                                                                             {hidden, states,
-                                                                              attentions} ->
-        name = "encoder.blocks.#{index}"
-        relative = Axon.dropout(relative, rate: spec.dropout_rate)
-
-        {query, position_query} =
-          attention_projection(hidden, relative, spec, name <> ".self_attention.query")
-
-        {key, position_key} =
-          attention_projection(hidden, relative, spec, name <> ".self_attention.key")
-
-        values = dense(hidden, spec.hidden_size, spec, name <> ".self_attention.value")
-        values = Axon.nx(values, &DisentangledAttention.split_heads(&1, spec.num_attention_heads))
-
-        position_key =
-          if spec.use_relative_attention and not spec.share_attention_key and
-               :content_to_position in spec.position_attention_types do
-            relative
-            |> Axon.nx(&Nx.new_axis(&1, 0))
-            |> dense(spec.hidden_size, spec, name <> ".self_attention.position_key")
-            |> Axon.nx(&DisentangledAttention.split_heads(&1, spec.num_attention_heads))
-          else
-            position_key
-          end
-
-        position_query =
-          if spec.use_relative_attention and not spec.share_attention_key and
-               :position_to_content in spec.position_attention_types do
-            relative
-            |> Axon.nx(&Nx.new_axis(&1, 0))
-            |> dense(spec.hidden_size, spec, name <> ".self_attention.position_query")
-            |> Axon.nx(&DisentangledAttention.split_heads(&1, spec.num_attention_heads))
-          else
-            position_query
-          end
-
-        weights =
-          Axon.layer(
-            &DisentangledAttention.weights/6,
-            [query, key, position_query, position_key, mask],
-            buckets: spec.position_buckets,
-            max_position: relative_limit(spec),
-            span: position_span(spec),
-            relative: spec.use_relative_attention,
-            terms: spec.position_attention_types
-          )
-
-        weights = Axon.dropout(weights, rate: spec.attention_dropout_rate)
-        context = Axon.layer(&DisentangledAttention.context/3, [weights, values])
-
-        attended =
-          context
-          |> dense(spec.hidden_size, spec, name <> ".self_attention.output")
-          |> Axon.dropout(rate: spec.dropout_rate)
-          |> Axon.add(hidden)
-          |> norm(spec, name <> ".self_attention_norm")
-
-        output =
-          attended
-          |> dense(spec.intermediate_size, spec, name <> ".ffn.intermediate")
-          |> Layers.activation(spec.activation)
-          |> dense(spec.hidden_size, spec, name <> ".ffn.output")
-          |> Axon.dropout(rate: spec.dropout_rate)
-          |> Axon.add(attended)
-          |> norm(spec, name <> ".output_norm")
-
-        output =
+    outputs =
+      Transformer.blocks(embedding,
+        num_blocks: spec.num_blocks,
+        num_attention_heads: spec.num_attention_heads,
+        hidden_size: spec.hidden_size,
+        attention_mask: mask,
+        attention: fn query, _key, _value, opts ->
+          {output, weights} = attention(query, relative, mask, spec, opts[:name])
+          {output, weights, opts[:attention_cache], Layers.none()}
+        end,
+        block_output: fn output, index ->
           if index == 0 and spec.conv_kernel_size > 0,
             do: convolution(embedding, output, mask, spec),
             else: output
-
-        {output, states ++ [output], attentions ++ [weights]}
-      end)
+        end,
+        ffn: [intermediate_size: spec.intermediate_size, activation: spec.activation],
+        dropout_rate: spec.dropout_rate,
+        attention_dropout_rate: spec.attention_dropout_rate,
+        layer_norm: [epsilon: spec.layer_norm_epsilon],
+        kernel_initializer: initializer(spec),
+        name: "encoder.blocks"
+      )
 
     Layers.output(%{
-      hidden_state: hidden,
-      hidden_states: Axon.container(List.to_tuple(states)),
-      attentions: Axon.container(List.to_tuple(attentions))
+      hidden_state: outputs.hidden_state,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
     })
+  end
+
+  defp attention(hidden, relative, mask, spec, name) do
+    relative = Axon.dropout(relative, rate: spec.dropout_rate)
+    {query, position_query} = attention_projection(hidden, relative, spec, name <> ".query")
+    {key, position_key} = attention_projection(hidden, relative, spec, name <> ".key")
+
+    values =
+      hidden
+      |> dense(spec.hidden_size, spec, name <> ".value")
+      |> Axon.nx(&split_heads(&1, spec.num_attention_heads))
+
+    position_key =
+      if spec.use_relative_attention and not spec.share_attention_key and
+           :content_to_position in spec.position_attention_types do
+        relative
+        |> Axon.nx(&Nx.new_axis(&1, 0))
+        |> dense(spec.hidden_size, spec, name <> ".position_key")
+        |> Axon.nx(&split_heads(&1, spec.num_attention_heads))
+      else
+        position_key
+      end
+
+    position_query =
+      if spec.use_relative_attention and not spec.share_attention_key and
+           :position_to_content in spec.position_attention_types do
+        relative
+        |> Axon.nx(&Nx.new_axis(&1, 0))
+        |> dense(spec.hidden_size, spec, name <> ".position_query")
+        |> Axon.nx(&split_heads(&1, spec.num_attention_heads))
+      else
+        position_query
+      end
+
+    weights =
+      Axon.layer(
+        &attention_weights/6,
+        [query, key, position_query, position_key, mask],
+        buckets: spec.position_buckets,
+        max_position: relative_limit(spec),
+        span: position_span(spec),
+        relative: spec.use_relative_attention,
+        terms: spec.position_attention_types
+      )
+      |> Axon.dropout(rate: spec.attention_dropout_rate)
+
+    output =
+      Axon.layer(&attention_context/3, [weights, values])
+      |> dense(spec.hidden_size, spec, name <> ".output")
+
+    {output, weights}
   end
 
   defp embeddings(ids, mask, spec) do
@@ -311,7 +311,7 @@ defmodule Bumblebee.Text.DebertaV2 do
 
   defp attention_projection(hidden, relative, spec, name) do
     Axon.layer(
-      &DisentangledAttention.project/5,
+      &attention_project/5,
       [
         hidden,
         relative,
@@ -369,17 +369,123 @@ defmodule Bumblebee.Text.DebertaV2 do
   defp position_span(spec),
     do: if(spec.position_buckets > 0, do: spec.position_buckets, else: relative_limit(spec))
 
-  @doc false
-  def projection_names(spec) do
-    ["query", "key", "value"] ++
-      if spec.use_relative_attention and not spec.share_attention_key do
-        if(:content_to_position in spec.position_attention_types, do: ["position_key"], else: []) ++
-          if :position_to_content in spec.position_attention_types,
-            do: ["position_query"],
-            else: []
+  defnp attention_project(hidden, relative, kernel, bias, opts) do
+    opts = keyword!(opts, [:heads, :relative, :mode])
+    content = split_heads(linear(hidden, kernel, bias), opts[:heads])
+
+    position =
+      if opts[:relative] do
+        split_heads(linear(Nx.new_axis(relative, 0), kernel, bias), opts[:heads])
       else
-        []
+        Nx.tensor(0.0)
       end
+
+    {content, position}
+  end
+
+  defnp attention_weights(query, key, position_query, position_key, mask, opts) do
+    opts = keyword!(opts, [:buckets, :max_position, :span, :relative, :terms, :mode])
+    scale = Nx.sqrt(Nx.axis_size(query, -1) * (1 + term_count(opts[:terms])))
+    scores = product(query, key / scale)
+
+    scores =
+      if opts[:relative] do
+        positions =
+          relative_positions(Nx.axis_size(query, 2), opts[:buckets], opts[:max_position])
+
+        bias = Nx.broadcast(0, Nx.shape(scores))
+
+        bias =
+          if has_term?(opts[:terms], :content_to_position) do
+            indices = Nx.clip(positions + opts[:span], 0, 2 * opts[:span] - 1)
+            bias + gather(product(query, position_key), indices) / scale
+          else
+            bias
+          end
+
+        bias =
+          if has_term?(opts[:terms], :position_to_content) do
+            indices = Nx.clip(-positions + opts[:span], 0, 2 * opts[:span] - 1)
+
+            bias +
+              Nx.transpose(gather(product(key, position_query), indices), axes: [0, 1, 3, 2]) /
+                scale
+          else
+            bias
+          end
+
+        scores + bias
+      else
+        scores
+      end
+
+    allowed = Nx.new_axis(Nx.new_axis(mask, 1), 2) * Nx.new_axis(Nx.new_axis(mask, 1), 3)
+
+    scores =
+      Nx.select(
+        Nx.broadcast(allowed, Nx.shape(scores)),
+        scores,
+        Nx.Constants.min_finite(Nx.type(scores))
+      )
+
+    Axon.Activations.softmax(scores, axis: -1)
+  end
+
+  defnp attention_context(weights, value, _opts) do
+    {batch, heads, length, width} = Nx.shape(value)
+
+    Nx.dot(weights, [3], [0, 1], value, [2], [0, 1])
+    |> Nx.transpose(axes: [0, 2, 1, 3])
+    |> Nx.reshape({batch, length, heads * width})
+  end
+
+  deftransformp(has_term?(terms, term), do: term in terms)
+  deftransformp(term_count(terms), do: length(terms))
+
+  defnp(linear(input, kernel, bias), do: Nx.dot(input, [-1], kernel, [0]) + bias)
+
+  defnp split_heads(input, heads) do
+    {batch, length, hidden} = Nx.shape(input)
+
+    input
+    |> Nx.reshape({batch, length, heads, div(hidden, heads)})
+    |> Nx.transpose(axes: [0, 2, 1, 3])
+  end
+
+  defnp product(left, right) do
+    right =
+      Nx.broadcast(
+        right,
+        {Nx.axis_size(left, 0), Nx.axis_size(right, 1), Nx.axis_size(right, 2),
+         Nx.axis_size(right, 3)}
+      )
+
+    Nx.dot(left, [3], [0, 1], right, [3], [0, 1])
+  end
+
+  defnp gather(scores, positions) do
+    shape =
+      {Nx.axis_size(scores, 0), Nx.axis_size(scores, 1), Nx.axis_size(positions, 0),
+       Nx.axis_size(positions, 1)}
+
+    Nx.take_along_axis(scores, Nx.broadcast(positions, shape), axis: 3)
+  end
+
+  defnp relative_positions(length, buckets, max_position) do
+    ids = Nx.iota({length}, type: :s64)
+    relative = Nx.new_axis(ids, 1) - Nx.new_axis(ids, 0)
+
+    if buckets > 0 do
+      mid = div(buckets, 2)
+      absolute = Nx.select(Nx.abs(relative) < mid, mid - 1, Nx.abs(relative))
+
+      logarithmic =
+        Nx.ceil(Nx.log(absolute / mid) / Nx.log((max_position - 1) / mid) * (mid - 1)) + mid
+
+      Nx.select(absolute <= mid, relative, logarithmic * Nx.sign(relative)) |> Nx.as_type(:s64)
+    else
+      relative
+    end
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
@@ -420,10 +526,11 @@ defmodule Bumblebee.Text.DebertaV2 do
         end
 
       terms =
-        Enum.map(terms, fn term ->
+        Enum.flat_map(terms, fn term ->
           case String.trim(term) do
-            "c2p" -> :content_to_position
-            "p2c" -> :position_to_content
+            "c2p" -> [:content_to_position]
+            "p2c" -> [:position_to_content]
+            "none" -> []
             other -> raise ArgumentError, "unsupported position attention type: #{inspect(other)}"
           end
         end)
@@ -438,8 +545,8 @@ defmodule Bumblebee.Text.DebertaV2 do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
-    def params_mapping(spec) do
-      mapping = %{
+    def params_mapping(_spec) do
+      %{
         "embedder.token_embedding" => "deberta.embeddings.word_embeddings",
         "embedder.position_embedding" => "deberta.embeddings.position_embeddings",
         "embedder.type_embedding" => "deberta.embeddings.token_type_embeddings",
@@ -449,6 +556,28 @@ defmodule Bumblebee.Text.DebertaV2 do
           "kernel" => {[{"deberta.encoder.rel_embeddings", "weight"}], fn [tensor] -> tensor end}
         },
         "encoder.relative_norm" => "deberta.encoder.LayerNorm",
+        "encoder.blocks.{n}.self_attention.query" => %{
+          "kernel" =>
+            {[{"deberta.encoder.layer.{n}.attention.self.query_proj", "weight"}],
+             fn [tensor] -> Nx.transpose(tensor) end},
+          "bias" =>
+            {[{"deberta.encoder.layer.{n}.attention.self.query_proj", "bias"}],
+             fn [tensor] -> tensor end}
+        },
+        "encoder.blocks.{n}.self_attention.key" => %{
+          "kernel" =>
+            {[{"deberta.encoder.layer.{n}.attention.self.key_proj", "weight"}],
+             fn [tensor] -> Nx.transpose(tensor) end},
+          "bias" =>
+            {[{"deberta.encoder.layer.{n}.attention.self.key_proj", "bias"}],
+             fn [tensor] -> tensor end}
+        },
+        "encoder.blocks.{n}.self_attention.value" =>
+          "deberta.encoder.layer.{n}.attention.self.value_proj",
+        "encoder.blocks.{n}.self_attention.position_key" =>
+          "deberta.encoder.layer.{n}.attention.self.pos_key_proj",
+        "encoder.blocks.{n}.self_attention.position_query" =>
+          "deberta.encoder.layer.{n}.attention.self.pos_query_proj",
         "encoder.blocks.{n}.self_attention.output" =>
           "deberta.encoder.layer.{n}.attention.output.dense",
         "encoder.blocks.{n}.self_attention_norm" =>
@@ -459,27 +588,6 @@ defmodule Bumblebee.Text.DebertaV2 do
         "encoder.conv" => "deberta.encoder.conv.conv",
         "encoder.conv_norm" => "deberta.encoder.conv.LayerNorm"
       }
-
-      Enum.reduce(@for.projection_names(spec), mapping, fn projection, mapping ->
-        source =
-          case projection do
-            "position_key" -> "pos_key_proj"
-            "position_query" -> "pos_query_proj"
-            name -> name <> "_proj"
-          end
-
-        target = "encoder.blocks.{n}.self_attention.#{projection}"
-        source = "deberta.encoder.layer.{n}.attention.self.#{source}"
-
-        if projection in ["query", "key"] do
-          Map.put(mapping, target, %{
-            "kernel" => {[{source, "weight"}], fn [tensor] -> Nx.transpose(tensor) end},
-            "bias" => {[{source, "bias"}], fn [tensor] -> tensor end}
-          })
-        else
-          Map.put(mapping, target, source)
-        end
-      end)
     end
   end
 end
