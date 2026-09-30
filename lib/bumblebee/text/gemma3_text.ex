@@ -59,19 +59,9 @@ defmodule Bumblebee.Text.Gemma3Text do
       ],
       rotary_embedding_base_local: [
         default: 10_000,
-        doc: "base for computing rotary embedding frequency for local (sliding) attention layers"
-      ],
-      rotary_embedding_scaling_strategy: [
-        default: nil,
-        doc: """
-        scaling configuration for rotary embedding. Currently the supported values are:
-
-          * `%{type: :linear, factor: number()}`
-
-          * `%{type: :dynamic, factor: number()}`
-
-        For more details see https://www.reddit.com/r/LocalLlama/comments/14mrgpr/dynamically_scaled_rope_further_increases
-        """
+        doc:
+          "base for computing rotary embedding frequency for local (sliding) attention layers. " <>
+            "These layers do not use rotary embedding scaling"
       ],
       use_attention_bias: [
         default: false,
@@ -104,7 +94,8 @@ defmodule Bumblebee.Text.Gemma3Text do
         doc: "whether to tie input and output embedding weights"
       ]
     ] ++
-      Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
+      Shared.common_options([:rotary_embedding_scaling_strategy, :num_labels, :id_to_label]) ++
+      Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
   Gemma 3 model family.
@@ -392,15 +383,16 @@ defmodule Bumblebee.Text.Gemma3Text do
       fn hidden_state, block ->
         name = block.name
 
-        # Local layers use sliding window attention and a separate rotary base
-        {attention_window_size, rotary_embedding_base} =
+        # Local layers use sliding window attention, a separate rotary base
+        # and no rotary scaling
+        {attention_window_size, rotary_embedding_base, rotary_embedding_scaling_strategy} =
           case Enum.at(layer_types, block.index, :sliding_attention) do
             :full_attention ->
-              {nil, spec.rotary_embedding_base}
+              {nil, spec.rotary_embedding_base, spec.rotary_embedding_scaling_strategy}
 
             :sliding_attention ->
               {{spec.attention_window_size, spec.attention_window_size},
-               spec.rotary_embedding_base_local}
+               spec.rotary_embedding_base_local, nil}
           end
 
         shortcut = hidden_state
@@ -424,7 +416,7 @@ defmodule Bumblebee.Text.Gemma3Text do
               position_ids: position_ids,
               max_positions: spec.max_positions,
               base: rotary_embedding_base,
-              scaling_strategy: spec.rotary_embedding_scaling_strategy
+              scaling_strategy: rotary_embedding_scaling_strategy
             ],
             query_use_bias: spec.use_attention_bias,
             key_use_bias: spec.use_attention_bias,
@@ -492,19 +484,6 @@ defmodule Bumblebee.Text.Gemma3Text do
     def load(spec, data) do
       import Shared.Converters
 
-      scaling_strategy_converter = fn name, value ->
-        case value do
-          %{"type" => "linear", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :linear, factor: factor}}
-
-          %{"type" => "dynamic", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :dynamic, factor: factor}}
-
-          _other ->
-            {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
-        end
-      end
-
       # Support sliding_window_pattern for backward compatibility
       # see https://github.com/huggingface/transformers/blob/v5.0.0rc1/src/transformers/models/gemma3/configuration_gemma3.py#L188-L195
       data =
@@ -521,6 +500,17 @@ defmodule Bumblebee.Text.Gemma3Text do
           end)
         end)
 
+      # Support the format before rope_parameters, where scaling
+      # applies only to global layers
+      data =
+        Map.put_new_lazy(data, "rope_parameters", fn ->
+          %{
+            "full_attention" =>
+              Map.put(data["rope_scaling"] || %{}, "rope_theta", data["rope_theta"]),
+            "sliding_attention" => %{"rope_theta" => data["rope_local_base_freq"]}
+          }
+        end)
+
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
@@ -534,10 +524,6 @@ defmodule Bumblebee.Text.Gemma3Text do
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_activation", activation()},
           use_attention_bias: {"attention_bias", boolean()},
-          rotary_embedding_base: {"rope_theta", number()},
-          rotary_embedding_base_local: {"rope_local_base_freq", number()},
-          rotary_embedding_scaling_strategy:
-            {"rope_scaling", optional(scaling_strategy_converter)},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()},
           attention_window_size: {"sliding_window", optional(number())},
@@ -550,7 +536,9 @@ defmodule Bumblebee.Text.Gemma3Text do
                })
              )},
           tie_word_embeddings: {"tie_word_embeddings", boolean()}
-        ) ++ Shared.common_options_from_transformers(data, spec)
+        ) ++
+          Shared.rotary_embedding_options_from_transformers(data) ++
+          Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
     end

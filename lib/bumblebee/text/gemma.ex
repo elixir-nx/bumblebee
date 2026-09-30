@@ -50,18 +50,6 @@ defmodule Bumblebee.Text.Gemma do
         default: 10_000,
         doc: "base for computing rotary embedding frequency"
       ],
-      rotary_embedding_scaling_strategy: [
-        default: nil,
-        doc: """
-        scaling configuration for rotary embedding. Currently the supported values are:
-
-          * `%{type: :linear, factor: number()}`
-
-          * `%{type: :dynamic, factor: number()}`
-
-        For more details see https://www.reddit.com/r/LocalLlama/comments/14mrgpr/dynamically_scaled_rope_further_increases
-        """
-      ],
       use_attention_bias: [
         default: false,
         doc:
@@ -77,7 +65,8 @@ defmodule Bumblebee.Text.Gemma do
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
     ] ++
-      Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
+      Shared.common_options([:rotary_embedding_scaling_strategy, :num_labels, :id_to_label]) ++
+      Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
   Gemma model family.
@@ -418,19 +407,6 @@ defmodule Bumblebee.Text.Gemma do
     def load(spec, data) do
       import Shared.Converters
 
-      scaling_strategy_converter = fn name, value ->
-        case value do
-          %{"type" => "linear", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :linear, factor: factor}}
-
-          %{"type" => "dynamic", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :dynamic, factor: factor}}
-
-          _other ->
-            {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
-        end
-      end
-
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
@@ -443,12 +419,11 @@ defmodule Bumblebee.Text.Gemma do
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
           use_attention_bias: {"attention_bias", boolean()},
-          rotary_embedding_base: {"rope_theta", number()},
-          rotary_embedding_scaling_strategy:
-            {"rope_scaling", optional(scaling_strategy_converter)},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()}
-        ) ++ Shared.common_options_from_transformers(data, spec)
+        ) ++
+          Shared.rotary_embedding_options_from_transformers(data) ++
+          Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
     end

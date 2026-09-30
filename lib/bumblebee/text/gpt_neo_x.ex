@@ -10,6 +10,13 @@ defmodule Bumblebee.Text.GptNeoX do
         tokens that can be represented in model input and output
         """
       ],
+      max_positions: [
+        default: 2048,
+        doc: """
+        the maximum sequence length that this model can process. Typically this is set to a
+        large value just in case, such as 512, 1024 or 2048
+        """
+      ],
       hidden_size: [
         default: 4096,
         doc: "the dimensionality of hidden layers"
@@ -57,7 +64,7 @@ defmodule Bumblebee.Text.GptNeoX do
           "whether to use the parallel formulation of the Transformer block, where attention and FFN is computed independently"
       ]
     ] ++
-      Shared.common_options([:num_labels, :id_to_label]) ++
+      Shared.common_options([:rotary_embedding_scaling_strategy, :num_labels, :id_to_label]) ++
       Shared.token_options(pad_token_id: nil)
 
   @moduledoc """
@@ -353,8 +360,10 @@ defmodule Bumblebee.Text.GptNeoX do
             causal: true,
             rotary_embedding: [
               position_ids: position_ids,
+              max_positions: spec.max_positions,
               percentage: spec.rotary_embedding_percentage,
-              base: spec.rotary_embedding_base
+              base: spec.rotary_embedding_base,
+              scaling_strategy: spec.rotary_embedding_scaling_strategy
             ],
             kernel_initializer: kernel_initializer(spec),
             name: join(name, "self_attention")
@@ -421,7 +430,7 @@ defmodule Bumblebee.Text.GptNeoX do
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
-          max_positions: {"max_positions", number()},
+          max_positions: {"max_position_embeddings", number()},
           hidden_size: {"hidden_size", number()},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
@@ -433,7 +442,9 @@ defmodule Bumblebee.Text.GptNeoX do
           layer_norm_epsilon: {"layer_norm_eps", number()},
           initializer_scale: {"init_std", number()},
           use_parallel_transformer_block: {"use_parallel_residual", boolean()}
-        ) ++ Shared.common_options_from_transformers(data, spec)
+        ) ++
+          Shared.rotary_embedding_options_from_transformers(data) ++
+          Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
     end

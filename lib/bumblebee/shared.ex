@@ -28,6 +28,22 @@ defmodule Bumblebee.Shared do
         doc:
           "whether cross-attention layers should be added to the model. " <>
             "This is only relevant for decoder models"
+      ],
+      rotary_embedding_scaling_strategy: [
+        default: nil,
+        doc: """
+        scaling configuration for rotary embedding. Currently the supported values are:
+
+          * `%{type: :linear, factor: number()}`
+
+          * `%{type: :dynamic, factor: number()}`
+
+          * `%{type: :llama3, factor: number(), low_frequency_factor: number(), high_frequency_factor: number(), original_max_positions: pos_integer()}`
+
+          * `%{type: :longrope, short_factor: list(number()), long_factor: list(number()), original_max_positions: pos_integer()}`
+
+        For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
+        """
       ]
     ]
 
@@ -122,6 +138,81 @@ defmodule Bumblebee.Shared do
       Keyword.put(opts, :num_labels, map_size(opts[:id_to_label]))
     else
       opts
+    end
+  end
+
+  @doc """
+  Converts rotary embedding options from Hugging Face config data.
+
+  Supports both `"rope_parameters"` and the older `"rope_scaling"`
+  with top-level `"rope_theta"`.
+
+  When the parameters are given for each layer type, the options for
+  `"sliding_attention"` get the `_local` suffix.
+  """
+  @spec rotary_embedding_options_from_transformers(map()) :: keyword()
+  def rotary_embedding_options_from_transformers(data) do
+    case data["rope_parameters"] || data["rope_scaling"] || %{} do
+      %{"full_attention" => full_params, "sliding_attention" => sliding_params} ->
+        local_opts =
+          for {key, value} <- rotary_embedding_options(sliding_params, data) do
+            {:"#{key}_local", value}
+          end
+
+        rotary_embedding_options(full_params, data) ++ local_opts
+
+      params ->
+        params = Map.merge(Map.take(data, ["rope_theta", "partial_rotary_factor"]), params)
+        rotary_embedding_options(params, data)
+    end
+  end
+
+  defp rotary_embedding_options(params, data) do
+    [
+      rotary_embedding_base: params["rope_theta"],
+      rotary_embedding_percentage: params["partial_rotary_factor"],
+      rotary_embedding_scaling_strategy: rotary_embedding_scaling_strategy(params, data)
+    ]
+    |> Enum.reject(fn {_key, value} -> value == nil end)
+  end
+
+  defp rotary_embedding_scaling_strategy(params, data) do
+    # Phi-3 has this option at the top level, other models in the parameters
+    original_max_positions =
+      data["original_max_position_embeddings"] || params["original_max_position_embeddings"] ||
+        data["max_position_embeddings"]
+
+    case {params["rope_type"] || params["type"] || "default", params} do
+      {"default", _params} ->
+        nil
+
+      {"linear", %{"factor" => factor}} ->
+        %{type: :linear, factor: factor}
+
+      {"dynamic", %{"factor" => factor}} ->
+        %{type: :dynamic, factor: factor}
+
+      {"llama3", %{"factor" => factor, "low_freq_factor" => low, "high_freq_factor" => high}} ->
+        %{
+          type: :llama3,
+          factor: factor,
+          low_frequency_factor: low,
+          high_frequency_factor: high,
+          original_max_positions: original_max_positions
+        }
+
+      # Old Phi-3 checkpoints use "su" and "yarn" for LongRoPE
+      {type, %{"short_factor" => short_factor, "long_factor" => long_factor}}
+      when type in ["longrope", "su", "yarn"] ->
+        %{
+          type: :longrope,
+          short_factor: short_factor,
+          long_factor: long_factor,
+          original_max_positions: original_max_positions
+        }
+
+      _other ->
+        raise "conversion failed, unsupported rotary embedding parameters: #{inspect(params)}"
     end
   end
 

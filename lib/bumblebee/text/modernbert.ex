@@ -496,6 +496,17 @@ defmodule Bumblebee.Text.ModernBert do
           end
         end)
 
+      # Support the format before rope_parameters
+      data =
+        Map.put_new_lazy(data, "rope_parameters", fn ->
+          rope_scaling = data["rope_scaling"] || %{}
+
+          %{
+            "full_attention" => Map.put(rope_scaling, "rope_theta", data["global_rope_theta"]),
+            "sliding_attention" => Map.put(rope_scaling, "rope_theta", data["local_rope_theta"])
+          }
+        end)
+
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
@@ -518,10 +529,10 @@ defmodule Bumblebee.Text.ModernBert do
                  "sliding_attention" => :sliding_attention,
                  "full_attention" => :full_attention
                })
-             )},
-          rotary_embedding_base_local: {"local_rope_theta", optional(number())},
-          rotary_embedding_base: {"global_rope_theta", optional(number())}
-        ) ++ Shared.common_options_from_transformers(data, spec)
+             )}
+        ) ++
+          Shared.rotary_embedding_options_from_transformers(data) ++
+          Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
     end

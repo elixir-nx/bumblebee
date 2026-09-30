@@ -53,20 +53,6 @@ defmodule Bumblebee.Text.SmolLm3 do
         default: 5_000_000,
         doc: "base for computing rotary embedding frequency"
       ],
-      rotary_embedding_scaling_strategy: [
-        default: nil,
-        doc: """
-        scaling configuration for rotary embedding. Currently the supported values are:
-
-          * `%{type: :linear, factor: number()}`
-
-          * `%{type: :dynamic, factor: number()}`
-
-          * `%{type: :llama3, factor: number(), low_frequency_factor: number(), high_frequency_factor: number(), original_max_positions: pos_integer()}`
-
-        For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
-        """
-      ],
       rotary_embedding_enabled: [
         default: nil,
         doc: """
@@ -88,7 +74,8 @@ defmodule Bumblebee.Text.SmolLm3 do
         doc: "whether to tie input and output embedding weights"
       ]
     ] ++
-      Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
+      Shared.common_options([:rotary_embedding_scaling_strategy, :num_labels, :id_to_label]) ++
+      Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
   SmolLM3 is a 3B parameter language model designed to push the boundaries of small models.
@@ -487,45 +474,6 @@ defmodule Bumblebee.Text.SmolLm3 do
     def load(spec, data) do
       import Shared.Converters
 
-      scaling_strategy_converter = fn name, value ->
-        # "type" has been renamed to "rope_type"
-        value =
-          case Map.pop(value, "type") do
-            {nil, value} -> value
-            {type, value} -> Map.put(value, "rope_type", type)
-          end
-
-        case value do
-          %{"rope_type" => "linear", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :linear, factor: factor}}
-
-          %{"rope_type" => "dynamic", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :dynamic, factor: factor}}
-
-          %{
-            "rope_type" => "llama3",
-            "factor" => factor,
-            "low_freq_factor" => low_frequency_factor,
-            "high_freq_factor" => high_frequency_factor,
-            "original_max_position_embeddings" => original_max_positions
-          }
-          when is_number(factor) and is_number(low_frequency_factor) and
-                 is_number(high_frequency_factor) and
-                 is_number(original_max_positions) ->
-            {:ok,
-             %{
-               type: :llama3,
-               factor: factor,
-               low_frequency_factor: low_frequency_factor,
-               high_frequency_factor: high_frequency_factor,
-               original_max_positions: original_max_positions
-             }}
-
-          _other ->
-            {:error, "invalid format for #{inspect(name)}, got: #{inspect(value)}"}
-        end
-      end
-
       rotary_embedding_enabled_converter = fn name, value ->
         case value do
           no_rope_layers when is_list(no_rope_layers) ->
@@ -548,15 +496,14 @@ defmodule Bumblebee.Text.SmolLm3 do
           attention_head_size: {"head_dim", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
-          rotary_embedding_base: {"rope_theta", number()},
-          rotary_embedding_scaling_strategy:
-            {"rope_scaling", optional(scaling_strategy_converter)},
           rotary_embedding_enabled:
             {"no_rope_layers", optional(rotary_embedding_enabled_converter)},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()},
           tie_word_embeddings: {"tie_word_embeddings", boolean()}
-        ) ++ Shared.common_options_from_transformers(data, spec)
+        ) ++
+          Shared.rotary_embedding_options_from_transformers(data) ++
+          Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
     end

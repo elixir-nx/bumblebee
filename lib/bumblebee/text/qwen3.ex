@@ -52,18 +52,6 @@ defmodule Bumblebee.Text.Qwen3 do
         default: 5_000_000,
         doc: "base for computing rotary embedding frequency"
       ],
-      rotary_embedding_scaling_strategy: [
-        default: nil,
-        doc: """
-        scaling configuration for rotary embedding. Currently the supported values are:
-
-          * `%{type: :linear, factor: number()}`
-
-          * `%{type: :dynamic, factor: number()}`
-
-        For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
-        """
-      ],
       layer_norm_epsilon: [
         default: 1.0e-6,
         doc: "the epsilon used by RMS normalization layers"
@@ -82,7 +70,7 @@ defmodule Bumblebee.Text.Qwen3 do
         doc: "whether to use RMS normalization on query and key projections"
       ]
     ] ++
-      Shared.common_options([:num_labels, :id_to_label]) ++
+      Shared.common_options([:rotary_embedding_scaling_strategy, :num_labels, :id_to_label]) ++
       Shared.token_options(pad_token_id: 151_643)
 
   @moduledoc """
@@ -415,22 +403,6 @@ defmodule Bumblebee.Text.Qwen3 do
     def load(spec, data) do
       import Shared.Converters
 
-      scaling_strategy_converter = fn _name, value ->
-        case value do
-          %{"type" => "linear", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :linear, factor: factor}}
-
-          %{"type" => "dynamic", "factor" => factor} when is_number(factor) ->
-            {:ok, %{type: :dynamic, factor: factor}}
-
-          nil ->
-            {:ok, nil}
-
-          _other ->
-            {:ok, nil}
-        end
-      end
-
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
@@ -443,12 +415,11 @@ defmodule Bumblebee.Text.Qwen3 do
           attention_head_size: {"head_dim", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
-          rotary_embedding_base: {"rope_theta", number()},
-          rotary_embedding_scaling_strategy:
-            {"rope_scaling", optional(scaling_strategy_converter)},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()}
-        ) ++ Shared.common_options_from_transformers(data, spec)
+        ) ++
+          Shared.rotary_embedding_options_from_transformers(data) ++
+          Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
     end

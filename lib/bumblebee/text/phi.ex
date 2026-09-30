@@ -65,7 +65,8 @@ defmodule Bumblebee.Text.Phi do
           "the standard deviation of the normal initializer used for initializing kernel parameters"
       ]
     ] ++
-      Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
+      Shared.common_options([:rotary_embedding_scaling_strategy, :num_labels, :id_to_label]) ++
+      Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
   Phi model family.
@@ -369,6 +370,7 @@ defmodule Bumblebee.Text.Phi do
               position_ids: position_ids,
               max_positions: spec.max_positions,
               base: spec.rotary_embedding_base,
+              scaling_strategy: spec.rotary_embedding_scaling_strategy,
               percentage: spec.rotary_embedding_percentage
             ],
             kernel_initializer: kernel_initializer(spec),
@@ -422,11 +424,11 @@ defmodule Bumblebee.Text.Phi do
           num_key_value_heads: {"num_key_value_heads", number()},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
-          rotary_embedding_base: {"rope_theta", number()},
-          rotary_embedding_percentage: {"partial_rotary_factor", number()},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"layer_norm_eps", number()}
-        ) ++ Shared.common_options_from_transformers(data, spec)
+        ) ++
+          Shared.rotary_embedding_options_from_transformers(data) ++
+          Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
     end

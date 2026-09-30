@@ -65,7 +65,8 @@ defmodule Bumblebee.Text.Mistral do
         doc: "base for computing rotary embedding frequency"
       ]
     ] ++
-      Shared.common_options([:num_labels, :id_to_label]) ++ Shared.token_options(pad_token_id: 0)
+      Shared.common_options([:rotary_embedding_scaling_strategy, :num_labels, :id_to_label]) ++
+      Shared.token_options(pad_token_id: 0)
 
   @moduledoc """
   Mistral model family.
@@ -342,7 +343,8 @@ defmodule Bumblebee.Text.Mistral do
             rotary_embedding: [
               position_ids: position_ids,
               max_positions: spec.max_positions,
-              base: spec.rotary_embedding_base
+              base: spec.rotary_embedding_base,
+              scaling_strategy: spec.rotary_embedding_scaling_strategy
             ],
             query_use_bias: false,
             key_use_bias: false,
@@ -403,10 +405,11 @@ defmodule Bumblebee.Text.Mistral do
           attention_window_size: {"sliding_window", optional(number())},
           intermediate_size: {"intermediate_size", number()},
           activation: {"hidden_act", activation()},
-          rotary_embedding_base: {"rope_theta", number()},
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()}
-        ) ++ Shared.common_options_from_transformers(data, spec)
+        ) ++
+          Shared.rotary_embedding_options_from_transformers(data) ++
+          Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
     end
