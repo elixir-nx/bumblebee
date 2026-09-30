@@ -53,6 +53,9 @@ defmodule Bumblebee.Text.TextEmbedding do
           %{^output_attribute => output} ->
             output
 
+          %{embedding: output} when output_attribute == :pooled_state ->
+            output
+
           %{} ->
             keys = output |> Map.keys() |> Enum.sort()
 

@@ -21,7 +21,7 @@ defmodule Bumblebee.HuggingFace.Hub do
   def file_listing_url(repository_id, subdir, revision) do
     revision = revision || "main"
     path = if(subdir, do: "/" <> subdir)
-    @huggingface_endpoint <> "/api/models/#{repository_id}/tree/#{revision}#{path}"
+    @huggingface_endpoint <> "/api/models/#{repository_id}/tree/#{revision}#{path}?recursive=true"
   end
 
   @doc """
