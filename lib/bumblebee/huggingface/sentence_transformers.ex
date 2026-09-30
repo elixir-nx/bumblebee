@@ -338,7 +338,7 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
   defp can_fuse_dense?(c1, c2) do
     c1_linear? = c1["activation_function"] in [nil, "torch.nn.modules.linear.Identity"]
     c2_linear? = c2["activation_function"] in [nil, "torch.nn.modules.linear.Identity"]
-    no_bias? = !Map.get(c1, "bias", false) and !Map.get(c2, "bias", false)
+    no_bias? = !Map.get(c1, "bias", true) and !Map.get(c2, "bias", true)
     dims_match? = c1["out_features"] == c2["in_features"]
 
     c1_linear? and c2_linear? and no_bias? and dims_match?

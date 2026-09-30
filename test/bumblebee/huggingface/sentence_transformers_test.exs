@@ -232,6 +232,78 @@ defmodule Bumblebee.HuggingFace.SentenceTransformersTest do
     end
 
     @tag :tmp_dir
+    test "does not fuse linear dense layers when bias is omitted (defaults to true)", %{
+      model_info: model_info,
+      tmp_dir: dir
+    } do
+      modules = [
+        %{"idx" => 0, "path" => "", "type" => "sentence_transformers.models.Transformer"},
+        %{"idx" => 1, "path" => "1_Pooling", "type" => "sentence_transformers.models.Pooling"},
+        %{"idx" => 2, "path" => "2_Dense", "type" => "sentence_transformers.models.Dense"},
+        %{"idx" => 3, "path" => "3_Dense", "type" => "sentence_transformers.models.Dense"}
+      ]
+
+      File.write!(Path.join(dir, "modules.json"), Jason.encode!(modules))
+
+      pooling_dir = Path.join(dir, "1_Pooling")
+      File.mkdir_p!(pooling_dir)
+
+      File.write!(
+        Path.join(pooling_dir, "config.json"),
+        Jason.encode!(%{"pooling_mode_mean_tokens" => true})
+      )
+
+      # 2_Dense: 4 -> 8 (bias omitted, defaults to true)
+      dense1_dir = Path.join(dir, "2_Dense")
+      File.mkdir_p!(dense1_dir)
+
+      File.write!(
+        Path.join(dense1_dir, "config.json"),
+        Jason.encode!(%{
+          "in_features" => 4,
+          "out_features" => 8,
+          "activation_function" => "torch.nn.modules.linear.Identity"
+        })
+      )
+
+      k1 = Nx.broadcast(0.5, {8, 4}) |> Nx.as_type({:f, 32})
+      b1 = Nx.broadcast(0.1, {8}) |> Nx.as_type({:f, 32})
+
+      Safetensors.write!(Path.join(dense1_dir, "model.safetensors"), %{
+        "linear.weight" => k1,
+        "linear.bias" => b1
+      })
+
+      # 3_Dense: 8 -> 4 (bias omitted, defaults to true)
+      dense2_dir = Path.join(dir, "3_Dense")
+      File.mkdir_p!(dense2_dir)
+
+      File.write!(
+        Path.join(dense2_dir, "config.json"),
+        Jason.encode!(%{
+          "in_features" => 8,
+          "out_features" => 4,
+          "activation_function" => "torch.nn.modules.linear.Identity"
+        })
+      )
+
+      k2 = Nx.broadcast(0.25, {4, 8}) |> Nx.as_type({:f, 32})
+      b2 = Nx.broadcast(0.2, {4}) |> Nx.as_type({:f, 32})
+
+      Safetensors.write!(Path.join(dense2_dir, "model.safetensors"), %{
+        "linear.weight" => k2,
+        "linear.bias" => b2
+      })
+
+      assert {:ok, new_model_info} =
+               Bumblebee.load_embedding_head({:local, dir}, model_info, fuse_dense: true)
+
+      assert Map.has_key?(new_model_info.params.data, "2_Dense")
+      assert Map.has_key?(new_model_info.params.data, "3_Dense")
+      refute Map.has_key?(new_model_info.params.data, "2_Dense_3_Dense")
+    end
+
+    @tag :tmp_dir
     test "returns error on unsupported module", %{model_info: model_info, tmp_dir: dir} do
       modules = [
         %{"idx" => 0, "path" => "", "type" => "sentence_transformers.models.Transformer"},
