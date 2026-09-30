@@ -650,6 +650,20 @@ defmodule Bumblebee do
 
   The final output of the resulting model is a map with the `:embedding` key.
 
+  Supported SentenceTransformers modules include:
+    * `sentence_transformers.models.Pooling` (modes: `:mean_tokens`, `:cls_token`,
+      `:max_tokens`, `:mean_sqrt_len_tokens`, `:last_token`)
+    * `sentence_transformers.models.Dense` (activations: `:identity`, `:tanh`,
+      `:relu`, `:gelu`, `:silu`, loaded from Safetensors or PyTorch weights)
+    * `sentence_transformers.models.Normalize` (L2 normalization)
+    * `sentence_transformers.models.Dropout` (no-op in inference)
+
+  > #### Note {: .info}
+  >
+  > SentenceTransformers heads attach to the base encoder's hidden states. If a model repository
+  > config defaults to another architecture (such as `:for_masked_language_modeling`), ensure
+  > you specify `architecture: :base` when calling `load_model/2`.
+
   ## Options
 
     * `:fuse_dense` - when true, fuses consecutive linear projection layers
@@ -666,8 +680,8 @@ defmodule Bumblebee do
 
   ## Examples
 
-      {:ok, model_info} = Bumblebee.load_model({:hf, "google/embeddinggemma-300m"})
-      {:ok, model_info} = Bumblebee.load_embedding_head({:hf, "google/embeddinggemma-300m"}, model_info)
+      {:ok, model_info} = Bumblebee.load_model({:hf, "unsloth/embeddinggemma-300m"})
+      {:ok, model_info} = Bumblebee.load_embedding_head({:hf, "unsloth/embeddinggemma-300m"}, model_info, fuse_dense: true)
       serving = Bumblebee.Text.text_embedding(model_info, tokenizer)
 
   """
@@ -1336,7 +1350,7 @@ defmodule Bumblebee do
   defp get_repo_files({:local, dir}) do
     case File.ls(dir) do
       {:ok, _filenames} ->
-        paths = Path.wildcard(Path.join(dir, "**"), match_dot: true)
+        paths = Path.wildcard(Path.join(dir, "**"))
 
         repo_files =
           for path <- paths,

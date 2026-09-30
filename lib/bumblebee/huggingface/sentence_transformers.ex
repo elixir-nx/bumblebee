@@ -11,7 +11,7 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
       %{"modules.json" => _etag} ->
         with {:ok, modules_path} <- download_fun.("modules.json"),
              {:ok, modules} <- decode_json(modules_path) do
-          modules = Enum.sort_by(modules, & &1["idx"])
+          modules = Enum.sort_by(modules, &(&1["idx"] || 0))
 
           case modules do
             [%{"type" => "sentence_transformers.models.Transformer"} | remaining] ->
@@ -82,8 +82,8 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
     config_file = Path.join(path, "config.json")
 
     with {:ok, config_path} <- download_fun.(config_file),
-         {:ok, config} <- decode_json(config_path) do
-      node = pooling_layer(node, attention_mask, config, path)
+         {:ok, config} <- decode_json(config_path),
+         {:ok, node} <- pooling_layer(node, attention_mask, config, path) do
       {:ok, node, params_data}
     end
   end
@@ -101,44 +101,43 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
 
     with {:ok, config_path} <- download_fun.(config_file),
          {:ok, config} <- decode_json(config_path),
+         {:ok, activation} <- parse_activation(config["activation_function"], path),
          {:ok, weights_file} <- find_weights_file(repo_files, path),
          {:ok, weights_path} <- download_fun.(weights_file) do
       out_features = config["out_features"]
-      bias = Map.get(config, "bias", false)
+      bias = Map.get(config, "bias", true)
 
-      case config["activation_function"] do
-        activation when activation in [nil, "torch.nn.modules.linear.Identity"] ->
-          layer_name = path
-          node = Axon.dense(node, out_features, use_bias: bias, name: layer_name)
+      layer_name = path
 
-          tensors = load_tensors(weights_path, opts)
+      node =
+        node
+        |> Axon.dense(out_features, use_bias: bias, name: layer_name)
+        |> maybe_activation(activation)
 
-          kernel =
-            tensors["linear.weight"]
+      tensors = load_tensors(weights_file, weights_path, opts)
+
+      kernel =
+        tensors["linear.weight"]
+        |> Nx.to_tensor()
+        |> Nx.transpose()
+        |> cast_param(opts[:type])
+        |> allocate_param(opts[:backend])
+
+      layer_params =
+        if bias do
+          bias_tensor =
+            tensors["linear.bias"]
             |> Nx.to_tensor()
-            |> Nx.transpose()
             |> cast_param(opts[:type])
             |> allocate_param(opts[:backend])
 
-          layer_params =
-            if bias do
-              bias_tensor =
-                tensors["linear.bias"]
-                |> Nx.to_tensor()
-                |> cast_param(opts[:type])
-                |> allocate_param(opts[:backend])
+          %{"kernel" => kernel, "bias" => bias_tensor}
+        else
+          %{"kernel" => kernel}
+        end
 
-              %{"kernel" => kernel, "bias" => bias_tensor}
-            else
-              %{"kernel" => kernel}
-            end
-
-          params_data = Map.put(params_data, layer_name, layer_params)
-          {:ok, node, params_data}
-
-        other ->
-          {:error, "unsupported activation function #{inspect(other)} in #{path}"}
-      end
+      params_data = Map.put(params_data, layer_name, layer_params)
+      {:ok, node, params_data}
     end
   end
 
@@ -160,8 +159,8 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
          {:ok, w1_path} <- download_fun.(w1_file),
          {:ok, w2_file} <- find_weights_file(repo_files, p2),
          {:ok, w2_path} <- download_fun.(w2_file) do
-      t1 = load_tensors(w1_path, opts)
-      t2 = load_tensors(w2_path, opts)
+      t1 = load_tensors(w1_file, w1_path, opts)
+      t2 = load_tensors(w2_file, w2_path, opts)
 
       k1 = t1["linear.weight"] |> Nx.to_tensor() |> Nx.transpose()
       k2 = t2["linear.weight"] |> Nx.to_tensor() |> Nx.transpose()
@@ -191,6 +190,18 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
     {:ok, node, params_data}
   end
 
+  defp build_module(
+         %{"type" => "sentence_transformers.models.Dropout"},
+         node,
+         _attention_mask,
+         params_data,
+         _repo_files,
+         _download_fun,
+         _opts
+       ) do
+    {:ok, node, params_data}
+  end
+
   defp build_module(%{"type" => type}, _node, _mask, _params, _repo_files, _download_fun, _opts) do
     {:error, "unsupported SentenceTransformers module #{inspect(type)}"}
   end
@@ -199,34 +210,81 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
     modes =
       for {key, mode} <- [
             {"pooling_mode_cls_token", :cls_token},
-            {"pooling_mode_mean_tokens", :mean_tokens}
+            {"pooling_mode_mean_tokens", :mean_tokens},
+            {"pooling_mode_max_tokens", :max_tokens},
+            {"pooling_mode_mean_sqrt_len_tokens", :mean_sqrt_len_tokens},
+            {"pooling_mode_lasttoken", :last_token}
           ],
           config[key] == true,
           do: mode
 
-    Axon.layer(
-      fn hidden_state, attention_mask, _opts ->
-        pool_outputs =
-          Enum.map(modes, fn
-            :mean_tokens ->
-              mask = Nx.new_axis(attention_mask, -1)
-              sum_embeddings = Nx.sum(Nx.multiply(hidden_state, mask), axes: [1])
-              sum_mask = Nx.sum(mask, axes: [1]) |> Nx.max(1.0e-9)
-              Nx.divide(sum_embeddings, sum_mask)
+    if modes == [] do
+      {:error, "no supported pooling mode found in #{name}"}
+    else
+      layer =
+        Axon.layer(
+          fn hidden_state, attention_mask, _opts ->
+            pool_outputs =
+              Enum.map(modes, fn
+                :mean_tokens ->
+                  mask = Nx.new_axis(attention_mask, -1)
+                  sum_embeddings = Nx.sum(Nx.multiply(hidden_state, mask), axes: [1])
+                  sum_mask = Nx.sum(mask, axes: [1]) |> Nx.max(1.0e-9)
+                  Nx.divide(sum_embeddings, sum_mask)
 
-            :cls_token ->
-              hidden_state[[.., 0, ..]]
-          end)
+                :cls_token ->
+                  hidden_state[[.., 0, ..]]
 
-        case pool_outputs do
-          [single] -> single
-          multiple -> Nx.concatenate(multiple, axis: -1)
-        end
-      end,
-      [hidden_state, attention_mask],
-      name: name
-    )
+                :max_tokens ->
+                  mask = Nx.new_axis(attention_mask, -1)
+                  pred = Nx.broadcast(Nx.not_equal(mask, 0), Nx.shape(hidden_state))
+
+                  pred
+                  |> Nx.select(hidden_state, Nx.Constants.min_finite(Nx.type(hidden_state)))
+                  |> Nx.reduce_max(axes: [1])
+
+                :mean_sqrt_len_tokens ->
+                  mask = Nx.new_axis(attention_mask, -1)
+                  sum_embeddings = Nx.sum(Nx.multiply(hidden_state, mask), axes: [1])
+                  sum_mask = Nx.sum(mask, axes: [1]) |> Nx.max(1.0e-9)
+                  Nx.divide(sum_embeddings, Nx.sqrt(sum_mask))
+
+                :last_token ->
+                  lengths =
+                    attention_mask
+                    |> Nx.sum(axes: [1])
+                    |> Nx.subtract(1)
+                    |> Nx.as_type({:s, 64})
+
+                  Bumblebee.Utils.Nx.batched_take(hidden_state, lengths)
+              end)
+
+            case pool_outputs do
+              [single] -> single
+              multiple -> Nx.concatenate(multiple, axis: -1)
+            end
+          end,
+          [hidden_state, attention_mask],
+          name: name
+        )
+
+      {:ok, layer}
+    end
   end
+
+  defp parse_activation("torch.nn.modules.linear.Identity", _path), do: {:ok, nil}
+  defp parse_activation("torch.nn.modules.activation.Tanh", _path), do: {:ok, :tanh}
+  defp parse_activation("torch.nn.modules.activation.ReLU", _path), do: {:ok, :relu}
+  defp parse_activation("torch.nn.modules.activation.GELU", _path), do: {:ok, :gelu}
+  defp parse_activation("torch.nn.modules.activation.SiLU", _path), do: {:ok, :silu}
+  defp parse_activation(nil, _path), do: {:ok, nil}
+
+  defp parse_activation(other, path) do
+    {:error, "unsupported activation function #{inspect(other)} in #{path}"}
+  end
+
+  defp maybe_activation(node, nil), do: node
+  defp maybe_activation(node, activation), do: Axon.activation(node, activation)
 
   defp maybe_fuse_dense(modules, true, repo_files, download_fun) do
     fuse_dense_modules(modules, repo_files, download_fun, [])
@@ -281,23 +339,36 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
     c1_linear? = c1["activation_function"] in [nil, "torch.nn.modules.linear.Identity"]
     c2_linear? = c2["activation_function"] in [nil, "torch.nn.modules.linear.Identity"]
     no_bias? = !Map.get(c1, "bias", false) and !Map.get(c2, "bias", false)
+    dims_match? = c1["out_features"] == c2["in_features"]
 
-    c1_linear? and c2_linear? and no_bias?
+    c1_linear? and c2_linear? and no_bias? and dims_match?
   end
 
   defp find_weights_file(repo_files, dir) do
     safetensors = Path.join(dir, "model.safetensors")
+    pytorch_bin = Path.join(dir, "pytorch_model.bin")
 
-    if Map.has_key?(repo_files, safetensors) do
-      {:ok, safetensors}
-    else
-      {:error, "could not find parameters file model.safetensors in #{dir}"}
+    cond do
+      Map.has_key?(repo_files, safetensors) ->
+        {:ok, safetensors}
+
+      Map.has_key?(repo_files, pytorch_bin) ->
+        {:ok, pytorch_bin}
+
+      true ->
+        {:error, "could not find parameters file in #{dir}"}
     end
   end
 
-  defp load_tensors(weights_path, opts) do
-    reader = opts[:safetensors_reader] || (&Safetensors.read!(&1, lazy: true))
-    reader.(weights_path)
+  defp load_tensors(weights_file, weights_path, opts) do
+    case Path.extname(weights_file) do
+      ".safetensors" ->
+        reader = opts[:safetensors_reader] || (&Safetensors.read!(&1, lazy: true))
+        reader.(weights_path)
+
+      _ ->
+        Bumblebee.Conversion.PyTorchLoader.load!(weights_path)
+    end
   end
 
   defp cast_param(tensor, nil), do: tensor
