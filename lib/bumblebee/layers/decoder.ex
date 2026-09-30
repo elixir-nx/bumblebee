@@ -31,7 +31,8 @@ defmodule Bumblebee.Layers.Decoder do
   put those hidden states in a cache and use on subsequent iterations.
 
   For self-attention blocks, we cache the key and value state for the
-  input token and append them to the cache.
+  input token and append them to the cache. With grouped-query attention,
+  we cache the key and value heads before they are repeated.
 
   For cross-attention blocks, we compute the whole key and value state
   on the first iteration and reuse on subsequent ones.
@@ -53,6 +54,9 @@ defmodule Bumblebee.Layers.Decoder do
 
     * `:decoder_num_attention_heads` - the number of decoder attention heads
 
+    * `:decoder_num_key_value_heads` - the number of decoder key and value
+      heads. Defaults to `:decoder_num_attention_heads`
+
     * `:encoder_num_attention_heads` - the number of encoder attention heads
       (for cross attention)
 
@@ -63,6 +67,10 @@ defmodule Bumblebee.Layers.Decoder do
   def init_cache(batch_size, max_length, opts \\ []) do
     hidden_size = Keyword.fetch!(opts, :hidden_size)
     decoder_num_attention_heads = Keyword.fetch!(opts, :decoder_num_attention_heads)
+
+    decoder_num_key_value_heads =
+      opts[:decoder_num_key_value_heads] || decoder_num_attention_heads
+
     decoder_num_blocks = Keyword.fetch!(opts, :decoder_num_blocks)
     encoder_num_attention_heads = opts[:encoder_num_attention_heads]
     encoder_sequence_length = opts[:encoder_sequence_length]
@@ -71,7 +79,7 @@ defmodule Bumblebee.Layers.Decoder do
       opts[:attention_head_size] || div(hidden_size, decoder_num_attention_heads)
 
     self_attention =
-      attention_cache(batch_size, max_length, decoder_num_attention_heads, decoder_head_size)
+      attention_cache(batch_size, max_length, decoder_num_key_value_heads, decoder_head_size)
 
     cross_attention =
       if encoder_sequence_length do

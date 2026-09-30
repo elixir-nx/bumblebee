@@ -433,12 +433,12 @@ defmodule Bumblebee.Layers.Transformer do
         {query, key}
       end
 
+    {key, value, attention_cache} =
+      Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset)
+
     num_key_value_groups = div(num_heads, num_key_value_heads)
     key = repeat_heads(key, num_key_value_groups)
     value = repeat_heads(value, num_key_value_groups)
-
-    {key, value, attention_cache} =
-      Layers.Decoder.cached_attention_key_values(key, value, attention_cache, offset)
 
     attention_relative_bias =
       case attention_relative_bias do
