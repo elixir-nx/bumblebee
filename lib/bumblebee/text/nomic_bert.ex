@@ -212,34 +212,60 @@ defmodule Bumblebee.Text.NomicBert do
   defp encoder(hidden_state, position_ids, attention_mask, attention_head_mask, spec, opts) do
     name = opts[:name]
 
-    Layers.Transformer.blocks(hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      num_blocks: spec.num_blocks,
-      num_attention_heads: spec.num_attention_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      layer_norm: [epsilon: spec.layer_norm_epsilon],
-      ffn:
-        &gated_ffn(&1, intermediate_size(spec), spec.hidden_size,
-          name: &2,
-          activation: spec.activation,
-          gate_use_bias: spec.ffn_gate_bias,
-          output_use_bias: spec.ffn_output_bias
-        ),
-      block_type: :standard,
-      causal: false,
-      rotary_embedding: [
-        position_ids: position_ids,
-        max_positions: spec.max_positions,
-        base: spec.rotary_embedding_base,
-        percentage: spec.rotary_embedding_percentage
+    Layers.Transformer.blocks(
+      hidden_state,
+      [
+        num_blocks: spec.num_blocks,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        name: join(name, "blocks")
       ],
-      query_use_bias: false,
-      key_use_bias: false,
-      value_use_bias: false,
-      output_use_bias: false,
-      name: join(name, "blocks")
+      fn hidden_state, block ->
+        name = block.name
+
+        shortcut = hidden_state
+
+        {hidden_state, attention, _cache} =
+          Layers.Transformer.self_attention(hidden_state, block,
+            num_heads: spec.num_attention_heads,
+            hidden_size: spec.hidden_size,
+            kernel_initializer: kernel_initializer(spec),
+            query_use_bias: false,
+            key_use_bias: false,
+            value_use_bias: false,
+            output_use_bias: false,
+            rotary_embedding: [
+              position_ids: position_ids,
+              max_positions: spec.max_positions,
+              base: spec.rotary_embedding_base,
+              percentage: spec.rotary_embedding_percentage
+            ],
+            name: join(name, "self_attention")
+          )
+
+        hidden_state =
+          hidden_state
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(
+            epsilon: spec.layer_norm_epsilon,
+            name: join(name, "self_attention_norm")
+          )
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> gated_ffn(intermediate_size(spec), spec.hidden_size,
+            activation: spec.activation,
+            gate_use_bias: spec.ffn_gate_bias,
+            output_use_bias: spec.ffn_output_bias,
+            name: join(name, "ffn")
+          )
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
+
+        %{hidden_state: hidden_state, attention: attention}
+      end
     )
   end
 

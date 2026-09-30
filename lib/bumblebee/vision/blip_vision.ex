@@ -182,22 +182,44 @@ defmodule Bumblebee.Vision.BlipVision do
   defp encoder(embeddings, spec, opts) do
     name = opts[:name]
 
-    Layers.Transformer.blocks(embeddings,
-      num_blocks: spec.num_blocks,
-      num_attention_heads: spec.num_attention_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      dropout_rate: 0.0,
-      attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm: [
-        epsilon: spec.layer_norm_epsilon
-      ],
-      ffn: [
-        intermediate_size: spec.intermediate_size,
-        activation: spec.activation
-      ],
-      block_type: :norm_first,
-      name: join(name, "blocks")
+    Layers.Transformer.blocks(
+      embeddings,
+      [num_blocks: spec.num_blocks, name: join(name, "blocks")],
+      fn hidden_state, block ->
+        name = block.name
+
+        shortcut = hidden_state
+
+        {hidden_state, attention, _cache} =
+          hidden_state
+          |> Axon.layer_norm(
+            epsilon: spec.layer_norm_epsilon,
+            name: join(name, "self_attention_norm")
+          )
+          |> Layers.Transformer.self_attention(block,
+            num_heads: spec.num_attention_heads,
+            hidden_size: spec.hidden_size,
+            kernel_initializer: kernel_initializer(spec),
+            dropout_rate: spec.attention_dropout_rate,
+            name: join(name, "self_attention")
+          )
+
+        hidden_state = Axon.add(hidden_state, shortcut)
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
+          |> Layers.Transformer.basic_ffn(spec.intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "ffn")
+          )
+          |> Axon.add(shortcut)
+
+        %{hidden_state: hidden_state, attention: attention}
+      end
     )
   end
 

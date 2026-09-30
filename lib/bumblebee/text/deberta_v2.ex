@@ -151,28 +151,7 @@ defmodule Bumblebee.Text.DebertaV2 do
 
     relative = relative_embeddings(spec)
 
-    outputs =
-      Transformer.blocks(embedding,
-        num_blocks: spec.num_blocks,
-        num_attention_heads: spec.num_attention_heads,
-        hidden_size: spec.hidden_size,
-        attention_mask: mask,
-        attention: fn query, _key, _value, opts ->
-          {output, weights} = attention(query, relative, mask, spec, opts[:name])
-          {output, weights, opts[:attention_cache], Layers.none()}
-        end,
-        block_output: fn output, index ->
-          if index == 0 and spec.conv_kernel_size > 0,
-            do: convolution(embedding, output, mask, spec),
-            else: output
-        end,
-        ffn: [intermediate_size: spec.intermediate_size, activation: spec.activation],
-        dropout_rate: spec.dropout_rate,
-        attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm: [epsilon: spec.layer_norm_epsilon],
-        kernel_initializer: initializer(spec),
-        name: "encoder.blocks"
-      )
+    outputs = encoder(embedding, relative, mask, spec)
 
     Layers.output(%{
       hidden_state: outputs.hidden_state,
@@ -181,53 +160,124 @@ defmodule Bumblebee.Text.DebertaV2 do
     })
   end
 
-  defp attention(hidden, relative, mask, spec, name) do
+  defp encoder(embedding, relative, mask, spec) do
+    # Both query and key padding positions are masked
+    attention_mask =
+      Axon.nx(mask, fn mask ->
+        Nx.multiply(Nx.new_axis(Nx.new_axis(mask, 1), 2), Nx.new_axis(Nx.new_axis(mask, 1), 3))
+      end)
+
+    Transformer.blocks(
+      embedding,
+      [num_blocks: spec.num_blocks, name: "encoder.blocks"],
+      fn hidden_state, block ->
+        name = block.name
+
+        shortcut = hidden_state
+
+        {hidden_state, attention} =
+          attention(hidden_state, relative, attention_mask, spec, name <> ".self_attention")
+
+        hidden_state =
+          hidden_state
+          |> Axon.dropout(rate: spec.dropout_rate)
+          |> Axon.add(shortcut)
+          |> norm(spec, name <> ".self_attention_norm")
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> Transformer.basic_ffn(spec.intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            dropout_rate: spec.dropout_rate,
+            kernel_initializer: initializer(spec),
+            name: name <> ".ffn"
+          )
+          |> Axon.add(shortcut)
+          |> norm(spec, name <> ".output_norm")
+
+        hidden_state =
+          if block.index == 0 and spec.conv_kernel_size > 0,
+            do: convolution(embedding, hidden_state, mask, spec),
+            else: hidden_state
+
+        %{hidden_state: hidden_state, attention: attention}
+      end
+    )
+  end
+
+  defp attention(hidden, relative, attention_mask, spec, name) do
+    heads = spec.num_attention_heads
+    head_size = div(spec.hidden_size, heads)
+    scale_factor = 1 + length(spec.position_attention_types)
+
     relative = Axon.dropout(relative, rate: spec.dropout_rate)
     {query, position_query} = attention_projection(hidden, relative, spec, name <> ".query")
     {key, position_key} = attention_projection(hidden, relative, spec, name <> ".key")
 
-    values =
-      hidden
-      |> dense(spec.hidden_size, spec, name <> ".value")
-      |> Axon.nx(&split_heads(&1, spec.num_attention_heads))
+    value =
+      Transformer.project_heads(hidden, heads, head_size,
+        kernel_initializer: initializer(spec),
+        name: name <> ".value"
+      )
+
+    position_projection = fn suffix ->
+      relative
+      |> Axon.nx(&Nx.new_axis(&1, 0))
+      |> Transformer.project_heads(heads, head_size,
+        kernel_initializer: initializer(spec),
+        name: name <> suffix
+      )
+    end
 
     position_key =
       if spec.use_relative_attention and not spec.share_attention_key and
-           :content_to_position in spec.position_attention_types do
-        relative
-        |> Axon.nx(&Nx.new_axis(&1, 0))
-        |> dense(spec.hidden_size, spec, name <> ".position_key")
-        |> Axon.nx(&split_heads(&1, spec.num_attention_heads))
-      else
-        position_key
-      end
+           :content_to_position in spec.position_attention_types,
+         do: position_projection.(".position_key"),
+         else: position_key
 
     position_query =
       if spec.use_relative_attention and not spec.share_attention_key and
-           :position_to_content in spec.position_attention_types do
-        relative
-        |> Axon.nx(&Nx.new_axis(&1, 0))
-        |> dense(spec.hidden_size, spec, name <> ".position_query")
-        |> Axon.nx(&split_heads(&1, spec.num_attention_heads))
+           :position_to_content in spec.position_attention_types,
+         do: position_projection.(".position_query"),
+         else: position_query
+
+    relative_bias =
+      if spec.use_relative_attention and spec.position_attention_types != [] do
+        Axon.layer(
+          &relative_attention_bias/5,
+          [query, key, position_query, position_key],
+          buckets: spec.position_buckets,
+          max_position: relative_limit(spec),
+          span: position_span(spec),
+          terms: spec.position_attention_types
+        )
       else
-        position_query
+        Layers.none()
       end
 
-    weights =
-      Axon.layer(
-        &attention_weights/6,
-        [query, key, position_query, position_key, mask],
-        buckets: spec.position_buckets,
-        max_position: relative_limit(spec),
-        span: position_span(spec),
-        relative: spec.use_relative_attention,
-        terms: spec.position_attention_types
+    # The key is scaled before the dot product, as in the Python model
+    key = Axon.nx(key, &Nx.divide(&1, Nx.sqrt(head_size * scale_factor)))
+
+    {output, weights} =
+      Layers.attention(
+        query,
+        key,
+        value,
+        attention_mask,
+        Layers.none(),
+        relative_bias,
+        Layers.none(),
+        scale: 1,
+        dropout_rate: spec.attention_dropout_rate
       )
-      |> Axon.dropout(rate: spec.attention_dropout_rate)
 
     output =
-      Axon.layer(&attention_context/3, [weights, values])
-      |> dense(spec.hidden_size, spec, name <> ".output")
+      Transformer.output_projection(output, spec.hidden_size,
+        kernel_initializer: initializer(spec),
+        name: name <> ".output"
+      )
 
     {output, weights}
   end
@@ -279,7 +329,12 @@ defmodule Bumblebee.Text.DebertaV2 do
 
     embedding =
       if width != spec.hidden_size,
-        do: dense(embedding, spec.hidden_size, spec, "embedder.projection", use_bias: false),
+        do:
+          Axon.dense(embedding, spec.hidden_size,
+            use_bias: false,
+            kernel_initializer: initializer(spec),
+            name: "embedder.projection"
+          ),
         else: embedding
 
     embedding
@@ -354,9 +409,6 @@ defmodule Bumblebee.Text.DebertaV2 do
   defp norm(hidden, spec, name),
     do: Axon.layer_norm(hidden, epsilon: spec.layer_norm_epsilon, name: name)
 
-  defp dense(hidden, units, spec, name, opts \\ []),
-    do: Axon.dense(hidden, units, [name: name, kernel_initializer: initializer(spec)] ++ opts)
-
   defp initializer(spec), do: Axon.Initializers.normal(scale: spec.initializer_scale)
 
   defp relative_limit(spec),
@@ -383,60 +435,32 @@ defmodule Bumblebee.Text.DebertaV2 do
     {content, position}
   end
 
-  defnp attention_weights(query, key, position_query, position_key, mask, opts) do
-    opts = keyword!(opts, [:buckets, :max_position, :span, :relative, :terms, :mode])
+  defnp relative_attention_bias(query, key, position_query, position_key, opts) do
+    opts = keyword!(opts, [:buckets, :max_position, :span, :terms, :mode])
+    query = Nx.transpose(query, axes: [0, 2, 1, 3])
+    key = Nx.transpose(key, axes: [0, 2, 1, 3])
     scale = Nx.sqrt(Nx.axis_size(query, -1) * (1 + term_count(opts[:terms])))
-    scores = product(query, key / scale)
+    positions = relative_positions(Nx.axis_size(query, 2), opts[:buckets], opts[:max_position])
 
-    scores =
-      if opts[:relative] do
-        positions =
-          relative_positions(Nx.axis_size(query, 2), opts[:buckets], opts[:max_position])
-
-        bias = Nx.broadcast(0, Nx.shape(scores))
-
-        bias =
-          if has_term?(opts[:terms], :content_to_position) do
-            indices = Nx.clip(positions + opts[:span], 0, 2 * opts[:span] - 1)
-            bias + gather(product(query, position_key), indices) / scale
-          else
-            bias
-          end
-
-        bias =
-          if has_term?(opts[:terms], :position_to_content) do
-            indices = Nx.clip(-positions + opts[:span], 0, 2 * opts[:span] - 1)
-
-            bias +
-              Nx.transpose(gather(product(key, position_query), indices), axes: [0, 1, 3, 2]) /
-                scale
-          else
-            bias
-          end
-
-        scores + bias
+    content_to_position =
+      if has_term?(opts[:terms], :content_to_position) do
+        position_key = Nx.transpose(position_key, axes: [0, 2, 1, 3])
+        indices = Nx.clip(positions + opts[:span], 0, 2 * opts[:span] - 1)
+        gather(product(query, position_key), indices) / scale
       else
-        scores
+        0.0
       end
 
-    allowed = Nx.new_axis(Nx.new_axis(mask, 1), 2) * Nx.new_axis(Nx.new_axis(mask, 1), 3)
+    position_to_content =
+      if has_term?(opts[:terms], :position_to_content) do
+        position_query = Nx.transpose(position_query, axes: [0, 2, 1, 3])
+        indices = Nx.clip(-positions + opts[:span], 0, 2 * opts[:span] - 1)
+        Nx.transpose(gather(product(key, position_query), indices), axes: [0, 1, 3, 2]) / scale
+      else
+        0.0
+      end
 
-    scores =
-      Nx.select(
-        Nx.broadcast(allowed, Nx.shape(scores)),
-        scores,
-        Nx.Constants.min_finite(Nx.type(scores))
-      )
-
-    Axon.Activations.softmax(scores, axis: -1)
-  end
-
-  defnp attention_context(weights, value, _opts) do
-    {batch, heads, length, width} = Nx.shape(value)
-
-    Nx.dot(weights, [3], [0, 1], value, [2], [0, 1])
-    |> Nx.transpose(axes: [0, 2, 1, 3])
-    |> Nx.reshape({batch, length, heads * width})
+    content_to_position + position_to_content
   end
 
   deftransformp(has_term?(terms, term), do: term in terms)
@@ -446,10 +470,7 @@ defmodule Bumblebee.Text.DebertaV2 do
 
   defnp split_heads(input, heads) do
     {batch, length, hidden} = Nx.shape(input)
-
-    input
-    |> Nx.reshape({batch, length, heads, div(hidden, heads)})
-    |> Nx.transpose(axes: [0, 2, 1, 3])
+    Nx.reshape(input, {batch, length, heads, div(hidden, heads)})
   end
 
   defnp product(left, right) do

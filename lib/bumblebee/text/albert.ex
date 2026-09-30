@@ -329,16 +329,16 @@ defmodule Bumblebee.Text.Albert do
         name: "embedder"
       )
 
-    {hidden_state, hidden_states, attentions} =
+    encoder_outputs =
       encoder(embeddings, inputs["attention_mask"], spec, name: join(name, "encoder"))
 
-    pooled_state = pooler(hidden_state, spec, name: join(name, "pooler"))
+    pooled_state = pooler(encoder_outputs.hidden_state, spec, name: join(name, "pooler"))
 
     %{
-      hidden_state: hidden_state,
+      hidden_state: encoder_outputs.hidden_state,
       pooled_state: pooled_state,
-      hidden_states: hidden_states,
-      attentions: attentions
+      hidden_states: encoder_outputs.hidden_states,
+      attentions: encoder_outputs.attentions
     }
   end
 
@@ -387,42 +387,58 @@ defmodule Bumblebee.Text.Albert do
         name: join(name, "embedding_projection")
       )
 
-    hidden_states = Axon.container({hidden_state})
-    attentions = Axon.container({})
-
-    for block_idx <- 0..(spec.num_blocks - 1),
-        inner_idx <- 0..(spec.block_depth - 1),
-        reduce: {hidden_state, hidden_states, attentions} do
-      {hidden_state, hidden_states, attentions} ->
+    # Blocks within a group share parameters
+    Layers.Transformer.blocks(
+      hidden_state,
+      [
+        num_blocks: spec.num_blocks * spec.block_depth,
+        attention_mask: attention_mask
+      ],
+      fn hidden_state, block ->
+        block_idx = div(block.index, spec.block_depth)
+        inner_idx = rem(block.index, spec.block_depth)
         group_idx = div(block_idx, div(spec.num_blocks, spec.num_groups))
 
         name = name |> join("groups") |> join(group_idx) |> join("blocks") |> join(inner_idx)
 
         # TODO: wrap encoder block in a layer_drop combinator
-        {hidden_state, attention, _cross_attention, _block_cache, _position_bias} =
-          Layers.Transformer.block(hidden_state,
-            attention_mask: attention_mask,
-            num_attention_heads: spec.num_attention_heads,
+
+        shortcut = hidden_state
+
+        {hidden_state, attention, _cache} =
+          Layers.Transformer.self_attention(hidden_state, block,
+            num_heads: spec.num_attention_heads,
             hidden_size: spec.hidden_size,
             kernel_initializer: kernel_initializer(spec),
-            dropout_rate: spec.dropout_rate,
-            attention_dropout_rate: spec.attention_dropout_rate,
-            layer_norm: [
-              epsilon: spec.layer_norm_epsilon
-            ],
-            ffn: [
-              intermediate_size: spec.intermediate_size,
-              activation: spec.activation
-            ],
-            name: name
+            dropout_rate: spec.attention_dropout_rate,
+            name: join(name, "self_attention")
           )
 
-        {
-          hidden_state,
-          Layers.append(hidden_states, hidden_state),
-          Layers.append(attentions, attention)
-        }
-    end
+        hidden_state =
+          hidden_state
+          |> Axon.dropout(rate: spec.dropout_rate)
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(
+            epsilon: spec.layer_norm_epsilon,
+            name: join(name, "self_attention_norm")
+          )
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> Layers.Transformer.basic_ffn(spec.intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            dropout_rate: spec.dropout_rate,
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "ffn")
+          )
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
+
+        %{hidden_state: hidden_state, attention: attention}
+      end
+    )
   end
 
   defp pooler(hidden_state, spec, opts) do

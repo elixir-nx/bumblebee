@@ -287,46 +287,77 @@ defmodule Bumblebee.Text.ModernBertDecoder do
        ) do
     name = opts[:name]
 
-    layer_norm = fn input, name ->
-      if String.ends_with?(name, "decoder.blocks.0.self_attention_norm") do
-        # The first self-attention norm is skipped.
-        input
-      else
-        layer_norm(input, epsilon: spec.layer_norm_epsilon, name: name)
-      end
-    end
-
-    Layers.Transformer.blocks(hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      cache: cache,
-      num_blocks: spec.num_blocks,
-      num_attention_heads: spec.num_attention_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      dropout_rate: spec.dropout_rate,
-      attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm: layer_norm,
-      ffn:
-        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
-          activation: spec.activation,
-          name: &2
-        ),
-      block_type: :norm_first,
-      causal: true,
-      rotary_embedding: [
-        position_ids: position_ids,
-        max_positions: spec.max_positions,
-        base: spec.rotary_embedding_base
+    Layers.Transformer.blocks(
+      hidden_state,
+      [
+        num_blocks: spec.num_blocks,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        cache: cache,
+        name: join(name, "blocks")
       ],
-      query_use_bias: false,
-      key_use_bias: false,
-      value_use_bias: false,
-      output_use_bias: false,
-      name: join(name, "blocks")
+      fn hidden_state, block ->
+        name = block.name
+
+        shortcut = hidden_state
+
+        # The first block has no attention norm
+        hidden_state =
+          if block.index == 0 do
+            hidden_state
+          else
+            layer_norm(hidden_state,
+              epsilon: spec.layer_norm_epsilon,
+              name: join(name, "self_attention_norm")
+            )
+          end
+
+        {hidden_state, attention, self_attention_cache} =
+          Layers.Transformer.self_attention(hidden_state, block,
+            num_heads: spec.num_attention_heads,
+            hidden_size: spec.hidden_size,
+            causal: true,
+            rotary_embedding: [
+              position_ids: position_ids,
+              max_positions: spec.max_positions,
+              base: spec.rotary_embedding_base
+            ],
+            query_use_bias: false,
+            key_use_bias: false,
+            value_use_bias: false,
+            output_use_bias: false,
+            kernel_initializer: kernel_initializer(spec),
+            dropout_rate: spec.attention_dropout_rate,
+            name: join(name, "self_attention")
+          )
+
+        hidden_state =
+          hidden_state
+          |> Axon.dropout(rate: spec.dropout_rate)
+          |> Axon.add(shortcut)
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
+          |> gated_ffn(spec.intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            name: join(name, "ffn")
+          )
+          |> Axon.add(shortcut)
+
+        %{
+          hidden_state: hidden_state,
+          attention: attention,
+          self_attention_cache: self_attention_cache
+        }
+      end
     )
   end
 
+  # Unlike the shared gated FFN, the activation is applied to the
+  # intermediate projection, not the gate
   defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
     name = opts[:name]
     activation = opts[:activation]

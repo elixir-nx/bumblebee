@@ -398,36 +398,99 @@ defmodule Bumblebee.Text.GptBigCode do
     Layers.Transformer.blocks(
       hidden_state,
       [
+        num_blocks: spec.num_blocks,
         attention_mask: attention_mask,
         attention_head_mask: attention_head_mask,
+        cross_attention_head_mask: cross_attention_head_mask,
         cache: cache,
-        causal: true,
-        num_blocks: spec.num_blocks,
-        num_attention_heads: spec.num_attention_heads,
-        num_key_value_heads: spec.num_key_value_heads,
-        hidden_size: spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        dropout_rate: spec.dropout_rate,
-        attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm: [
-          epsilon: spec.layer_norm_epsilon
-        ],
-        ffn: [
-          intermediate_size: spec.intermediate_size || 4 * spec.hidden_size,
-          activation: spec.activation
-        ],
-        block_type: :norm_first,
-        attention_scale: if(not spec.scale_attention_weights, do: 1),
         name: join(name, "blocks")
-      ] ++
-        if(spec.use_cross_attention,
-          do: [
-            cross_hidden_state: encoder_hidden_state,
-            cross_attention_mask: encoder_attention_mask,
-            cross_attention_head_mask: cross_attention_head_mask
-          ],
-          else: []
-        )
+      ],
+      fn hidden_state, block ->
+        name = block.name
+
+        attention_opts = [
+          num_heads: spec.num_attention_heads,
+          num_key_value_heads: spec.num_key_value_heads,
+          hidden_size: spec.hidden_size,
+          attention_scale: if(not spec.scale_attention_weights, do: 1),
+          kernel_initializer: kernel_initializer(spec),
+          dropout_rate: spec.attention_dropout_rate
+        ]
+
+        shortcut = hidden_state
+
+        {hidden_state, attention, self_attention_cache} =
+          hidden_state
+          |> Axon.layer_norm(
+            epsilon: spec.layer_norm_epsilon,
+            name: join(name, "self_attention_norm")
+          )
+          |> Layers.Transformer.self_attention(
+            block,
+            [causal: true, name: join(name, "self_attention")] ++ attention_opts
+          )
+
+        hidden_state =
+          hidden_state
+          |> Axon.dropout(rate: spec.dropout_rate)
+          |> Axon.add(shortcut)
+
+        {hidden_state, cross_attention, cross_attention_cache} =
+          if spec.use_cross_attention do
+            Layers.if_present encoder_hidden_state do
+              shortcut = hidden_state
+
+              {hidden_state, cross_attention, cross_attention_cache} =
+                hidden_state
+                |> Axon.layer_norm(
+                  epsilon: spec.layer_norm_epsilon,
+                  name: join(name, "cross_attention_norm")
+                )
+                |> Layers.Transformer.cross_attention(
+                  encoder_hidden_state,
+                  block,
+                  [
+                    attention_mask: encoder_attention_mask,
+                    name: join(name, "cross_attention")
+                  ] ++ attention_opts
+                )
+
+              hidden_state =
+                hidden_state
+                |> Axon.dropout(rate: spec.dropout_rate)
+                |> Axon.add(shortcut)
+
+              {hidden_state, cross_attention, cross_attention_cache}
+            else
+              {hidden_state, Layers.none(), block.cross_attention_cache}
+            end
+          else
+            {hidden_state, Layers.none(), block.cross_attention_cache}
+          end
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
+          |> Layers.Transformer.basic_ffn(
+            spec.intermediate_size || 4 * spec.hidden_size,
+            spec.hidden_size,
+            activation: spec.activation,
+            dropout_rate: spec.dropout_rate,
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "ffn")
+          )
+          |> Axon.add(shortcut)
+
+        %{
+          hidden_state: hidden_state,
+          attention: attention,
+          cross_attention: cross_attention,
+          self_attention_cache: self_attention_cache,
+          cross_attention_cache: cross_attention_cache
+        }
+      end
     )
   end
 

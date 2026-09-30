@@ -546,23 +546,52 @@ defmodule Bumblebee.Text.Bart do
   defp encoder(hidden_state, attention_mask, attention_head_mask, spec, opts) do
     name = opts[:name]
 
-    Layers.Transformer.blocks(hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      num_blocks: spec.encoder_num_blocks,
-      num_attention_heads: spec.encoder_num_attention_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      dropout_rate: spec.dropout_rate,
-      attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm: [
-        epsilon: 1.0e-5
+    Layers.Transformer.blocks(
+      hidden_state,
+      [
+        num_blocks: spec.encoder_num_blocks,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        name: join(name, "blocks")
       ],
-      ffn: [
-        intermediate_size: spec.encoder_intermediate_size,
-        activation: spec.activation
-      ],
-      name: join(name, "blocks")
+      fn hidden_state, block ->
+        name = block.name
+
+        shortcut = hidden_state
+
+        {hidden_state, attention, _cache} =
+          Layers.Transformer.self_attention(hidden_state, block,
+            num_heads: spec.encoder_num_attention_heads,
+            hidden_size: spec.hidden_size,
+            kernel_initializer: kernel_initializer(spec),
+            dropout_rate: spec.attention_dropout_rate,
+            name: join(name, "self_attention")
+          )
+
+        hidden_state =
+          hidden_state
+          |> Axon.dropout(rate: spec.dropout_rate)
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "self_attention_norm"))
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> Layers.Transformer.basic_ffn(spec.encoder_intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            dropout_rate: spec.dropout_rate,
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "ffn")
+          )
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "output_norm"))
+
+        %{
+          hidden_state: hidden_state,
+          attention: attention
+        }
+      end
     )
   end
 
@@ -579,28 +608,88 @@ defmodule Bumblebee.Text.Bart do
        ) do
     name = opts[:name]
 
-    Layers.Transformer.blocks(hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      cross_hidden_state: encoder_hidden_state,
-      cross_attention_mask: encoder_attention_mask,
-      cross_attention_head_mask: cross_attention_head_mask,
-      cache: cache,
-      causal: true,
-      num_blocks: spec.decoder_num_blocks,
-      num_attention_heads: spec.decoder_num_attention_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      dropout_rate: spec.dropout_rate,
-      attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm: [
-        epsilon: 1.0e-5
+    Layers.Transformer.blocks(
+      hidden_state,
+      [
+        num_blocks: spec.decoder_num_blocks,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        cross_attention_head_mask: cross_attention_head_mask,
+        cache: cache,
+        name: join(name, "blocks")
       ],
-      ffn: [
-        intermediate_size: spec.decoder_intermediate_size,
-        activation: spec.activation
-      ],
-      name: join(name, "blocks")
+      fn hidden_state, block ->
+        name = block.name
+
+        attention_opts = [
+          num_heads: spec.decoder_num_attention_heads,
+          hidden_size: spec.hidden_size,
+          kernel_initializer: kernel_initializer(spec),
+          dropout_rate: spec.attention_dropout_rate
+        ]
+
+        shortcut = hidden_state
+
+        {hidden_state, attention, self_attention_cache} =
+          Layers.Transformer.self_attention(
+            hidden_state,
+            block,
+            [causal: true, name: join(name, "self_attention")] ++ attention_opts
+          )
+
+        hidden_state =
+          hidden_state
+          |> Axon.dropout(rate: spec.dropout_rate)
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "self_attention_norm"))
+
+        {hidden_state, cross_attention, cross_attention_cache} =
+          Layers.if_present encoder_hidden_state do
+            shortcut = hidden_state
+
+            {hidden_state, cross_attention, cross_attention_cache} =
+              Layers.Transformer.cross_attention(
+                hidden_state,
+                encoder_hidden_state,
+                block,
+                [
+                  attention_mask: encoder_attention_mask,
+                  name: join(name, "cross_attention")
+                ] ++ attention_opts
+              )
+
+            hidden_state =
+              hidden_state
+              |> Axon.dropout(rate: spec.dropout_rate)
+              |> Axon.add(shortcut)
+              |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "cross_attention_norm"))
+
+            {hidden_state, cross_attention, cross_attention_cache}
+          else
+            {hidden_state, Layers.none(), block.cross_attention_cache}
+          end
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> Layers.Transformer.basic_ffn(spec.decoder_intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            dropout_rate: spec.dropout_rate,
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "ffn")
+          )
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "output_norm"))
+
+        %{
+          hidden_state: hidden_state,
+          attention: attention,
+          cross_attention: cross_attention,
+          self_attention_cache: self_attention_cache,
+          cross_attention_cache: cross_attention_cache
+        }
+      end
     )
   end
 

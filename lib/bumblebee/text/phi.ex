@@ -342,56 +342,59 @@ defmodule Bumblebee.Text.Phi do
        ) do
     name = opts[:name]
 
-    Layers.Transformer.blocks(hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      cache: cache,
-      num_blocks: spec.num_blocks,
-      num_attention_heads: spec.num_attention_heads,
-      num_key_value_heads: spec.num_key_value_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      layer_norm: [
-        epsilon: spec.layer_norm_epsilon
+    Layers.Transformer.blocks(
+      hidden_state,
+      [
+        num_blocks: spec.num_blocks,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        cache: cache,
+        name: join(name, "blocks")
       ],
-      ffn: [
-        intermediate_size: spec.intermediate_size,
-        activation: spec.activation
-      ],
-      block_type: &block_impl/3,
-      causal: true,
-      rotary_embedding: [
-        position_ids: position_ids,
-        max_positions: spec.max_positions,
-        base: spec.rotary_embedding_base,
-        percentage: spec.rotary_embedding_percentage
-      ],
-      query_use_bias: true,
-      key_use_bias: true,
-      value_use_bias: true,
-      output_use_bias: true,
-      name: join(name, "blocks")
+      fn hidden_state, block ->
+        name = block.name
+
+        shortcut = hidden_state
+
+        hidden_state =
+          Axon.layer_norm(hidden_state,
+            epsilon: spec.layer_norm_epsilon,
+            name: join(name, "self_attention_norm")
+          )
+
+        # Attention and FFN run in parallel on the same input
+        {attention_hidden_state, attention, self_attention_cache} =
+          Layers.Transformer.self_attention(hidden_state, block,
+            num_heads: spec.num_attention_heads,
+            num_key_value_heads: spec.num_key_value_heads,
+            hidden_size: spec.hidden_size,
+            causal: true,
+            rotary_embedding: [
+              position_ids: position_ids,
+              max_positions: spec.max_positions,
+              base: spec.rotary_embedding_base,
+              percentage: spec.rotary_embedding_percentage
+            ],
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "self_attention")
+          )
+
+        ffn_hidden_state =
+          Layers.Transformer.basic_ffn(hidden_state, spec.intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "ffn")
+          )
+
+        hidden_state = Axon.add([shortcut, attention_hidden_state, ffn_hidden_state])
+
+        %{
+          hidden_state: hidden_state,
+          attention: attention,
+          self_attention_cache: self_attention_cache
+        }
+      end
     )
-  end
-
-  # :parallel block with attention norm applied earlier and without ffn norm
-  defp block_impl(hidden_state, steps, _name) do
-    shortcut = hidden_state
-
-    hidden_state = steps.self_attention_norm.(hidden_state)
-
-    {attention_hidden_state, attention_info} = steps.self_attention.(hidden_state)
-
-    {_hidden_state, cross_attention_info} =
-      steps.cross_attention_maybe.(hidden_state, fn _hidden_state ->
-        raise "cross attention not supported"
-      end)
-
-    ffn_hidden_state = steps.ffn.(hidden_state)
-
-    hidden_state = Axon.add([shortcut, attention_hidden_state, ffn_hidden_state])
-
-    {hidden_state, attention_info, cross_attention_info}
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do

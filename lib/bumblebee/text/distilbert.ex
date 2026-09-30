@@ -369,22 +369,47 @@ defmodule Bumblebee.Text.Distilbert do
 
     Layers.Transformer.blocks(
       hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      num_blocks: spec.num_blocks,
-      num_attention_heads: spec.num_attention_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      dropout_rate: spec.dropout_rate,
-      attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm: [
-        epsilon: 1.0e-12
+      [
+        num_blocks: spec.num_blocks,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        name: join(name, "blocks")
       ],
-      ffn: [
-        intermediate_size: spec.intermediate_size,
-        activation: spec.activation
-      ],
-      name: join(name, "blocks")
+      fn hidden_state, block ->
+        name = block.name
+
+        shortcut = hidden_state
+
+        {hidden_state, attention, _cache} =
+          Layers.Transformer.self_attention(hidden_state, block,
+            num_heads: spec.num_attention_heads,
+            hidden_size: spec.hidden_size,
+            kernel_initializer: kernel_initializer(spec),
+            dropout_rate: spec.attention_dropout_rate,
+            name: join(name, "self_attention")
+          )
+
+        hidden_state =
+          hidden_state
+          |> Axon.dropout(rate: spec.dropout_rate)
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(epsilon: 1.0e-12, name: join(name, "self_attention_norm"))
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> Layers.Transformer.basic_ffn(spec.intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            dropout_rate: spec.dropout_rate,
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "ffn")
+          )
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(epsilon: 1.0e-12, name: join(name, "output_norm"))
+
+        %{hidden_state: hidden_state, attention: attention}
+      end
     )
   end
 
