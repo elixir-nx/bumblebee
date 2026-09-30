@@ -213,6 +213,48 @@ defmodule Bumblebee.HuggingFace.SentenceTransformersTest do
     end
 
     @tag :tmp_dir
+    test "raises ArgumentError when base model output lacks hidden_state", %{
+      spec: spec,
+      tmp_dir: dir
+    } do
+      lm_model =
+        Axon.input("input_ids", shape: {nil, nil})
+        |> Axon.nx(fn input_ids ->
+          %{
+            logits:
+              Nx.broadcast(0.0, {Nx.axis_size(input_ids, 0), Nx.axis_size(input_ids, 1), 100})
+          }
+        end)
+
+      model_info = %{model: lm_model, params: Axon.ModelState.empty(), spec: spec}
+
+      modules = [
+        %{"idx" => 0, "path" => "", "type" => "sentence_transformers.models.Transformer"},
+        %{"idx" => 1, "path" => "1_Pooling", "type" => "sentence_transformers.models.Pooling"}
+      ]
+
+      File.write!(Path.join(dir, "modules.json"), Jason.encode!(modules))
+
+      pooling_dir = Path.join(dir, "1_Pooling")
+      File.mkdir_p!(pooling_dir)
+
+      File.write!(
+        Path.join(pooling_dir, "config.json"),
+        Jason.encode!(%{"pooling_mode_mean_tokens" => true})
+      )
+
+      assert {:ok, new_model_info} = Bumblebee.load_embedding_head({:local, dir}, model_info)
+
+      {_init_fn, predict_fn} = Axon.build(new_model_info.model)
+
+      assert_raise Axon.CompileError,
+                   ~r/expected model output to contain :hidden_state, but got keys: \[:logits\]/,
+                   fn ->
+                     predict_fn.(new_model_info.params, %{"input_ids" => Nx.tensor([[1, 2, 3]])})
+                   end
+    end
+
+    @tag :tmp_dir
     test "fuses consecutive linear dense layers when fuse_dense: true", %{
       model_info: model_info,
       tmp_dir: dir

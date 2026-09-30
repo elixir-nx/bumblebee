@@ -38,7 +38,18 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
 
   defp build_pipeline(modules, repo_files, download_fun, model_info, opts) do
     base_model = model_info.model
-    hidden_state = Axon.nx(base_model, & &1.hidden_state)
+
+    hidden_state =
+      Axon.nx(base_model, fn
+        %{hidden_state: hidden_state} ->
+          hidden_state
+
+        output ->
+          raise ArgumentError,
+                "expected model output to contain :hidden_state, but got keys: #{inspect(Map.keys(output))}." <>
+                  " If the model defaults to a language modeling architecture, please specify" <>
+                  " `architecture: :base` when calling `Bumblebee.load_model/2`."
+      end)
 
     attention_mask =
       Layers.default Axon.input("attention_mask", optional: true) do
