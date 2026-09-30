@@ -314,20 +314,59 @@ defmodule Bumblebee.Diffusion.Layers.UNet do
       end
     end)
     |> Layers.Transformer.blocks(
-      cross_hidden_state: cross_hidden_state,
-      num_blocks: depth,
-      num_attention_heads: num_heads,
-      hidden_size: hidden_size,
-      query_use_bias: false,
-      key_use_bias: false,
-      value_use_bias: false,
-      layer_norm: [
-        epsilon: 1.0e-5
-      ],
-      dropout_rate: dropout,
-      ffn: &ffn_geglu(&1, 4 * hidden_size, hidden_size, dropout: dropout, name: &2),
-      block_type: :norm_first,
-      name: join(name, "blocks")
+      [num_blocks: depth, name: join(name, "blocks")],
+      fn hidden_state, block ->
+        name = block.name
+
+        attention_opts = [
+          num_heads: num_heads,
+          hidden_size: hidden_size,
+          query_use_bias: false,
+          key_use_bias: false,
+          value_use_bias: false
+        ]
+
+        shortcut = hidden_state
+
+        {hidden_state, attention, _cache} =
+          hidden_state
+          |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "self_attention_norm"))
+          |> Layers.Transformer.self_attention(
+            block,
+            [name: join(name, "self_attention")] ++ attention_opts
+          )
+
+        hidden_state =
+          hidden_state
+          |> Axon.dropout(rate: dropout)
+          |> Axon.add(shortcut)
+
+        shortcut = hidden_state
+
+        {hidden_state, cross_attention, _cache} =
+          hidden_state
+          |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "cross_attention_norm"))
+          |> Layers.Transformer.cross_attention(
+            cross_hidden_state,
+            block,
+            [name: join(name, "cross_attention")] ++ attention_opts
+          )
+
+        hidden_state =
+          hidden_state
+          |> Axon.dropout(rate: dropout)
+          |> Axon.add(shortcut)
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "output_norm"))
+          |> ffn_geglu(4 * hidden_size, hidden_size, dropout: dropout, name: join(name, "ffn"))
+          |> Axon.add(shortcut)
+
+        %{hidden_state: hidden_state, attention: attention, cross_attention: cross_attention}
+      end
     )
     |> then(fn %{hidden_state: hidden_state} ->
       if use_linear_projection do

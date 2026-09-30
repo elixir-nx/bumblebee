@@ -373,148 +373,95 @@ defmodule Bumblebee.Text.Gemma3Text do
        ) do
     name = opts[:name]
 
-    # QK-norm functions for Gemma 3 (uses shift: 1.0 for (1+weight) formula)
-    query_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
-    key_norm = &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2)
-
-    # Per-layer attention window size based on layer_types
-    # :attention_window_size uses local (sliding window) attention
-    # :full_attention uses global attention (nil window size)
     layer_types = spec.layer_types || generate_layer_types(spec.num_blocks)
 
-    attention_window_size = fn idx ->
-      case Enum.at(layer_types, idx, :sliding_attention) do
-        :full_attention -> nil
-        :sliding_attention -> {spec.attention_window_size, spec.attention_window_size}
-      end
+    norm = fn hidden_state, name ->
+      Layers.rms_norm(hidden_state,
+        shift: 1.0,
+        epsilon: spec.layer_norm_epsilon,
+        upcast: :all,
+        name: name
+      )
     end
 
-    # Per-layer rotary embedding base: local layers use rotary_embedding_base_local,
-    # global layers use rotary_embedding_base
-    rotary_embedding = fn idx ->
-      base =
-        case Enum.at(layer_types, idx, :sliding_attention) do
-          :full_attention -> spec.rotary_embedding_base
-          :sliding_attention -> spec.rotary_embedding_base_local
-        end
-
+    Layers.Transformer.blocks(
+      hidden_state,
       [
-        position_ids: position_ids,
-        max_positions: spec.max_positions,
-        base: base,
-        scaling_strategy: spec.rotary_embedding_scaling_strategy
-      ]
-    end
+        num_blocks: spec.num_blocks,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        cache: cache,
+        name: join(name, "blocks")
+      ],
+      fn hidden_state, block ->
+        name = block.name
 
-    attention_scale = :math.pow(spec.attention_scale_base, -0.5)
+        # Local layers use sliding window attention and a separate rotary base
+        {attention_window_size, rotary_embedding_base} =
+          case Enum.at(layer_types, block.index, :sliding_attention) do
+            :full_attention ->
+              {nil, spec.rotary_embedding_base}
 
-    Layers.Transformer.blocks(hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      cache: cache,
-      num_blocks: spec.num_blocks,
-      num_attention_heads: spec.num_attention_heads,
-      num_key_value_heads: spec.num_key_value_heads,
-      hidden_size: spec.hidden_size,
-      attention_head_size: spec.attention_head_size,
-      attention_scale: attention_scale,
-      kernel_initializer: kernel_initializer(spec),
-      layer_norm:
-        &Layers.rms_norm(&1,
-          shift: 1.0,
-          name: &2,
-          epsilon: spec.layer_norm_epsilon,
-          upcast: :all
-        ),
-      ffn:
-        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
-          name: &2,
-          activation: spec.activation
-        ),
-      block_type: &gemma3_block_impl(&1, &2, &3, spec),
-      causal: true,
-      rotary_embedding: rotary_embedding,
-      attention_window_size: attention_window_size,
-      query_norm: query_norm,
-      key_norm: key_norm,
-      query_use_bias: spec.use_attention_bias,
-      key_use_bias: spec.use_attention_bias,
-      value_use_bias: spec.use_attention_bias,
-      output_use_bias: spec.use_attention_bias,
-      name: join(name, "blocks")
+            :sliding_attention ->
+              {{spec.attention_window_size, spec.attention_window_size},
+               spec.rotary_embedding_base_local}
+          end
+
+        shortcut = hidden_state
+
+        {hidden_state, attention, self_attention_cache} =
+          hidden_state
+          |> norm.(join(name, "self_attention_norm"))
+          |> Layers.Transformer.self_attention(block,
+            num_heads: spec.num_attention_heads,
+            num_key_value_heads: spec.num_key_value_heads,
+            hidden_size: spec.hidden_size,
+            attention_head_size: spec.attention_head_size,
+            attention_scale: :math.pow(spec.attention_scale_base, -0.5),
+            attention_window_size: attention_window_size,
+            causal: true,
+            query_norm:
+              &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2),
+            key_norm:
+              &Layers.rms_norm(&1, shift: 1.0, epsilon: spec.layer_norm_epsilon, name: &2),
+            rotary_embedding: [
+              position_ids: position_ids,
+              max_positions: spec.max_positions,
+              base: rotary_embedding_base,
+              scaling_strategy: spec.rotary_embedding_scaling_strategy
+            ],
+            query_use_bias: spec.use_attention_bias,
+            key_use_bias: spec.use_attention_bias,
+            value_use_bias: spec.use_attention_bias,
+            output_use_bias: spec.use_attention_bias,
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "self_attention")
+          )
+
+        hidden_state =
+          hidden_state
+          |> norm.(join(name, "post_attention_norm"))
+          |> Axon.add(shortcut)
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> norm.(join(name, "pre_ffn_norm"))
+          |> Layers.Transformer.gated_ffn(spec.intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            name: join(name, "ffn")
+          )
+          |> norm.(join(name, "post_ffn_norm"))
+          |> Axon.add(shortcut)
+
+        %{
+          hidden_state: hidden_state,
+          attention: attention,
+          self_attention_cache: self_attention_cache
+        }
+      end
     )
-  end
-
-  # Custom block implementation for Gemma 3's unique normalization structure:
-  # - Post-attention norm BEFORE residual add
-  # - Pre/post FFN norms
-  defp gemma3_block_impl(hidden_state, steps, name, spec) do
-    # Pre-attention norm + attention (using provided steps)
-    shortcut = hidden_state
-
-    {hidden_state, attention_info} =
-      hidden_state
-      |> steps.self_attention_norm.()
-      |> steps.self_attention.()
-
-    # Post-attention norm BEFORE residual (Gemma 3 specific)
-    hidden_state =
-      Layers.rms_norm(hidden_state,
-        shift: 1.0,
-        name: join(name, "post_attention_norm"),
-        epsilon: spec.layer_norm_epsilon,
-        upcast: :all
-      )
-
-    hidden_state = Axon.add(shortcut, hidden_state)
-
-    # FFN with pre/post norms (Gemma 3 specific)
-    shortcut = hidden_state
-
-    hidden_state =
-      Layers.rms_norm(hidden_state,
-        shift: 1.0,
-        name: join(name, "pre_ffn_norm"),
-        epsilon: spec.layer_norm_epsilon,
-        upcast: :all
-      )
-
-    hidden_state = steps.ffn.(hidden_state)
-
-    hidden_state =
-      Layers.rms_norm(hidden_state,
-        shift: 1.0,
-        name: join(name, "post_ffn_norm"),
-        epsilon: spec.layer_norm_epsilon,
-        upcast: :all
-      )
-
-    hidden_state = Axon.add(shortcut, hidden_state)
-
-    # Handle cross-attention (required by block interface but not used by Gemma 3)
-    {_hidden_state, cross_attention_info} =
-      steps.cross_attention_maybe.(hidden_state, fn _ ->
-        raise "cross attention not supported"
-      end)
-
-    {hidden_state, attention_info, cross_attention_info}
-  end
-
-  defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
-    name = opts[:name]
-    activation = opts[:activation]
-
-    intermediate =
-      Axon.dense(hidden_state, intermediate_size,
-        name: join(name, "intermediate"),
-        use_bias: false
-      )
-
-    gate = Axon.dense(hidden_state, intermediate_size, name: join(name, "gate"), use_bias: false)
-
-    hidden_state = Axon.multiply(intermediate, Layers.activation(gate, activation))
-
-    Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do

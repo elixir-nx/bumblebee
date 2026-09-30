@@ -350,24 +350,53 @@ defmodule Bumblebee.Text.M2m100 do
     name = opts[:name]
 
     encoder_outputs =
-      Layers.Transformer.blocks(hidden_state,
-        attention_mask: attention_mask,
-        attention_head_mask: attention_head_mask,
-        num_blocks: spec.encoder_num_blocks,
-        num_attention_heads: spec.encoder_num_attention_heads,
-        hidden_size: spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        dropout_rate: spec.dropout_rate,
-        attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm: [
-          epsilon: 1.0e-5
+      Layers.Transformer.blocks(
+        hidden_state,
+        [
+          num_blocks: spec.encoder_num_blocks,
+          attention_mask: attention_mask,
+          attention_head_mask: attention_head_mask,
+          name: join(name, "blocks")
         ],
-        block_type: :norm_first,
-        ffn: [
-          intermediate_size: spec.encoder_intermediate_size,
-          activation: spec.activation
-        ],
-        name: join(name, "blocks")
+        fn hidden_state, block ->
+          name = block.name
+
+          shortcut = hidden_state
+
+          {hidden_state, attention, _cache} =
+            hidden_state
+            |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "self_attention_norm"))
+            |> Layers.Transformer.self_attention(block,
+              num_heads: spec.encoder_num_attention_heads,
+              hidden_size: spec.hidden_size,
+              kernel_initializer: kernel_initializer(spec),
+              dropout_rate: spec.attention_dropout_rate,
+              name: join(name, "self_attention")
+            )
+
+          hidden_state =
+            hidden_state
+            |> Axon.dropout(rate: spec.dropout_rate)
+            |> Axon.add(shortcut)
+
+          shortcut = hidden_state
+
+          hidden_state =
+            hidden_state
+            |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "output_norm"))
+            |> Layers.Transformer.basic_ffn(spec.encoder_intermediate_size, spec.hidden_size,
+              activation: spec.activation,
+              dropout_rate: spec.dropout_rate,
+              kernel_initializer: kernel_initializer(spec),
+              name: join(name, "ffn")
+            )
+            |> Axon.add(shortcut)
+
+          %{
+            hidden_state: hidden_state,
+            attention: attention
+          }
+        end
       )
 
     hidden_state = Axon.layer_norm(encoder_outputs.hidden_state, name: join(name, "norm"))
@@ -465,29 +494,88 @@ defmodule Bumblebee.Text.M2m100 do
     name = opts[:name]
 
     decoder_outputs =
-      Layers.Transformer.blocks(hidden_state,
-        attention_mask: attention_mask,
-        attention_head_mask: attention_head_mask,
-        cross_hidden_state: encoder_hidden_state,
-        cross_attention_mask: encoder_attention_mask,
-        cross_attention_head_mask: cross_attention_head_mask,
-        cache: cache,
-        causal: true,
-        num_blocks: spec.decoder_num_blocks,
-        num_attention_heads: spec.decoder_num_attention_heads,
-        hidden_size: spec.hidden_size,
-        kernel_initializer: kernel_initializer(spec),
-        dropout_rate: spec.dropout_rate,
-        attention_dropout_rate: spec.attention_dropout_rate,
-        layer_norm: [
-          epsilon: 1.0e-5
+      Layers.Transformer.blocks(
+        hidden_state,
+        [
+          num_blocks: spec.decoder_num_blocks,
+          attention_mask: attention_mask,
+          attention_head_mask: attention_head_mask,
+          cross_attention_head_mask: cross_attention_head_mask,
+          cache: cache,
+          name: join(name, "blocks")
         ],
-        block_type: :norm_first,
-        ffn: [
-          intermediate_size: spec.decoder_intermediate_size,
-          activation: spec.activation
-        ],
-        name: join(name, "blocks")
+        fn hidden_state, block ->
+          name = block.name
+
+          attention_opts = [
+            num_heads: spec.decoder_num_attention_heads,
+            hidden_size: spec.hidden_size,
+            kernel_initializer: kernel_initializer(spec),
+            dropout_rate: spec.attention_dropout_rate
+          ]
+
+          shortcut = hidden_state
+
+          {hidden_state, attention, self_attention_cache} =
+            hidden_state
+            |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "self_attention_norm"))
+            |> Layers.Transformer.self_attention(
+              block,
+              [causal: true, name: join(name, "self_attention")] ++ attention_opts
+            )
+
+          hidden_state =
+            hidden_state
+            |> Axon.dropout(rate: spec.dropout_rate)
+            |> Axon.add(shortcut)
+
+          {hidden_state, cross_attention, cross_attention_cache} =
+            Layers.if_present encoder_hidden_state do
+              shortcut = hidden_state
+
+              {hidden_state, cross_attention, cross_attention_cache} =
+                hidden_state
+                |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "cross_attention_norm"))
+                |> Layers.Transformer.cross_attention(
+                  encoder_hidden_state,
+                  block,
+                  [
+                    attention_mask: encoder_attention_mask,
+                    name: join(name, "cross_attention")
+                  ] ++ attention_opts
+                )
+
+              hidden_state =
+                hidden_state
+                |> Axon.dropout(rate: spec.dropout_rate)
+                |> Axon.add(shortcut)
+
+              {hidden_state, cross_attention, cross_attention_cache}
+            else
+              {hidden_state, Layers.none(), block.cross_attention_cache}
+            end
+
+          shortcut = hidden_state
+
+          hidden_state =
+            hidden_state
+            |> Axon.layer_norm(epsilon: 1.0e-5, name: join(name, "output_norm"))
+            |> Layers.Transformer.basic_ffn(spec.decoder_intermediate_size, spec.hidden_size,
+              activation: spec.activation,
+              dropout_rate: spec.dropout_rate,
+              kernel_initializer: kernel_initializer(spec),
+              name: join(name, "ffn")
+            )
+            |> Axon.add(shortcut)
+
+          %{
+            hidden_state: hidden_state,
+            attention: attention,
+            cross_attention: cross_attention,
+            self_attention_cache: self_attention_cache,
+            cross_attention_cache: cross_attention_cache
+          }
+        end
       )
 
     hidden_state = Axon.layer_norm(decoder_outputs.hidden_state, name: join(name, "norm"))

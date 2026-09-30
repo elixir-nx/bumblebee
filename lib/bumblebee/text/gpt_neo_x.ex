@@ -334,32 +334,74 @@ defmodule Bumblebee.Text.GptNeoX do
        ) do
     name = opts[:name]
 
-    Layers.Transformer.blocks(hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      cache: cache,
-      num_blocks: spec.num_blocks,
-      num_attention_heads: spec.num_attention_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      layer_norm: [
-        epsilon: spec.layer_norm_epsilon
+    Layers.Transformer.blocks(
+      hidden_state,
+      [
+        num_blocks: spec.num_blocks,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        cache: cache,
+        name: join(name, "blocks")
       ],
-      ffn: [
-        intermediate_size: spec.intermediate_size
-      ],
-      block_type: if(spec.use_parallel_transformer_block, do: :parallel, else: :norm_first),
-      causal: true,
-      rotary_embedding: [
-        position_ids: position_ids,
-        percentage: spec.rotary_embedding_percentage,
-        base: spec.rotary_embedding_base
-      ],
-      query_use_bias: true,
-      key_use_bias: true,
-      value_use_bias: true,
-      output_use_bias: true,
-      name: join(name, "blocks")
+      fn hidden_state, block ->
+        name = block.name
+
+        {attention_output, attention, self_attention_cache} =
+          hidden_state
+          |> Axon.layer_norm(
+            epsilon: spec.layer_norm_epsilon,
+            name: join(name, "self_attention_norm")
+          )
+          |> Layers.Transformer.self_attention(block,
+            num_heads: spec.num_attention_heads,
+            hidden_size: spec.hidden_size,
+            causal: true,
+            rotary_embedding: [
+              position_ids: position_ids,
+              percentage: spec.rotary_embedding_percentage,
+              base: spec.rotary_embedding_base
+            ],
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "self_attention")
+          )
+
+        hidden_state =
+          if spec.use_parallel_transformer_block do
+            ffn_output =
+              hidden_state
+              |> Axon.layer_norm(
+                epsilon: spec.layer_norm_epsilon,
+                name: join(name, "output_norm")
+              )
+              |> Layers.Transformer.basic_ffn(spec.intermediate_size, spec.hidden_size,
+                kernel_initializer: kernel_initializer(spec),
+                name: join(name, "ffn")
+              )
+
+            Axon.add([hidden_state, attention_output, ffn_output])
+          else
+            hidden_state = Axon.add(attention_output, hidden_state)
+
+            ffn_output =
+              hidden_state
+              |> Axon.layer_norm(
+                epsilon: spec.layer_norm_epsilon,
+                name: join(name, "output_norm")
+              )
+              |> Layers.Transformer.basic_ffn(spec.intermediate_size, spec.hidden_size,
+                kernel_initializer: kernel_initializer(spec),
+                name: join(name, "ffn")
+              )
+
+            Axon.add(ffn_output, hidden_state)
+          end
+
+        %{
+          hidden_state: hidden_state,
+          attention: attention,
+          self_attention_cache: self_attention_cache
+        }
+      end
     )
   end
 

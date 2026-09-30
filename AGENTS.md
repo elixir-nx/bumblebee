@@ -7,7 +7,7 @@ The main steps of adding a new model are the following:
 2. Look at some existing model implementations in Bumblebee. In case of LLMs, copying an existing LLM implementation is typically a good starting point.
 
 3. Implement the model code.
-   - Whenever possible, reuse existing primitives, most notably `Layers.Transformer.blocks/2`, which is shared for most LLM implementations. Sometimes models introduce novelties to the transformer design, in which case it may be necessary to add a new option to `Layers.Transformer.blocks/2`.
+   - Use `Layers.Transformer.blocks/3` for the block stack. It handles the cache and outputs, and the model writes the block body as plain code, in the same order as the Python model. Use `self_attention/3`, `cross_attention/4`, `basic_ffn/4` and `gated_ffn/4` for standard parts. If the model has a new attention type, write it in the model with the attention steps (`project_heads/4`, `rotary_embedding/6`, `Layers.attention/8`, `output_projection/3`). Do not add model-specific options to the shared code.
    - Include relevant options from Python model configuration as Bumblebee model options (with matching defaults).
    - Make sure the `params_mapping/1` maps to correct Python layer names. You can use `Bumblebee.load_model(..., log_params_diff: true)` to get all logs related to params loading.
 

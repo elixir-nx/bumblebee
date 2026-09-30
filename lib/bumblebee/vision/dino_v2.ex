@@ -343,92 +343,89 @@ defmodule Bumblebee.Vision.DinoV2 do
   defp encoder(hidden_state, spec, opts) do
     name = opts[:name]
 
-    ffn =
-      if spec.ffn_swiglu_activation do
-        intermediate_size =
-          div(floor(floor(spec.hidden_size * spec.intermediate_size_ratio) * 2 / 3 + 7), 8) * 8
+    Layers.Transformer.blocks(
+      hidden_state,
+      [num_blocks: spec.num_blocks, name: join(name, "blocks")],
+      fn hidden_state, block ->
+        name = block.name
 
-        &ffn_swiglu(&1, intermediate_size, spec.hidden_size, name: &2)
-      else
-        intermediate_size = floor(spec.hidden_size * spec.intermediate_size_ratio)
+        shortcut = hidden_state
 
-        [
-          intermediate_size: intermediate_size,
-          activation: spec.activation
-        ]
+        {hidden_state, attention, _cache} =
+          hidden_state
+          |> Axon.layer_norm(
+            epsilon: spec.layer_norm_epsilon,
+            name: join(name, "self_attention_norm")
+          )
+          |> Layers.Transformer.self_attention(block,
+            num_heads: spec.num_attention_heads,
+            hidden_size: spec.hidden_size,
+            kernel_initializer: kernel_initializer(spec),
+            dropout_rate: spec.attention_dropout_rate,
+            query_use_bias: spec.use_attention_bias,
+            key_use_bias: spec.use_attention_bias,
+            value_use_bias: spec.use_attention_bias,
+            name: join(name, "self_attention")
+          )
+
+        hidden_state =
+          hidden_state
+          |> Axon.dropout(rate: spec.dropout_rate)
+          |> Layers.scale(
+            scale_initializer: Axon.Initializers.full(spec.scale_initial_value),
+            name: join(name, "self_attention_scale")
+          )
+          |> Axon.add(shortcut)
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
+          |> ffn(spec, name: join(name, "ffn"))
+          |> Layers.scale(
+            scale_initializer: Axon.Initializers.full(spec.scale_initial_value),
+            name: join(name, "output_scale")
+          )
+          |> Axon.add(shortcut)
+
+        %{hidden_state: hidden_state, attention: attention}
       end
-
-    Layers.Transformer.blocks(hidden_state,
-      num_blocks: spec.num_blocks,
-      num_attention_heads: spec.num_attention_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      dropout_rate: spec.dropout_rate,
-      attention_dropout_rate: spec.attention_dropout_rate,
-      query_use_bias: spec.use_attention_bias,
-      key_use_bias: spec.use_attention_bias,
-      value_use_bias: spec.use_attention_bias,
-      layer_norm: [
-        epsilon: spec.layer_norm_epsilon
-      ],
-      ffn: ffn,
-      block_type: &block_impl(&1, &2, &3, spec),
-      name: join(name, "blocks")
     )
+  end
+
+  defp ffn(hidden_state, spec, opts) do
+    name = opts[:name]
+
+    if spec.ffn_swiglu_activation do
+      intermediate_size =
+        div(floor(floor(spec.hidden_size * spec.intermediate_size_ratio) * 2 / 3 + 7), 8) * 8
+
+      ffn_swiglu(hidden_state, intermediate_size, spec.hidden_size, name: name)
+    else
+      intermediate_size = floor(spec.hidden_size * spec.intermediate_size_ratio)
+
+      Layers.Transformer.basic_ffn(hidden_state, intermediate_size, spec.hidden_size,
+        activation: spec.activation,
+        dropout_rate: spec.dropout_rate,
+        kernel_initializer: kernel_initializer(spec),
+        name: name
+      )
+    end
   end
 
   # A feed-forward network with SwiGLU nonlinearity as in https://arxiv.org/abs/2002.05202
   defp ffn_swiglu(x, intermediate_size, output_size, opts) do
     name = opts[:name]
-    dropout = opts[:dropout] || 0.0
 
     {gate, x} =
       x
       |> Axon.dense(intermediate_size * 2, name: join(name, "intermediate"))
       |> Axon.split(2, axis: -1)
 
-    x = Axon.multiply(x, Axon.silu(gate))
-
     x
-    |> Axon.dropout(rate: dropout, name: join(name, "dropout"))
+    |> Axon.multiply(Axon.silu(gate))
     |> Axon.dense(output_size, name: join(name, "output"))
-  end
-
-  # :norm_first block with additional scaling layers
-  defp block_impl(hidden_state, steps, name, spec) do
-    shortcut = hidden_state
-
-    {hidden_state, attention_info} =
-      hidden_state
-      |> steps.self_attention_norm.()
-      |> steps.self_attention.()
-
-    hidden_state =
-      hidden_state
-      |> Bumblebee.Layers.scale(
-        scale_initializer: Axon.Initializers.full(spec.scale_initial_value),
-        name: join(name, "self_attention_scale")
-      )
-      |> Axon.add(shortcut)
-
-    {_hidden_state, cross_attention_info} =
-      steps.cross_attention_maybe.(hidden_state, fn _hidden_state ->
-        raise "cross attention not supported"
-      end)
-
-    shortcut = hidden_state
-
-    hidden_state =
-      hidden_state
-      |> steps.output_norm.()
-      |> steps.ffn.()
-      |> Bumblebee.Layers.scale(
-        scale_initializer: Axon.Initializers.full(spec.scale_initial_value),
-        name: join(name, "output_scale")
-      )
-      |> Axon.add(shortcut)
-
-    {hidden_state, attention_info, cross_attention_info}
   end
 
   defp kernel_initializer(spec) do

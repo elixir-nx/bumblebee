@@ -330,53 +330,66 @@ defmodule Bumblebee.Text.Llama do
        ) do
     name = opts[:name]
 
-    Layers.Transformer.blocks(hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      attention_head_size: spec.attention_head_size,
-      cache: cache,
-      num_blocks: spec.num_blocks,
-      num_attention_heads: spec.num_attention_heads,
-      num_key_value_heads: spec.num_key_value_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      layer_norm: &Layers.rms_norm(&1, name: &2, epsilon: spec.layer_norm_epsilon),
-      ffn:
-        &gated_ffn(&1, spec.intermediate_size, spec.hidden_size,
-          name: &2,
-          activation: spec.activation
-        ),
-      block_type: :norm_first,
-      causal: true,
-      rotary_embedding: [
-        position_ids: position_ids,
-        max_positions: spec.max_positions,
-        base: spec.rotary_embedding_base,
-        scaling_strategy: spec.rotary_embedding_scaling_strategy
+    Layers.Transformer.blocks(
+      hidden_state,
+      [
+        num_blocks: spec.num_blocks,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        cache: cache,
+        name: join(name, "blocks")
       ],
-      query_use_bias: false,
-      key_use_bias: false,
-      value_use_bias: false,
-      output_use_bias: false,
-      name: join(name, "blocks")
+      fn hidden_state, block ->
+        name = block.name
+
+        shortcut = hidden_state
+
+        {hidden_state, attention, self_attention_cache} =
+          hidden_state
+          |> Layers.rms_norm(
+            epsilon: spec.layer_norm_epsilon,
+            name: join(name, "self_attention_norm")
+          )
+          |> Layers.Transformer.self_attention(block,
+            num_heads: spec.num_attention_heads,
+            num_key_value_heads: spec.num_key_value_heads,
+            hidden_size: spec.hidden_size,
+            attention_head_size: spec.attention_head_size,
+            causal: true,
+            rotary_embedding: [
+              position_ids: position_ids,
+              max_positions: spec.max_positions,
+              base: spec.rotary_embedding_base,
+              scaling_strategy: spec.rotary_embedding_scaling_strategy
+            ],
+            query_use_bias: false,
+            key_use_bias: false,
+            value_use_bias: false,
+            output_use_bias: false,
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "self_attention")
+          )
+
+        hidden_state = Axon.add(hidden_state, shortcut)
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> Layers.rms_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
+          |> Layers.Transformer.gated_ffn(spec.intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            name: join(name, "ffn")
+          )
+          |> Axon.add(shortcut)
+
+        %{
+          hidden_state: hidden_state,
+          attention: attention,
+          self_attention_cache: self_attention_cache
+        }
+      end
     )
-  end
-
-  defp gated_ffn(hidden_state, intermediate_size, output_size, opts) do
-    name = opts[:name]
-    activation = opts[:activation]
-
-    intermediate =
-      Axon.dense(hidden_state, intermediate_size,
-        name: join(name, "intermediate"),
-        use_bias: false
-      )
-
-    gate = Axon.dense(hidden_state, intermediate_size, name: join(name, "gate"), use_bias: false)
-
-    hidden_state = Axon.multiply(intermediate, Axon.activation(gate, activation))
-
-    Axon.dense(hidden_state, output_size, name: join(name, "output"), use_bias: false)
   end
 
   defp language_modeling_head(hidden_state, spec, opts) do

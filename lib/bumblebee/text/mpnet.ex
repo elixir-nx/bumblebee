@@ -364,30 +364,63 @@ defmodule Bumblebee.Text.MpNet do
   defp encoder(hidden_state, attention_mask, attention_head_mask, spec, opts) do
     name = opts[:name]
 
-    Layers.Transformer.blocks(
-      hidden_state,
-      attention_mask: attention_mask,
-      attention_head_mask: attention_head_mask,
-      num_blocks: spec.num_blocks,
-      num_attention_heads: spec.num_attention_heads,
-      hidden_size: spec.hidden_size,
-      kernel_initializer: kernel_initializer(spec),
-      dropout_rate: spec.dropout_rate,
-      attention_dropout_rate: spec.attention_dropout_rate,
-      layer_norm: [
-        epsilon: spec.layer_norm_epsilon
-      ],
-      ffn: [
-        intermediate_size: spec.intermediate_size,
-        activation: spec.activation
-      ],
-      attention_relative_bias: [
+    # The bias is computed once and shared by all blocks
+    attention_relative_bias =
+      Layers.relative_attention_bias(hidden_state, hidden_state, Layers.none(), Layers.none(),
         bidirectional: true,
         num_buckets: spec.relative_attention_num_buckets,
-        max_distance: 128
+        max_distance: 128,
+        num_heads: spec.num_attention_heads,
+        name: join(name, "blocks.0.self_attention.relative_attention_bias")
+      )
+
+    Layers.Transformer.blocks(
+      hidden_state,
+      [
+        num_blocks: spec.num_blocks,
+        attention_mask: attention_mask,
+        attention_head_mask: attention_head_mask,
+        name: join(name, "blocks")
       ],
-      share_attention_relative_bias: true,
-      name: join(name, "blocks")
+      fn hidden_state, block ->
+        name = block.name
+
+        shortcut = hidden_state
+
+        {hidden_state, attention, _cache} =
+          Layers.Transformer.self_attention(hidden_state, block,
+            num_heads: spec.num_attention_heads,
+            hidden_size: spec.hidden_size,
+            kernel_initializer: kernel_initializer(spec),
+            dropout_rate: spec.attention_dropout_rate,
+            attention_relative_bias: attention_relative_bias,
+            name: join(name, "self_attention")
+          )
+
+        hidden_state =
+          hidden_state
+          |> Axon.dropout(rate: spec.dropout_rate)
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(
+            epsilon: spec.layer_norm_epsilon,
+            name: join(name, "self_attention_norm")
+          )
+
+        shortcut = hidden_state
+
+        hidden_state =
+          hidden_state
+          |> Layers.Transformer.basic_ffn(spec.intermediate_size, spec.hidden_size,
+            activation: spec.activation,
+            dropout_rate: spec.dropout_rate,
+            kernel_initializer: kernel_initializer(spec),
+            name: join(name, "ffn")
+          )
+          |> Axon.add(shortcut)
+          |> Axon.layer_norm(epsilon: spec.layer_norm_epsilon, name: join(name, "output_norm"))
+
+        %{hidden_state: hidden_state, attention: attention}
+      end
     )
   end
 
