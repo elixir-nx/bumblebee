@@ -127,6 +127,7 @@ defmodule Bumblebee do
     "Dinov2Model" => {Bumblebee.Vision.DinoV2, :base},
     "Dinov2Backbone" => {Bumblebee.Vision.DinoV2, :backbone},
     "Dinov2ForImageClassification" => {Bumblebee.Vision.DinoV2, :for_image_classification},
+    "DebertaV2Model" => {Bumblebee.Text.DebertaV2, :base},
     "DistilBertModel" => {Bumblebee.Text.Distilbert, :base},
     "DistilBertForMaskedLM" => {Bumblebee.Text.Distilbert, :for_masked_language_modeling},
     "DistilBertForSequenceClassification" =>
@@ -268,6 +269,7 @@ defmodule Bumblebee do
     "bert" => :bert,
     "blenderbot" => :blenderbot,
     "blip" => :bert,
+    "deberta-v2" => :deberta_v2,
     "distilbert" => :distilbert,
     "camembert" => :camembert,
     "clip" => :clip,

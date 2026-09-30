@@ -144,6 +144,9 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
         eos: "<|endoftext|>"
       }
     },
+    deberta_v2: %{
+      special_tokens: %{unk: "[UNK]", sep: "[SEP]", pad: "[PAD]", cls: "[CLS]", mask: "[MASK]"}
+    },
     distilbert: %{
       special_tokens: %{unk: "[UNK]", sep: "[SEP]", pad: "[PAD]", cls: "[CLS]", mask: "[MASK]"}
     },
