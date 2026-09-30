@@ -29,6 +29,35 @@ defmodule Bumblebee.Text.Gemma3TextTest do
     )
   end
 
+  test ":base with bidirectional attention" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-Gemma3TextModel"},
+               spec_overrides: [use_bidirectional_attention: true]
+             )
+
+    assert %Bumblebee.Text.Gemma3Text{
+             architecture: :base,
+             use_bidirectional_attention: true
+           } = spec
+
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
+
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
+
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[0.3755, -0.6418, 1.9320], [-0.5731, 0.3630, 2.5736], [-0.0530, 0.5178, 1.3310]]
+      ]),
+      atol: 1.0e-4
+    )
+  end
+
   test ":for_sequence_classification" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(
