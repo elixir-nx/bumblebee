@@ -80,7 +80,7 @@ defmodule Bumblebee.Text.Gemma3Text do
       attention_window_size: [
         default: 4096,
         doc:
-          "window size for both sides of the sliding attention window (used for `:sliding_attention` layers)"
+          "the number of tokens each token can attend to in the sliding attention window, including itself. Only used for `:sliding_attention` layers"
       ],
       layer_types: [
         default: nil,
@@ -391,7 +391,7 @@ defmodule Bumblebee.Text.Gemma3Text do
               {nil, spec.rotary_embedding_base, spec.rotary_embedding_scaling_strategy}
 
             :sliding_attention ->
-              {{spec.attention_window_size, spec.attention_window_size},
+              {{spec.attention_window_size - 1, spec.attention_window_size - 1},
                spec.rotary_embedding_base_local, nil}
           end
 

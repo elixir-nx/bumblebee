@@ -45,7 +45,8 @@ defmodule Bumblebee.Text.Mistral do
       ],
       attention_window_size: [
         default: 4096,
-        doc: "window size for both sides of the sliding attention window"
+        doc:
+          "the number of tokens each token can attend to in the sliding attention window, including itself"
       ],
       activation: [
         default: :silu,
@@ -339,7 +340,7 @@ defmodule Bumblebee.Text.Mistral do
             causal: true,
             attention_window_size:
               spec.attention_window_size &&
-                {spec.attention_window_size, spec.attention_window_size},
+                {spec.attention_window_size - 1, spec.attention_window_size - 1},
             rotary_embedding: [
               position_ids: position_ids,
               max_positions: spec.max_positions,
