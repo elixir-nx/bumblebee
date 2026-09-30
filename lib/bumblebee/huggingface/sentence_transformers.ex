@@ -224,12 +224,21 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
       layer =
         Axon.layer(
           fn hidden_state, attention_mask, _opts ->
+            type = Nx.type(hidden_state)
+
+            eps =
+              case type do
+                {:f, 16} -> Nx.tensor(1.0e-4, type: type)
+                {:bf, 16} -> Nx.tensor(1.0e-4, type: type)
+                _ -> Nx.tensor(1.0e-9, type: type)
+              end
+
             pool_outputs =
               Enum.map(modes, fn
                 :mean_tokens ->
-                  mask = Nx.new_axis(attention_mask, -1)
+                  mask = attention_mask |> Nx.as_type(type) |> Nx.new_axis(-1)
                   sum_embeddings = Nx.sum(Nx.multiply(hidden_state, mask), axes: [1])
-                  sum_mask = Nx.sum(mask, axes: [1]) |> Nx.max(1.0e-9)
+                  sum_mask = Nx.sum(mask, axes: [1]) |> Nx.max(eps)
                   Nx.divide(sum_embeddings, sum_mask)
 
                 :cls_token ->
@@ -240,13 +249,13 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
                   pred = Nx.broadcast(Nx.not_equal(mask, 0), Nx.shape(hidden_state))
 
                   pred
-                  |> Nx.select(hidden_state, Nx.Constants.min_finite(Nx.type(hidden_state)))
+                  |> Nx.select(hidden_state, Nx.Constants.min_finite(type))
                   |> Nx.reduce_max(axes: [1])
 
                 :mean_sqrt_len_tokens ->
-                  mask = Nx.new_axis(attention_mask, -1)
+                  mask = attention_mask |> Nx.as_type(type) |> Nx.new_axis(-1)
                   sum_embeddings = Nx.sum(Nx.multiply(hidden_state, mask), axes: [1])
-                  sum_mask = Nx.sum(mask, axes: [1]) |> Nx.max(1.0e-9)
+                  sum_mask = Nx.sum(mask, axes: [1]) |> Nx.max(eps)
                   Nx.divide(sum_embeddings, Nx.sqrt(sum_mask))
 
                 :last_token ->
