@@ -215,11 +215,6 @@ defmodule Bumblebee.Text.T5 do
   end
 
   @impl true
-  def traverse_cache(_spec, cache, fun) do
-    Layers.Decoder.traverse_cache(cache, fun)
-  end
-
-  @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
     inputs = encoder_decoder_inputs(spec)
 

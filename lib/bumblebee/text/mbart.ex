@@ -429,11 +429,6 @@ defmodule Bumblebee.Text.Mbart do
     )
   end
 
-  @impl true
-  def traverse_cache(_spec, cache, fun) do
-    Layers.Decoder.traverse_cache(cache, fun)
-  end
-
   defp core(inputs, spec) do
     encoder_outputs =
       Layers.if_present inputs["encoder_hidden_state"] do

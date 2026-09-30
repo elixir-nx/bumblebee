@@ -20,6 +20,9 @@ defmodule Bumblebee.Text.Generation do
 
   This function is used when the cache needs to be inflated or
   deflated for a different batch size.
+
+  This callback is optional. By default, all tensors with a leading
+  batch axis are traversed, that is, all tensors except scalars.
   """
   @callback traverse_cache(
               spec :: Bumblebee.ModelSpec.t(),
@@ -33,7 +36,7 @@ defmodule Bumblebee.Text.Generation do
   """
   @callback extra_config_module(spec :: Bumblebee.ModelSpec.t()) :: module()
 
-  @optional_callbacks extra_config_module: 1
+  @optional_callbacks traverse_cache: 3, extra_config_module: 1
 
   import Nx.Defn
 
@@ -56,7 +59,13 @@ defmodule Bumblebee.Text.Generation do
           (Nx.Tensor.t() -> Nx.Tensor.t())
         ) :: cache()
   def traverse_cache(%module{} = spec, cache, fun) do
-    module.traverse_cache(spec, cache, fun)
+    if Code.ensure_loaded?(module) and function_exported?(module, :traverse_cache, 3) do
+      module.traverse_cache(spec, cache, fun)
+    else
+      Utils.Nx.map(cache, fn tensor ->
+        if Nx.rank(tensor) == 0, do: tensor, else: fun.(tensor)
+      end)
+    end
   end
 
   @doc """

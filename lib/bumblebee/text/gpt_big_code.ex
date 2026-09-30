@@ -297,11 +297,6 @@ defmodule Bumblebee.Text.GptBigCode do
     )
   end
 
-  @impl true
-  def traverse_cache(_spec, cache, fun) do
-    Layers.Decoder.traverse_cache(cache, fun)
-  end
-
   defp inputs(spec) do
     shape = {nil, nil}
     hidden_shape = {nil, nil, spec.hidden_size}

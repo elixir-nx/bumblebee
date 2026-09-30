@@ -196,11 +196,6 @@ defmodule Bumblebee.Multimodal.Blip do
     text_spec.__struct__.init_cache(text_spec, batch_size, max_length, inputs)
   end
 
-  @impl true
-  def traverse_cache(_spec, cache, fun) do
-    Layers.Decoder.traverse_cache(cache, fun)
-  end
-
   defimpl Bumblebee.HuggingFace.Transformers.Config do
     def load(spec, data) do
       import Shared.Converters

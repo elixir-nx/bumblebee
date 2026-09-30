@@ -5,6 +5,17 @@ defmodule Bumblebee.Layers.Decoder do
 
   alias Bumblebee.Layers
 
+  defmodule Cache do
+    @moduledoc false
+
+    # Cache for iterative decoding. The entry in each block is a map
+    # of tensors specific to the block type. All tensors, except for
+    # scalars, have a leading batch axis.
+
+    @derive {Nx.Container, containers: [:blocks, :offset, :attention_mask]}
+    defstruct [:blocks, :offset, :attention_mask]
+  end
+
   @doc """
   Builds a fresh cache for iterative decoding.
 
@@ -86,27 +97,13 @@ defmodule Bumblebee.Layers.Decoder do
 
     attention_mask = Nx.broadcast(0, {batch_size, max_length})
 
-    %{blocks: blocks, offset: offset, attention_mask: attention_mask}
+    %Cache{blocks: blocks, offset: offset, attention_mask: attention_mask}
   end
 
   defp attention_cache(batch_size, sequence_length, num_heads, head_size) do
     shape = {batch_size, sequence_length, num_heads, head_size}
     zeros = Nx.broadcast(0.0, shape)
     %{key: zeros, value: zeros}
-  end
-
-  @doc """
-  Calls `fun` for every batched tensor in cache initialized with
-  `init_cache/3`.
-  """
-  def traverse_cache(cache, fun) do
-    %{blocks: blocks, offset: offset, attention_mask: attention_mask} = cache
-
-    %{
-      blocks: Bumblebee.Utils.Nx.map(blocks, fun),
-      offset: offset,
-      attention_mask: fun.(attention_mask)
-    }
   end
 
   @doc """
@@ -190,7 +187,7 @@ defmodule Bumblebee.Layers.Decoder do
   def put_block_cache(cache, block_idx, block_cache) do
     Axon.layer(
       fn cache, block_cache, _opts ->
-        put_in(cache, [:blocks, Access.elem(block_idx)], block_cache)
+        %{cache | blocks: put_elem(cache.blocks, block_idx, block_cache)}
       end,
       [cache, block_cache]
     )
