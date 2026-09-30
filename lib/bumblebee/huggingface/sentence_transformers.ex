@@ -208,14 +208,14 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
 
   defp pooling_layer(hidden_state, attention_mask, config, name) do
     modes =
-      for {key, mode} <- [
-            {"pooling_mode_cls_token", :cls_token},
-            {"pooling_mode_mean_tokens", :mean_tokens},
-            {"pooling_mode_max_tokens", :max_tokens},
-            {"pooling_mode_mean_sqrt_len_tokens", :mean_sqrt_len_tokens},
-            {"pooling_mode_lasttoken", :last_token}
+      for {keys, mode} <- [
+            {["pooling_mode_cls_token"], :cls_token},
+            {["pooling_mode_max_tokens"], :max_tokens},
+            {["pooling_mode_mean_tokens"], :mean_tokens},
+            {["pooling_mode_mean_sqrt_len_tokens"], :mean_sqrt_len_tokens},
+            {["pooling_mode_lasttoken", "pooling_mode_last_token"], :last_token}
           ],
-          config[key] == true,
+          Enum.any?(keys, &(config[&1] == true)),
           do: mode
 
     if modes == [] do

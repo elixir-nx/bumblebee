@@ -406,6 +406,101 @@ defmodule Bumblebee.HuggingFace.SentenceTransformersTest do
     end
 
     @tag :tmp_dir
+    test "loads last_token pooling with pooling_mode_last_token key", %{spec: spec, tmp_dir: dir} do
+      custom_model =
+        Axon.input("input_ids", shape: {nil, nil})
+        |> Axon.nx(fn _input_ids ->
+          hidden_state =
+            Nx.tensor([[[1.0, 5.0, 2.0, 3.0], [4.0, 2.0, 6.0, 1.0], [99.0, 99.0, 99.0, 99.0]]])
+
+          %{hidden_state: hidden_state}
+        end)
+
+      model_info = %{model: custom_model, params: Axon.ModelState.empty(), spec: spec}
+
+      modules = [
+        %{"idx" => 0, "path" => "", "type" => "sentence_transformers.models.Transformer"},
+        %{"idx" => 1, "path" => "1_Pooling", "type" => "sentence_transformers.models.Pooling"}
+      ]
+
+      File.write!(Path.join(dir, "modules.json"), Jason.encode!(modules))
+
+      pooling_dir = Path.join(dir, "1_Pooling")
+      File.mkdir_p!(pooling_dir)
+
+      pooling_config = %{
+        "pooling_mode_cls_token" => false,
+        "pooling_mode_mean_tokens" => false,
+        "pooling_mode_last_token" => true
+      }
+
+      File.write!(Path.join(pooling_dir, "config.json"), Jason.encode!(pooling_config))
+
+      assert {:ok, new_model_info} = Bumblebee.load_embedding_head({:local, dir}, model_info)
+
+      inputs = %{
+        "input_ids" => Nx.tensor([[1, 2, 3]]),
+        "attention_mask" => Nx.tensor([[1, 1, 0]])
+      }
+
+      {_init_fn, predict_fn} = Axon.build(new_model_info.model)
+      output = predict_fn.(new_model_info.params, inputs)
+
+      assert_all_close(output.embedding, Nx.tensor([[4.0, 2.0, 6.0, 1.0]]))
+    end
+
+    @tag :tmp_dir
+    test "concatenates multiple pooling modes in PyTorch order (max before mean)", %{
+      spec: spec,
+      tmp_dir: dir
+    } do
+      custom_model =
+        Axon.input("input_ids", shape: {nil, nil})
+        |> Axon.nx(fn _input_ids ->
+          hidden_state =
+            Nx.tensor([[[1.0, 5.0, 2.0, 3.0], [4.0, 2.0, 6.0, 1.0], [99.0, 99.0, 99.0, 99.0]]])
+
+          %{hidden_state: hidden_state}
+        end)
+
+      model_info = %{model: custom_model, params: Axon.ModelState.empty(), spec: spec}
+
+      modules = [
+        %{"idx" => 0, "path" => "", "type" => "sentence_transformers.models.Transformer"},
+        %{"idx" => 1, "path" => "1_Pooling", "type" => "sentence_transformers.models.Pooling"}
+      ]
+
+      File.write!(Path.join(dir, "modules.json"), Jason.encode!(modules))
+
+      pooling_dir = Path.join(dir, "1_Pooling")
+      File.mkdir_p!(pooling_dir)
+
+      pooling_config = %{
+        "pooling_mode_cls_token" => false,
+        "pooling_mode_mean_tokens" => true,
+        "pooling_mode_max_tokens" => true
+      }
+
+      File.write!(Path.join(pooling_dir, "config.json"), Jason.encode!(pooling_config))
+
+      assert {:ok, new_model_info} = Bumblebee.load_embedding_head({:local, dir}, model_info)
+
+      inputs = %{
+        "input_ids" => Nx.tensor([[1, 2, 3]]),
+        "attention_mask" => Nx.tensor([[1, 1, 0]])
+      }
+
+      {_init_fn, predict_fn} = Axon.build(new_model_info.model)
+      output = predict_fn.(new_model_info.params, inputs)
+
+      # Max tokens: [4.0, 5.0, 6.0, 3.0]
+      # Mean tokens: [2.5, 3.5, 4.0, 2.0]
+      # Concatenated along last axis in PyTorch order (max then mean)
+      expected = Nx.tensor([[4.0, 5.0, 6.0, 3.0, 2.5, 3.5, 4.0, 2.0]])
+      assert_all_close(output.embedding, expected)
+    end
+
+    @tag :tmp_dir
     test "loads mean_sqrt_len_tokens pooling", %{spec: spec, tmp_dir: dir} do
       custom_model =
         Axon.input("input_ids", shape: {nil, nil})
