@@ -126,6 +126,71 @@ defmodule Bumblebee.HuggingFace.SentenceTransformersTest do
     end
 
     @tag :tmp_dir
+    test "infers type from base model params when type option is omitted", %{
+      spec: spec,
+      tmp_dir: dir
+    } do
+      base_model =
+        Axon.input("input_ids", shape: {nil, nil})
+        |> Axon.nx(fn input_ids ->
+          batch_size = Nx.axis_size(input_ids, 0)
+          seq_len = Nx.axis_size(input_ids, 1)
+
+          hidden_state =
+            Nx.broadcast(1.0, {batch_size, seq_len, 4})
+            |> Nx.as_type({:f, 16})
+
+          %{hidden_state: hidden_state}
+        end)
+
+      base_params = %Axon.ModelState{
+        data: %{"base" => %{"kernel" => Nx.broadcast(1.0, {4, 4}) |> Nx.as_type({:f, 16})}}
+      }
+
+      model_info = %{model: base_model, params: base_params, spec: spec}
+
+      modules = [
+        %{"idx" => 0, "path" => "", "type" => "sentence_transformers.models.Transformer"},
+        %{"idx" => 1, "path" => "1_Pooling", "type" => "sentence_transformers.models.Pooling"},
+        %{"idx" => 2, "path" => "2_Dense", "type" => "sentence_transformers.models.Dense"}
+      ]
+
+      File.write!(Path.join(dir, "modules.json"), Jason.encode!(modules))
+
+      pooling_dir = Path.join(dir, "1_Pooling")
+      File.mkdir_p!(pooling_dir)
+
+      File.write!(
+        Path.join(pooling_dir, "config.json"),
+        Jason.encode!(%{"pooling_mode_mean_tokens" => true})
+      )
+
+      dense_dir = Path.join(dir, "2_Dense")
+      File.mkdir_p!(dense_dir)
+
+      dense_config = %{
+        "in_features" => 4,
+        "out_features" => 8,
+        "bias" => true,
+        "activation_function" => "torch.nn.modules.linear.Identity"
+      }
+
+      File.write!(Path.join(dense_dir, "config.json"), Jason.encode!(dense_config))
+
+      weights = %{
+        "linear.weight" => Nx.broadcast(0.5, {8, 4}) |> Nx.as_type({:f, 32}),
+        "linear.bias" => Nx.broadcast(0.1, {8}) |> Nx.as_type({:f, 32})
+      }
+
+      Safetensors.write!(Path.join(dense_dir, "model.safetensors"), weights)
+
+      assert {:ok, new_model_info} = Bumblebee.load_embedding_head({:local, dir}, model_info)
+
+      assert Nx.type(new_model_info.params.data["2_Dense"]["kernel"]) == {:f, 16}
+      assert Nx.type(new_model_info.params.data["2_Dense"]["bias"]) == {:f, 16}
+    end
+
+    @tag :tmp_dir
     test "returns error when modules.json is missing", %{model_info: model_info, tmp_dir: dir} do
       assert {:error, "could not find modules.json in the repository"} =
                Bumblebee.load_embedding_head({:local, dir}, model_info)

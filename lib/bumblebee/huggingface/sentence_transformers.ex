@@ -7,6 +7,11 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
   Loads a SentenceTransformers embedding head and attaches it to the model.
   """
   def load_embedding_head(_repository, repo_files, download_fun, model_info, opts) do
+    opts =
+      opts
+      |> Keyword.put_new_lazy(:type, fn -> infer_param_type(model_info.params) end)
+      |> Keyword.put_new_lazy(:backend, fn -> infer_param_backend(model_info.params) end)
+
     case repo_files do
       %{"modules.json" => _etag} ->
         with {:ok, modules_path} <- download_fun.("modules.json"),
@@ -408,6 +413,30 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
     policy = Axon.MixedPrecision.create_policy(params: type, compute: type, output: type)
     Axon.MixedPrecision.apply_policy(model, policy)
   end
+
+  defp infer_param_type(%Axon.ModelState{data: data}) do
+    find_first_tensor(data, &Nx.type/1)
+  end
+
+  defp infer_param_type(_), do: nil
+
+  defp infer_param_backend(%Axon.ModelState{data: data}) do
+    find_first_tensor(data, fn %Nx.Tensor{data: %backend{}} ->
+      if backend == Nx.BinaryBackend, do: nil, else: backend
+    end)
+  end
+
+  defp infer_param_backend(_), do: nil
+
+  defp find_first_tensor(data, fun) when is_map(data) do
+    Enum.find_value(data, fn
+      {_key, %Nx.Tensor{} = tensor} -> fun.(tensor)
+      {_key, nested} when is_map(nested) -> find_first_tensor(nested, fun)
+      _ -> nil
+    end)
+  end
+
+  defp find_first_tensor(_, _fun), do: nil
 
   defp decode_json(path) do
     case File.read(path) do
