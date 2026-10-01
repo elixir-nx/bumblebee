@@ -1126,4 +1126,36 @@ defmodule Bumblebee.HuggingFace.SentenceTransformersTest do
       atol: 1.0e-4
     )
   end
+
+  @tag :slow
+  test "end-to-end with sentence-transformers/all-distilroberta-v1 (architecture: :base)" do
+    assert {:ok, model_info} =
+             Bumblebee.load_model(
+               {:hf, "sentence-transformers/all-distilroberta-v1"},
+               architecture: :base
+             )
+
+    assert {:ok, model_info} =
+             Bumblebee.load_embedding_head(
+               {:hf, "sentence-transformers/all-distilroberta-v1"},
+               model_info
+             )
+
+    assert {:ok, tokenizer} =
+             Bumblebee.load_tokenizer({:hf, "sentence-transformers/all-distilroberta-v1"})
+
+    serving = Bumblebee.Text.text_embedding(model_info, tokenizer)
+    res = Nx.Serving.run(serving, "Hello world")
+
+    assert Nx.shape(res.embedding) == {768}
+
+    norm = Nx.LinAlg.norm(res.embedding)
+    assert_all_close(norm, Nx.tensor(1.0), atol: 1.0e-5)
+
+    assert_all_close(
+      res.embedding[0..4],
+      Nx.tensor([0.027808, -0.024371, -0.021978, -0.057262, 0.034520]),
+      atol: 1.0e-4
+    )
+  end
 end
