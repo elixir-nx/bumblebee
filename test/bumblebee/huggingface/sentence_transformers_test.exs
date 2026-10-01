@@ -62,8 +62,10 @@ defmodule Bumblebee.HuggingFace.SentenceTransformersTest do
       output = predict_fn.(new_model_info.params, inputs)
 
       assert Map.has_key?(output, :embedding)
+      assert Map.has_key?(output, :pooled_state)
       assert Map.has_key?(output, :hidden_state)
       assert Nx.shape(output.embedding) == {1, 4}
+      assert_all_close(output.pooled_state, output.embedding)
 
       # Normalization check: L2 norm of output embedding must be 1.0
       norm = Nx.LinAlg.norm(output.embedding, axes: [-1])
@@ -123,6 +125,62 @@ defmodule Bumblebee.HuggingFace.SentenceTransformersTest do
       output = predict_fn.(new_model_info.params, inputs)
 
       assert Nx.shape(output.embedding) == {1, 8}
+    end
+
+    @tag :tmp_dir
+    test "updates ModelState.parameters for added layers", %{spec: spec, tmp_dir: dir} do
+      base_model =
+        Axon.input("input_ids", shape: {nil, 4})
+        |> Axon.nx(fn x -> %{hidden_state: Nx.new_axis(x, 1)} end)
+
+      base_params = %Axon.ModelState{
+        data: %{"base" => %{"kernel" => Nx.broadcast(1.0, {4, 4})}},
+        parameters: %{"base" => ["kernel"]},
+        frozen_parameters: %{},
+        state: %{}
+      }
+
+      model_info = %{model: base_model, params: base_params, spec: spec}
+
+      modules = [
+        %{"idx" => 0, "path" => "", "type" => "sentence_transformers.models.Transformer"},
+        %{"idx" => 1, "path" => "1_Pooling", "type" => "sentence_transformers.models.Pooling"},
+        %{"idx" => 2, "path" => "2_Dense", "type" => "sentence_transformers.models.Dense"}
+      ]
+
+      File.write!(Path.join(dir, "modules.json"), Jason.encode!(modules))
+
+      pooling_dir = Path.join(dir, "1_Pooling")
+      File.mkdir_p!(pooling_dir)
+
+      File.write!(
+        Path.join(pooling_dir, "config.json"),
+        Jason.encode!(%{"pooling_mode_mean_tokens" => true})
+      )
+
+      dense_dir = Path.join(dir, "2_Dense")
+      File.mkdir_p!(dense_dir)
+
+      dense_config = %{
+        "in_features" => 4,
+        "out_features" => 8,
+        "bias" => true,
+        "activation_function" => "torch.nn.modules.linear.Identity"
+      }
+
+      File.write!(Path.join(dense_dir, "config.json"), Jason.encode!(dense_config))
+
+      weights = %{
+        "linear.weight" => Nx.broadcast(0.5, {8, 4}) |> Nx.as_type({:f, 32}),
+        "linear.bias" => Nx.broadcast(0.1, {8}) |> Nx.as_type({:f, 32})
+      }
+
+      Safetensors.write!(Path.join(dense_dir, "model.safetensors"), weights)
+
+      assert {:ok, new_model_info} = Bumblebee.load_embedding_head({:local, dir}, model_info)
+
+      assert Enum.sort(new_model_info.params.parameters["2_Dense"]) == ["bias", "kernel"]
+      assert new_model_info.params.parameters["base"] == ["kernel"]
     end
 
     @tag :tmp_dir

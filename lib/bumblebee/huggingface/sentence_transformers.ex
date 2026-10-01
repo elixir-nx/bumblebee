@@ -56,31 +56,48 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
         Layers.default_attention_mask(Axon.input("input_ids"))
       end
 
-    initial_state = {hidden_state, model_info.params.data}
+    initial_state = {hidden_state, model_info.params.data, model_info.params.parameters}
 
     result =
-      Enum.reduce_while(modules, {:ok, initial_state}, fn module, {:ok, {node, params_data}} ->
-        case build_module(
-               module,
-               node,
-               attention_mask,
-               params_data,
-               repo_files,
-               download_fun,
-               opts
-             ) do
-          {:ok, node, params_data} ->
-            {:cont, {:ok, {node, params_data}}}
+      Enum.reduce_while(
+        modules,
+        {:ok, initial_state},
+        fn module, {:ok, {node, params_data, params_parameters}} ->
+          case build_module(
+                 module,
+                 node,
+                 attention_mask,
+                 params_data,
+                 params_parameters,
+                 repo_files,
+                 download_fun,
+                 opts
+               ) do
+            {:ok, node, params_data, params_parameters} ->
+              {:cont, {:ok, {node, params_data, params_parameters}}}
 
-          {:error, reason} ->
-            {:halt, {:error, reason}}
+            {:error, reason} ->
+              {:halt, {:error, reason}}
+          end
         end
-      end)
+      )
 
-    with {:ok, {embedding, params_data}} <- result do
-      final_model = Axon.container(%{embedding: embedding, hidden_state: hidden_state})
+    with {:ok, {embedding, params_data, params_parameters}} <- result do
+      final_model =
+        Axon.container(%{
+          embedding: embedding,
+          pooled_state: embedding,
+          hidden_state: hidden_state
+        })
+
       final_model = apply_type(final_model, opts[:type])
-      final_params = %{model_info.params | data: params_data}
+
+      final_params =
+        if params_parameters do
+          %{model_info.params | data: params_data, parameters: params_parameters}
+        else
+          %{model_info.params | data: params_data}
+        end
 
       {:ok, %{model_info | model: final_model, params: final_params}}
     end
@@ -91,6 +108,7 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
          node,
          attention_mask,
          params_data,
+         params_parameters,
          _repo_files,
          download_fun,
          _opts
@@ -100,7 +118,7 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
     with {:ok, config_path} <- download_fun.(config_file),
          {:ok, config} <- decode_json(config_path),
          {:ok, node} <- pooling_layer(node, attention_mask, config, path) do
-      {:ok, node, params_data}
+      {:ok, node, params_data, params_parameters}
     end
   end
 
@@ -109,6 +127,7 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
          node,
          _attention_mask,
          params_data,
+         params_parameters,
          repo_files,
          download_fun,
          opts
@@ -153,7 +172,13 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
         end
 
       params_data = Map.put(params_data, layer_name, layer_params)
-      {:ok, node, params_data}
+
+      params_parameters =
+        if params_parameters do
+          Map.put(params_parameters, layer_name, Map.keys(layer_params))
+        end
+
+      {:ok, node, params_data, params_parameters}
     end
   end
 
@@ -167,6 +192,7 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
          node,
          _attention_mask,
          params_data,
+         params_parameters,
          repo_files,
          download_fun,
          opts
@@ -189,7 +215,12 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
       node = Axon.dense(node, out_features, use_bias: false, name: layer_name)
       params_data = Map.put(params_data, layer_name, %{"kernel" => k_fused})
 
-      {:ok, node, params_data}
+      params_parameters =
+        if params_parameters do
+          Map.put(params_parameters, layer_name, ["kernel"])
+        end
+
+      {:ok, node, params_data, params_parameters}
     end
   end
 
@@ -198,12 +229,13 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
          node,
          _attention_mask,
          params_data,
+         params_parameters,
          _repo_files,
          _download_fun,
          _opts
        ) do
     node = Axon.nx(node, &Bumblebee.Utils.Nx.normalize/1, name: "#{path}.normalize")
-    {:ok, node, params_data}
+    {:ok, node, params_data, params_parameters}
   end
 
   defp build_module(
@@ -211,14 +243,24 @@ defmodule Bumblebee.HuggingFace.SentenceTransformers do
          node,
          _attention_mask,
          params_data,
+         params_parameters,
          _repo_files,
          _download_fun,
          _opts
        ) do
-    {:ok, node, params_data}
+    {:ok, node, params_data, params_parameters}
   end
 
-  defp build_module(%{"type" => type}, _node, _mask, _params, _repo_files, _download_fun, _opts) do
+  defp build_module(
+         %{"type" => type},
+         _node,
+         _mask,
+         _params,
+         _params_parameters,
+         _repo_files,
+         _download_fun,
+         _opts
+       ) do
     {:error, "unsupported SentenceTransformers module #{inspect(type)}"}
   end
 
