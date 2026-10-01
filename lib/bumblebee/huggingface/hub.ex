@@ -16,12 +16,18 @@ defmodule Bumblebee.HuggingFace.Hub do
 
   @doc """
   Returns a URL to list the contents of a Hugging Face repository.
+
+  ## Options
+
+    * `:recursive` - whether to list repository files recursively. Defaults to `true`
+
   """
-  @spec file_listing_url(String.t(), String.t() | nil, String.t() | nil) :: String.t()
-  def file_listing_url(repository_id, subdir, revision) do
+  @spec file_listing_url(String.t(), String.t() | nil, String.t() | nil, keyword()) :: String.t()
+  def file_listing_url(repository_id, subdir, revision, opts \\ []) do
     revision = revision || "main"
     path = if(subdir, do: "/" <> subdir)
-    @huggingface_endpoint <> "/api/models/#{repository_id}/tree/#{revision}#{path}"
+    query = if Keyword.get(opts, :recursive, true), do: "?recursive=true", else: ""
+    @huggingface_endpoint <> "/api/models/#{repository_id}/tree/#{revision}#{path}#{query}"
   end
 
   @doc """

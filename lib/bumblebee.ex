@@ -336,10 +336,22 @@ defmodule Bumblebee do
         * `:subdir` - the directory within the repository where the
           files are located
 
-    * `{:local, directory}` - the directory containing model files
+        * `:recursive` - whether to list files recursively. Defaults to `true`
+
+    * `{:local, directory}` or `{:local, directory, options}` - the directory containing model files.
+      The supported options are:
+
+        * `:subdir` - the directory within the directory where the
+          files are located
+
+        * `:recursive` - whether to list files recursively. Defaults to `true`
 
   """
-  @type repository :: {:hf, String.t()} | {:hf, String.t(), keyword()} | {:local, Path.t()}
+  @type repository ::
+          {:hf, String.t()}
+          | {:hf, String.t(), keyword()}
+          | {:local, Path.t()}
+          | {:local, Path.t(), keyword()}
 
   @typedoc """
   A model together with its state and metadata.
@@ -1273,15 +1285,28 @@ defmodule Bumblebee do
     {:error, "could not infer featurizer type from the configuration"}
   end
 
-  defp get_repo_files({:local, dir}) do
+  defp get_repo_files({:local, dir, opts}) do
+    dir =
+      if subdir = opts[:subdir] do
+        Path.join(dir, subdir)
+      else
+        dir
+      end
+
     case File.ls(dir) do
       {:ok, filenames} ->
+        paths =
+          if Keyword.get(opts, :recursive, true) do
+            Path.wildcard(Path.join(dir, "**"))
+          else
+            Enum.map(filenames, &Path.join(dir, &1))
+          end
+
         repo_files =
-          for filename <- filenames,
-              path = Path.join(dir, filename),
+          for path <- paths,
               File.regular?(path),
               into: %{},
-              do: {filename, nil}
+              do: {Path.relative_to(path, dir), nil}
 
         {:ok, repo_files}
 
@@ -1290,9 +1315,22 @@ defmodule Bumblebee do
     end
   end
 
+  defp get_repo_files({:local, dir}) when is_binary(dir) do
+    get_repo_files({:local, dir, []})
+  end
+
   defp get_repo_files({:hf, repository_id, opts}) do
     subdir = opts[:subdir]
-    url = HuggingFace.Hub.file_listing_url(repository_id, subdir, opts[:revision])
+    recursive = Keyword.get(opts, :recursive, true)
+
+    url =
+      HuggingFace.Hub.file_listing_url(
+        repository_id,
+        subdir,
+        opts[:revision],
+        recursive: recursive
+      )
+
     cache_scope = repository_id_to_cache_scope(repository_id)
 
     result =
@@ -1323,14 +1361,23 @@ defmodule Bumblebee do
     end
   end
 
-  defp download({:local, dir}, filename, _etag) do
-    path = Path.join(dir, filename)
+  defp download({:local, dir, opts}, filename, _etag) do
+    path =
+      if subdir = opts[:subdir] do
+        Path.join([dir, subdir, filename])
+      else
+        Path.join(dir, filename)
+      end
 
     if File.exists?(path) do
       {:ok, path}
     else
       {:error, "local file #{inspect(path)} does not exist"}
     end
+  end
+
+  defp download({:local, dir}, filename, etag) when is_binary(dir) do
+    download({:local, dir, []}, filename, etag)
   end
 
   defp download({:hf, repository_id, opts}, filename, etag) do
@@ -1362,18 +1409,32 @@ defmodule Bumblebee do
   end
 
   defp normalize_repository!({:hf, repository_id, opts}) when is_binary(repository_id) do
-    opts = Keyword.validate!(opts, [:revision, :cache_dir, :offline, :auth_token, :subdir])
+    opts =
+      Keyword.validate!(opts, [
+        :revision,
+        :cache_dir,
+        :offline,
+        :auth_token,
+        :subdir,
+        recursive: true
+      ])
+
     {:hf, repository_id, opts}
   end
 
   defp normalize_repository!({:local, dir}) when is_binary(dir) do
-    {:local, dir}
+    {:local, dir, []}
+  end
+
+  defp normalize_repository!({:local, dir, opts}) when is_binary(dir) and is_list(opts) do
+    opts = Keyword.validate!(opts, [:subdir, recursive: true])
+    {:local, dir, opts}
   end
 
   defp normalize_repository!(other) do
     raise ArgumentError,
-          "expected repository to be either {:hf, repository_id}, {:hf, repository_id, options}" <>
-            " or {:local, directory}, got: #{inspect(other)}"
+          "expected repository to be either {:hf, repository_id}, {:hf, repository_id, options}," <>
+            " {:local, directory}, or {:local, directory, options}, got: #{inspect(other)}"
   end
 
   @doc """

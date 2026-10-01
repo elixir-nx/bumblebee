@@ -263,6 +263,24 @@ defmodule Bumblebee.HuggingFace.HubTest do
     end
   end
 
+  describe "file_listing_url/4" do
+    test "constructs recursive tree listing URL by default" do
+      assert Hub.file_listing_url("foo/bar", nil, nil) ==
+               "https://huggingface.co/api/models/foo/bar/tree/main?recursive=true"
+
+      assert Hub.file_listing_url("foo/bar", "sub/dir", "v1.0") ==
+               "https://huggingface.co/api/models/foo/bar/tree/v1.0/sub/dir?recursive=true"
+    end
+
+    test "omits recursive query param when recursive: false" do
+      assert Hub.file_listing_url("foo/bar", nil, nil, recursive: false) ==
+               "https://huggingface.co/api/models/foo/bar/tree/main"
+
+      assert Hub.file_listing_url("foo/bar", "sub/dir", "v1.0", recursive: false) ==
+               "https://huggingface.co/api/models/foo/bar/tree/v1.0/sub/dir"
+    end
+  end
+
   defp url(port), do: "http://localhost:#{port}"
 
   defp serve_with_etag(conn, etag, body) do

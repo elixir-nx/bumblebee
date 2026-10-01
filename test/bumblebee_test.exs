@@ -109,5 +109,24 @@ defmodule BumblebeeTest do
 
       assert Enum.sort(Map.keys(params.data)) == Enum.sort(Map.keys(default_params.data))
     end
+
+    @tag :tmp_dir
+    test "loads spec from local directory containing subdirectories", %{tmp_dir: tmp_dir} do
+      File.mkdir_p!(Path.join(tmp_dir, "sub/dir"))
+      File.write!(Path.join(tmp_dir, "config.json"), ~s/{"architectures": ["BertModel"]}/)
+      File.write!(Path.join(tmp_dir, "sub/dir/extra.json"), ~s/{}/)
+
+      assert {:ok, %Bumblebee.Text.Bert{}} = Bumblebee.load_spec({:local, tmp_dir})
+    end
+
+    @tag :tmp_dir
+    test "loads spec from local directory with :subdir option", %{tmp_dir: tmp_dir} do
+      sub = Path.join(tmp_dir, "sub_model")
+      File.mkdir_p!(sub)
+      File.write!(Path.join(sub, "config.json"), ~s/{"architectures": ["BertModel"]}/)
+
+      assert {:ok, %Bumblebee.Text.Bert{}} =
+               Bumblebee.load_spec({:local, tmp_dir, subdir: "sub_model"})
+    end
   end
 end
