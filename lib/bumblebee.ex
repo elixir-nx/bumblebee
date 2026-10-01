@@ -346,9 +346,6 @@ defmodule Bumblebee do
 
         * `:recursive` - whether to list files recursively. Defaults to `true`
 
-        * `:max_depth` - the maximum directory depth to search when `:recursive` is `true`.
-          Defaults to `2`
-
   """
   @type repository ::
           {:hf, String.t()}
@@ -1300,8 +1297,7 @@ defmodule Bumblebee do
       {:ok, filenames} ->
         paths =
           if Keyword.get(opts, :recursive, true) do
-            max_depth = Keyword.get(opts, :max_depth, 2)
-            list_files_with_depth(dir, max_depth)
+            Path.wildcard(Path.join(dir, "*")) ++ Path.wildcard(Path.join(dir, "*/*"))
           else
             Enum.map(filenames, &Path.join(dir, &1))
           end
@@ -1363,14 +1359,6 @@ defmodule Bumblebee do
 
       {:ok, repo_files}
     end
-  end
-
-  defp list_files_with_depth(dir, max_depth) when is_integer(max_depth) and max_depth >= 1 do
-    1..max_depth
-    |> Enum.flat_map(fn depth ->
-      pattern = List.duplicate("*", depth) |> Path.join()
-      Path.wildcard(Path.join(dir, pattern))
-    end)
   end
 
   defp download({:local, dir, opts}, filename, _etag) do
@@ -1439,7 +1427,7 @@ defmodule Bumblebee do
   end
 
   defp normalize_repository!({:local, dir, opts}) when is_binary(dir) and is_list(opts) do
-    opts = Keyword.validate!(opts, [:subdir, recursive: true, max_depth: 2])
+    opts = Keyword.validate!(opts, [:subdir, recursive: true])
     {:local, dir, opts}
   end
 

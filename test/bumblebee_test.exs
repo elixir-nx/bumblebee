@@ -130,17 +130,17 @@ defmodule BumblebeeTest do
     end
 
     @tag :tmp_dir
-    test "limits directory traversal to :max_depth", %{tmp_dir: tmp_dir} do
+    test "limits directory traversal to depth of 2", %{tmp_dir: tmp_dir} do
       deep_dir = Path.join(tmp_dir, "l1/l2/l3")
       File.mkdir_p!(deep_dir)
       File.write!(Path.join(deep_dir, "config.json"), ~s/{"architectures": ["BertModel"]}/)
 
       assert_raise ArgumentError, ~r/no config file found in the given repository/, fn ->
-        Bumblebee.load_spec({:local, tmp_dir, max_depth: 2})
+        Bumblebee.load_spec({:local, tmp_dir})
       end
 
       assert {:ok, %Bumblebee.Text.Bert{}} =
-               Bumblebee.load_spec({:local, tmp_dir, max_depth: 3, subdir: "l1/l2/l3"})
+               Bumblebee.load_spec({:local, tmp_dir, subdir: "l1/l2/l3"})
     end
   end
 end
