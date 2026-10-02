@@ -5,6 +5,24 @@ defmodule Bumblebee.Layers.Decoder do
 
   alias Bumblebee.Layers
 
+  @doc """
+  Rejects cached inference with bidirectional self-attention, since adding
+  tokens changes the hidden states of previously processed tokens.
+  """
+  def validate_attention_cache(cache, false), do: cache
+
+  def validate_attention_cache(cache, true) do
+    Axon.layer(
+      fn cache, _opts ->
+        case cache do
+          %Axon.None{} -> cache
+          _ -> raise ArgumentError, "decoding cache is not supported with bidirectional attention"
+        end
+      end,
+      [Axon.optional(cache)]
+    )
+  end
+
   defmodule Cache do
     @moduledoc false
 

@@ -358,3 +358,63 @@ And here we have our answer!
 <!-- livebook:{"break_markdown":true} -->
 
 For additional context you can also visit the [Mistral docs](https://docs.mistral.ai/guides/rag/) that go through a similar example.
+
+## Embeddings from decoder models
+
+Gemma3Text, Llama, Mistral and Qwen3 support `use_bidirectional_attention: true`.
+Loading a checkpoint reads `is_causal` (inverted) for Llama, Mistral and Qwen3,
+and `use_bidirectional_attention` for Gemma3Text. The other spelling is also
+accepted as a fallback. Gemma's native field takes precedence when both are
+present; the other models prefer `is_causal`. All four default to causal
+attention, including the `:base` architecture.
+
+When a checkpoint does not declare its embedding attention mode, pass it
+explicitly when loading:
+
+```elixir
+# Replace with the repository of your embedding checkpoint.
+{:ok, model_info} =
+  Bumblebee.load_model({:hf, "organization/embedding-model"},
+    architecture: :base,
+    spec_overrides: [use_bidirectional_attention: true]
+  )
+```
+
+The same option works through `Bumblebee.configure/2` when constructing a spec.
+Consumers that delegate checkpoint loading and inference to Bumblebee, such as
+Sting, automatically use the checkpoint's declared attention mode after updating
+Bumblebee. Consumers supplying their own spec must preserve this option or pass
+the override above. Selecting `architecture: :base` alone does not enable it.
+
+Padding masks are combined with causal or bidirectional attention. Gemma's local
+bidirectional layers use half the configured sliding window as their radius;
+Mistral and Qwen3 use the full configured window as their bidirectional radius.
+Causal windows include the current token in their width. Qwen3 also loads the
+checkpoint's `use_sliding_window`, `max_window_layers` and `layer_types` settings.
+Bidirectional inference requires recomputing the whole sequence. Cache inputs,
+cache initialization and generation are rejected in this mode.
+
+RoPE configurations accept both `type` and `rope_type`, including linear,
+dynamic and YaRN scaling. Unsupported variants, conflicting type keys and
+invalid scaling parameters raise an error. YaRN uses the configured factor and
+the current Transformers frequency blending and attention scaling formula.
+Dynamic RoPE chooses its scale from the highest `position_ids` value, matching
+Transformers. For padding-independent dynamic scaling, supply positions derived
+from the attention mask, for example `Nx.max(Nx.cumulative_sum(mask, axis: 1) - 1, 0)`.
+The default positions include padding slots, just as in Transformers; padding
+that crosses the original context boundary can therefore change the scale.
+
+[EmbeddingGemma](https://huggingface.co/google/embeddinggemma-300m) uses a Gemma3Text
+backbone, but its complete embedding pipeline additionally requires prompt
+formatting, masked mean pooling, two trained Dense projections and L2
+normalization. Loading the backbone alone does not apply those projections.
+Use float32 or bfloat16 for EmbeddingGemma. Its gated checkpoint integration test
+can be run against an authorized local copy:
+
+```shell
+BUMBLEBEE_EMBEDDING_GEMMA=/path/to/checkpoint mix test \
+  test/bumblebee/text/embedding_gemma_integration_test.exs --include slow
+```
+
+That test exercises the backbone, tokenizer and pooled serving; deterministic
+small-model comparisons with Python Transformers run without Hub access.

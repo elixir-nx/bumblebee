@@ -3,6 +3,15 @@ defmodule Bumblebee.Text.Qwen3 do
 
   options =
     [
+      use_bidirectional_attention: [
+        default: false,
+        doc: """
+        whether to use bidirectional attention. Loaded from checkpoint `is_causal`
+        (inverted), or `use_bidirectional_attention`. The default is causal, including
+        the `:base` architecture. Bidirectional inference requires the full sequence
+        on each pass and does not support decoding cache or generation
+        """
+      ],
       vocab_size: [
         default: 151_936,
         doc: """
@@ -43,6 +52,22 @@ defmodule Bumblebee.Text.Qwen3 do
       num_key_value_heads: [
         default: 8,
         doc: "the number of key value heads for each attention layer in the model"
+      ],
+      attention_window_size: [
+        default: nil,
+        doc: """
+        sliding window width, or nil for full attention. Causal layers attend to
+        this many tokens including themselves; bidirectional layers attend to
+        tokens within this distance on either side
+        """
+      ],
+      max_window_layers: [
+        default: 28,
+        doc: "number of initial full-attention layers when :layer_types is not specified"
+      ],
+      layer_types: [
+        default: nil,
+        doc: "per-layer :full_attention or :sliding_attention overrides"
       ],
       activation: [
         default: :silu,
@@ -157,6 +182,33 @@ defmodule Bumblebee.Text.Qwen3 do
     spec
     |> Shared.put_config_attrs(opts)
     |> Shared.validate_label_options()
+    |> Shared.validate_bidirectional_attention()
+    |> validate_attention_options()
+  end
+
+  defp validate_attention_options(spec) do
+    unless is_nil(spec.attention_window_size) or
+             (is_integer(spec.attention_window_size) and spec.attention_window_size > 0) do
+      raise ArgumentError, ":attention_window_size must be nil or a positive integer"
+    end
+
+    unless is_integer(spec.max_window_layers) and spec.max_window_layers >= 0 do
+      raise ArgumentError, ":max_window_layers must be a non-negative integer"
+    end
+
+    if spec.layer_types do
+      unless is_list(spec.layer_types) and length(spec.layer_types) == spec.num_blocks and
+               Enum.all?(spec.layer_types, &(&1 in [:full_attention, :sliding_attention])) do
+        raise ArgumentError,
+              ":layer_types must specify :full_attention or :sliding_attention for each block"
+      end
+
+      if :sliding_attention in spec.layer_types and is_nil(spec.attention_window_size) do
+        raise ArgumentError, "sliding attention layers require :attention_window_size"
+      end
+    end
+
+    spec
   end
 
   @impl true
@@ -167,6 +219,11 @@ defmodule Bumblebee.Text.Qwen3 do
   end
 
   @impl true
+  def init_cache(%{use_bidirectional_attention: true}, _batch_size, _max_length, _inputs) do
+    raise ArgumentError,
+          "decoding cache and generation are not supported with bidirectional attention"
+  end
+
   def init_cache(spec, batch_size, max_length, _inputs) do
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
@@ -275,7 +332,10 @@ defmodule Bumblebee.Text.Qwen3 do
         position_ids,
         inputs["attention_mask"],
         inputs["attention_head_mask"],
-        inputs["cache"],
+        Layers.Decoder.validate_attention_cache(
+          inputs["cache"],
+          spec.use_bidirectional_attention
+        ),
         spec,
         name: "decoder"
       )
@@ -334,6 +394,25 @@ defmodule Bumblebee.Text.Qwen3 do
       fn hidden_state, block ->
         name = block.name
 
+        layer_type =
+          if spec.layer_types do
+            Enum.fetch!(spec.layer_types, block.index)
+          else
+            if spec.attention_window_size && block.index >= spec.max_window_layers,
+              do: :sliding_attention,
+              else: :full_attention
+          end
+
+        attention_window_size =
+          if layer_type == :sliding_attention do
+            radius =
+              if spec.use_bidirectional_attention,
+                do: spec.attention_window_size,
+                else: spec.attention_window_size - 1
+
+            {radius, radius}
+          end
+
         shortcut = hidden_state
 
         {hidden_state, attention, self_attention_cache} =
@@ -347,7 +426,8 @@ defmodule Bumblebee.Text.Qwen3 do
             num_key_value_heads: spec.num_key_value_heads,
             hidden_size: spec.hidden_size,
             attention_head_size: spec.attention_head_size,
-            causal: true,
+            causal: not spec.use_bidirectional_attention,
+            attention_window_size: attention_window_size,
             query_norm: qk_norm,
             key_norm: qk_norm,
             rotary_embedding: [
@@ -403,8 +483,33 @@ defmodule Bumblebee.Text.Qwen3 do
     def load(spec, data) do
       import Shared.Converters
 
+      data =
+        case Map.get(data, "use_sliding_window", false) do
+          false ->
+            Map.put(data, "sliding_window", nil)
+
+          true ->
+            Map.put_new(data, "sliding_window", 4096)
+
+          value ->
+            raise ArgumentError,
+                  "expected use_sliding_window to be a boolean, got: #{inspect(value)}"
+        end
+
       opts =
         convert!(data,
+          attention_window_size: {"sliding_window", optional(number())},
+          max_window_layers: {"max_window_layers", number()},
+          layer_types:
+            {"layer_types",
+             optional(
+               list(
+                 mapping(%{
+                   "full_attention" => :full_attention,
+                   "sliding_attention" => :sliding_attention
+                 })
+               )
+             )},
           vocab_size: {"vocab_size", number()},
           tie_word_embeddings: {"tie_word_embeddings", boolean()},
           max_positions: {"max_position_embeddings", number()},
@@ -418,6 +523,7 @@ defmodule Bumblebee.Text.Qwen3 do
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()}
         ) ++
+          Shared.bidirectional_attention_options_from_transformers(data) ++
           Shared.rotary_embedding_options_from_transformers(data) ++
           Shared.common_options_from_transformers(data, spec)
 

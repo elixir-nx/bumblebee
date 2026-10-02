@@ -147,6 +147,47 @@ defmodule Bumblebee.Shared do
   end
 
   @doc """
+  Converts the causal-attention setting from Hugging Face config data.
+
+  Hugging Face models use `"is_causal"`, while some embedding checkpoints
+  serialize `"use_bidirectional_attention"`. `"is_causal"` takes precedence
+  when both are present.
+  """
+  @spec bidirectional_attention_options_from_transformers(map()) :: keyword()
+  def bidirectional_attention_options_from_transformers(data) do
+    case Map.fetch(data, "is_causal") do
+      {:ok, is_causal} when is_boolean(is_causal) ->
+        [use_bidirectional_attention: not is_causal]
+
+      {:ok, _value} ->
+        raise "conversion failed, expected \"is_causal\" to be a boolean"
+
+      :error ->
+        case Map.fetch(data, "use_bidirectional_attention") do
+          {:ok, use_bidirectional_attention} when is_boolean(use_bidirectional_attention) ->
+            [use_bidirectional_attention: use_bidirectional_attention]
+
+          {:ok, _value} ->
+            raise "conversion failed, expected \"use_bidirectional_attention\" to be a boolean"
+
+          :error ->
+            []
+        end
+    end
+  end
+
+  @doc false
+  @spec validate_bidirectional_attention(Bumblebee.ModelSpec.t()) :: Bumblebee.ModelSpec.t()
+  def validate_bidirectional_attention(%{use_bidirectional_attention: value} = spec)
+      when is_boolean(value),
+      do: spec
+
+  def validate_bidirectional_attention(%{use_bidirectional_attention: value}) do
+    raise ArgumentError,
+          ":use_bidirectional_attention must be a boolean, got: #{inspect(value)}"
+  end
+
+  @doc """
   Converts rotary embedding options from Hugging Face config data.
 
   Supports both `"rope_parameters"` and the older `"rope_scaling"`

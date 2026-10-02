@@ -96,6 +96,29 @@ defmodule Bumblebee.SharedTest do
     end
   end
 
+  describe "bidirectional_attention_options_from_transformers/1" do
+    test "uses is_causal when present" do
+      assert [use_bidirectional_attention: true] =
+               Shared.bidirectional_attention_options_from_transformers(%{
+                 "is_causal" => false,
+                 "use_bidirectional_attention" => false
+               })
+    end
+
+    test "falls back to use_bidirectional_attention" do
+      assert [use_bidirectional_attention: true] =
+               Shared.bidirectional_attention_options_from_transformers(%{
+                 "use_bidirectional_attention" => true
+               })
+    end
+
+    test "rejects a non-boolean is_causal value" do
+      assert_raise RuntimeError, ~r/expected "is_causal" to be a boolean/, fn ->
+        Shared.bidirectional_attention_options_from_transformers(%{"is_causal" => "false"})
+      end
+    end
+  end
+
   describe "validate_label_options/1" do
     test "passes when :id_to_label is empty" do
       spec = %{__struct__: TestConfig, num_labels: 3, id_to_label: %{}}

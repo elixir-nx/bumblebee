@@ -3,6 +3,15 @@ defmodule Bumblebee.Text.Llama do
 
   options =
     [
+      use_bidirectional_attention: [
+        default: false,
+        doc: """
+        whether to use bidirectional attention. Loaded from checkpoint `is_causal`
+        (inverted), or `use_bidirectional_attention`. The default is causal, including
+        the `:base` architecture. Bidirectional inference requires the full sequence
+        on each pass and does not support decoding cache or generation
+        """
+      ],
       vocab_size: [
         default: 32000,
         doc: """
@@ -154,6 +163,7 @@ defmodule Bumblebee.Text.Llama do
     spec
     |> Shared.put_config_attrs(opts)
     |> Shared.validate_label_options()
+    |> Shared.validate_bidirectional_attention()
   end
 
   @impl true
@@ -164,6 +174,11 @@ defmodule Bumblebee.Text.Llama do
   end
 
   @impl true
+  def init_cache(%{use_bidirectional_attention: true}, _batch_size, _max_length, _inputs) do
+    raise ArgumentError,
+          "decoding cache and generation are not supported with bidirectional attention"
+  end
+
   def init_cache(spec, batch_size, max_length, _inputs) do
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
@@ -272,7 +287,10 @@ defmodule Bumblebee.Text.Llama do
         position_ids,
         inputs["attention_mask"],
         inputs["attention_head_mask"],
-        inputs["cache"],
+        Layers.Decoder.validate_attention_cache(
+          inputs["cache"],
+          spec.use_bidirectional_attention
+        ),
         spec,
         name: "decoder"
       )
@@ -338,7 +356,7 @@ defmodule Bumblebee.Text.Llama do
             num_key_value_heads: spec.num_key_value_heads,
             hidden_size: spec.hidden_size,
             attention_head_size: spec.attention_head_size,
-            causal: true,
+            causal: not spec.use_bidirectional_attention,
             rotary_embedding: [
               position_ids: position_ids,
               max_positions: spec.max_positions,
@@ -409,6 +427,7 @@ defmodule Bumblebee.Text.Llama do
           layer_norm_epsilon: {"rms_norm_eps", number()},
           tie_word_embeddings: {"tie_word_embeddings", boolean()}
         ) ++
+          Shared.bidirectional_attention_options_from_transformers(data) ++
           Shared.rotary_embedding_options_from_transformers(data) ++
           Shared.common_options_from_transformers(data, spec)
 

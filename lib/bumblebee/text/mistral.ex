@@ -3,6 +3,15 @@ defmodule Bumblebee.Text.Mistral do
 
   options =
     [
+      use_bidirectional_attention: [
+        default: false,
+        doc: """
+        whether to use bidirectional attention. Loaded from checkpoint `is_causal`
+        (inverted), or `use_bidirectional_attention`. The default is causal, including
+        the `:base` architecture. Bidirectional inference requires the full sequence
+        on each pass and does not support decoding cache or generation
+        """
+      ],
       vocab_size: [
         default: 32000,
         doc: """
@@ -46,7 +55,7 @@ defmodule Bumblebee.Text.Mistral do
       attention_window_size: [
         default: 4096,
         doc:
-          "the number of tokens each token can attend to in the sliding attention window, including itself"
+          "causal window width including the token itself; in bidirectional mode, the maximum distance on either side"
       ],
       activation: [
         default: :silu,
@@ -153,6 +162,7 @@ defmodule Bumblebee.Text.Mistral do
     spec
     |> Shared.put_config_attrs(opts)
     |> Shared.validate_label_options()
+    |> Shared.validate_bidirectional_attention()
   end
 
   @impl true
@@ -163,6 +173,11 @@ defmodule Bumblebee.Text.Mistral do
   end
 
   @impl true
+  def init_cache(%{use_bidirectional_attention: true}, _batch_size, _max_length, _inputs) do
+    raise ArgumentError,
+          "decoding cache and generation are not supported with bidirectional attention"
+  end
+
   def init_cache(spec, batch_size, max_length, _inputs) do
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
@@ -270,7 +285,10 @@ defmodule Bumblebee.Text.Mistral do
         position_ids,
         inputs["attention_mask"],
         inputs["attention_head_mask"],
-        inputs["cache"],
+        Layers.Decoder.validate_attention_cache(
+          inputs["cache"],
+          spec.use_bidirectional_attention
+        ),
         spec,
         name: "decoder"
       )
@@ -337,10 +355,11 @@ defmodule Bumblebee.Text.Mistral do
             num_heads: spec.num_attention_heads,
             num_key_value_heads: spec.num_key_value_heads,
             hidden_size: spec.hidden_size,
-            causal: true,
+            causal: not spec.use_bidirectional_attention,
             attention_window_size:
               spec.attention_window_size &&
-                {spec.attention_window_size - 1, spec.attention_window_size - 1},
+                {spec.attention_window_size - if(spec.use_bidirectional_attention, do: 0, else: 1),
+                 spec.attention_window_size},
             rotary_embedding: [
               position_ids: position_ids,
               max_positions: spec.max_positions,
@@ -409,6 +428,7 @@ defmodule Bumblebee.Text.Mistral do
           initializer_scale: {"initializer_range", number()},
           layer_norm_epsilon: {"rms_norm_eps", number()}
         ) ++
+          Shared.bidirectional_attention_options_from_transformers(data) ++
           Shared.rotary_embedding_options_from_transformers(data) ++
           Shared.common_options_from_transformers(data, spec)
 

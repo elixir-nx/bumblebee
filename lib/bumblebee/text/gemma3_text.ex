@@ -80,7 +80,7 @@ defmodule Bumblebee.Text.Gemma3Text do
       attention_window_size: [
         default: 4096,
         doc:
-          "the number of tokens each token can attend to in the sliding attention window, including itself. Only used for `:sliding_attention` layers"
+          "causal window width including the token itself. Bidirectional layers use half this width as the distance on either side, matching Transformers. Only used for `:sliding_attention` layers"
       ],
       layer_types: [
         default: nil,
@@ -95,7 +95,12 @@ defmodule Bumblebee.Text.Gemma3Text do
       ],
       use_bidirectional_attention: [
         default: false,
-        doc: "whether to use bidirectional attention instead of causal attention"
+        doc: """
+        whether to use bidirectional attention. Loaded from checkpoint `is_causal`
+        (inverted), or `use_bidirectional_attention`. The default is causal, including
+        the `:base` architecture. Bidirectional inference requires the full sequence
+        on each pass and does not support decoding cache or generation
+        """
       ]
     ] ++
       Shared.common_options([:rotary_embedding_scaling_strategy, :num_labels, :id_to_label]) ++
@@ -194,6 +199,7 @@ defmodule Bumblebee.Text.Gemma3Text do
     spec
     |> Shared.put_config_attrs(opts)
     |> Shared.validate_label_options()
+    |> Shared.validate_bidirectional_attention()
   end
 
   @impl true
@@ -204,6 +210,11 @@ defmodule Bumblebee.Text.Gemma3Text do
   end
 
   @impl true
+  def init_cache(%{use_bidirectional_attention: true}, _batch_size, _max_length, _inputs) do
+    raise ArgumentError,
+          "decoding cache and generation are not supported with bidirectional attention"
+  end
+
   def init_cache(spec, batch_size, max_length, _inputs) do
     Layers.Decoder.init_cache(batch_size, max_length,
       hidden_size: spec.hidden_size,
@@ -312,7 +323,10 @@ defmodule Bumblebee.Text.Gemma3Text do
         position_ids,
         inputs["attention_mask"],
         inputs["attention_head_mask"],
-        inputs["cache"],
+        Layers.Decoder.validate_attention_cache(
+          inputs["cache"],
+          spec.use_bidirectional_attention
+        ),
         spec,
         name: "decoder"
       )
@@ -395,8 +409,12 @@ defmodule Bumblebee.Text.Gemma3Text do
               {nil, spec.rotary_embedding_base, spec.rotary_embedding_scaling_strategy}
 
             :sliding_attention ->
-              {{spec.attention_window_size - 1, spec.attention_window_size - 1},
-               spec.rotary_embedding_base_local, nil}
+              radius =
+                if spec.use_bidirectional_attention,
+                  do: div(spec.attention_window_size, 2),
+                  else: spec.attention_window_size - 1
+
+              {{radius, radius}, spec.rotary_embedding_base_local, nil}
           end
 
         shortcut = hidden_state
@@ -539,9 +557,14 @@ defmodule Bumblebee.Text.Gemma3Text do
                  "full_attention" => :full_attention
                })
              )},
-          tie_word_embeddings: {"tie_word_embeddings", boolean()},
-          use_bidirectional_attention: {"use_bidirectional_attention", boolean()}
+          tie_word_embeddings: {"tie_word_embeddings", boolean()}
         ) ++
+          Shared.bidirectional_attention_options_from_transformers(
+            if(Map.has_key?(data, "use_bidirectional_attention"),
+              do: Map.delete(data, "is_causal"),
+              else: data
+            )
+          ) ++
           Shared.rotary_embedding_options_from_transformers(data) ++
           Shared.common_options_from_transformers(data, spec)
 
