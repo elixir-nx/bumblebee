@@ -38,9 +38,14 @@ defmodule Bumblebee.Shared do
 
           * `%{type: :dynamic, factor: number()}`
 
+          * `%{type: :yarn, factor: number(), original_max_positions: pos_integer(), beta_fast: number(), beta_slow: number()}`
+
           * `%{type: :llama3, factor: number(), low_frequency_factor: number(), high_frequency_factor: number(), original_max_positions: pos_integer()}`
 
           * `%{type: :longrope, short_factor: list(number()), long_factor: list(number()), original_max_positions: pos_integer()}`
+
+        YaRN also accepts `:attention_factor` (defaults to `0.1 * log(factor) + 1.0`)
+        and `:truncate` (defaults to `true`).
 
         For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
         """
@@ -168,8 +173,14 @@ defmodule Bumblebee.Shared do
   end
 
   defp rotary_embedding_options(params, data) do
+    base = params["rope_theta"]
+
+    if base != nil and (not is_number(base) or base <= 0) do
+      raise "conversion failed, \"rope_theta\" must be a positive number"
+    end
+
     [
-      rotary_embedding_base: params["rope_theta"],
+      rotary_embedding_base: base,
       rotary_embedding_percentage: params["partial_rotary_factor"],
       rotary_embedding_scaling_strategy: rotary_embedding_scaling_strategy(params, data)
     ]
@@ -182,37 +193,173 @@ defmodule Bumblebee.Shared do
       data["original_max_position_embeddings"] || params["original_max_position_embeddings"] ||
         data["max_position_embeddings"]
 
-    case {params["rope_type"] || params["type"] || "default", params} do
+    type = rope_type!(params)
+
+    if type == "default" and scaling_fields?(params) do
+      if Map.has_key?(params, "type") or Map.has_key?(params, "rope_type") do
+        raise "conversion failed, default rotary embedding does not accept scaling parameters"
+      else
+        raise "conversion failed, rotary embedding scaling parameters require \"type\" or \"rope_type\""
+      end
+    end
+
+    case {type, params} do
       {"default", _params} ->
         nil
 
       {"linear", %{"factor" => factor}} ->
-        %{type: :linear, factor: factor}
+        %{type: :linear, factor: validate_factor!(factor, "linear")}
 
       {"dynamic", %{"factor" => factor}} ->
-        %{type: :dynamic, factor: factor}
+        %{type: :dynamic, factor: validate_factor!(factor, type)}
 
       {"llama3", %{"factor" => factor, "low_freq_factor" => low, "high_freq_factor" => high}} ->
-        %{
-          type: :llama3,
-          factor: factor,
-          low_frequency_factor: low,
-          high_frequency_factor: high,
-          original_max_positions: original_max_positions
-        }
+        llama3_scaling_strategy(factor, low, high, original_max_positions)
 
       # Old Phi-3 checkpoints use "su" and "yarn" for LongRoPE
-      {type, %{"short_factor" => short_factor, "long_factor" => long_factor}}
+      {type, %{"short_factor" => _short_factor, "long_factor" => _long_factor} = params}
       when type in ["longrope", "su", "yarn"] ->
-        %{
-          type: :longrope,
-          short_factor: short_factor,
-          long_factor: long_factor,
-          original_max_positions: original_max_positions
-        }
+        longrope_scaling_strategy(params, original_max_positions)
+
+      {"yarn", %{"factor" => _factor}} = config ->
+        yarn_scaling_strategy(config, original_max_positions)
 
       _other ->
         raise "conversion failed, unsupported rotary embedding parameters: #{inspect(params)}"
+    end
+  end
+
+  defp yarn_scaling_strategy({"yarn", params}, original_max_positions) do
+    factor = validate_factor!(params["factor"], "yarn")
+    original_max_positions = validate_original_max_positions!(original_max_positions, "yarn")
+    beta_fast = validate_positive_number!(params["beta_fast"] || 32.0, "beta_fast", "yarn")
+    beta_slow = validate_positive_number!(params["beta_slow"] || 1.0, "beta_slow", "yarn")
+
+    unless is_boolean(Map.get(params, "truncate", true)) do
+      raise "conversion failed, yarn requires \"truncate\" to be a boolean"
+    end
+
+    if beta_fast < beta_slow do
+      raise "conversion failed, YaRN requires \"beta_fast\" >= \"beta_slow\""
+    end
+
+    %{
+      type: :yarn,
+      factor: factor,
+      original_max_positions: original_max_positions,
+      beta_fast: beta_fast,
+      beta_slow: beta_slow,
+      attention_factor: yarn_attention_factor(params, factor),
+      truncate: Map.get(params, "truncate", true)
+    }
+  end
+
+  defp llama3_scaling_strategy(factor, low, high, original_max_positions) do
+    factor = validate_factor!(factor, "llama3")
+    low = validate_positive_number!(low, "low_freq_factor", "llama3")
+    high = validate_positive_number!(high, "high_freq_factor", "llama3")
+
+    if high <= low do
+      raise "conversion failed, llama3 requires \"high_freq_factor\" > \"low_freq_factor\""
+    end
+
+    %{
+      type: :llama3,
+      factor: factor,
+      low_frequency_factor: low,
+      high_frequency_factor: high,
+      original_max_positions: validate_original_max_positions!(original_max_positions, "llama3")
+    }
+  end
+
+  defp rope_type!(%{"rope_type" => rope_type, "type" => type}) when rope_type != type do
+    raise "conversion failed, conflicting \"rope_type\" and \"type\" values"
+  end
+
+  defp rope_type!(%{"rope_type" => rope_type}), do: rope_type
+  defp rope_type!(%{"type" => type}), do: type
+  defp rope_type!(_params), do: "default"
+
+  defp scaling_fields?(params) do
+    Enum.any?(
+      [
+        "factor",
+        "short_factor",
+        "long_factor",
+        "low_freq_factor",
+        "high_freq_factor",
+        "beta_fast",
+        "beta_slow",
+        "attention_factor",
+        "mscale",
+        "mscale_all_dim",
+        "truncate"
+      ],
+      &Map.has_key?(params, &1)
+    )
+  end
+
+  defp longrope_scaling_strategy(params, original_max_positions) do
+    %{
+      type: :longrope,
+      short_factor: validate_number_list!(params["short_factor"], "short_factor", "longrope"),
+      long_factor: validate_number_list!(params["long_factor"], "long_factor", "longrope"),
+      original_max_positions: validate_original_max_positions!(original_max_positions, "longrope")
+    }
+  end
+
+  defp yarn_attention_factor(params, factor) do
+    case params["attention_factor"] do
+      nil ->
+        case {params["mscale"], params["mscale_all_dim"]} do
+          {nil, nil} ->
+            yarn_mscale(factor)
+
+          {mscale, mscale_all_dim} when is_number(mscale) and is_number(mscale_all_dim) ->
+            yarn_mscale(factor, mscale) / yarn_mscale(factor, mscale_all_dim)
+
+          _other ->
+            raise "conversion failed, yarn requires numeric \"mscale\" and \"mscale_all_dim\" together"
+        end
+
+      attention_factor ->
+        validate_positive_number!(attention_factor, "attention_factor", "yarn")
+    end
+  end
+
+  defp yarn_mscale(factor, mscale \\ 1.0)
+  defp yarn_mscale(factor, _mscale) when factor <= 1.0, do: 1.0
+  defp yarn_mscale(factor, mscale), do: 0.1 * mscale * :math.log(factor) + 1.0
+
+  defp validate_factor!(factor, type) do
+    if is_number(factor) and factor >= 1.0 do
+      factor
+    else
+      raise "conversion failed, #{type} requires a numeric \"factor\" >= 1"
+    end
+  end
+
+  defp validate_original_max_positions!(value, type) do
+    if is_integer(value) and value > 0 do
+      value
+    else
+      raise "conversion failed, #{type} requires a positive integer \"original_max_position_embeddings\""
+    end
+  end
+
+  defp validate_positive_number!(value, key, type) do
+    if is_number(value) and value > 0 do
+      value
+    else
+      raise "conversion failed, #{type} requires a positive numeric #{inspect(key)}"
+    end
+  end
+
+  defp validate_number_list!(value, key, type) do
+    if is_list(value) and value != [] and Enum.all?(value, &(is_number(&1) and &1 > 0)) do
+      value
+    else
+      raise "conversion failed, #{type} requires a non-empty list of positive numbers for #{inspect(key)}"
     end
   end
 
