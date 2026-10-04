@@ -42,6 +42,8 @@ defmodule Bumblebee.Shared do
 
           * `%{type: :longrope, short_factor: list(number()), long_factor: list(number()), original_max_positions: pos_integer()}`
 
+          * `%{type: :yarn, factor: number(), original_max_positions: pos_integer(), beta_fast: number(), beta_slow: number(), attention_factor: number()}`
+
         For more details see https://www.reddit.com/r/LocalLLaMA/comments/14mrgpr/dynamically_scaled_rope_further_increases
         """
       ]
@@ -211,10 +213,34 @@ defmodule Bumblebee.Shared do
           original_max_positions: original_max_positions
         }
 
+      {"yarn", %{"factor" => factor} = params} ->
+        attention_factor =
+          params["attention_factor"] ||
+            case {params["mscale"], params["mscale_all_dim"]} do
+              {mscale, mscale_all_dim} when is_number(mscale) and is_number(mscale_all_dim) ->
+                yarn_mscale(factor, mscale) / yarn_mscale(factor, mscale_all_dim)
+
+              _other ->
+                yarn_mscale(factor)
+            end
+
+        %{
+          type: :yarn,
+          factor: factor,
+          original_max_positions: original_max_positions,
+          beta_fast: params["beta_fast"] || 32.0,
+          beta_slow: params["beta_slow"] || 1.0,
+          attention_factor: attention_factor
+        }
+
       _other ->
         raise "conversion failed, unsupported rotary embedding parameters: #{inspect(params)}"
     end
   end
+
+  defp yarn_mscale(factor, mscale \\ 1.0)
+  defp yarn_mscale(factor, _mscale) when factor <= 1.0, do: 1.0
+  defp yarn_mscale(factor, mscale), do: 0.1 * mscale * :math.log(factor) + 1.0
 
   @doc """
   Merges the given list of attributes into a configuration struct.

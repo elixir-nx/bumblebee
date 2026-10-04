@@ -54,6 +54,43 @@ defmodule Bumblebee.Text.LlamaTest do
     )
   end
 
+  test ":base rotary embedding scaling strategy :yarn" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-LlamaModel"},
+               spec_overrides: [
+                 rotary_embedding_scaling_strategy: %{
+                   type: :yarn,
+                   factor: 4.0,
+                   original_max_positions: 16,
+                   beta_fast: 32.0,
+                   beta_slow: 1.0,
+                   attention_factor: 1.138629436111989
+                 }
+               ]
+             )
+
+    assert %Bumblebee.Text.Llama{
+             architecture: :base,
+             rotary_embedding_scaling_strategy: %{type: :yarn}
+           } = spec
+
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
+
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.hidden_state) == {1, 10, 32}
+
+    assert_all_close(
+      outputs.hidden_state[[.., 1..3, 1..3]],
+      Nx.tensor([
+        [[1.4805, -2.0318, 0.4768], [2.3732, -0.8378, -0.0220], [0.5740, -0.0519, -1.1806]]
+      ])
+    )
+  end
+
   test ":for_sequence_classification" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(

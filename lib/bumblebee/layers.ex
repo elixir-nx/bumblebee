@@ -1321,10 +1321,56 @@ defmodule Bumblebee.Layers do
 
         positions_cos_sin(position, inv_frequency)
 
+      %{
+        type: :yarn,
+        factor: factor,
+        original_max_positions: original_max_positions
+      } = yarn ->
+        beta_fast = yarn[:beta_fast] || 32.0
+        beta_slow = yarn[:beta_slow] || 1.0
+        attention_factor = yarn[:attention_factor] || 1.0
+
+        inv_frequency_extrapolation = inv_frequency(base, range)
+        inv_frequency_interpolation = Nx.divide(inv_frequency_extrapolation, factor)
+
+        low = yarn_correction_dim(beta_fast, size, base, original_max_positions)
+        high = yarn_correction_dim(beta_slow, size, base, original_max_positions)
+
+        {low, high} =
+          if Map.get(yarn, :truncate, true) do
+            {:math.floor(low), :math.ceil(high)}
+          else
+            {low, high}
+          end
+
+        low = max(low, 0.0)
+        high = min(high, size - 1.0)
+        high = if low == high, do: high + 0.001, else: high
+
+        ramp =
+          Nx.iota({div(size, 2)})
+          |> Nx.subtract(low)
+          |> Nx.divide(high - low)
+          |> Nx.clip(0.0, 1.0)
+
+        inv_frequency =
+          Nx.add(
+            Nx.multiply(inv_frequency_interpolation, ramp),
+            Nx.multiply(inv_frequency_extrapolation, Nx.subtract(1.0, ramp))
+          )
+
+        {cos, sin} = positions_cos_sin(position, inv_frequency)
+        {Nx.multiply(cos, attention_factor), Nx.multiply(sin, attention_factor)}
+
       _other ->
         inv_frequency = inv_frequency(base, range)
         positions_cos_sin(position, inv_frequency)
     end
+  end
+
+  defp yarn_correction_dim(num_rotations, size, base, original_max_positions) do
+    size * :math.log(original_max_positions / (num_rotations * 2 * :math.pi())) /
+      (2 * :math.log(base))
   end
 
   defnp llama3_inv_frequency(
