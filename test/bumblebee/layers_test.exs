@@ -32,14 +32,7 @@ defmodule Bumblebee.LayersTest do
       params = init.(inputs, Axon.ModelState.empty())
       outputs = predict.(params, inputs)
 
-      scale = 2.0 * 4 / 2 - (2.0 - 1.0)
-      base = 10_000 * :math.pow(scale, 4 / (4 - 2))
-      angle = 1 / :math.sqrt(base)
-
-      assert_all_close(
-        outputs.query[[0, 1, 0, 1]],
-        Nx.tensor(:math.cos(angle) - :math.sin(angle))
-      )
+      assert_all_close(outputs.query[[0, 1, 0, 1]], Nx.tensor(0.9967))
     end
   end
 end
