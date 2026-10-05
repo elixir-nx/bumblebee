@@ -28,4 +28,30 @@ defmodule Bumblebee.SharedTest do
                    end
     end
   end
+
+  describe "rotary_embedding_options_from_transformers/1" do
+    test "loads YaRN configuration" do
+      data = %{
+        "rope_theta" => 10_000.0,
+        "rope_scaling" => %{
+          "rope_type" => "yarn",
+          "factor" => 4.0,
+          "original_max_position_embeddings" => 2048
+        }
+      }
+
+      assert Shared.rotary_embedding_options_from_transformers(data) == [
+               rotary_embedding_base: 10_000.0,
+               rotary_embedding_scaling_strategy: %{
+                 type: :yarn,
+                 factor: 4.0,
+                 original_max_positions: 2048,
+                 beta_fast: 32.0,
+                 beta_slow: 1.0,
+                 attention_factor: 0.1 * :math.log(4.0) + 1.0,
+                 truncate: true
+               }
+             ]
+    end
+  end
 end
