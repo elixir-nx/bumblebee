@@ -1267,10 +1267,8 @@ defmodule Bumblebee.Layers do
         positions_cos_sin(position, inv_frequency)
 
       %{type: :dynamic, factor: factor} when sequence_length > max_positions ->
-        base =
-          base
-          |> Nx.multiply(factor * sequence_length / max_positions - (factor - 1))
-          |> Nx.pow(size / (size - 2))
+        scale = factor * sequence_length / max_positions - (factor - 1)
+        base = Nx.multiply(base, Nx.pow(scale, size / (size - 2)))
 
         inv_frequency = inv_frequency(base, range)
         positions_cos_sin(position, inv_frequency)
