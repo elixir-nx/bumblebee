@@ -54,7 +54,8 @@ defmodule Bumblebee.LayersTest do
         original_max_positions: 2,
         beta_fast: 32.0,
         beta_slow: 1.0,
-        attention_factor: 0.1 * :math.log(4.0) + 1.0
+        attention_factor: 0.1 * :math.log(4.0) + 1.0,
+        truncate: true
       }
 
       {query, _key} =
@@ -77,9 +78,7 @@ defmodule Bumblebee.LayersTest do
 
       assert_all_close(
         outputs.query[[0, 1..3, 0, 0..1]],
-        Nx.tensor([[-0.3012, 0.9975], [-1.3254, 0.9950], [-1.1311, 0.9925]])
-        |> Nx.multiply(0.1 * :math.log(4.0) + 1.0),
-        atol: 1.0e-4
+        Nx.tensor([[-0.3429, 1.1358], [-1.5092, 1.1329], [-1.2879, 1.1301]])
       )
     end
   end

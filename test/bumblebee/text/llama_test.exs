@@ -64,7 +64,8 @@ defmodule Bumblebee.Text.LlamaTest do
                    original_max_positions: 16,
                    beta_fast: 32.0,
                    beta_slow: 1.0,
-                   attention_factor: 1.138629436111989
+                   attention_factor: 1.138629436111989,
+                   truncate: true
                  }
                ]
              )

@@ -1324,12 +1324,12 @@ defmodule Bumblebee.Layers do
       %{
         type: :yarn,
         factor: factor,
-        original_max_positions: original_max_positions
-      } = yarn ->
-        beta_fast = yarn[:beta_fast] || 32.0
-        beta_slow = yarn[:beta_slow] || 1.0
-        attention_factor = yarn[:attention_factor] || 1.0
-
+        original_max_positions: original_max_positions,
+        beta_fast: beta_fast,
+        beta_slow: beta_slow,
+        attention_factor: attention_factor,
+        truncate: truncate
+      } ->
         inv_frequency_extrapolation = inv_frequency(base, range)
         inv_frequency_interpolation = Nx.divide(inv_frequency_extrapolation, factor)
 
@@ -1337,7 +1337,7 @@ defmodule Bumblebee.Layers do
         high = yarn_correction_dim(beta_slow, size, base, original_max_positions)
 
         {low, high} =
-          if Map.get(yarn, :truncate, true) do
+          if truncate do
             {:math.floor(low), :math.ceil(high)}
           else
             {low, high}

@@ -48,7 +48,8 @@ defmodule Bumblebee.SharedTest do
                  original_max_positions: 2048,
                  beta_fast: 32.0,
                  beta_slow: 1.0,
-                 attention_factor: 0.1 * :math.log(4.0) + 1.0
+                 attention_factor: 0.1 * :math.log(4.0) + 1.0,
+                 truncate: true
                }
              ]
     end
