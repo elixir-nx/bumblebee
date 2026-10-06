@@ -54,76 +54,70 @@ defmodule Bumblebee.SentenceTransformers do
       |> Keyword.take([:backend, :type, :safetensors_reader])
       |> Keyword.put_new(:architecture, :base)
 
-    case Downloader.download_file(repository, "modules.json") do
-      {:ok, modules_path} ->
-        with {:ok, modules} <- Pipeline.decode_json(modules_path),
-             modules = Enum.sort_by(modules, &(&1["idx"] || 0)),
-             [first | pipeline_modules] <- modules do
-          first_type = Pipeline.normalize_module_type(first["type"])
-
-          case first_type do
-            "Transformer" ->
-              base_repository = Downloader.subrepository(repository, first["path"])
-
-              with {:ok, model_info} <- Bumblebee.load_model(base_repository, base_opts),
-                   {:ok, model_info} <-
-                     Pipeline.build(repository, pipeline_modules, model_info, opts) do
-                load_config_and_attach(repository, model_info)
-              end
-
-            "StaticEmbedding" ->
-              with {:ok, model_info} <-
-                     Pipeline.build_static_embedding(repository, first, opts),
-                   {:ok, model_info} <-
-                     Pipeline.build(repository, pipeline_modules, model_info, opts) do
-                load_config_and_attach(repository, model_info)
-              end
-
-            other ->
-              {:error, "unsupported base module in modules.json: #{inspect(other)}"}
-          end
-        else
-          [] ->
-            {:error, "modules.json is empty"}
-
-          {:error, reason} ->
-            {:error, reason}
-
-          _other ->
-            {:error,
-             "expected modules.json to define a Transformer or StaticEmbedding base model"}
+    case load_pipeline_modules(repository) do
+      {:ok, [first | pipeline_modules]} ->
+        with {:ok, model_info} <- load_base_model(repository, first, base_opts, opts),
+             {:ok, model_info} <- Pipeline.build(repository, pipeline_modules, model_info, opts) do
+          load_config_and_attach(repository, model_info)
         end
+
+      {:missing_modules, _reason} ->
+        load_fallback_model(repository, base_opts, opts)
 
       {:error, reason} ->
-        if Downloader.missing_file?(repository, "modules.json", reason) do
-          load_fallback_model(repository, base_opts, opts)
-        else
-          {:error, reason}
-        end
+        {:error, reason}
     end
+  end
+
+  defp load_base_model(repository, %{"path" => path, "type" => type} = first, base_opts, opts) do
+    case Pipeline.normalize_module_type(type) do
+      "Transformer" ->
+        base_repository = Downloader.subrepository(repository, path)
+        Bumblebee.load_model(base_repository, base_opts)
+
+      "StaticEmbedding" ->
+        Pipeline.build_static_embedding(repository, first, opts)
+
+      other ->
+        {:error, "unsupported base module in modules.json: #{inspect(other)}"}
+    end
+  end
+
+  defp load_base_model(_repository, _first, _base_opts, _opts) do
+    {:error, "expected modules.json to define a Transformer or StaticEmbedding base model"}
   end
 
   defp load_fallback_model(repository, base_opts, opts) do
     # Fallback when modules.json is not present: load model and apply default pooling
     # CausalLM-based models use last token pooling, otherwise mean pooling
-    with {:ok, model_info} <- Bumblebee.load_model(repository, base_opts) do
-      pooling_mode = infer_fallback_pooling_mode(repository, model_info)
+    with {:ok, model_info} <- Bumblebee.load_model(repository, base_opts),
+         fallback_modules = build_fallback_modules(repository, model_info),
+         {:ok, model_info} <- Pipeline.build(repository, fallback_modules, model_info, opts) do
+      load_config_and_attach(repository, model_info)
+    end
+  end
 
-      with {:ok, model_info} <-
-             Pipeline.build(
-               repository,
-               [
-                 %{
-                   "type" => "Pooling",
-                   "path" => "default_pooling",
-                   "pooling_mode" => pooling_mode
-                 }
-               ],
-               model_info,
-               opts
-             ) do
-        load_config_and_attach(repository, model_info)
-      end
+  defp build_fallback_modules(repository, model_info) do
+    pooling_mode = infer_fallback_pooling_mode(repository, model_info)
+    [%{"type" => "Pooling", "path" => "default_pooling", "pooling_mode" => pooling_mode}]
+  end
+
+  defp load_pipeline_modules(repository, opts \\ []) do
+    case Downloader.download_file(repository, "modules.json", opts) do
+      {:ok, path} ->
+        with {:ok, modules} <- Pipeline.decode_json(path) do
+          case Enum.sort_by(modules, &(&1["idx"] || 0)) do
+            [] -> {:error, "modules.json is empty"}
+            sorted -> {:ok, sorted}
+          end
+        end
+
+      {:error, reason} ->
+        if Downloader.missing_file?(repository, "modules.json", reason) do
+          {:missing_modules, reason}
+        else
+          {:error, reason}
+        end
     end
   end
 
@@ -167,28 +161,22 @@ defmodule Bumblebee.SentenceTransformers do
   end
 
   defp do_load_embedding_head(repository, model_info, opts) do
-    case Downloader.download_file(repository, "modules.json") do
-      {:ok, modules_path} ->
-        with {:ok, modules} <- Pipeline.decode_json(modules_path),
-             modules = Enum.sort_by(modules, &(&1["idx"] || 0)),
-             [first | pipeline_modules] <- modules,
-             true <-
-               Pipeline.normalize_module_type(first["type"]) in ["Transformer", "StaticEmbedding"] ||
-                 {:error,
-                  "expected the first module in modules.json to be Transformer or StaticEmbedding"},
-             {:ok, model_info} <- Pipeline.build(repository, pipeline_modules, model_info, opts) do
-          load_config_and_attach(repository, model_info)
+    case load_pipeline_modules(repository) do
+      {:ok, [first | pipeline_modules]} ->
+        if Pipeline.normalize_module_type(first["type"]) in ["Transformer", "StaticEmbedding"] do
+          with {:ok, model_info} <- Pipeline.build(repository, pipeline_modules, model_info, opts) do
+            load_config_and_attach(repository, model_info)
+          end
         else
-          {:error, reason} ->
-            {:error, reason}
-
-          _other ->
-            {:error,
-             "expected modules.json to define a Transformer or StaticEmbedding base model"}
+          {:error,
+           "expected the first module in modules.json to be Transformer or StaticEmbedding"}
         end
 
-      {:error, _} ->
+      {:missing_modules, _reason} ->
         {:error, "could not find modules.json in the repository"}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -197,22 +185,15 @@ defmodule Bumblebee.SentenceTransformers do
   or the repository root when `modules.json` is absent.
   """
   def load_tokenizer(repository, opts \\ []) do
-    case Downloader.download_file(repository, "modules.json") do
-      {:ok, path} ->
-        with {:ok, modules} <- Pipeline.decode_json(path),
-             [first | _] <- Enum.sort_by(modules, &(&1["idx"] || 0)) do
-          Bumblebee.load_tokenizer(Downloader.subrepository(repository, first["path"]), opts)
-        else
-          {:error, reason} -> {:error, reason}
-          _ -> {:error, "modules.json is empty"}
-        end
+    case load_pipeline_modules(repository, opts) do
+      {:ok, [first | _]} ->
+        Bumblebee.load_tokenizer(Downloader.subrepository(repository, first["path"]), opts)
+
+      {:missing_modules, _reason} ->
+        Bumblebee.load_tokenizer(repository, opts)
 
       {:error, reason} ->
-        if Downloader.missing_file?(repository, "modules.json", reason) do
-          Bumblebee.load_tokenizer(repository, opts)
-        else
-          {:error, reason}
-        end
+        {:error, reason}
     end
   end
 
@@ -424,88 +405,10 @@ defmodule Bumblebee.SentenceTransformers do
     {_init_fun, encoder} = Axon.build(model)
 
     embedding_fun = fn params, inputs ->
-      output = encoder.(params, inputs)
-
-      output =
-        case output do
-          %Nx.Tensor{} ->
-            output
-
-          %{^output_attribute => %Axon.None{}} ->
-            keys = output |> Map.keys() |> Enum.sort()
-
-            raise ArgumentError,
-                  "key #{inspect(output_attribute)} in the output map has value %Axon.None{}," <>
-                    " make sure this is the correct key and check module documentation incase it is opt-in." <>
-                    " The output map keys are: #{inspect(keys)}"
-
-          %{^output_attribute => output} ->
-            output
-
-          %{embedding: output} when output_attribute == :pooled_state ->
-            output
-
-          %{} ->
-            keys = output |> Map.keys() |> Enum.sort()
-
-            raise ArgumentError,
-                  "key #{inspect(output_attribute)} not found in the output map," <>
-                    " you may want to set :output_attribute to one of the map keys: #{inspect(keys)}"
-
-          _ ->
-            output
-        end
-
-      if output_pool != nil and Nx.rank(output) != 3 do
-        raise ArgumentError,
-              "expected the output tensor to have rank 3 to apply :output_pool, got: #{Nx.rank(output)}." <>
-                " You should either disable pooling or pick a different output using :output_attribute"
-      end
-
-      output =
-        case output_pool do
-          nil ->
-            output
-
-          :cls_token_pooling ->
-            Nx.take(output, 0, axis: 1)
-
-          :mean_pooling ->
-            input_mask_expanded = Nx.new_axis(inputs["attention_mask"], -1)
-
-            output
-            |> Nx.multiply(input_mask_expanded)
-            |> Nx.sum(axes: [1])
-            |> Nx.divide(Nx.sum(input_mask_expanded, axes: [1]))
-
-          :last_token_pooling ->
-            sequence_lengths =
-              inputs["attention_mask"]
-              |> Nx.sum(axes: [1])
-              |> Nx.subtract(1)
-              |> Nx.as_type({:s, 64})
-
-            Bumblebee.Utils.Nx.batched_take(output, sequence_lengths)
-
-          other ->
-            raise ArgumentError,
-                  "expected :output_pool to be one of :cls_token_pooling, :mean_pooling, :last_token_pooling or nil, got: #{inspect(other)}"
-        end
-
-      output =
-        case embedding_processor do
-          nil ->
-            output
-
-          :l2_norm ->
-            Bumblebee.Utils.Nx.normalize(output)
-
-          other ->
-            raise ArgumentError,
-                  "expected :embedding_processor to be one of nil or :l2_norm, got: #{inspect(other)}"
-        end
-
-      output
+      encoder.(params, inputs)
+      |> extract_output_tensor(output_attribute)
+      |> apply_output_pool(output_pool, inputs)
+      |> apply_embedding_processor(embedding_processor)
     end
 
     batch_keys = Bumblebee.Shared.sequence_batch_keys(sequence_length)
@@ -622,36 +525,104 @@ defmodule Bumblebee.SentenceTransformers do
     |> MapSet.new(&PreTrainedTokenizer.token_to_id(tokenizer, &1))
   end
 
+  defp extract_output_tensor(%Nx.Tensor{} = tensor, _attribute), do: tensor
+
+  defp extract_output_tensor(%{} = output, attribute) do
+    case Map.fetch(output, attribute) do
+      {:ok, %Axon.None{}} ->
+        keys = output |> Map.keys() |> Enum.sort()
+
+        raise ArgumentError,
+              "key #{inspect(attribute)} in the output map has value %Axon.None{}," <>
+                " make sure this is the correct key and check module documentation incase it is opt-in." <>
+                " The output map keys are: #{inspect(keys)}"
+
+      {:ok, tensor} ->
+        tensor
+
+      :error when attribute == :pooled_state and is_map_key(output, :embedding) ->
+        output.embedding
+
+      :error ->
+        keys = output |> Map.keys() |> Enum.sort()
+
+        raise ArgumentError,
+              "key #{inspect(attribute)} not found in the output map," <>
+                " you may want to set :output_attribute to one of the map keys: #{inspect(keys)}"
+    end
+  end
+
+  defp extract_output_tensor(other, _attribute), do: other
+
+  defp apply_output_pool(output, nil, _inputs), do: output
+
+  defp apply_output_pool(output, pool, inputs) do
+    if Nx.rank(output) != 3 do
+      raise ArgumentError,
+            "expected the output tensor to have rank 3 to apply :output_pool, got: #{Nx.rank(output)}." <>
+              " You should either disable pooling or pick a different output using :output_attribute"
+    end
+
+    case pool do
+      :cls_token_pooling ->
+        Nx.take(output, 0, axis: 1)
+
+      :mean_pooling ->
+        input_mask_expanded = Nx.new_axis(inputs["attention_mask"], -1)
+
+        output
+        |> Nx.multiply(input_mask_expanded)
+        |> Nx.sum(axes: [1])
+        |> Nx.divide(Nx.sum(input_mask_expanded, axes: [1]))
+
+      :last_token_pooling ->
+        sequence_lengths =
+          inputs["attention_mask"]
+          |> Nx.sum(axes: [1])
+          |> Nx.subtract(1)
+          |> Nx.as_type({:s, 64})
+
+        Bumblebee.Utils.Nx.batched_take(output, sequence_lengths)
+
+      other ->
+        raise ArgumentError,
+              "expected :output_pool to be one of :cls_token_pooling, :mean_pooling, :last_token_pooling or nil, got: #{inspect(other)}"
+    end
+  end
+
+  defp apply_embedding_processor(output, nil), do: output
+  defp apply_embedding_processor(output, :l2_norm), do: Bumblebee.Utils.Nx.normalize(output)
+
+  defp apply_embedding_processor(_output, other) do
+    raise ArgumentError,
+          "expected :embedding_processor to be one of nil or :l2_norm, got: #{inspect(other)}"
+  end
+
   defp resolve_prompt(opts, model_info) do
-    case {opts[:prompt], opts[:prompt_name]} do
-      {prompt, nil} when is_binary(prompt) ->
+    case {Keyword.fetch(opts, :prompt), Keyword.fetch(opts, :prompt_name)} do
+      {{:ok, prompt}, :error} when is_binary(prompt) ->
         prompt
 
-      {prompt, nil} when prompt in [false, nil] ->
-        if Keyword.has_key?(opts, :prompt) do
-          ""
-        else
-          find_default_prompt(model_info)
-        end
+      {{:ok, prompt}, :error} when prompt in [false, nil] ->
+        ""
 
-      {prompt, nil} ->
+      {{:ok, prompt}, :error} ->
         raise ArgumentError, "expected :prompt to be a string or false, got: #{inspect(prompt)}"
 
-      {nil, prompt_name} when is_binary(prompt_name) ->
+      {:error, {:ok, prompt_name}} when is_binary(prompt_name) ->
         find_prompt_by_name!(model_info, prompt_name)
 
-      {nil, prompt_name} when prompt_name in [false, nil] ->
-        if Keyword.has_key?(opts, :prompt_name) do
-          ""
-        else
-          find_default_prompt(model_info)
-        end
+      {:error, {:ok, prompt_name}} when prompt_name in [false, nil] ->
+        ""
 
-      {nil, prompt_name} ->
+      {:error, {:ok, prompt_name}} ->
         raise ArgumentError,
               "expected :prompt_name to be a string or false, got: #{inspect(prompt_name)}"
 
-      {_prompt, _prompt_name} ->
+      {:error, :error} ->
+        find_default_prompt(model_info)
+
+      {{:ok, _}, {:ok, _}} ->
         raise ArgumentError, "expected either :prompt or :prompt_name, but both were given"
     end
   end
@@ -717,36 +688,27 @@ defmodule Bumblebee.SentenceTransformers do
         {:error, "could not find sentence transformers config"}
       else
         config = Enum.reduce(configs, %{}, &Map.merge(&2, &1))
-        tokenizer_limit = (tokenizer || root_tokenizer || %{})["model_max_length"]
-        # Hugging Face uses enormous sentinel values for tokenizers without a limit.
-        tokenizer_limit =
-          if is_integer(tokenizer_limit) and tokenizer_limit > 0 and
-               tokenizer_limit < 1_000_000_000,
-             do: tokenizer_limit
-
-        limit =
-          (transformer || %{})["max_seq_length"] || config["max_seq_length"] || tokenizer_limit
-
+        limit = resolve_max_seq_length(transformer, config, tokenizer, root_tokenizer)
         {:ok, parse_st_config(Map.put(config, "max_seq_length", limit))}
       end
     end
   end
 
-  defp first_module_path(repository, opts) do
-    case Downloader.download_file(repository, "modules.json", opts) do
-      {:ok, path} ->
-        with {:ok, modules} <- Pipeline.decode_json(path),
-             [first | _] <- Enum.sort_by(modules, &(&1["idx"] || 0)) do
-          {:ok, first["path"] || ""}
-        else
-          {:error, reason} -> {:error, reason}
-          _ -> {:error, "modules.json is empty"}
-        end
+  defp resolve_max_seq_length(transformer, config, tokenizer, root_tokenizer) do
+    tokenizer_limit = (tokenizer || root_tokenizer || %{})["model_max_length"]
 
-      {:error, reason} ->
-        if Downloader.missing_file?(repository, "modules.json", reason),
-          do: {:ok, "0_Transformer"},
-          else: {:error, reason}
+    tokenizer_limit =
+      if is_integer(tokenizer_limit) and tokenizer_limit > 0 and tokenizer_limit < 1_000_000_000,
+        do: tokenizer_limit
+
+    (transformer || %{})["max_seq_length"] || config["max_seq_length"] || tokenizer_limit
+  end
+
+  defp first_module_path(repository, opts) do
+    case load_pipeline_modules(repository, opts) do
+      {:ok, [first | _]} -> {:ok, first["path"] || ""}
+      {:missing_modules, _} -> {:ok, "0_Transformer"}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -800,71 +762,68 @@ defmodule Bumblebee.SentenceTransformers do
   defp parse_similarity_fn_name(nil), do: nil
   defp parse_similarity_fn_name(other), do: other
 
+  @causal_spec_names [
+    "Gemma",
+    "GemmaConfig",
+    "Gemma3Text",
+    "Gemma3TextConfig",
+    "Llama",
+    "LlamaConfig",
+    "Mistral",
+    "MistralConfig",
+    "Qwen3",
+    "Qwen3Config",
+    "SmolLm3",
+    "Smollm3Config",
+    "Phi",
+    "PhiConfig",
+    "Phi3",
+    "Phi3Config",
+    "Gpt2",
+    "Gpt2Config",
+    "GptBigCode",
+    "GptBigCodeConfig",
+    "GptNeoX",
+    "GptNeoXConfig"
+  ]
+
   @doc """
   Infers fallback pooling mode when `modules.json` is missing.
   Returns `"last"` for causal-LM architectures, and `"mean"` otherwise.
   """
   def infer_fallback_pooling_mode(repository, model_info) do
-    is_causal_from_config =
-      case Downloader.download_file(repository, "config.json") do
-        {:ok, path} ->
-          case Pipeline.decode_json(path) do
-            {:ok, config} ->
-              archs = config["architectures"] || []
-
-              causal_arch? =
-                Enum.any?(archs, fn arch ->
-                  is_binary(arch) and
-                    (String.ends_with?(arch, "ForCausalLM") or
-                       String.ends_with?(arch, "LMHeadModel"))
-                end)
-
-              causal_arch? and Map.get(config, "is_causal", true)
-
-            _ ->
-              false
-          end
-
-        _ ->
-          false
-      end
-
-    is_causal_from_spec =
-      if spec = model_info[:spec] || model_info[:config] do
-        struct_name = spec.__struct__ |> Module.split() |> List.last()
-
-        struct_name in [
-          "Gemma",
-          "GemmaConfig",
-          "Gemma3Text",
-          "Gemma3TextConfig",
-          "Llama",
-          "LlamaConfig",
-          "Mistral",
-          "MistralConfig",
-          "Qwen3",
-          "Qwen3Config",
-          "SmolLm3",
-          "Smollm3Config",
-          "Phi",
-          "PhiConfig",
-          "Phi3",
-          "Phi3Config",
-          "Gpt2",
-          "Gpt2Config",
-          "GptBigCode",
-          "GptBigCodeConfig",
-          "GptNeoX",
-          "GptNeoXConfig"
-        ]
-      else
-        false
-      end
-
-    if is_causal_from_config or is_causal_from_spec do
+    if causal_from_config?(repository) or causal_from_spec?(model_info) do
       "last"
     else
       "mean"
+    end
+  end
+
+  defp causal_from_config?(repository) do
+    with {:ok, path} <- Downloader.download_file(repository, "config.json"),
+         {:ok, config} <- Pipeline.decode_json(path) do
+      archs = config["architectures"] || []
+
+      causal_arch? =
+        Enum.any?(archs, fn arch ->
+          is_binary(arch) and
+            (String.ends_with?(arch, "ForCausalLM") or String.ends_with?(arch, "LMHeadModel"))
+        end)
+
+      causal_arch? and Map.get(config, "is_causal", true)
+    else
+      _ -> false
+    end
+  end
+
+  defp causal_from_spec?(model_info) do
+    case model_info[:spec] || model_info[:config] do
+      nil ->
+        false
+
+      spec ->
+        struct_name = spec.__struct__ |> Module.split() |> List.last()
+        struct_name in @causal_spec_names
     end
   end
 end

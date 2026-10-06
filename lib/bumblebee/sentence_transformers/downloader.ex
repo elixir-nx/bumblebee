@@ -22,28 +22,12 @@ defmodule Bumblebee.SentenceTransformers.Downloader do
   def download_file(repository, filename, opts \\ [])
 
   def download_file({:local, dir}, filename, _opts) when is_binary(dir) do
-    path = Path.join(dir, filename)
-
-    if File.exists?(path) do
-      {:ok, path}
-    else
-      {:error, "file #{inspect(path)} does not exist"}
-    end
+    check_local_file(Path.join(dir, filename))
   end
 
   def download_file({:local, dir, local_opts}, filename, _opts) when is_binary(dir) do
-    path =
-      if subdir = local_opts[:subdir] do
-        Path.join([dir, subdir, filename])
-      else
-        Path.join(dir, filename)
-      end
-
-    if File.exists?(path) do
-      {:ok, path}
-    else
-      {:error, "file #{inspect(path)} does not exist"}
-    end
+    subdir = local_opts[:subdir] || ""
+    check_local_file(Path.join([dir, subdir, filename]))
   end
 
   def download_file({:hf, repo_id}, filename, opts) do
@@ -72,6 +56,14 @@ defmodule Bumblebee.SentenceTransformers.Downloader do
 
   def download_file(other, _filename, _opts) do
     {:error, "invalid repository format: #{inspect(other)}"}
+  end
+
+  defp check_local_file(path) do
+    if File.exists?(path) do
+      {:ok, path}
+    else
+      {:error, "file #{inspect(path)} does not exist"}
+    end
   end
 
   @doc false

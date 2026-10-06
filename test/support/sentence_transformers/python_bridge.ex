@@ -418,7 +418,8 @@ defmodule Bumblebee.SentenceTransformers.TestSupport.PythonBridge do
         [_, result_json] = Regex.run(~r/__RESULT__:(.*)$/m, output)
 
         inputs =
-          Regex.run(~r/__INPUTS__:(.*)$/m, output)
+          ~r/__INPUTS__:(.*)$/m
+          |> Regex.run(output)
           |> Enum.at(1)
           |> Jason.decode!()
           |> Map.new(fn {k, v} -> {k, Nx.tensor(v)} end)
