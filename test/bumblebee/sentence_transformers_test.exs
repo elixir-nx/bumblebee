@@ -1286,4 +1286,30 @@ defmodule Bumblebee.SentenceTransformersTest do
       assert_in_delta val, ref, 1.0e-5
     end)
   end
+
+  @tag :slow
+  @tag :network
+  test "end-to-end integration test with intfloat/e5-small-v2" do
+    repo = {:hf, "intfloat/e5-small-v2"}
+
+    assert {:ok, model_info} = SentenceTransformers.load_model(repo)
+    assert {:ok, tokenizer} = SentenceTransformers.load_tokenizer(repo)
+
+    serving = SentenceTransformers.text_embedding(model_info, tokenizer)
+    result = Nx.Serving.run(serving, "query: Cats are cute.")
+
+    assert %{embedding: embedding} = result
+    assert Nx.shape(embedding) == {384}
+
+    # Reference values from PyTorch sentence-transformers 6.1.0 for "query: Cats are cute.":
+    # [-0.010973, 0.073814, 0.011410]
+    slice = Nx.to_flat_list(embedding[1..3])
+    py_reference = [-0.01097320, 0.07381421, 0.01141022]
+
+    slice
+    |> Enum.zip(py_reference)
+    |> Enum.each(fn {val, ref} ->
+      assert_in_delta val, ref, 1.0e-5
+    end)
+  end
 end
