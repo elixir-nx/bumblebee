@@ -128,20 +128,22 @@ defmodule Bumblebee.Multimodal.SigLip do
     text_embedding =
       text_model
       |> Axon.nx(& &1.pooled_state)
-      |> Axon.nx(&normalize/1)
+      |> Axon.nx(&Bumblebee.Utils.Nx.normalize/1)
 
     image_embedding =
       vision_model
       |> Axon.nx(& &1.pooled_state)
-      |> Axon.nx(&normalize/1)
+      |> Axon.nx(&Bumblebee.Utils.Nx.normalize/1)
 
     similarity = Layers.cosine_similarity(text_embedding, image_embedding)
 
     logits_per_text =
       similarity
-      |> scale_layer(
+      |> Layers.scale(
         name: "logit_scale",
-        initializer: Axon.Initializers.full(spec.logit_scale_initial_value)
+        scale_shape: fn _ -> {} end,
+        transform: &Nx.exp/1,
+        scale_initializer: Axon.Initializers.full(spec.logit_scale_initial_value)
       )
       |> bias_layer(
         name: "logit_bias",
@@ -156,26 +158,6 @@ defmodule Bumblebee.Multimodal.SigLip do
       text_embedding: text_embedding,
       image_embedding: image_embedding
     })
-  end
-
-  defp normalize(x) do
-    Nx.divide(x, Nx.LinAlg.norm(x, ord: 2, axes: [-1], keep_axes: true))
-  end
-
-  defp scale_layer(input, opts) do
-    name = opts[:name]
-    initializer = opts[:initializer] || Axon.Initializers.full(1.0)
-
-    scale_param = Axon.param("scale", fn _ -> {} end, initializer: initializer)
-
-    Axon.layer(
-      fn input, scale, _opts ->
-        Nx.multiply(input, Nx.exp(scale))
-      end,
-      [input, scale_param],
-      name: name,
-      op_name: :logit_scale
-    )
   end
 
   defp bias_layer(input, opts) do

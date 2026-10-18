@@ -517,6 +517,8 @@ defmodule Bumblebee.Layers do
     opts =
       Keyword.validate!(opts, [
         :name,
+        :scale_shape,
+        :transform,
         scale_initializer: Axon.Initializers.full(1.0e-6),
         channel_index: -1
       ])
@@ -524,27 +526,36 @@ defmodule Bumblebee.Layers do
     name = opts[:name]
     scale_initializer = opts[:scale_initializer]
     channel_index = opts[:channel_index]
+    transform = opts[:transform] || (& &1)
 
-    scale_shape = fn input_shape ->
-      rank = tuple_size(input_shape)
-      channel_index = rem(rank + channel_index, rank)
-      out_channels = elem(input_shape, channel_index)
-      {out_channels}
-    end
+    scale_shape =
+      opts[:scale_shape] ||
+        fn input_shape ->
+          rank = tuple_size(input_shape)
+          channel_index = rem(rank + channel_index, rank)
+          {elem(input_shape, channel_index)}
+        end
 
     scale_param = Axon.param("scale", scale_shape, initializer: scale_initializer)
 
     Axon.layer(
       fn input, scale, _opts ->
-        channel_index = Nx.axis_index(input, channel_index)
-        shape = Tuple.duplicate(1, Nx.rank(input)) |> put_elem(channel_index, :auto)
-        scale = Nx.reshape(scale, shape)
-        Nx.multiply(input, scale)
+        scale =
+          if Nx.shape(scale) == {},
+            do: scale,
+            else: Nx.reshape(scale, shape_for(input, channel_index))
+
+        Nx.multiply(input, transform.(scale))
       end,
       [x, scale_param],
       name: name,
       op_name: :scale
     )
+  end
+
+  defp shape_for(input, channel_index) do
+    channel_index = Nx.axis_index(input, channel_index)
+    Tuple.duplicate(1, Nx.rank(input)) |> put_elem(channel_index, :auto)
   end
 
   @doc """

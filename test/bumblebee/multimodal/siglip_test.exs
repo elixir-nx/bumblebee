@@ -7,11 +7,10 @@ defmodule Bumblebee.Multimodal.SigLipTest do
 
   test ":base" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
-             Bumblebee.load_model({:hf, "katuni4ka/tiny-random-SiglipModel"})
+             Bumblebee.load_model({:hf, "hf-internal-testing/tiny-random-SiglipModel"})
 
     assert %Bumblebee.Multimodal.SigLip{architecture: :base} = spec
 
-    # Image size is 30x30 for this tiny model
     inputs = %{
       "input_ids" =>
         Nx.tensor([
@@ -32,14 +31,12 @@ defmodule Bumblebee.Multimodal.SigLipTest do
 
     assert_all_close(
       outputs.logits_per_text,
-      Nx.tensor([[-0.0626, -0.0771], [-0.0961, -0.1548]]),
-      atol: 1.0e-3
+      Nx.tensor([[-0.0626, -0.0771], [-0.0961, -0.1548]])
     )
 
     assert_all_close(
       outputs.logits_per_image,
-      Nx.tensor([[-0.0626, -0.0961], [-0.0771, -0.1548]]),
-      atol: 1.0e-3
+      Nx.tensor([[-0.0626, -0.0961], [-0.0771, -0.1548]])
     )
   end
 end
