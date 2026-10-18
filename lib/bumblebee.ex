@@ -119,6 +119,7 @@ defmodule Bumblebee do
     "SiglipModel" => {Bumblebee.Multimodal.SigLip, :base},
     "SiglipTextModel" => {Bumblebee.Text.SigLipText, :base},
     "SiglipVisionModel" => {Bumblebee.Vision.SigLipVision, :base},
+    "SiglipForImageClassification" => {Bumblebee.Vision.SigLipVision, :for_image_classification},
     "ControlNetModel" => {Bumblebee.Diffusion.ControlNet, :base},
     "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification},
     "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
@@ -232,8 +233,7 @@ defmodule Bumblebee do
 
   @transformers_class_to_featurizer %{
     "CLIPFeatureExtractor" => Bumblebee.Vision.ClipFeaturizer,
-    "SiglipImageProcessor" => Bumblebee.Vision.ClipFeaturizer,
-    "Siglip2ImageProcessor" => Bumblebee.Vision.ClipFeaturizer,
+    "SiglipImageProcessor" => Bumblebee.Vision.SigLipFeaturizer,
     "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer,
     "DeiTFeatureExtractor" => Bumblebee.Vision.DeitFeaturizer,
     "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer,

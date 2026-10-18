@@ -124,6 +124,7 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Vision.BitFeaturizer,
           Bumblebee.Vision.BlipFeaturizer,
           Bumblebee.Vision.ClipFeaturizer,
+          Bumblebee.Vision.SigLipFeaturizer,
           Bumblebee.Vision.ConvNextFeaturizer,
           Bumblebee.Vision.DeitFeaturizer,
           Bumblebee.Vision.VitFeaturizer

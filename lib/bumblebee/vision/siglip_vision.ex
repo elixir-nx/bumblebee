@@ -233,8 +233,23 @@ defmodule Bumblebee.Vision.SigLipVision do
         initializer: Axon.Initializers.normal()
       )
 
-    attended =
-      multihead_attention(probe, hidden_state, spec, name: join(name, "attention"))
+    probe =
+      Axon.layer(
+        fn probe, hidden_state, _opts ->
+          batch_size = Nx.axis_size(hidden_state, 0)
+          Nx.broadcast(probe, {batch_size, Nx.axis_size(probe, 1), Nx.axis_size(probe, 2)})
+        end,
+        [probe, hidden_state],
+        op_name: :broadcast_probe
+      )
+
+    {attended, _, _, _} =
+      Layers.Transformer.multi_head_attention(probe, hidden_state, hidden_state,
+        num_heads: spec.num_attention_heads,
+        hidden_size: spec.hidden_size,
+        kernel_initializer: Axon.Initializers.normal(),
+        name: join(name, "attention")
+      )
 
     attended = Axon.nx(attended, fn x -> Nx.squeeze(x, axes: [1]) end)
 
@@ -254,77 +269,6 @@ defmodule Bumblebee.Vision.SigLipVision do
       )
 
     Axon.add(attended, mlp_output)
-  end
-
-  defp multihead_attention(query, key_value, spec, opts) do
-    name = opts[:name]
-    num_heads = spec.num_attention_heads
-    head_dim = div(spec.hidden_size, num_heads)
-
-    q =
-      Axon.dense(query, spec.hidden_size,
-        kernel_initializer: Axon.Initializers.normal(),
-        name: join(name, "query")
-      )
-
-    k =
-      Axon.dense(key_value, spec.hidden_size,
-        kernel_initializer: Axon.Initializers.normal(),
-        name: join(name, "key")
-      )
-
-    v =
-      Axon.dense(key_value, spec.hidden_size,
-        kernel_initializer: Axon.Initializers.normal(),
-        name: join(name, "value")
-      )
-
-    q = Axon.nx(q, fn x -> reshape_for_attention(x, num_heads, head_dim) end)
-    k = Axon.nx(k, fn x -> reshape_for_attention(x, num_heads, head_dim) end)
-    v = Axon.nx(v, fn x -> reshape_for_attention(x, num_heads, head_dim) end)
-
-    scale = :math.sqrt(head_dim)
-
-    attention_output =
-      Axon.layer(
-        fn q, k, v, _opts ->
-          # Broadcast q to match k's batch size (for attention pooling head)
-          {batch_k, _, _, _} = Nx.shape(k)
-          {batch_q, heads, seq_q, head_d} = Nx.shape(q)
-
-          q =
-            if batch_q == 1 and batch_k > 1 do
-              Nx.broadcast(q, {batch_k, heads, seq_q, head_d})
-            else
-              q
-            end
-
-          scores = Nx.dot(q, [3], [0, 1], k, [3], [0, 1]) |> Nx.divide(scale)
-          weights = Axon.Activations.softmax(scores, axis: -1)
-          Nx.dot(weights, [3], [0, 1], v, [2], [0, 1])
-        end,
-        [q, k, v],
-        name: join(name, "attention"),
-        op_name: :attention
-      )
-
-    attention_output =
-      Axon.nx(attention_output, fn x ->
-        {batch, _heads, seq_len, _head_dim} = Nx.shape(x)
-
-        Nx.transpose(x, axes: [0, 2, 1, 3])
-        |> Nx.reshape({batch, seq_len, spec.hidden_size})
-      end)
-
-    Axon.dense(attention_output, spec.hidden_size,
-      kernel_initializer: Axon.Initializers.normal(),
-      name: join(name, "output")
-    )
-  end
-
-  defp reshape_for_attention(x, num_heads, head_dim) do
-    {batch, seq_len, _hidden} = Nx.shape(x)
-    x |> Nx.reshape({batch, seq_len, num_heads, head_dim}) |> Nx.transpose(axes: [0, 2, 1, 3])
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
@@ -354,6 +298,23 @@ defmodule Bumblebee.Vision.SigLipVision do
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(_spec) do
+      in_proj_kernel_slice = fn chunk_idx ->
+        fn [kernel] ->
+          chunk_size = div(Nx.axis_size(kernel, 0), 3)
+
+          kernel
+          |> Nx.slice_along_axis(chunk_idx * chunk_size, chunk_size, axis: 0)
+          |> Nx.transpose()
+        end
+      end
+
+      in_proj_bias_slice = fn chunk_idx ->
+        fn [bias] ->
+          chunk_size = div(Nx.axis_size(bias, 0), 3)
+          Nx.slice_along_axis(bias, chunk_idx * chunk_size, chunk_size, axis: 0)
+        end
+      end
+
       %{
         "embedder.patch_embedding" => "vision_model.embeddings.patch_embedding",
         "embedder.position_embedding" => "vision_model.embeddings.position_embedding",
@@ -377,55 +338,19 @@ defmodule Bumblebee.Vision.SigLipVision do
           }
         },
         "head.attention.query" => %{
-          "kernel" => {
-            [{"vision_model.head.attention", "in_proj_weight"}],
-            fn [kernel] ->
-              chunk_size = div(Nx.axis_size(kernel, 0), 3)
-              kernel = Nx.slice_along_axis(kernel, 0, chunk_size, axis: 0)
-              Nx.transpose(kernel)
-            end
-          },
-          "bias" => {
-            [{"vision_model.head.attention", "in_proj_bias"}],
-            fn [bias] ->
-              chunk_size = div(Nx.axis_size(bias, 0), 3)
-              Nx.slice_along_axis(bias, 0, chunk_size, axis: 0)
-            end
-          }
+          "kernel" =>
+            {[{"vision_model.head.attention", "in_proj_weight"}], in_proj_kernel_slice.(0)},
+          "bias" => {[{"vision_model.head.attention", "in_proj_bias"}], in_proj_bias_slice.(0)}
         },
         "head.attention.key" => %{
-          "kernel" => {
-            [{"vision_model.head.attention", "in_proj_weight"}],
-            fn [kernel] ->
-              chunk_size = div(Nx.axis_size(kernel, 0), 3)
-              kernel = Nx.slice_along_axis(kernel, chunk_size, chunk_size, axis: 0)
-              Nx.transpose(kernel)
-            end
-          },
-          "bias" => {
-            [{"vision_model.head.attention", "in_proj_bias"}],
-            fn [bias] ->
-              chunk_size = div(Nx.axis_size(bias, 0), 3)
-              Nx.slice_along_axis(bias, chunk_size, chunk_size, axis: 0)
-            end
-          }
+          "kernel" =>
+            {[{"vision_model.head.attention", "in_proj_weight"}], in_proj_kernel_slice.(1)},
+          "bias" => {[{"vision_model.head.attention", "in_proj_bias"}], in_proj_bias_slice.(1)}
         },
         "head.attention.value" => %{
-          "kernel" => {
-            [{"vision_model.head.attention", "in_proj_weight"}],
-            fn [kernel] ->
-              chunk_size = div(Nx.axis_size(kernel, 0), 3)
-              kernel = Nx.slice_along_axis(kernel, 2 * chunk_size, chunk_size, axis: 0)
-              Nx.transpose(kernel)
-            end
-          },
-          "bias" => {
-            [{"vision_model.head.attention", "in_proj_bias"}],
-            fn [bias] ->
-              chunk_size = div(Nx.axis_size(bias, 0), 3)
-              Nx.slice_along_axis(bias, 2 * chunk_size, chunk_size, axis: 0)
-            end
-          }
+          "kernel" =>
+            {[{"vision_model.head.attention", "in_proj_weight"}], in_proj_kernel_slice.(2)},
+          "bias" => {[{"vision_model.head.attention", "in_proj_bias"}], in_proj_bias_slice.(2)}
         },
         "head.attention.output" => "vision_model.head.attention.out_proj",
         "head.norm" => "vision_model.head.layernorm",
