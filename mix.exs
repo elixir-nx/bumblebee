@@ -73,6 +73,10 @@ defmodule Bumblebee.MixProject do
           Bumblebee.Diffusion.StableDiffusion,
           Bumblebee.Diffusion.StableDiffusionControlNet
         ],
+        "Sentence Transformers": [
+          Bumblebee.SentenceTransformers,
+          Bumblebee.SentenceTransformers.Pipeline
+        ],
         Models: [
           Bumblebee.Audio.Whisper,
           Bumblebee.Diffusion.ControlNet,
