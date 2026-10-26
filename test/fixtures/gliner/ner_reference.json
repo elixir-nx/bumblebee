@@ -1,0 +1,238 @@
+{
+  "model": "fastino/gliner2.5-base-v1",
+  "revision": "78cea040597df251eedefa9d7ee2a756af39fe64",
+  "reference": "gliner2 2.0.0, torch 2.14.0, CPU float32",
+  "examples": [
+    {
+      "text": "Apple CEO Tim Cook announced the iPhone 15 in Cupertino.",
+      "labels": [
+        "company",
+        "person",
+        "product",
+        "location"
+      ],
+      "prediction": {
+        "entities": {
+          "company": [
+            {
+              "text": "Apple",
+              "confidence": 0.9979098439216614,
+              "start": 0,
+              "end": 5
+            }
+          ],
+          "person": [
+            {
+              "text": "Tim Cook",
+              "confidence": 0.995536208152771,
+              "start": 10,
+              "end": 18
+            }
+          ],
+          "product": [
+            {
+              "text": "iPhone 15",
+              "confidence": 0.9923769235610962,
+              "start": 33,
+              "end": 42
+            }
+          ],
+          "location": [
+            {
+              "text": "Cupertino",
+              "confidence": 0.9973949193954468,
+              "start": 46,
+              "end": 55
+            }
+          ]
+        }
+      }
+    },
+    {
+      "text": "It was quiet and nothing happened.",
+      "labels": [
+        "company",
+        "person",
+        "product",
+        "location"
+      ],
+      "prediction": {
+        "entities": {
+          "company": [],
+          "person": [],
+          "product": [],
+          "location": []
+        }
+      }
+    },
+    {
+      "text": "İpek met José in São Paulo. 👩🏽‍💻 Alice emailed bob@example.com.",
+      "labels": [
+        "person",
+        "location",
+        "email"
+      ],
+      "prediction": {
+        "entities": {
+          "person": [
+            {
+              "text": "Alice",
+              "confidence": 0.9852306246757507,
+              "start": 33,
+              "end": 38
+            },
+            {
+              "text": "José",
+              "confidence": 0.9819398522377014,
+              "start": 9,
+              "end": 13
+            },
+            {
+              "text": "İpek",
+              "confidence": 0.5640807747840881,
+              "start": 0,
+              "end": 4
+            }
+          ],
+          "location": [
+            {
+              "text": "São Paulo",
+              "confidence": 0.9983048439025879,
+              "start": 17,
+              "end": 26
+            }
+          ],
+          "email": [
+            {
+              "text": "bob@example.com",
+              "confidence": 0.9971128702163696,
+              "start": 47,
+              "end": 62
+            }
+          ]
+        }
+      }
+    },
+    {
+      "text": "The University of California, Berkeley is in California. New York University is in New York City.",
+      "labels": [
+        "organization",
+        "location"
+      ],
+      "prediction": {
+        "entities": {
+          "organization": [
+            {
+              "text": "New York University",
+              "confidence": 0.9389233589172363,
+              "start": 57,
+              "end": 76
+            },
+            {
+              "text": "Berkeley",
+              "confidence": 0.6230217814445496,
+              "start": 30,
+              "end": 38
+            },
+            {
+              "text": "The University of California",
+              "confidence": 0.5583738088607788,
+              "start": 0,
+              "end": 28
+            }
+          ],
+          "location": [
+            {
+              "text": "California",
+              "confidence": 0.9944834113121033,
+              "start": 45,
+              "end": 55
+            },
+            {
+              "text": "New York City",
+              "confidence": 0.9925059676170349,
+              "start": 83,
+              "end": 96
+            },
+            {
+              "text": "California",
+              "confidence": 0.9822803139686584,
+              "start": 18,
+              "end": 28
+            }
+          ]
+        }
+      }
+    },
+    {
+      "text": "The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. The committee discussed the agenda and reviewed the previous meeting notes. Microsoft CEO Satya Nadella met Tim Cook in Seattle.",
+      "labels": [
+        "company",
+        "person",
+        "location"
+      ],
+      "prediction": {
+        "entities": {
+          "company": [
+            {
+              "text": "Microsoft",
+              "confidence": 0.996722400188446,
+              "start": 1368,
+              "end": 1377
+            }
+          ],
+          "person": [
+            {
+              "text": "Tim Cook",
+              "confidence": 0.9962313771247864,
+              "start": 1400,
+              "end": 1408
+            },
+            {
+              "text": "Satya Nadella",
+              "confidence": 0.9937824606895447,
+              "start": 1382,
+              "end": 1395
+            }
+          ],
+          "location": [
+            {
+              "text": "Seattle",
+              "confidence": 0.9983269572257996,
+              "start": 1412,
+              "end": 1419
+            }
+          ]
+        }
+      }
+    },
+    {
+      "text": "( Source : ANI )",
+      "labels": [
+        "person",
+        "location",
+        "corporation",
+        "product",
+        "creative-work",
+        "group"
+      ],
+      "prediction": {
+        "entities": {
+          "person": [
+            {
+              "text": "ANI",
+              "confidence": 0.7916450500488281,
+              "start": 11,
+              "end": 14
+            }
+          ],
+          "location": [],
+          "corporation": [],
+          "product": [],
+          "creative-work": [],
+          "group": []
+        }
+      }
+    }
+  ]
+}
