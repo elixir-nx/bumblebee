@@ -80,7 +80,7 @@ defmodule Bumblebee.Text.Gemma3Text do
       attention_window_size: [
         default: 4096,
         doc:
-          "the number of tokens each token can attend to in the sliding attention window, including itself. Only used for `:sliding_attention` layers"
+          "the number of tokens each token can attend to in the sliding attention window, including itself. With bidirectional attention, the window is centered on the token, spanning half the size on each side. Only used for `:sliding_attention` layers"
       ],
       layer_types: [
         default: nil,
@@ -395,8 +395,14 @@ defmodule Bumblebee.Text.Gemma3Text do
               {nil, spec.rotary_embedding_base, spec.rotary_embedding_scaling_strategy}
 
             :sliding_attention ->
-              {{spec.attention_window_size - 1, spec.attention_window_size - 1},
-               spec.rotary_embedding_base_local, nil}
+              # With bidirectional attention, the window spans both sides
+              # see https://github.com/huggingface/transformers/blob/v5.20.2/src/transformers/models/gemma3/configuration_gemma3.py#L102-L103
+              size =
+                if spec.use_bidirectional_attention,
+                  do: div(spec.attention_window_size, 2),
+                  else: spec.attention_window_size - 1
+
+              {{size, size}, spec.rotary_embedding_base_local, nil}
           end
 
         shortcut = hidden_state
