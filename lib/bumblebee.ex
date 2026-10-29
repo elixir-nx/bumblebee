@@ -248,7 +248,6 @@ defmodule Bumblebee do
 
   @transformers_class_to_featurizer %{
     "CLIPFeatureExtractor" => Bumblebee.Vision.ClipFeaturizer,
-    "SiglipImageProcessor" => Bumblebee.Vision.SigLipFeaturizer,
     "ConvNextFeatureExtractor" => Bumblebee.Vision.ConvNextFeaturizer,
     "DeiTFeatureExtractor" => Bumblebee.Vision.DeitFeaturizer,
     "ViTFeatureExtractor" => Bumblebee.Vision.VitFeaturizer,
@@ -257,7 +256,8 @@ defmodule Bumblebee do
 
   @transformers_image_processor_type_to_featurizer %{
     "BlipImageProcessor" => Bumblebee.Vision.BlipFeaturizer,
-    "BitImageProcessor" => Bumblebee.Vision.BitFeaturizer
+    "BitImageProcessor" => Bumblebee.Vision.BitFeaturizer,
+    "SiglipImageProcessor" => Bumblebee.Vision.SigLipFeaturizer
   }
 
   @model_type_to_featurizer %{
