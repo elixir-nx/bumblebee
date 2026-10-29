@@ -116,6 +116,10 @@ defmodule Bumblebee do
     "CLIPModel" => {Bumblebee.Multimodal.Clip, :base},
     "CLIPTextModel" => {Bumblebee.Text.ClipText, :base},
     "CLIPVisionModel" => {Bumblebee.Vision.ClipVision, :base},
+    "SiglipModel" => {Bumblebee.Multimodal.SigLip, :base},
+    "SiglipTextModel" => {Bumblebee.Text.SigLipText, :base},
+    "SiglipVisionModel" => {Bumblebee.Vision.SigLipVision, :base},
+    "SiglipForImageClassification" => {Bumblebee.Vision.SigLipVision, :for_image_classification},
     "ControlNetModel" => {Bumblebee.Diffusion.ControlNet, :base},
     "ConvNextForImageClassification" => {Bumblebee.Vision.ConvNext, :for_image_classification},
     "ConvNextModel" => {Bumblebee.Vision.ConvNext, :base},
@@ -252,7 +256,8 @@ defmodule Bumblebee do
 
   @transformers_image_processor_type_to_featurizer %{
     "BlipImageProcessor" => Bumblebee.Vision.BlipFeaturizer,
-    "BitImageProcessor" => Bumblebee.Vision.BitFeaturizer
+    "BitImageProcessor" => Bumblebee.Vision.BitFeaturizer,
+    "SiglipImageProcessor" => Bumblebee.Vision.SigLipFeaturizer
   }
 
   @model_type_to_featurizer %{
@@ -273,6 +278,7 @@ defmodule Bumblebee do
     "distilbert" => :distilbert,
     "camembert" => :camembert,
     "clip" => :clip,
+    "siglip" => :siglip,
     "gemma" => :gemma,
     "gemma3_text" => :gemma,
     "gpt_neox" => :gpt_neo_x,
