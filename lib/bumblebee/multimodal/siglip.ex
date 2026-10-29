@@ -28,6 +28,10 @@ defmodule Bumblebee.Multimodal.SigLip do
   SigLIP uses a sigmoid loss function instead of the contrastive loss used
   by CLIP, which allows for better scaling and more stable training.
 
+  SigLIP 2 checkpoints use the same architecture and the `"siglip"` model
+  type, but they use a Gemma tokenizer. Load their tokenizer with
+  `Bumblebee.load_tokenizer(repository, type: :gemma)`.
+
   ## Architectures
 
     * `:base` - the base SigLIP model
