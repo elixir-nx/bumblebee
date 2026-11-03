@@ -128,6 +128,8 @@ defmodule Bumblebee do
     "Dinov2Backbone" => {Bumblebee.Vision.DinoV2, :backbone},
     "Dinov2ForImageClassification" => {Bumblebee.Vision.DinoV2, :for_image_classification},
     "DebertaV2Model" => {Bumblebee.Text.DebertaV2, :base},
+    "DebertaV2ForSequenceClassification" =>
+      {Bumblebee.Text.DebertaV2, :for_sequence_classification},
     "DistilBertModel" => {Bumblebee.Text.Distilbert, :base},
     "DistilBertForMaskedLM" => {Bumblebee.Text.Distilbert, :for_masked_language_modeling},
     "DistilBertForSequenceClassification" =>

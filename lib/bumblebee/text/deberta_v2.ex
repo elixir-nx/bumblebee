@@ -5,67 +5,93 @@ defmodule Bumblebee.Text.DebertaV2 do
   import Nx.Defn
 
   options = [
-    vocab_size: [default: 128_100, doc: "the token vocabulary size"],
-    hidden_size: [default: 1536, doc: "the dimensionality of hidden states"],
-    embedding_size: [
-      default: nil,
-      doc: "the embedding dimensionality, defaulting to `:hidden_size`"
-    ],
-    num_blocks: [default: 24, doc: "the number of encoder blocks"],
-    num_attention_heads: [default: 24, doc: "the number of attention heads"],
-    attention_head_size: [
-      default: nil,
-      doc: "the head dimensionality, defaulting to hidden size divided by head count"
-    ],
-    intermediate_size: [default: 6144, doc: "the feed-forward intermediate dimensionality"],
-    activation: [default: :gelu, doc: "the feed-forward activation"],
-    dropout_rate: [default: 0.1, doc: "the embedding and residual dropout rate"],
-    attention_dropout_rate: [default: 0.1, doc: "the attention probability dropout rate"],
-    max_positions: [default: 512, doc: "the maximum number of absolute positions"],
-    type_vocab_size: [
-      default: 0,
-      doc: "the token-type vocabulary size; zero disables token-type embeddings"
-    ],
-    initializer_scale: [default: 0.02, doc: "the standard deviation of the parameter initializer"],
-    layer_norm_epsilon: [default: 1.0e-7, doc: "the layer normalization epsilon"],
-    use_relative_attention: [
-      default: false,
-      doc: "whether to add disentangled relative attention"
-    ],
-    max_relative_positions: [
-      default: -1,
-      doc: "the relative position limit; negative values use `:max_positions`"
-    ],
-    position_buckets: [
-      default: -1,
-      doc: "the number of logarithmic position buckets; negative values disable bucketing"
-    ],
-    use_position_embeddings: [default: true, doc: "whether to add absolute position embeddings"],
-    position_attention_types: [
-      default: [],
-      doc:
-        "the relative attention terms, a subset of `[:content_to_position, :position_to_content]`"
-    ],
-    share_attention_key: [
-      default: false,
-      doc: "whether relative positions reuse content query and key projections"
-    ],
-    normalize_relative_embeddings: [
-      default: false,
-      doc: "whether to normalize the relative embedding table"
-    ],
-    conv_kernel_size: [
-      default: 0,
-      doc: "the convolution kernel size after the first block; zero disables convolution"
-    ],
-    conv_groups: [default: 1, doc: "the number of convolution groups"],
-    conv_activation: [default: :tanh, doc: "the convolution activation"]
-  ]
+      vocab_size: [default: 128_100, doc: "the token vocabulary size"],
+      hidden_size: [default: 1536, doc: "the dimensionality of hidden states"],
+      embedding_size: [
+        default: nil,
+        doc: "the embedding dimensionality, defaulting to `:hidden_size`"
+      ],
+      num_blocks: [default: 24, doc: "the number of encoder blocks"],
+      num_attention_heads: [default: 24, doc: "the number of attention heads"],
+      attention_head_size: [
+        default: nil,
+        doc: "the head dimensionality, defaulting to hidden size divided by head count"
+      ],
+      intermediate_size: [default: 6144, doc: "the feed-forward intermediate dimensionality"],
+      activation: [default: :gelu, doc: "the feed-forward activation"],
+      dropout_rate: [default: 0.1, doc: "the embedding and residual dropout rate"],
+      attention_dropout_rate: [default: 0.1, doc: "the attention probability dropout rate"],
+      max_positions: [default: 512, doc: "the maximum number of absolute positions"],
+      type_vocab_size: [
+        default: 0,
+        doc: "the token-type vocabulary size; zero disables token-type embeddings"
+      ],
+      initializer_scale: [default: 0.02, doc: "the standard deviation of the parameter initializer"],
+      layer_norm_epsilon: [default: 1.0e-7, doc: "the layer normalization epsilon"],
+      use_relative_attention: [
+        default: false,
+        doc: "whether to add disentangled relative attention"
+      ],
+      max_relative_positions: [
+        default: -1,
+        doc: "the relative position limit; negative values use `:max_positions`"
+      ],
+      position_buckets: [
+        default: -1,
+        doc: "the number of logarithmic position buckets; negative values disable bucketing"
+      ],
+      use_position_embeddings: [default: true, doc: "whether to add absolute position embeddings"],
+      position_attention_types: [
+        default: [],
+        doc:
+          "the relative attention terms, a subset of `[:content_to_position, :position_to_content]`"
+      ],
+      share_attention_key: [
+        default: false,
+        doc: "whether relative positions reuse content query and key projections"
+      ],
+      normalize_relative_embeddings: [
+        default: false,
+        doc: "whether to normalize the relative embedding table"
+      ],
+      conv_kernel_size: [
+        default: 0,
+        doc: "the convolution kernel size after the first block; zero disables convolution"
+      ],
+      conv_groups: [default: 1, doc: "the number of convolution groups"],
+      conv_activation: [default: :tanh, doc: "the convolution activation"],
+      pooler_hidden_size: [
+        default: nil,
+        doc: "the context pooler dimensionality which defaults to `:hidden_size`"
+      ],
+      pooler_activation: [
+        default: :gelu,
+        doc: "the activation function used in the context pooler"
+      ],
+      pooler_dropout_rate: [
+        default: 0.0,
+        doc: "the dropout rate applied to the [CLS] token right before the context pooler"
+      ],
+      cls_dropout_rate: [
+        default: nil,
+        doc: "the dropout rate for the ForSequenceClassification head which defaults to `:dropout_rate`"
+      ]
+    ] ++ Shared.common_options([:num_labels, :id_to_label])
 
   @moduledoc """
   DeBERTa-v2 and DeBERTa-v3 base encoder.
 
-  Supports the `:base` architecture. Inputs are `"input_ids"` with shape
+  ## Architectures
+
+    * `:base` - plain DeBERTa without any head on top
+
+    * `:for_sequence_classification` - DeBERTa with a context pooler
+      and a classification head on the first token. The head returns
+      logits corresponding to possible classes
+
+  ## Inputs
+
+  Inputs are `"input_ids"` with shape
   `{batch_size, sequence_length}` and optional `"attention_mask"`,
   `"position_ids"`, and `"token_type_ids"` tensors of the same shape.
   The attention mask defaults to ones; callers must mark padding explicitly.
@@ -88,12 +114,14 @@ defmodule Bumblebee.Text.DebertaV2 do
   @behaviour Bumblebee.Configurable
 
   @impl true
-  def architectures, do: [:base]
+  def architectures, do: [:base, :for_sequence_classification]
 
   @impl true
   def config(spec, opts) do
-    spec = Shared.put_config_attrs(spec, opts)
-
+    spec =
+      spec
+      |> Shared.put_config_attrs(opts)
+      |> Shared.validate_label_options()
     validate_attention_dimensions!(spec)
 
     if spec.num_blocks < 1, do: raise(ArgumentError, "num_blocks must be positive")
@@ -140,6 +168,47 @@ defmodule Bumblebee.Text.DebertaV2 do
 
   @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
+    spec
+    |> core()
+    |> then(fn outputs ->
+      Layers.output(%{
+        hidden_state: outputs.hidden_state,
+        hidden_states: outputs.hidden_states,
+        attentions: outputs.attentions
+      })
+    end)
+  end
+
+  def model(%__MODULE__{architecture: :for_sequence_classification} = spec) do
+    outputs = core(spec)
+    pooler_size = spec.pooler_hidden_size || spec.hidden_size
+
+    logits =
+      outputs.hidden_state
+      |> Axon.nx(& &1[[.., 0]])
+      |> Axon.dropout(rate: spec.pooler_dropout_rate, name: "context_pooler.dropout")
+      |> Axon.dense(pooler_size,
+        kernel_initializer: initializer(spec),
+        name: "context_pooler.output"
+      )
+      |> Layers.activation(spec.pooler_activation)
+      |> Axon.dropout(
+        rate: spec.classifier_dropout_rate || spec.dropout_rate,
+        name: "sequence_classification_head.dropout"
+      )
+      |> Axon.dense(spec.num_labels,
+        kernel_initializer: initializer(spec),
+        name: "sequence_classification_head.output"
+      )
+
+    Layers.output(%{
+      logits: logits,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
+  end
+
+  defp core(spec) do
     ids = Axon.input("input_ids", shape: {nil, nil})
 
     mask =
@@ -151,13 +220,7 @@ defmodule Bumblebee.Text.DebertaV2 do
 
     relative = relative_embeddings(spec)
 
-    outputs = encoder(embedding, relative, mask, spec)
-
-    Layers.output(%{
-      hidden_state: outputs.hidden_state,
-      hidden_states: outputs.hidden_states,
-      attentions: outputs.attentions
-    })
+    encoder(embedding, relative, mask, spec)
   end
 
   defp encoder(embedding, relative, mask, spec) do
@@ -536,8 +599,12 @@ defmodule Bumblebee.Text.DebertaV2 do
           share_attention_key: {"share_att_key", boolean()},
           conv_kernel_size: {"conv_kernel_size", number()},
           conv_groups: {"conv_groups", number()},
-          conv_activation: {"conv_act", activation()}
-        )
+          conv_activation: {"conv_act", activation()},
+          pooler_hidden_size: {"pooler_hidden_size", optional(number())},
+          pooler_activation: {"pooler_hidden_act", activation()},
+          pooler_dropout_rate: {"pooler_dropout", number()},
+          classifier_dropout_rate: {"cls_dropout", optional(number())}
+        ) ++ Shared.common_options_from_transformers(data, spec)
 
       terms =
         case data["pos_att_type"] do
@@ -607,7 +674,9 @@ defmodule Bumblebee.Text.DebertaV2 do
         "encoder.blocks.{n}.ffn.output" => "deberta.encoder.layer.{n}.output.dense",
         "encoder.blocks.{n}.output_norm" => "deberta.encoder.layer.{n}.output.LayerNorm",
         "encoder.conv" => "deberta.encoder.conv.conv",
-        "encoder.conv_norm" => "deberta.encoder.conv.LayerNorm"
+        "encoder.conv_norm" => "deberta.encoder.conv.LayerNorm",
+        "context_pooler.output" => "pooler.dense",
+        "sequence_classification_head.output" => "classifier"
       }
     end
   end
