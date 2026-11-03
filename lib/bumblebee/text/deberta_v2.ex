@@ -101,7 +101,9 @@ defmodule Bumblebee.Text.DebertaV2 do
   `"position_ids"`, and `"token_type_ids"` tensors of the same shape.
   The attention mask defaults to ones; callers must mark padding explicitly.
 
-  Returns `:hidden_state`, and optionally `:hidden_states` and `:attentions`.
+  Returns `:hidden_state` for `:base`, and `:logits` for
+  `:for_sequence_classification`. Both optionally return
+  `:hidden_states` and `:attentions`.
   This encoder uses disentangled content/position attention, including
   logarithmic relative position buckets used by DeBERTa-v3.
 
@@ -174,15 +176,13 @@ defmodule Bumblebee.Text.DebertaV2 do
 
   @impl true
   def model(%__MODULE__{architecture: :base} = spec) do
-    spec
-    |> core()
-    |> then(fn outputs ->
-      Layers.output(%{
-        hidden_state: outputs.hidden_state,
-        hidden_states: outputs.hidden_states,
-        attentions: outputs.attentions
-      })
-    end)
+    outputs = core(spec)
+
+    Layers.output(%{
+      hidden_state: outputs.hidden_state,
+      hidden_states: outputs.hidden_states,
+      attentions: outputs.attentions
+    })
   end
 
   def model(%__MODULE__{architecture: :for_sequence_classification} = spec) do
@@ -191,7 +191,7 @@ defmodule Bumblebee.Text.DebertaV2 do
 
     logits =
       outputs.hidden_state
-      |> Axon.nx(& &1[[.., 0]])
+      |> Layers.take_token(index: 0, axis: 1)
       |> Axon.dropout(rate: spec.pooler_dropout_rate, name: "context_pooler.dropout")
       |> Axon.dense(pooler_size,
         kernel_initializer: initializer(spec),
