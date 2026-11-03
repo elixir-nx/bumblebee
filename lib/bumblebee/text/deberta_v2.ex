@@ -193,7 +193,7 @@ defmodule Bumblebee.Text.DebertaV2 do
       )
       |> Layers.activation(spec.pooler_activation)
       |> Axon.dropout(
-        rate: spec.classifier_dropout_rate || spec.dropout_rate,
+        rate: spec.cls_dropout_rate || spec.dropout_rate,
         name: "sequence_classification_head.dropout"
       )
       |> Axon.dense(spec.num_labels,
@@ -603,7 +603,7 @@ defmodule Bumblebee.Text.DebertaV2 do
           pooler_hidden_size: {"pooler_hidden_size", optional(number())},
           pooler_activation: {"pooler_hidden_act", activation()},
           pooler_dropout_rate: {"pooler_dropout", number()},
-          classifier_dropout_rate: {"cls_dropout", optional(number())}
+          cls_dropout_rate: {"cls_dropout", optional(number())}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       terms =

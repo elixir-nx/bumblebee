@@ -31,4 +31,28 @@ defmodule Bumblebee.Text.DebertaV2Test do
       ])
     )
   end
+
+  test ":for_sequence_classification" do
+    assert {:ok, %{model: model, params: params, spec: spec}} =
+             Bumblebee.load_model(
+               {:hf, "hf-internal-testing/tiny-random-DebertaV2ForSequenceClassification"},
+               architecture: :for_sequence_classification
+             )
+
+    assert %Bumblebee.Text.DebertaV2{architecture: :for_sequence_classification} = spec
+
+    inputs = %{
+      "input_ids" => Nx.tensor([[10, 20, 30, 40, 50, 60, 70, 80, 0, 0]]),
+      "attention_mask" => Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]])
+    }
+
+    outputs = Axon.predict(model, params, inputs)
+
+    assert Nx.shape(outputs.logits) == {1, 2}
+
+    assert_all_close(
+      outputs.logits,
+      Nx.tensor([[0.0041, 0.0060]])
+    )
+  end
 end
