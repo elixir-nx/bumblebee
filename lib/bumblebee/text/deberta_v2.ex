@@ -4,7 +4,8 @@ defmodule Bumblebee.Text.DebertaV2 do
 
   import Nx.Defn
 
-  options = [
+  options =
+    [
       vocab_size: [default: 128_100, doc: "the token vocabulary size"],
       hidden_size: [default: 1536, doc: "the dimensionality of hidden states"],
       embedding_size: [
@@ -26,7 +27,10 @@ defmodule Bumblebee.Text.DebertaV2 do
         default: 0,
         doc: "the token-type vocabulary size; zero disables token-type embeddings"
       ],
-      initializer_scale: [default: 0.02, doc: "the standard deviation of the parameter initializer"],
+      initializer_scale: [
+        default: 0.02,
+        doc: "the standard deviation of the parameter initializer"
+      ],
       layer_norm_epsilon: [default: 1.0e-7, doc: "the layer normalization epsilon"],
       use_relative_attention: [
         default: false,
@@ -74,7 +78,8 @@ defmodule Bumblebee.Text.DebertaV2 do
       ],
       cls_dropout_rate: [
         default: nil,
-        doc: "the dropout rate for the ForSequenceClassification head which defaults to `:dropout_rate`"
+        doc:
+          "the dropout rate for the ForSequenceClassification head which defaults to `:dropout_rate`"
       ]
     ] ++ Shared.common_options([:num_labels, :id_to_label])
 
@@ -122,6 +127,7 @@ defmodule Bumblebee.Text.DebertaV2 do
       spec
       |> Shared.put_config_attrs(opts)
       |> Shared.validate_label_options()
+
     validate_attention_dimensions!(spec)
 
     if spec.num_blocks < 1, do: raise(ArgumentError, "num_blocks must be positive")
