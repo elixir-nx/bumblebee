@@ -472,6 +472,28 @@ defmodule Bumblebee.Text.PreTrainedTokenizerTest do
     )
   end
 
+  test ":siglip" do
+    assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "google/siglip-base-patch16-224"})
+
+    assert %Bumblebee.Text.PreTrainedTokenizer{type: :siglip} = tokenizer
+
+    inputs =
+      Bumblebee.apply_tokenizer(tokenizer, ["a photo of a cat", "Two dogs playing in the snow."])
+
+    assert_equal(
+      inputs["input_ids"],
+      Nx.tensor([
+        [262, 266, 1304, 267, 262, 266, 2783, 1],
+        [395, 3014, 1376, 268, 260, 2468, 1, 1]
+      ])
+    )
+
+    assert_equal(
+      inputs["attention_mask"],
+      Nx.tensor([[1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 0]])
+    )
+  end
+
   test ":smollm3" do
     assert {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "HuggingFaceTB/SmolLM3-3B"})
 
