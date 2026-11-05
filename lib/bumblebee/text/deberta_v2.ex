@@ -76,7 +76,7 @@ defmodule Bumblebee.Text.DebertaV2 do
         default: 0.0,
         doc: "the dropout rate applied to the [CLS] token right before the context pooler"
       ],
-      cls_dropout_rate: [
+      classifier_dropout_rate: [
         default: nil,
         doc:
           "the dropout rate for the ForSequenceClassification head which defaults to `:dropout_rate`"
@@ -199,7 +199,7 @@ defmodule Bumblebee.Text.DebertaV2 do
       )
       |> Layers.activation(spec.pooler_activation)
       |> Axon.dropout(
-        rate: spec.cls_dropout_rate || spec.dropout_rate,
+        rate: spec.classifier_dropout_rate || spec.dropout_rate,
         name: "sequence_classification_head.dropout"
       )
       |> Axon.dense(spec.num_labels,
@@ -609,7 +609,7 @@ defmodule Bumblebee.Text.DebertaV2 do
           pooler_hidden_size: {"pooler_hidden_size", optional(number())},
           pooler_activation: {"pooler_hidden_act", activation()},
           pooler_dropout_rate: {"pooler_dropout", number()},
-          cls_dropout_rate: {"cls_dropout", optional(number())}
+          classifier_dropout_rate: {"cls_dropout", optional(number())}
         ) ++ Shared.common_options_from_transformers(data, spec)
 
       terms =
