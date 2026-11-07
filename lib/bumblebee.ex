@@ -100,6 +100,7 @@ defmodule Bumblebee do
     "BertForSequenceClassification" => {Bumblebee.Text.Bert, :for_sequence_classification},
     "BertForTokenClassification" => {Bumblebee.Text.Bert, :for_token_classification},
     "BertLMHeadModel" => {Bumblebee.Text.Bert, :for_causal_language_modeling},
+    "BoundaryExtractor" => {Bumblebee.Text.Gliner, :boundary},
     "BertModel" => {Bumblebee.Text.Bert, :base},
     "BlenderbotForConditionalGeneration" =>
       {Bumblebee.Text.Blenderbot, :for_conditional_generation},

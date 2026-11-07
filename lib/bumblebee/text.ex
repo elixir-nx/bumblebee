@@ -3,6 +3,65 @@ defmodule Bumblebee.Text do
   High-level tasks related to text processing.
   """
 
+  @doc """
+  Loads the GLiNER 2.5 encoder, boundary head, span scorer, and tokenizer.
+
+  The repository follows `t:Bumblebee.repository/0`, including local directories
+  and pinned Hugging Face revisions. It must include `encoder_config/config.json`.
+  Only the boundary architecture with first-token pooling and a shared candidate
+  pool is supported. Returns `{:ok, extractor}` or a loading error.
+
+  ## Options
+
+    * `:defn_options` - numerical compiler options, such as `[compiler: EXLA]`
+    * `:backend` - backend on which to load parameters
+    * `:log_params_diff` - log checkpoint parameter differences
+    * `:sequence_length` - optional fixed padded encoder length
+    * `:max_sequence_length` - reject longer packed inputs; defaults to 4096.
+      Inputs include both the label schema and document. No truncation is applied.
+
+  """
+  defdelegate load_entity_extraction(repository, opts \\ []),
+    to: Bumblebee.Text.GlinerEntityExtraction,
+    as: :load
+
+  @doc """
+  Builds an entity extraction serving with labels supplied for each document.
+
+  Accepts `%{text: "Apple hired Alice.", labels: ["company", "person"]}`.
+  Returns `%{"entities" => %{"company" => ["Apple"], "person" => ["Alice"]}}`.
+  Repeated labels are deduplicated, and an empty label list returns an empty
+  map (`%{}`) without model inference.
+
+  Processes one document per batch. Keep `batch_size: 1` when starting the
+  serving process; document batching and accelerator partitioning are not
+  currently supported. Distinct packed lengths may trigger separate compilations.
+
+  ## Options
+
+    * `:threshold` - inclusive entity confidence cutoff, defaults to 0.5
+    * `:include_spans` - include `"text"`, `"start"`, and `"end"` fields.
+      Offsets count Unicode codepoints in the original document, matching GLiNER.
+      Defaults to `false`
+    * `:include_confidence` - include a `"confidence"` field, defaults to `false`
+
+  Scores are numerically approximate across backends. Decisions extremely close
+  to a cutoff can differ from another execution of the reference model.
+
+  ## Example
+
+      {:ok, extractor} = Bumblebee.Text.load_entity_extraction(
+        {:hf, "fastino/gliner2.5-base-v1", revision: "78cea040597df251eedefa9d7ee2a756af39fe64"},
+        defn_options: [compiler: EXLA]
+      )
+      serving = Bumblebee.Text.entity_extraction(extractor, include_spans: true)
+      Nx.Serving.run(serving, %{text: "Apple hired Alice.", labels: ["company", "person"]})
+
+  """
+  defdelegate entity_extraction(extractor, opts \\ []),
+    to: Bumblebee.Text.GlinerEntityExtraction,
+    as: :new
+
   @type token_classification_input :: String.t()
   @type token_classification_output :: %{entities: list(token_classification_entity())}
 
