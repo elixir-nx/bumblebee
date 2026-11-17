@@ -9,7 +9,7 @@ Bumblebee provides pre-trained Neural Network models on top of [Axon](https://gi
 
 ## Getting started
 
-The best way to get started with Bumblebee is with [Livebook](https://livebook.dev). [Our announcement video](https://news.livebook.dev/announcing-bumblebee-gpt2-stable-diffusion-and-more-in-elixir-3Op73O) shows how to use Livebook's Smart Cells to perform different Neural Network tasks with few clicks. You can then tweak the code and deploy it.
+The best way to get started with Bumblebee is with [Livebook](https://livebook.dev). [Our announcement video](https://livebook.dev/blog/announcing-bumblebee-gpt2-stable-diffusion-and-more-in-elixir) shows how to use Livebook's Smart Cells to perform different Neural Network tasks with few clicks. You can then tweak the code and deploy it.
 
 ![](.github/images/kino_bumblebee_token_classification.png)
 
