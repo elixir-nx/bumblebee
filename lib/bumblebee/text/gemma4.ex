@@ -19,11 +19,11 @@ defmodule Bumblebee.Text.Gemma4 do
         """
       ],
       hidden_size: [
-        default: 2560,
+        default: 2304,
         doc: "the dimensionality of hidden layers"
       ],
       intermediate_size: [
-        default: 10240,
+        default: 9216,
         doc: "the dimensionality of intermediate layers"
       ],
       use_double_wide_ffn: [
@@ -42,7 +42,7 @@ defmodule Bumblebee.Text.Gemma4 do
           "the size of the key, value, and query projection per attention head in `:full_attention` layers"
       ],
       num_blocks: [
-        default: 42,
+        default: 30,
         doc: "the number of Transformer blocks in the model"
       ],
       num_attention_heads: [
@@ -50,7 +50,7 @@ defmodule Bumblebee.Text.Gemma4 do
         doc: "the number of attention heads for each attention layer in the model"
       ],
       num_key_value_heads: [
-        default: 2,
+        default: 4,
         doc: "the number of key value heads for each attention layer in the model"
       ],
       num_global_key_value_heads: [
@@ -713,7 +713,10 @@ defmodule Bumblebee.Text.Gemma4 do
         |> Map.put("full_rope_theta", full_rope["rope_theta"])
         |> Map.put("full_rope_percentage", full_rope["partial_rotary_factor"])
         |> Map.put("sliding_rope_theta", sliding_rope["rope_theta"])
-        |> Map.put_new_lazy("global_head_dim", fn -> per_layer_head_size(data) end)
+        |> Map.put_new_lazy("global_head_dim", fn -> per_layer_value(data, "head_dim") end)
+        |> Map.put_new_lazy("num_global_key_value_heads", fn ->
+          per_layer_value(data, "num_key_value_heads")
+        end)
 
       opts =
         convert!(data,
@@ -755,11 +758,12 @@ defmodule Bumblebee.Text.Gemma4 do
       @for.config(spec, opts)
     end
 
-    # Newer transformers versions save the global head size per layer instead of as "global_head_dim"
-    defp per_layer_head_size(data) do
+    # Newer transformers versions save the global attention shapes per layer, instead of
+    # as "global_head_dim" and "num_global_key_value_heads"
+    defp per_layer_value(data, key) do
       (data["per_layer_config"] || %{})
       |> Map.values()
-      |> Enum.find_value(& &1["head_dim"])
+      |> Enum.find_value(& &1[key])
     end
   end
 
