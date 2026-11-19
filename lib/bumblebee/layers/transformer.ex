@@ -36,6 +36,11 @@ defmodule Bumblebee.Layers.Transformer do
   `:attention`, `:cross_attention`, `:self_attention_cache` and
   `:cross_attention_cache`.
 
+  When a block reuses states computed by an earlier block, `fun` may
+  take a third argument: a map with the results of `fun` for the
+  previous blocks, by block index. The results may include any other
+  keys for this purpose.
+
   ## Options
 
     * `:num_blocks` (required) - the number of blocks
@@ -74,7 +79,8 @@ defmodule Bumblebee.Layers.Transformer do
       hidden_states: Axon.container({hidden_state}),
       attentions: Axon.container({}),
       cross_attentions: Axon.container({}),
-      cache: cache
+      cache: cache,
+      results: %{}
     }
 
     outputs =
@@ -96,6 +102,11 @@ defmodule Bumblebee.Layers.Transformer do
             cross_attention_cache: cross_attention_cache
           }
 
+          block_result =
+            if is_function(fun, 3),
+              do: fun.(state.hidden_state, block, state.results),
+              else: fun.(state.hidden_state, block)
+
           result =
             Map.merge(
               %{
@@ -104,7 +115,7 @@ defmodule Bumblebee.Layers.Transformer do
                 self_attention_cache: self_attention_cache,
                 cross_attention_cache: cross_attention_cache
               },
-              fun.(state.hidden_state, block)
+              block_result
             )
 
           block_cache =
@@ -119,11 +130,14 @@ defmodule Bumblebee.Layers.Transformer do
             hidden_states: Layers.append(state.hidden_states, result.hidden_state),
             attentions: Layers.append(state.attentions, result.attention),
             cross_attentions: Layers.append(state.cross_attentions, result.cross_attention),
-            cache: Layers.Decoder.put_block_cache(state.cache, index, block_cache)
+            cache: Layers.Decoder.put_block_cache(state.cache, index, block_cache),
+            results: Map.put(state.results, index, result)
           }
       end
 
-    update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, hidden_state))
+    outputs
+    |> Map.delete(:results)
+    |> update_in([:cache], &Layers.Decoder.update_cache_offset(&1, hidden_state))
   end
 
   @doc """
