@@ -53,7 +53,7 @@ defmodule Bumblebee.Text.Gemma4 do
         default: 4,
         doc: "the number of key value heads for each attention layer in the model"
       ],
-      num_global_key_value_heads: [
+      global_num_key_value_heads: [
         default: nil,
         doc: """
         the number of key value heads in `:full_attention` layers, when `:attention_key_equals_value`
@@ -635,7 +635,7 @@ defmodule Bumblebee.Text.Gemma4 do
   defp key_value_shape(spec, :full_attention) do
     num_key_value_heads =
       if spec.attention_key_equals_value,
-        do: spec.num_global_key_value_heads || spec.num_key_value_heads,
+        do: spec.global_num_key_value_heads || spec.num_key_value_heads,
         else: spec.num_key_value_heads
 
     {num_key_value_heads, spec.global_attention_head_size}
@@ -716,11 +716,16 @@ defmodule Bumblebee.Text.Gemma4 do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
+    def load(spec, %{"model_type" => "gemma4", "text_config" => %{} = text_config} = data) do
+      # The multimodal config controls whether the output head is tied.
+      text_config =
+        Map.put(text_config, "tie_word_embeddings", Map.get(data, "tie_word_embeddings", true))
+
+      load(spec, text_config)
+    end
+
     def load(spec, data) do
       import Shared.Converters
-
-      # Multimodal checkpoints nest the text model configuration
-      data = Map.get(data, "text_config", data)
 
       if data["enable_moe_block"] do
         raise ArgumentError, "Gemma 4 mixture-of-experts models are not supported yet"
@@ -728,6 +733,7 @@ defmodule Bumblebee.Text.Gemma4 do
 
       rotary_opts = Shared.rotary_embedding_options_from_transformers(data)
 
+      # Standard RoPE in the checkpoint overrides the proportional default.
       rotary_opts =
         if get_in(data, ["rope_parameters", "full_attention"]) do
           Keyword.put_new(rotary_opts, :rotary_embedding_scaling_strategy, nil)
@@ -752,7 +758,7 @@ defmodule Bumblebee.Text.Gemma4 do
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           num_key_value_heads: {"num_key_value_heads", number()},
-          num_global_key_value_heads: {"num_global_key_value_heads", optional(number())},
+          global_num_key_value_heads: {"num_global_key_value_heads", optional(number())},
           attention_key_equals_value: {"attention_k_eq_v", boolean()},
           attention_head_size: {"head_dim", number()},
           global_attention_head_size: {"global_head_dim", number()},
@@ -790,8 +796,7 @@ defmodule Bumblebee.Text.Gemma4 do
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
     def params_mapping(spec) do
-      # Without the "model." prefix, so that the prefix inferred on load is
-      # "model.language_model" for multimodal checkpoints and "model" otherwise
+      # The loader infers the text model prefix from the checkpoint.
       %{
         "embedder.token_embedding" => "embed_tokens",
         "per_layer_inputs.token_embedding" => "embed_tokens_per_layer",
@@ -817,9 +822,15 @@ defmodule Bumblebee.Text.Gemma4 do
           "scalar" => {[{"layers.{n}", "layer_scalar"}], fn [value] -> value end}
         },
         "output_norm" => "norm",
-        "language_modeling_head.output" =>
-          if(spec.tie_word_embeddings, do: "embed_tokens", else: "lm_head")
+        "language_modeling_head.output" => language_modeling_head_source(spec.tie_word_embeddings)
       }
+    end
+
+    defp language_modeling_head_source(true), do: "embed_tokens"
+
+    defp language_modeling_head_source(false) do
+      # Give the full parameter name so the loader can find it at the root.
+      %{"kernel" => {[{"lm_head", "lm_head.weight"}], fn [weight] -> weight end}}
     end
   end
 end

@@ -88,7 +88,7 @@ defmodule Bumblebee.Text.Gemma4Test do
     assert %Bumblebee.Text.Gemma4{
              architecture: :for_causal_language_modeling,
              attention_key_equals_value: true,
-             num_global_key_value_heads: 1,
+             global_num_key_value_heads: 1,
              per_layer_input_size: 0
            } = spec
 
@@ -108,6 +108,43 @@ defmodule Bumblebee.Text.Gemma4Test do
       ]),
       atol: 1.0e-4
     )
+  end
+
+  test "loads untied output weights from text-only and multimodal checkpoints" do
+    head = Nx.broadcast(0.25, {1024, 32})
+
+    for checkpoint <- [
+          "tiny-random-Gemma4ForCausalLM",
+          "tiny-random-Gemma4ForConditionalGeneration"
+        ] do
+      assert {:ok, %{params: params}} =
+               Bumblebee.load_model({:hf, "bumblebee-testing/" <> checkpoint},
+                 spec_overrides: [tie_word_embeddings: false],
+                 safetensors_reader: fn path ->
+                   path
+                   |> Safetensors.read!(lazy: true)
+                   |> Map.put("lm_head.weight", head)
+                 end
+               )
+
+      assert_equal(params.data["language_modeling_head.output"]["kernel"], head)
+    end
+  end
+
+  test "uses the multimodal config to decide whether to tie output weights" do
+    data = %{
+      "model_type" => "gemma4",
+      "tie_word_embeddings" => false,
+      "text_config" => %{
+        "model_type" => "gemma4_text",
+        "hidden_size" => 32,
+        "global_head_dim" => 16,
+        "tie_word_embeddings" => true
+      }
+    }
+
+    assert %Bumblebee.Text.Gemma4{hidden_size: 32, tie_word_embeddings: false} =
+             Bumblebee.HuggingFace.Transformers.Config.load(%Bumblebee.Text.Gemma4{}, data)
   end
 
   test "generation with shared key-value blocks" do
@@ -152,7 +189,7 @@ defmodule Bumblebee.Text.Gemma4Test do
     assert %Bumblebee.Text.Gemma4{
              attention_head_size: 8,
              global_attention_head_size: 16,
-             num_global_key_value_heads: 1
+             global_num_key_value_heads: 1
            } = spec
   end
 end
