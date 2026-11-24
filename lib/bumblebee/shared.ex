@@ -38,6 +38,8 @@ defmodule Bumblebee.Shared do
 
           * `%{type: :dynamic, factor: number()}`
 
+          * `%{type: :proportional, percentage: number(), factor: number()}`
+
           * `%{type: :llama3, factor: number(), low_frequency_factor: number(), high_frequency_factor: number(), original_max_positions: pos_integer()}`
 
           * `%{type: :longrope, short_factor: list(number()), long_factor: list(number()), original_max_positions: pos_integer()}`
@@ -155,7 +157,11 @@ defmodule Bumblebee.Shared do
   @spec rotary_embedding_options_from_transformers(map()) :: keyword()
   def rotary_embedding_options_from_transformers(data) do
     case data["rope_parameters"] || data["rope_scaling"] || %{} do
-      %{"full_attention" => full_params, "sliding_attention" => sliding_params} ->
+      params
+      when is_map_key(params, "full_attention") or is_map_key(params, "sliding_attention") ->
+        full_params = params["full_attention"] || %{}
+        sliding_params = params["sliding_attention"] || %{}
+
         local_opts =
           for {key, value} <- rotary_embedding_options(sliding_params, data) do
             {:"#{key}_local", value}
@@ -170,10 +176,15 @@ defmodule Bumblebee.Shared do
   end
 
   defp rotary_embedding_options(params, data) do
+    scaling_strategy = rotary_embedding_scaling_strategy(params, data)
+
+    percentage =
+      unless match?(%{type: :proportional}, scaling_strategy), do: params["partial_rotary_factor"]
+
     [
       rotary_embedding_base: params["rope_theta"],
-      rotary_embedding_percentage: params["partial_rotary_factor"],
-      rotary_embedding_scaling_strategy: rotary_embedding_scaling_strategy(params, data)
+      rotary_embedding_percentage: percentage,
+      rotary_embedding_scaling_strategy: scaling_strategy
     ]
     |> Enum.reject(fn {_key, value} -> value == nil end)
   end
@@ -193,6 +204,13 @@ defmodule Bumblebee.Shared do
 
       {"dynamic", %{"factor" => factor}} ->
         %{type: :dynamic, factor: factor}
+
+      {"proportional", params} ->
+        %{
+          type: :proportional,
+          percentage: Map.get(params, "partial_rotary_factor", 1.0),
+          factor: Map.get(params, "factor", 1.0)
+        }
 
       {"llama3", %{"factor" => factor, "low_freq_factor" => low, "high_freq_factor" => high}} ->
         %{
