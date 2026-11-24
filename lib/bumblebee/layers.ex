@@ -548,6 +548,28 @@ defmodule Bumblebee.Layers do
   end
 
   @doc """
+  Multiplies logits by the exponential of a learned scalar.
+
+  ## Options
+
+    * `:name` - layer name
+
+    * `:scale_initializer` - initializer for the scalar. Defaults to `:zeros`
+
+  """
+  def exp_scale_logits(%Axon{} = logits, opts \\ []) do
+    opts = Keyword.validate!(opts, [:name, scale_initializer: :zeros])
+    scale = Axon.param("scale", {}, initializer: opts[:scale_initializer])
+
+    Axon.layer(
+      fn logits, scale, _opts -> Nx.multiply(logits, Nx.exp(scale)) end,
+      [logits, scale],
+      name: opts[:name],
+      op_name: :exp_scale
+    )
+  end
+
+  @doc """
   Adds a drop-path layer to the network for stochastic depth.
 
   ## Options

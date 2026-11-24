@@ -137,7 +137,7 @@ defmodule Bumblebee.Multimodal.Clip do
     logits_per_text =
       text_embedding
       |> Layers.cosine_similarity(image_embedding)
-      |> exp_scale(
+      |> Layers.exp_scale_logits(
         name: "scale",
         scale_initializer: Axon.Initializers.full(spec.logit_scale_initial_value)
       )
@@ -150,24 +150,6 @@ defmodule Bumblebee.Multimodal.Clip do
       text_embedding: text_embedding,
       image_embedding: image_embedding
     })
-  end
-
-  defp exp_scale(input, opts) do
-    opts = Keyword.validate!(opts, [:name, scale_initializer: Axon.Initializers.full(1.0e-6)])
-
-    name = opts[:name]
-    scale_initializer = opts[:scale_initializer]
-
-    scale_param = Axon.param("scale", fn _ -> {} end, initializer: scale_initializer)
-
-    Axon.layer(
-      fn input, scale, _opts ->
-        Nx.multiply(input, Nx.exp(scale))
-      end,
-      [input, scale_param],
-      name: name,
-      op_name: :exp_scale
-    )
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do

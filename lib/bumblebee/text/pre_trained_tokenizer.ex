@@ -241,6 +241,13 @@ defmodule Bumblebee.Text.PreTrainedTokenizer do
         mask: "<mask>"
       }
     },
+    siglip: %{
+      special_tokens: %{
+        unk: "<unk>",
+        eos: "</s>",
+        pad: "</s>"
+      }
+    },
     smollm3: %{
       special_tokens: %{
         eos: "<|im_end|>",
