@@ -54,4 +54,20 @@ defmodule Bumblebee.Vision.SigLipVisionTest do
       Nx.tensor([[-0.0952, 0.8452]])
     )
   end
+
+  test "image classification loads labels from the top-level config" do
+    spec =
+      Bumblebee.configure(Bumblebee.Vision.SigLipVision, architecture: :for_image_classification)
+
+    spec =
+      Bumblebee.HuggingFace.Transformers.Config.load(spec, %{
+        "model_type" => "siglip",
+        "vision_config" => %{"hidden_size" => 8},
+        "id2label" => %{"0" => "cat", "1" => "dog", "2" => "bird"}
+      })
+
+    assert spec.hidden_size == 8
+    assert spec.num_labels == 3
+    assert spec.id_to_label == %{0 => "cat", 1 => "dog", 2 => "bird"}
+  end
 end

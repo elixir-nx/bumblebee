@@ -22,6 +22,10 @@ defmodule Bumblebee.Text.SigLipText do
         default: 768,
         doc: "the dimensionality of hidden layers"
       ],
+      projection_size: [
+        default: nil,
+        doc: "the dimensionality of the projection layer. Defaults to `:hidden_size`"
+      ],
       num_blocks: [
         default: 12,
         doc: "the number of Transformer blocks in the encoder"
@@ -152,7 +156,7 @@ defmodule Bumblebee.Text.SigLipText do
       end)
 
     pooled_state =
-      Axon.dense(last_token, spec.hidden_size,
+      Axon.dense(last_token, spec.projection_size || spec.hidden_size,
         kernel_initializer: Axon.Initializers.normal(),
         name: "head"
       )
@@ -251,6 +255,7 @@ defmodule Bumblebee.Text.SigLipText do
           vocab_size: {"vocab_size", number()},
           max_positions: {"max_position_embeddings", number()},
           hidden_size: {"hidden_size", number()},
+          projection_size: {"projection_size", optional(number())},
           num_blocks: {"num_hidden_layers", number()},
           num_attention_heads: {"num_attention_heads", number()},
           intermediate_size: {"intermediate_size", number()},

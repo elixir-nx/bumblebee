@@ -137,10 +137,8 @@ defmodule Bumblebee.Multimodal.Clip do
     logits_per_text =
       text_embedding
       |> Layers.cosine_similarity(image_embedding)
-      |> Layers.scale(
+      |> Layers.exp_scale_logits(
         name: "scale",
-        scale_shape: fn _ -> {} end,
-        transform: &Nx.exp/1,
         scale_initializer: Axon.Initializers.full(spec.logit_scale_initial_value)
       )
 

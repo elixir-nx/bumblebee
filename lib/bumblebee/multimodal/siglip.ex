@@ -139,14 +139,18 @@ defmodule Bumblebee.Multimodal.SigLip do
       |> Axon.nx(& &1.pooled_state)
       |> Axon.nx(&Bumblebee.Utils.Nx.normalize/1)
 
-    similarity = Layers.cosine_similarity(text_embedding, image_embedding)
+    # Both embeddings are normalized, so their dot product gives the cosine similarity.
+    similarity =
+      Axon.layer(
+        fn text, image, _opts -> Nx.dot(text, [1], image, [1]) end,
+        [text_embedding, image_embedding],
+        op_name: :dot
+      )
 
     logits_per_text =
       similarity
-      |> Layers.scale(
+      |> Layers.exp_scale_logits(
         name: "logit_scale",
-        scale_shape: fn _ -> {} end,
-        transform: &Nx.exp/1,
         scale_initializer: Axon.Initializers.full(spec.logit_scale_initial_value)
       )
       |> bias_layer(

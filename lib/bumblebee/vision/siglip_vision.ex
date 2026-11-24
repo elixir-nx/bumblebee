@@ -296,8 +296,15 @@ defmodule Bumblebee.Vision.SigLipVision do
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Config do
-    def load(spec, %{"model_type" => "siglip", "vision_config" => data}) do
-      load(spec, data)
+    def load(spec, %{"model_type" => "siglip", "vision_config" => vision_data} = data) do
+      label_keys = ["id2label", "num_labels"]
+      labels = Map.take(data, label_keys)
+
+      if labels == %{} do
+        load(spec, vision_data)
+      else
+        load(spec, Map.merge(Map.drop(vision_data, label_keys), labels))
+      end
     end
 
     def load(spec, data) do
