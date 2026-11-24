@@ -53,6 +53,28 @@ defmodule Bumblebee.Text.Gemma4Test do
     )
   end
 
+  test "uses token IDs for per-layer inputs with supplied embeddings" do
+    {:ok, %{model: model, params: params, spec: spec}} =
+      Bumblebee.load_model({:hf, "bumblebee-testing/tiny-random-Gemma4ForCausalLM"})
+
+    ids = Nx.tensor([[10, 20, 30]])
+
+    embeddings =
+      params.data["embedder.token_embedding"]["kernel"]
+      |> Nx.take(ids)
+      |> Nx.multiply(:math.sqrt(spec.hidden_size))
+
+    from_ids = Axon.predict(model, params, %{"input_ids" => ids})
+
+    from_both =
+      Axon.predict(model, params, %{"input_ids" => ids, "input_embeddings" => embeddings})
+
+    from_embeddings = Axon.predict(model, params, %{"input_embeddings" => embeddings})
+
+    assert_all_close(from_both.logits, from_ids.logits)
+    assert Nx.to_number(Nx.all_close(from_both.logits, from_embeddings.logits)) == 0
+  end
+
   test ":for_causal_language_modeling from a multimodal checkpoint" do
     assert {:ok, %{model: model, params: params, spec: spec}} =
              Bumblebee.load_model(
@@ -174,6 +196,7 @@ defmodule Bumblebee.Text.Gemma4Test do
   test "loads global attention shapes from per-layer configuration" do
     data = %{
       "model_type" => "gemma4_text",
+      "num_hidden_layers" => 2,
       "layer_types" => ["sliding_attention", "full_attention"],
       "head_dim" => 8,
       "rope_parameters" => %{
@@ -181,7 +204,10 @@ defmodule Bumblebee.Text.Gemma4Test do
         "full_attention" => %{"rope_theta" => 1_000_000.0, "partial_rotary_factor" => 0.25}
       },
       "attention_k_eq_v" => true,
-      "per_layer_config" => %{"01" => %{"head_dim" => 16, "num_key_value_heads" => 1}}
+      "per_layer_config" => %{
+        "00" => %{"head_dim" => 8, "num_key_value_heads" => 2},
+        "01" => %{"head_dim" => 16, "num_key_value_heads" => 1}
+      }
     }
 
     spec = Bumblebee.HuggingFace.Transformers.Config.load(%Bumblebee.Text.Gemma4{}, data)

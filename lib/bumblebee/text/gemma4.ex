@@ -117,7 +117,8 @@ defmodule Bumblebee.Text.Gemma4 do
         doc: """
         a list of layer types for each layer, where each element is either `:sliding_attention`
         (local attention with sliding window) or `:full_attention` (global attention). Defaults
-        to five `:sliding_attention` layers followed by one `:full_attention` layer, repeated
+        to five `:sliding_attention` layers followed by one `:full_attention` layer, repeated.
+        The last layer always uses `:full_attention`
         """
       ],
       per_layer_input_size: [
@@ -200,11 +201,10 @@ defmodule Bumblebee.Text.Gemma4 do
 
     * `"input_embeddings"` - `{batch_size, sequence_length, hidden_size}`
 
-      Embedded representation of `"input_ids"`, which can be specified
-      for more control over how `"input_ids"` are embedded than the
-      model's internal embedding lookup. If `"input_embeddings"` are present,
-      then `"input_ids"` will be ignored. Per-layer inputs then only have
-      their part projected from the embeddings.
+      Embeddings to use in place of the main token embedding lookup.
+      If the model uses per-layer inputs, it projects these embeddings
+      and combines them with per-layer token embeddings from `"input_ids"`.
+      With embeddings alone, it uses only the projection.
 
     * `"cache"`
 
@@ -319,9 +319,7 @@ defmodule Bumblebee.Text.Gemma4 do
 
     per_layer_inputs =
       if spec.per_layer_input_size > 0 do
-        per_layer_inputs(inputs["input_ids"], inputs["input_embeddings"], embeddings, spec,
-          name: "per_layer_inputs"
-        )
+        per_layer_inputs(inputs["input_ids"], embeddings, spec, name: "per_layer_inputs")
       end
 
     position_ids =
@@ -365,7 +363,7 @@ defmodule Bumblebee.Text.Gemma4 do
 
   # Per-layer inputs combine an embedding of each token with a projection
   # of the token embedding, giving each block its own input
-  defp per_layer_inputs(input_ids, input_embeddings, embeddings, spec, opts) do
+  defp per_layer_inputs(input_ids, embeddings, spec, opts) do
     name = opts[:name]
     size = spec.per_layer_input_size
 
@@ -380,9 +378,7 @@ defmodule Bumblebee.Text.Gemma4 do
       |> split_blocks(spec)
       |> norm(spec, join(name, "projection_norm"))
 
-    Layers.if_present input_embeddings do
-      projection
-    else
+    Layers.if_present input_ids do
       input_ids
       |> Axon.embedding(spec.per_layer_input_vocab_size, spec.num_blocks * size,
         kernel_initializer: kernel_initializer(spec),
@@ -392,6 +388,8 @@ defmodule Bumblebee.Text.Gemma4 do
       |> split_blocks(spec)
       |> Axon.add(projection)
       |> scale(:math.pow(2, -0.5))
+    else
+      projection
     end
   end
 
@@ -698,10 +696,13 @@ defmodule Bumblebee.Text.Gemma4 do
   end
 
   defp layer_types(spec) do
-    spec.layer_types ||
-      Enum.map(0..(spec.num_blocks - 1), fn index ->
-        if rem(index + 1, 6) == 0, do: :full_attention, else: :sliding_attention
-      end)
+    types =
+      spec.layer_types ||
+        Enum.map(1..spec.num_blocks, fn n ->
+          if rem(n, 6) == 0, do: :full_attention, else: :sliding_attention
+        end)
+
+    List.replace_at(types, -1, :full_attention)
   end
 
   defp first_shared_block(spec), do: spec.num_blocks - spec.num_shared_key_value_blocks
@@ -741,13 +742,6 @@ defmodule Bumblebee.Text.Gemma4 do
           rotary_opts
         end
 
-      data =
-        data
-        |> Map.put_new_lazy("global_head_dim", fn -> per_layer_value(data, "head_dim") end)
-        |> Map.put_new_lazy("num_global_key_value_heads", fn ->
-          per_layer_value(data, "num_key_value_heads")
-        end)
-
       opts =
         convert!(data,
           vocab_size: {"vocab_size", number()},
@@ -782,16 +776,28 @@ defmodule Bumblebee.Text.Gemma4 do
           tie_word_embeddings: {"tie_word_embeddings", boolean()}
         ) ++ rotary_opts ++ Shared.common_options_from_transformers(data, spec)
 
-      @for.config(spec, opts)
+      @for.config(spec, Keyword.merge(global_attention_options(data, spec), opts))
     end
 
-    # Newer transformers versions save the global attention shapes per layer, instead of
-    # as "global_head_dim" and "num_global_key_value_heads"
-    defp per_layer_value(data, key) do
-      (data["per_layer_config"] || %{})
-      |> Map.values()
-      |> Enum.find_value(& &1[key])
+    defp global_attention_options(%{"per_layer_config" => layers} = data, spec)
+         when is_map(layers) do
+      import Shared.Converters
+
+      # The last layer always uses global attention. Its index may be zero-padded.
+      num_blocks = data["num_hidden_layers"] || spec.num_blocks
+
+      overrides =
+        Enum.find_value(layers, %{}, fn {index, attrs} ->
+          if String.to_integer(index) == num_blocks - 1, do: attrs
+        end)
+
+      convert!(Map.merge(data, overrides),
+        global_attention_head_size: {"head_dim", number()},
+        global_num_key_value_heads: {"num_key_value_heads", optional(number())}
+      )
     end
+
+    defp global_attention_options(_data, _spec), do: []
   end
 
   defimpl Bumblebee.HuggingFace.Transformers.Model do
