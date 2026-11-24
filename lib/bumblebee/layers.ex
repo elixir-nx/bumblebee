@@ -1237,27 +1237,45 @@ defmodule Bumblebee.Layers do
   Adds a rotary embedding layer to the network.
   """
   def rotary_embedding(query, key, position_ids, attention_mask, size, opts \\ []) do
+    rotary_embedding_layer(
+      &apply_rotary_embedding/5,
+      [query, key],
+      position_ids,
+      attention_mask,
+      size,
+      opts
+    )
+    |> unwrap_tuple(2)
+  end
+
+  @doc """
+  Applies rotary embedding to a single input.
+  """
+  def rotary_embedding_single(input, position_ids, attention_mask, size, opts \\ []) do
+    rotary_embedding_layer(
+      &apply_rotary_embedding_single/4,
+      [input],
+      position_ids,
+      attention_mask,
+      size,
+      opts
+    )
+  end
+
+  defp rotary_embedding_layer(fun, inputs, position_ids, attention_mask, size, opts) do
     opts = Keyword.validate!(opts, [:name, :scaling_strategy, max_positions: 2048, base: 10_000])
 
-    output =
-      Axon.layer(
-        &apply_rotary_embedding/5,
-        [query, key, position_ids, Axon.optional(attention_mask)],
-        [size: size] ++ opts
-      )
-
-    unwrap_tuple(output, 2)
+    Axon.layer(fun, inputs ++ [position_ids, Axon.optional(attention_mask)], [size: size] ++ opts)
   end
 
   deftransformp create_sinusoidal_positions(
+                  position,
                   sequence_length,
                   max_positions,
                   size,
                   base,
                   scaling_strategy
                 ) do
-    position = Nx.iota({sequence_length})
-
     range = Nx.iota({div(size, 2)}) |> Nx.multiply(2) |> Nx.divide(size)
 
     case scaling_strategy do
@@ -1266,8 +1284,15 @@ defmodule Bumblebee.Layers do
         position = Nx.divide(position, factor)
         positions_cos_sin(position, inv_frequency)
 
-      %{type: :dynamic, factor: factor} when sequence_length > max_positions ->
-        scale = factor * sequence_length / max_positions - (factor - 1)
+      %{type: :proportional, percentage: percentage, factor: factor} ->
+        num_pairs = floor(percentage * size / 2)
+        active = Nx.less(Nx.iota({div(size, 2)}), num_pairs)
+        inv_frequency = Nx.select(active, Nx.divide(inv_frequency(base, range), factor), 0.0)
+        positions_cos_sin(position, inv_frequency)
+
+      %{type: :dynamic, factor: factor} when size > 2 ->
+        extra_length = position |> Nx.reduce_max() |> Nx.add(1 - max_positions) |> Nx.max(0)
+        scale = extra_length |> Nx.divide(max_positions) |> Nx.multiply(factor) |> Nx.add(1)
         base = Nx.multiply(base, Nx.pow(scale, size / (size - 2)))
 
         inv_frequency = inv_frequency(base, range)
@@ -1415,12 +1440,22 @@ defmodule Bumblebee.Layers do
   end
 
   defnp positions_cos_sin(position, inv_frequency) do
-    angle = Nx.outer(position, inv_frequency)
+    angle = Nx.multiply(Nx.new_axis(position, -1), inv_frequency)
     angle = Nx.concatenate([angle, angle], axis: -1)
     {Nx.cos(angle), Nx.sin(angle)}
   end
 
-  defnp apply_rotary_embedding(query, key, position_ids, attention_mask, opts \\ []) do
+  defnp apply_rotary_embedding(query, key, position_ids, attention_mask, opts) do
+    {cos, sin} = rotary_cos_sin(query, position_ids, attention_mask, opts)
+    {apply_rotation(query, cos, sin), apply_rotation(key, cos, sin)}
+  end
+
+  defnp apply_rotary_embedding_single(input, position_ids, attention_mask, opts) do
+    {cos, sin} = rotary_cos_sin(input, position_ids, attention_mask, opts)
+    apply_rotation(input, cos, sin)
+  end
+
+  defnp rotary_cos_sin(input, position_ids, attention_mask, opts) do
     opts =
       keyword!(opts, [
         :size,
@@ -1430,8 +1465,7 @@ defmodule Bumblebee.Layers do
         base: 10_000
       ])
 
-    # When decoding with cache position_ids may be a partial sequence,
-    # but in that case we always have full-length attention mask
+    # LongRoPE uses the full mask width during cached decoding.
     sequence_length =
       case attention_mask do
         %Axon.None{} -> Nx.axis_size(position_ids, 1)
@@ -1440,6 +1474,7 @@ defmodule Bumblebee.Layers do
 
     {cos, sin} =
       create_sinusoidal_positions(
+        Nx.as_type(position_ids, :f32),
         sequence_length,
         opts[:max_positions],
         opts[:size],
@@ -1447,16 +1482,12 @@ defmodule Bumblebee.Layers do
         opts[:scaling_strategy]
       )
 
-    position_ids = Nx.as_type(position_ids, :s64)
-
-    cos = cos |> Nx.take(position_ids) |> Nx.new_axis(2) |> Nx.as_type(Nx.type(query))
-    sin = sin |> Nx.take(position_ids) |> Nx.new_axis(2) |> Nx.as_type(Nx.type(query))
-
-    rotated_query = query * cos + rotate_half(query) * sin
-    rotated_key = key * cos + rotate_half(key) * sin
-
-    {rotated_query, rotated_key}
+    cos = cos |> Nx.new_axis(2) |> Nx.as_type(Nx.type(input))
+    sin = sin |> Nx.new_axis(2) |> Nx.as_type(Nx.type(input))
+    {cos, sin}
   end
+
+  defnp apply_rotation(input, cos, sin), do: input * cos + rotate_half(input) * sin
 
   defnp rotate_half(x) do
     size = div(Nx.axis_size(x, -1), 2)

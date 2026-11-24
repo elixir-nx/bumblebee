@@ -74,15 +74,24 @@ defmodule Bumblebee.Text.Gemma4 do
         doc: "base for computing rotary embedding frequency for `:full_attention` layers"
       ],
       rotary_embedding_percentage: [
-        default: 0.25,
-        doc: """
-        the fraction of rotary embedding frequencies used in `:full_attention` layers. The
-        remaining frequencies are zero, so those dimensions are not rotated
-        """
+        default: 1.0,
+        doc: "the fraction of the head rotated by standard RoPE in full-attention layers"
+      ],
+      rotary_embedding_scaling_strategy: [
+        default: %{type: :proportional, percentage: 0.25, factor: 1.0},
+        doc: "the rotary embedding scaling strategy in full-attention layers"
       ],
       rotary_embedding_base_local: [
         default: 10_000,
         doc: "base for computing rotary embedding frequency for `:sliding_attention` layers"
+      ],
+      rotary_embedding_percentage_local: [
+        default: 1.0,
+        doc: "the fraction of the head rotated by standard RoPE in sliding-attention layers"
+      ],
+      rotary_embedding_scaling_strategy_local: [
+        default: nil,
+        doc: "the rotary embedding scaling strategy in sliding-attention layers"
       ],
       use_attention_bias: [
         default: false,
@@ -406,7 +415,9 @@ defmodule Bumblebee.Text.Gemma4 do
     name = opts[:name]
     layer_types = layer_types(spec)
     first_shared = first_shared_block(spec)
-    producers = producer_blocks(layer_types, first_shared)
+
+    producers =
+      if first_shared < spec.num_blocks, do: producer_blocks(layer_types, first_shared), else: %{}
 
     Layers.Transformer.blocks(
       hidden_state,
@@ -417,15 +428,14 @@ defmodule Bumblebee.Text.Gemma4 do
         cache: cache,
         name: join(name, "blocks")
       ],
-      fn hidden_state, block, previous_results ->
+      fn hidden_state, block, shared_key_values ->
         layer_type = Enum.at(layer_types, block.index)
 
         # Shared blocks reuse the key and value states of the last earlier
         # block of the same type, instead of computing their own
         shared_key_value =
           if block.index >= first_shared do
-            producer = Map.fetch!(previous_results, Map.fetch!(producers, layer_type))
-            {producer.key, producer.value}
+            Map.fetch!(shared_key_values, layer_type)
           end
 
         name = block.name
@@ -488,22 +498,50 @@ defmodule Bumblebee.Text.Gemma4 do
 
         hidden_state = layer_scale(hidden_state, name: join(name, "layer_scale"))
 
-        %{
+        result = %{
           hidden_state: hidden_state,
           attention: attention,
-          key: key,
-          value: value,
           self_attention_cache: self_attention_cache
         }
-      end
+
+        shared_key_values =
+          if block.index == producers[layer_type] do
+            Map.put(shared_key_values, layer_type, {key, value})
+          else
+            shared_key_values
+          end
+
+        {result, shared_key_values}
+      end,
+      %{}
     )
+    |> elem(0)
   end
 
   defp self_attention(hidden_state, position_ids, block, layer_type, shared_key_value, spec, opts) do
     name = opts[:name]
     full? = layer_type == :full_attention
     {num_key_value_heads, head_size} = key_value_shape(spec, layer_type)
-    rotate = &rotary_embedding(&1, position_ids, head_size, layer_type, spec)
+
+    rotary_opts =
+      if full? do
+        [
+          base: spec.rotary_embedding_base,
+          percentage: spec.rotary_embedding_percentage,
+          scaling_strategy: spec.rotary_embedding_scaling_strategy
+        ]
+      else
+        [
+          base: spec.rotary_embedding_base_local,
+          percentage: spec.rotary_embedding_percentage_local,
+          scaling_strategy: spec.rotary_embedding_scaling_strategy_local
+        ]
+      end
+
+    rotary_opts =
+      [position_ids: position_ids, max_positions: spec.max_positions] ++ rotary_opts
+
+    rotary_layer_opts = [name: join(name, "rotary_embedding")]
 
     project = fn input, num_heads, suffix ->
       Layers.Transformer.project_heads(input, num_heads, head_size,
@@ -517,12 +555,20 @@ defmodule Bumblebee.Text.Gemma4 do
       hidden_state
       |> project.(spec.num_attention_heads, "query")
       |> norm(spec, join(name, "query_norm"))
-      |> rotate.()
 
-    {key, value, cache} =
+    {query, key, value, cache} =
       case shared_key_value do
         {key, value} ->
-          {key, value, block.self_attention_cache}
+          query =
+            Layers.Transformer.rotary_embedding(
+              query,
+              block.attention_mask,
+              head_size,
+              rotary_opts,
+              rotary_layer_opts
+            )
+
+          {query, key, value, block.self_attention_cache}
 
         nil ->
           key = project.(hidden_state, num_key_value_heads, "key")
@@ -532,15 +578,29 @@ defmodule Bumblebee.Text.Gemma4 do
               do: key,
               else: project.(hidden_state, num_key_value_heads, "value")
 
-          key = key |> norm(spec, join(name, "key_norm")) |> rotate.()
+          key = norm(key, spec, join(name, "key_norm"))
+
+          {query, key} =
+            Layers.Transformer.rotary_embedding(
+              query,
+              key,
+              block.attention_mask,
+              head_size,
+              rotary_opts,
+              rotary_layer_opts
+            )
+
           value = unscaled_norm(value, spec)
 
-          Layers.Decoder.cached_attention_key_values(
-            key,
-            value,
-            block.self_attention_cache,
-            block.offset
-          )
+          {key, value, cache} =
+            Layers.Decoder.cached_attention_key_values(
+              key,
+              value,
+              block.self_attention_cache,
+              block.offset
+            )
+
+          {query, key, value, cache}
       end
 
     num_key_value_groups = div(spec.num_attention_heads, num_key_value_heads)
@@ -570,44 +630,6 @@ defmodule Bumblebee.Text.Gemma4 do
       )
 
     {attention_output, attention_weights, key, value, cache}
-  end
-
-  # The frequencies span the whole head, so that with a percentage below
-  # 1.0 the dimensions without a frequency are paired, but not rotated
-  defp rotary_embedding(input, position_ids, head_size, layer_type, spec) do
-    {base, percentage} =
-      case layer_type do
-        :full_attention -> {spec.rotary_embedding_base, spec.rotary_embedding_percentage}
-        :sliding_attention -> {spec.rotary_embedding_base_local, 1.0}
-      end
-
-    num_rotated = trunc(percentage * head_size / 2)
-
-    inv_frequency =
-      for index <- 0..(div(head_size, 2) - 1) do
-        if index < num_rotated, do: 1 / :math.pow(base, 2 * index / head_size), else: 0.0
-      end
-
-    Axon.layer(&rotary_embedding_impl/3, [input, position_ids],
-      inv_frequency: inv_frequency,
-      op_name: :rotary_embedding
-    )
-  end
-
-  defp rotary_embedding_impl(input, position_ids, opts) do
-    inv_frequency = Nx.tensor(opts[:inv_frequency], type: :f32)
-
-    frequency = position_ids |> Nx.as_type(:f32) |> Nx.new_axis(-1) |> Nx.multiply(inv_frequency)
-    angle = Nx.concatenate([frequency, frequency], axis: -1) |> Nx.new_axis(2)
-    cos = angle |> Nx.cos() |> Nx.as_type(Nx.type(input))
-    sin = angle |> Nx.sin() |> Nx.as_type(Nx.type(input))
-
-    half = div(Nx.axis_size(input, -1), 2)
-    first = input[[.., .., .., 0..(half - 1)//1]]
-    second = input[[.., .., .., half..-1//1]]
-    rotated = Nx.concatenate([Nx.negate(second), first], axis: -1)
-
-    Nx.add(Nx.multiply(input, cos), Nx.multiply(rotated, sin))
   end
 
   defp key_value_shape(spec, :full_attention) do
@@ -704,15 +726,17 @@ defmodule Bumblebee.Text.Gemma4 do
         raise ArgumentError, "Gemma 4 mixture-of-experts models are not supported yet"
       end
 
-      rope_parameters = data["rope_parameters"] || %{}
-      full_rope = rope_parameters["full_attention"] || %{}
-      sliding_rope = rope_parameters["sliding_attention"] || %{}
+      rotary_opts = Shared.rotary_embedding_options_from_transformers(data)
+
+      rotary_opts =
+        if get_in(data, ["rope_parameters", "full_attention"]) do
+          Keyword.put_new(rotary_opts, :rotary_embedding_scaling_strategy, nil)
+        else
+          rotary_opts
+        end
 
       data =
         data
-        |> Map.put("full_rope_theta", full_rope["rope_theta"])
-        |> Map.put("full_rope_percentage", full_rope["partial_rotary_factor"])
-        |> Map.put("sliding_rope_theta", sliding_rope["rope_theta"])
         |> Map.put_new_lazy("global_head_dim", fn -> per_layer_value(data, "head_dim") end)
         |> Map.put_new_lazy("num_global_key_value_heads", fn ->
           per_layer_value(data, "num_key_value_heads")
@@ -733,9 +757,6 @@ defmodule Bumblebee.Text.Gemma4 do
           attention_head_size: {"head_dim", number()},
           global_attention_head_size: {"global_head_dim", number()},
           activation: {"hidden_activation", activation()},
-          rotary_embedding_base: {"full_rope_theta", number()},
-          rotary_embedding_percentage: {"full_rope_percentage", number()},
-          rotary_embedding_base_local: {"sliding_rope_theta", number()},
           use_attention_bias: {"attention_bias", boolean()},
           layer_norm_epsilon: {"rms_norm_eps", number()},
           initializer_scale: {"initializer_range", number()},
@@ -753,7 +774,7 @@ defmodule Bumblebee.Text.Gemma4 do
           num_shared_key_value_blocks: {"num_kv_shared_layers", number()},
           final_logit_softcapping: {"final_logit_softcapping", optional(number())},
           tie_word_embeddings: {"tie_word_embeddings", boolean()}
-        ) ++ Shared.common_options_from_transformers(data, spec)
+        ) ++ rotary_opts ++ Shared.common_options_from_transformers(data, spec)
 
       @for.config(spec, opts)
     end

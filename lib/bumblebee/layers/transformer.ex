@@ -36,11 +36,6 @@ defmodule Bumblebee.Layers.Transformer do
   `:attention`, `:cross_attention`, `:self_attention_cache` and
   `:cross_attention_cache`.
 
-  When a block reuses states computed by an earlier block, `fun` may
-  take a third argument: a map with the results of `fun` for the
-  previous blocks, by block index. The results may include any other
-  keys for this purpose.
-
   ## Options
 
     * `:num_blocks` (required) - the number of blocks
@@ -59,6 +54,27 @@ defmodule Bumblebee.Layers.Transformer do
 
   """
   def blocks(hidden_state, opts, fun) do
+    {outputs, _acc} =
+      blocks(
+        hidden_state,
+        opts,
+        fn hidden_state, block, acc -> {fun.(hidden_state, block), acc} end,
+        nil
+      )
+
+    outputs
+  end
+
+  @doc """
+  Adds a stack of transformer blocks with an accumulator.
+
+  The options and block result are the same as in `blocks/3`.
+  `fun` receives the hidden state, block, and accumulator, and returns
+  `{result, acc}`. The next block receives the updated accumulator.
+
+  Returns `{outputs, acc}` with the final accumulator.
+  """
+  def blocks(hidden_state, opts, fun, acc) do
     opts =
       Keyword.validate!(opts, [
         :name,
@@ -79,13 +95,12 @@ defmodule Bumblebee.Layers.Transformer do
       hidden_states: Axon.container({hidden_state}),
       attentions: Axon.container({}),
       cross_attentions: Axon.container({}),
-      cache: cache,
-      results: %{}
+      cache: cache
     }
 
-    outputs =
-      for index <- 0..(opts[:num_blocks] - 1), reduce: state do
-        state ->
+    {outputs, acc} =
+      for index <- 0..(opts[:num_blocks] - 1), reduce: {state, acc} do
+        {state, acc} ->
           block_cache = Layers.Decoder.get_block_cache(state.cache, index)
 
           {self_attention_cache, cross_attention_cache} =
@@ -102,10 +117,7 @@ defmodule Bumblebee.Layers.Transformer do
             cross_attention_cache: cross_attention_cache
           }
 
-          block_result =
-            if is_function(fun, 3),
-              do: fun.(state.hidden_state, block, state.results),
-              else: fun.(state.hidden_state, block)
+          {block_result, acc} = fun.(state.hidden_state, block, acc)
 
           result =
             Map.merge(
@@ -125,19 +137,19 @@ defmodule Bumblebee.Layers.Transformer do
               result.cross_attention_cache
             )
 
-          %{
+          state = %{
             hidden_state: result.hidden_state,
             hidden_states: Layers.append(state.hidden_states, result.hidden_state),
             attentions: Layers.append(state.attentions, result.attention),
             cross_attentions: Layers.append(state.cross_attentions, result.cross_attention),
-            cache: Layers.Decoder.put_block_cache(state.cache, index, block_cache),
-            results: Map.put(state.results, index, result)
+            cache: Layers.Decoder.put_block_cache(state.cache, index, block_cache)
           }
+
+          {state, acc}
       end
 
-    outputs
-    |> Map.delete(:results)
-    |> update_in([:cache], &Layers.Decoder.update_cache_offset(&1, hidden_state))
+    outputs = update_in(outputs.cache, &Layers.Decoder.update_cache_offset(&1, hidden_state))
+    {outputs, acc}
   end
 
   @doc """
@@ -566,32 +578,13 @@ defmodule Bumblebee.Layers.Transformer do
 
   """
   def rotary_embedding(query, key, attention_mask, head_size, rotary_opts, opts) do
-    validate_required_keys!(rotary_opts, [:position_ids])
-
-    rotary_opts =
-      Keyword.validate!(rotary_opts, [
-        :position_ids,
-        :max_positions,
-        :scaling_strategy,
-        base: 10_000,
-        percentage: 1.0
-      ])
-
-    {position_ids, rotary_opts} = Keyword.pop(rotary_opts, :position_ids)
-    {percentage, rotary_opts} = Keyword.pop(rotary_opts, :percentage)
-
-    size = trunc(head_size * percentage)
-
-    rotary_opts = [name: opts[:name]] ++ rotary_opts
+    {position_ids, size, rotary_opts} = rotary_embedding_options(head_size, rotary_opts, opts)
 
     if size == head_size do
       Layers.rotary_embedding(query, key, position_ids, attention_mask, size, rotary_opts)
     else
-      query_rotary = Axon.nx(query, & &1[[.., .., .., 0..(size - 1)//1]])
-      query_pass = Axon.nx(query, & &1[[.., .., .., size..-1//1]])
-
-      key_rotary = Axon.nx(key, & &1[[.., .., .., 0..(size - 1)//1]])
-      key_pass = Axon.nx(key, & &1[[.., .., .., size..-1//1]])
+      {query_rotary, query_pass} = split_rotary_head(query, size)
+      {key_rotary, key_pass} = split_rotary_head(key, size)
 
       {query_rotary, key_rotary} =
         Layers.rotary_embedding(
@@ -606,6 +599,46 @@ defmodule Bumblebee.Layers.Transformer do
       {Axon.concatenate([query_rotary, query_pass], axis: -1),
        Axon.concatenate([key_rotary, key_pass], axis: -1)}
     end
+  end
+
+  @doc """
+  Applies rotary embedding to one input. See `rotary_embedding/6` for options.
+  """
+  def rotary_embedding(input, attention_mask, head_size, rotary_opts, opts) do
+    {position_ids, size, rotary_opts} = rotary_embedding_options(head_size, rotary_opts, opts)
+
+    if size == head_size do
+      Layers.rotary_embedding_single(input, position_ids, attention_mask, size, rotary_opts)
+    else
+      {rotary, pass} = split_rotary_head(input, size)
+
+      rotary =
+        Layers.rotary_embedding_single(rotary, position_ids, attention_mask, size, rotary_opts)
+
+      Axon.concatenate([rotary, pass], axis: -1)
+    end
+  end
+
+  defp rotary_embedding_options(head_size, rotary_opts, opts) do
+    validate_required_keys!(rotary_opts, [:position_ids])
+
+    rotary_opts =
+      Keyword.validate!(rotary_opts, [
+        :position_ids,
+        :max_positions,
+        :scaling_strategy,
+        base: 10_000,
+        percentage: 1.0
+      ])
+
+    {position_ids, rotary_opts} = Keyword.pop(rotary_opts, :position_ids)
+    {percentage, rotary_opts} = Keyword.pop(rotary_opts, :percentage)
+    {position_ids, trunc(head_size * percentage), [name: opts[:name]] ++ rotary_opts}
+  end
+
+  defp split_rotary_head(input, size) do
+    {Axon.nx(input, & &1[[.., .., .., 0..(size - 1)//1]]),
+     Axon.nx(input, & &1[[.., .., .., size..-1//1]])}
   end
 
   @doc """
